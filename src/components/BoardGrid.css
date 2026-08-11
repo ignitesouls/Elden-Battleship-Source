@@ -1,0 +1,1444 @@
+.bg-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: center;
+  max-width: 100%;
+}
+
+.bg-label {
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.bg-grid-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.bg-grid {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  background: var(--board-line);
+  border: 2px solid var(--board-line);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, 0.18), 0 4px 18px rgba(0, 0, 0, 0.45);
+  flex: none;
+  /* Width and height are set to the identical explicit value (not inferred via
+     aspect-ratio) so sizing can't get squeezed by ambiguous flex/block sizing rules -
+     it's always exactly min(--bg-max-vh, --bg-max-vw, a hard cap). Both bounds are plain
+     viewport units, so a caller can claim e.g. "half the screen" via maxVw regardless of
+     how its parent container happens to be sized. */
+  width: min(var(--bg-max-vh, 78vh), var(--bg-max-vw, 92vw), 1600px);
+  height: min(var(--bg-max-vh, 78vh), var(--bg-max-vw, 92vw), 1600px);
+
+  /* Size of the per-square tally chips. Defined here, on the common ancestor, because two
+     unrelated rules need to agree on it: the strip itself and the bottom padding that keeps the
+     square's name from running through it. The floor is what keeps two digits legible on a small
+     board, and is also why that padding can't simply be a percentage of the cell. */
+  --bg-count-font: clamp(7px, calc(var(--bg-cell-font, 11px) * 1.05), 15px);
+}
+
+/* Fill mode: the board takes whatever shape its container has, square or not. Overrides the
+   min(vh, vw, 1600px) sizing above, which exists to keep the board square and can't describe a
+   panel the player has dragged into a rectangle. */
+.bg-wrap-fill {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.bg-grid-scroll-fill {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  /* No horizontal scroll here: the grid is being told to fit, so there is nothing to scroll to. */
+  overflow: hidden;
+}
+
+.bg-grid-fill {
+  width: 100%;
+  height: 100%;
+}
+
+.bg-coord {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.6rem, 1.4vh, 0.85rem);
+  /**
+   * Stated, never inherited.
+   *
+   * The gutter tracks are `auto`, so the track's height is the label's line box - and a line box
+   * inherited from an ancestor that set `line-height: 0` is zero tall. The caster's monitor does
+   * exactly that (.cast-preview, to kill the inline-block descender gap), which collapsed the
+   * coordinate rows to nothing and left the glyphs overflowing their own track, clipped top and
+   * bottom by the frame. It was invisible while the labels were small and obvious the moment they
+   * were made large. The OBS source was always fine, which is what pinned it on the preview.
+   */
+  line-height: 1.15;
+  color: var(--text-dim);
+  transition: color 0.1s;
+}
+
+/* Lights up the row/column label the hover shadow is pointing at. */
+.bg-coord-active {
+  color: var(--accent-bright);
+  font-weight: 700;
+}
+
+.bg-tooltip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 50;
+  pointer-events: none;
+  max-width: 260px;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(6, 18, 27, 0.97);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.bg-cell {
+  position: relative;
+  padding: 1px;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--cell);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bg-cell-axis-shadow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.bg-cell-text {
+  /* The first render's estimate only, and overridden by an inline px size from the moment there is
+     a cell to measure - see lib/textFit, which fits each name to the square it's actually in. This
+     line is what a square looks like for the one frame before that measurement exists. */
+  font-size: clamp(7px, calc(var(--bg-cell-font, 11px) * var(--bg-cell-fit, 1)), 17px);
+  /* Not 1.1. Below roughly 1.2 the glyph box is taller than its own line box, so descenders hang
+     outside it and the overflow:hidden below (there for the ellipsis) cuts them off - "Margit" and
+     "Watchdog" lost the tails of their g's. The padding is the same guard for the final line, whose
+     descenders sit right on the clip edge even at a comfortable line-height. */
+  line-height: 1.25;
+  padding-bottom: 0.1em;
+  text-align: center;
+  /* Geometric sans at bold, for open counters that survive being shrunk into a cell. It is a WIDE
+     face though - noticeably wider than the body font - so long names wrap sooner here than they
+     used to. See --font-board for why it isn't self-hosted. */
+  font-family: var(--font-board);
+  font-weight: 700;
+  /* Region tint when the set records one (the boss set does, objectives don't), else the
+     default. See .bg-region-* below. */
+  color: var(--bg-region, var(--cell-text));
+  /* The backstop under the backstop. textFit sizes a name so that no word has to be broken, so
+     this should now only ever fire in a cell too small to hold its longest word at 5px - which on
+     the boss board means a panel dragged smaller than anyone plays at. */
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  max-height: 100%;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+
+  /* Anything that still doesn't fit ends in an ellipsis rather than being sliced through a word.
+     A visible "..." reads as "hover for the rest", which is true; a half-word reads as a bug. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--bg-cell-lines, 5);
+  line-clamp: var(--bg-cell-lines, 5);
+  overflow: hidden;
+}
+
+/**
+ * Where on the map each square is, by colour.
+ *
+ * All seven are light tints rather than saturated hues: the cell behind them is near-black navy
+ * (--cell), so lightness is what carries contrast here, and a "true" red or blue dark enough to
+ * read as that colour would be unreadable at this size. Grouped to match the Region type - the
+ * pairs that share a colour are the ones players travel together.
+ *
+ * Deliberately kept clear of the result fills these sit on top of: --miss-fill is blue and
+ * --hit-fill orange, which is exactly why a resolved square stops using them (.bg-cell-text-marked).
+ */
+.bg-region-limgrave { --bg-region: #74d68a; }
+.bg-region-liurnia { --bg-region: #62b6f2; }
+.bg-region-caelid { --bg-region: #ef6b6b; }
+.bg-region-altus { --bg-region: #edc75c; }
+/* Neutral rather than the blue-grey of --cell-text, so "grey" reads as a chosen colour next to
+   the others instead of looking like an untinted square. */
+.bg-region-mountaintops { --bg-region: #c8c6c2; }
+.bg-region-underground { --bg-region: #bb8bea; }
+/* Magenta, not the orange it started as. Orange sat ~16 degrees of hue from the Altus gold, and two
+   light warm tints that close are not tellable apart inside a cell - which matters most here, since
+   the DLC is the largest group on the board by some way. The rest of the palette crowds into the
+   warm end (red, gold) and then leaves everything from purple back round to red empty, so this is
+   the one direction that buys separation from gold without landing on top of something else. */
+.bg-region-dlc { --bg-region: #ef82d1; }
+
+/**
+ * The Objectives palette, which is a separate ten from the seven above.
+ *
+ * That set colours by where a boss stands. This one colours by how far into a run a square sits and
+ * whether it's its own trip - see the Region type for why the two vocabularies are kept apart rather
+ * than shared. Ten is more than the seven above, so the hues are spaced deliberately: reading round
+ * the wheel it goes red 3, orange 28, gold 50, lime 95, green 148, cyan 184, blue 217, purple 265,
+ * magenta 316, with no gap under 22 degrees.
+ *
+ * The one pair to watch is gold (post-Altus) against orange (Shadow Keep), which is the 22. They
+ * survive it where the boss board's gold and orange didn't because these two differ in saturation as
+ * well as hue AND can never describe the same trip - one is base game, the other is DLC - so a
+ * misread costs nothing. If it does prove too close in play, move Shadow Keep further red; there is
+ * room between it and Cerulean Coast.
+ */
+.bg-region-prealtus { --bg-region: #2fae66; }
+.bg-region-postaltus { --bg-region: #f0d24a; }
+/* Ice, not the silver-grey the boss board uses for the same mountains: white is spoken for below,
+   and grey is its nearest neighbour. */
+.bg-region-snowfield { --bg-region: #55d9e0; }
+.bg-region-dlcgeneral { --bg-region: #5b9bf5; }
+.bg-region-belurat { --bg-region: #ea7fd0; }
+.bg-region-shadowkeep { --bg-region: #ff8c2b; }
+.bg-region-rauh { --bg-region: #8ee04a; }
+.bg-region-dlcsouth { --bg-region: #ff5a52; }
+/* Combined (C) squares, which take a colour of their own instead of a region - see buildBingoBoard. */
+.bg-region-combined { --bg-region: #a97bf0; }
+/**
+ * "Anywhere": collections and counts that are genuinely not in one place.
+ *
+ * Near-white rather than pure #fff, which .bg-cell-text-marked owns - a resolved square bleaches to
+ * white, and two identical whites would make an untouched general square read as an already-fired
+ * one at a glance. The half-step off is enough to keep them apart while still reading as white next
+ * to nine saturated hues.
+ */
+.bg-region-general { --bg-region: #edf3f7; }
+
+/**
+ * Lifts the name above the marker layer, which is a later grid item and would otherwise paint over
+ * it. Every square carrying anything at all needs this - a result OR a pencil mark - and an
+ * untouched square has no marker to sit under. Same trick the stream overlay uses for the same
+ * reason; see Overlay.css.
+ */
+.bg-cell-text.bg-cell-text-lifted {
+  position: relative;
+  z-index: 3;
+}
+
+/**
+ * A square that's been FIRED AT drops its region colour for white.
+ *
+ * Two things happen to a resolved square that ruin a tinted name: the cell fills with a result
+ * colour (blue for a miss, orange for a hit, red for sunk), and a marker is drawn over the top.
+ * A green or gold name survives neither. White clears both, and the state is still obvious from
+ * the fill - so the square reads as resolved AND still says what it was, which is the point.
+ *
+ * A pencil mark deliberately does NOT get this. It used to, because one class did both this job and
+ * the z-index lift above, so right-clicking a square to pin a guess also bleached its name - and the
+ * tint is exactly what you're reading when you decide which squares are worth pinning. Nothing about
+ * a pencil mark justifies it either: the star sits in one corner and the cell keeps its own colour,
+ * so there is no result fill for white to rescue the name from.
+ */
+.bg-cell-text.bg-cell-text-marked {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.7);
+}
+
+/* Full lift for a square you can actually fire at. */
+.bg-cell:not(.bg-cell-inert):hover {
+  filter: brightness(1.3);
+}
+
+/**
+ * A square being held down to fire at - see holdToFireMs in BoardGrid.
+ *
+ * The sweep is the clock: it reaches the far edge at the instant the shot goes, so the wait is
+ * legible as progress rather than as lag. Its duration is the player's chosen hold length, handed
+ * in as --bg-hold-ms because that same number is what the timer in JS is counting.
+ *
+ * An animation rather than a transition. A transition needs the element to have been painted in its
+ * start state and changed in a later frame; this class arrives on the same frame the cell first
+ * wants to be filling, so a transition would simply jump to the end.
+ *
+ * z-index 2 sits it under the square's name (lifted to 3 while held) and under the result markers
+ * at 4 - the point is to read the boss you are about to commit to, so nothing may wash over it.
+ */
+.bg-cell-holding {
+  /* Marks the target itself, not just its progress: on a dense board the fill alone reads as
+     ambient motion, and this is the line that says "this square". */
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.bg-cell-holding::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.45;
+  transform-origin: left center;
+  animation: bg-hold-fill var(--bg-hold-ms, 400ms) linear forwards;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes bg-hold-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/**
+ * Holding still has to be possible for someone who can't have the motion, so the fill is replaced
+ * rather than dropped: the outline above already says which square, and this says "held" without
+ * anything sweeping. It costs the progress reading, which is the part that can't be kept.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .bg-cell-holding::after {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.28;
+  }
+}
+
+/**
+ * A square that can't be clicked still highlights, just more quietly.
+ *
+ * These used to carry the HTML `disabled` attribute, and Chrome fires NO mouse events on a disabled
+ * button - so a board you couldn't fire at (your own defense grid, the post-match recap, or any
+ * board during the prep countdown) had no cell highlight, no row/column shading and no tooltip,
+ * because all three hang off the same onMouseEnter. Inertness is a class now; the click handler
+ * does the refusing.
+ */
+.bg-cell-inert {
+  cursor: default;
+}
+
+.bg-cell-inert:hover {
+  filter: brightness(1.15);
+}
+
+.bg-empty {
+  background: var(--cell);
+}
+
+/**
+ * A resolved square colors its whole self, not just the middle of it.
+ *
+ * The markers alone were too quiet: on a ten-by-ten board carrying a boss name in every square, a
+ * small icon in the center of a cell that is otherwise the same navy as its ninety-nine neighbours
+ * doesn't read at a glance - which is what players kept reporting. The fill is what you see from
+ * across the room; the marker is what tells you which of the three it was.
+ *
+ * Miss is a flat blue (open water, nothing there). Hit and sunk are gradients so the marker still
+ * has somewhere darker to sit against, and so a hit doesn't read as a solid orange tile.
+ */
+.bg-miss {
+  background: var(--miss-fill);
+}
+
+.bg-hit {
+  background: radial-gradient(circle at 50% 50%, var(--hit-fill) 0%, #2a1103 78%);
+}
+
+.bg-sunk {
+  background: radial-gradient(circle at 50% 60%, var(--sunk-fill) 0%, #1a0808 80%);
+}
+
+.bg-ship {
+  background: var(--ship);
+}
+
+.bg-cell-mark-layer {
+  position: relative;
+  pointer-events: none;
+}
+
+/* Right-click pencil mark: a client-local "I reckon something's here" pin. Deliberately reads
+   as an annotation rather than a result, so it can't be confused with a real hit. */
+/**
+ * The "I want this square" mark, toggled with right-click.
+ *
+ * Top RIGHT, and a star rather than the ring it used to be: the ring sat top-left where the hit and
+ * miss markers are drawn, so on a busy board the two read as the same kind of thing. A star in the
+ * opposite corner is unmistakably an annotation rather than a result.
+ *
+ * Drawn as a mask so the icon takes the accent color and stays legible on any cell state, the same
+ * trick the ship sprites use.
+ */
+.bg-pencil-mark {
+  position: absolute;
+  top: 5%;
+  right: 5%;
+  width: 24%;
+  height: 24%;
+  min-width: 9px;
+  min-height: 9px;
+  background: var(--accent);
+  -webkit-mask-image: var(--bg-star-icon);
+  mask-image: var(--bg-star-icon);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  filter: drop-shadow(0 0 3px rgba(217, 164, 65, 0.75));
+}
+
+/**
+ * Markers are sized with an explicit width AND height rather than `inset`.
+ *
+ * An <svg> is a replaced element, and a replaced element's `auto` size comes from its own intrinsic
+ * ratio - NOT from opposing offsets. So `inset: 3%` pinned the left edge and then let the 1:1
+ * viewBox decide the height. On a square cell the two agree and nothing looks wrong; the moment a
+ * board is dragged out of square on the match canvas they diverge, because the marker is still
+ * sizing itself off the cell's WIDTH alone. At a 105x15 cell the burst rendered 99x99 - six rows
+ * tall, spilling over its neighbours - and at 19x76 it was a small dot in a tall cell.
+ *
+ * A percentage width and a percentage height each resolve against their own axis of the cell, so
+ * the box tracks both. The default preserveAspectRatio ("xMidYMid meet") then scales the artwork
+ * uniformly inside it: centered, never distorted, and never larger than the square it belongs to.
+ */
+/**
+ * The wheel-driven tallies, along the bottom edge of a square.
+ *
+ * The bottom rather than a corner because there can be several: one chip per crewmate who has
+ * counted this square, and a team splitting an objective needs to see who has done how much of it.
+ * Corners hold one thing each and are already spoken for - the pencil star owns the top right, the
+ * result markers own the middle.
+ *
+ * z-index 4 puts these above the square's name, which is itself lifted to 3 when annotated. That
+ * order is deliberate: the name is fixed and known, the tallies are the thing that just changed.
+ * Sized from --bg-cell-font, the same measure the names use, so they shrink with the board.
+ */
+.bg-count-strip {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  bottom: 3%;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  /* Wide on purpose. These are bare digits now, and "9 4 2" set tightly reads as nine hundred and
+     forty-two - the gap is the only thing separating one crewmate's tally from the next. */
+  gap: 0.7em;
+  overflow: hidden;
+  pointer-events: none;
+  font-size: var(--bg-count-font);
+  line-height: 1.15;
+}
+
+/**
+ * One tally. A bare number - see SquareCount for why there is no name on it.
+ *
+ * No plate and no border. Three bordered chips were three boxes competing with the square's own
+ * frame for a row of single digits, and the borders cost more width than the digits did. Legibility
+ * over a boss name or a hit fill comes from a heavy text-shadow instead, which is the same thing
+ * .bg-cell-text does and costs no space at all.
+ *
+ * min-width holds a single digit to the width of a double so a row doesn't shuffle sideways when
+ * somebody counts past nine.
+ */
+.bg-count-num {
+  min-width: 1em;
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+/* Yours, in the accent. With no names and no borders, this and first position are the entire answer
+   to "which one is mine" - and it's the only one you can change. */
+.bg-count-num-mine {
+  color: var(--accent-bright);
+}
+
+/**
+ * Lifts the centred square name clear of the tallies below it, rather than letting the two overlap.
+ *
+ * Derived from --bg-count-font rather than being a percentage of the cell, because the strip does
+ * NOT scale with the cell all the way down - its font clamps at 7px so two digits stay readable,
+ * which means on a small board the strip is a bigger share of the square than on a large one. A
+ * flat 18% was right at 56px cells and let the name run straight through the numbers at 38px.
+ *
+ * 1.5, down from the 1.9 the bordered chips needed - a bare digit is a line box and nothing else.
+ */
+.bg-cell-has-counts {
+  padding-bottom: calc(var(--bg-count-font) * 1.5);
+}
+
+.hit-mark,
+.miss-mark,
+.sunk-mark,
+.ruled-mark,
+.whale-mark,
+.laboon-mark,
+.tentacle-mark,
+.dutchman-mark,
+.bottle-mark,
+.jar-mark,
+.patches-mark {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/**
+ * One square of water, away from the board - the recap's Deep list (see MatchReport).
+ *
+ * Every marker above is positioned absolutely against its cell and sized as a percentage of one, so
+ * anywhere outside the grid it needs something to be a cell FOR it, which is all this is. It carries
+ * the miss fill for the same reason: these drawings are designed to be read against blue water, and
+ * the tentacle is a near-black silhouette whose whole outline is a pale sheen - on a dark panel it
+ * would be a smudge.
+ */
+.deep-find-icon {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--miss-fill);
+}
+
+/**
+ * The whale (see lib/whale.ts). Nearly fills its square, because it is the rarest thing that can
+ * happen on a board and it should be unmistakable from across a room - and because it only ever
+ * appears on water, where there is no hull or hit marker for it to compete with.
+ */
+.whale-mark {
+  top: 4%;
+  left: 4%;
+  width: 92%;
+  height: 92%;
+  animation: whale-surface 0.7s ease-out;
+}
+
+.whale-body {
+  transform-origin: 50% 60%;
+  animation: whale-bob 3.4s ease-in-out infinite;
+}
+
+/**
+ * White, because there is only one whale worth putting in a game and it is Moby Dick.
+ *
+ * Which makes this an ink drawing rather than a sprite: a white body, a cold slate line carrying the
+ * whole form, and hatching for the shading. No solid dark fill anywhere - a filled two-tone whale
+ * reads as a cartoon sticker sitting on top of the board, where this should look like it was drawn
+ * onto the chart. Slate rather than black for the same reason.
+ */
+.whale-hull {
+  fill: #fbfdff;
+  stroke: #55707f;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.whale-fin {
+  fill: #eef5fa;
+  stroke: #55707f;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* The bowed jaw line, drawn as heavy as the outline: it IS the animal's silhouette as far as reading
+   it at a glance goes, and a thin version of it just looks like a crease. */
+.whale-jaw {
+  fill: none;
+  stroke: #55707f;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.whale-hatch {
+  fill: none;
+  stroke: #93aab8;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.whale-eye {
+  fill: none;
+  stroke: #55707f;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+/* The cute bit. Outlined like everything else so it belongs to the same drawing. */
+.whale-tongue {
+  fill: #ff9db4;
+  stroke: #55707f;
+  stroke-width: 1.6;
+}
+
+.whale-halo {
+  fill: none;
+  stroke: var(--accent, #e8c072);
+  stroke-width: 2.4;
+  opacity: 0.9;
+  animation: whale-halo-drift 3.4s ease-in-out infinite;
+}
+
+.whale-bubble {
+  fill: #eaf7ff;
+  opacity: 0.7;
+  animation: whale-bubble-rise 2.8s ease-in-out infinite;
+}
+
+.whale-bubble-2 { animation-delay: 0.5s; }
+.whale-bubble-3 { animation-delay: 1.1s; }
+
+/* Rolls over as it arrives, which is the moment the joke lands. */
+@keyframes whale-surface {
+  0% { transform: scale(0.5) rotate(-28deg); opacity: 0; }
+  70% { transform: scale(1.08) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes whale-bob {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-2.5px) rotate(1.5deg); }
+}
+
+@keyframes whale-halo-drift {
+  0%, 100% { transform: translateY(0); opacity: 0.9; }
+  50% { transform: translateY(-2px); opacity: 0.6; }
+}
+
+@keyframes whale-bubble-rise {
+  0% { transform: translateY(4px) scale(0.7); opacity: 0; }
+  40% { opacity: 0.75; }
+  100% { transform: translateY(-10px) scale(1); opacity: 0; }
+}
+
+/**
+ * Laboon: the same drawing, alive, and blue.
+ *
+ * Sharing the whale's geometry means colour is the only thing telling them apart, so it has to do that
+ * job at 20px - hence a proper mid-blue body rather than another shade of paper. And nothing here
+ * rolls over on arrival the way the whale does, because he was never in any trouble.
+ */
+.laboon-mark {
+  top: 4%;
+  left: 4%;
+  width: 92%;
+  height: 92%;
+  animation: laboon-arrive 0.6s ease-out;
+}
+
+.laboon-body {
+  transform-origin: 50% 60%;
+  animation: whale-bob 4.2s ease-in-out infinite;
+}
+
+.laboon-hull {
+  fill: #4d86b8;
+  stroke: #1d3c58;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.laboon-fin {
+  fill: #3f74a4;
+  stroke: #1d3c58;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.laboon-jaw,
+.laboon-smile {
+  fill: none;
+  stroke: #1d3c58;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+/* Pale, because it is scar tissue on a dark hide - and because it is how he is recognised. Thinner
+   than a single scar would be: there are ten of them crossing, and at full weight the head goes white. */
+.laboon-scar {
+  fill: none;
+  stroke: #eaf1f6;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.laboon-hatch {
+  fill: none;
+  stroke: #37699a;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.laboon-eye { fill: #10283c; }
+.laboon-glint { fill: #ffffff; opacity: 0.9; }
+
+.laboon-spout {
+  fill: none;
+  stroke: #cfe7f7;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  opacity: 0.75;
+  animation: laboon-breathe 3s ease-in-out infinite;
+}
+
+@keyframes laboon-arrive {
+  0% { transform: translateY(14%) scale(0.8); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes laboon-breathe {
+  0%, 100% { opacity: 0.25; transform: translateY(1px); }
+  45% { opacity: 0.8; transform: translateY(-2px); }
+}
+
+/**
+ * A tentacle. Fills its square and runs off the bottom edge of it, because what it belongs to does not
+ * fit on the board.
+ *
+ * Near-black, which is what the text actually says: the idol in The Call of Cthulhu is greenish-BLACK
+ * stone, and the green is a trace in it rather than the colour of the thing. A properly green tentacle
+ * reads as a cartoon octopus, so what is left of the green here is a cold cast in an almost-black -
+ * enough that it is not the same black as the board's grid lines, and nowhere near enough to be a
+ * colour. The silhouette is carried by a pale sheen instead of an outline (see .tentacle-sheen),
+ * because a dark line around a dark shape on dark water is three kinds of nothing.
+ */
+.tentacle-mark {
+  top: 2%;
+  left: 2%;
+  width: 96%;
+  height: 96%;
+  animation: tentacle-rise 0.75s ease-out;
+}
+
+.tentacle-body {
+  transform-origin: 45% 100%;
+  animation: tentacle-sway 5s ease-in-out infinite;
+}
+
+.tentacle-limb {
+  fill: #1a2422;
+  stroke: #080d0c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.tentacle-sheen {
+  fill: none;
+  stroke: #93a8a2;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+/* Grey-lilac rather than mint: these are the underside of something, not a plant. */
+.tentacle-sucker {
+  fill: #b9c4c1;
+  opacity: 0.5;
+}
+
+.tentacle-lid {
+  fill: none;
+  stroke: #dfe7e4;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+/**
+ * Awake: the last tentacle has landed.
+ *
+ * The one moment in this app that is allowed to be loud. Every board in the room shows all of them at
+ * once (see deepMarks), which is the payoff for a hunt that until now was several crews quietly not
+ * knowing about each other.
+ */
+/* Awake reads as WET and lit rather than as a different colour: the arm barely shifts, the sheen comes
+   up hard, the suckers catch the light, and the eye does the rest. */
+.tentacle-mark-awake .tentacle-limb {
+  fill: #202d2a;
+  stroke: #050908;
+}
+
+.tentacle-mark-awake .tentacle-sheen {
+  stroke: #dff0ea;
+  opacity: 0.85;
+  stroke-width: 2.8;
+}
+
+.tentacle-mark-awake .tentacle-sucker {
+  fill: #e8efec;
+  opacity: 0.8;
+}
+
+.tentacle-eye {
+  transform-origin: 76% 62%;
+  animation: tentacle-open 0.5s ease-out 0.3s both;
+}
+
+.tentacle-eye-white {
+  fill: #f4e08a;
+  stroke: #0d2a24;
+  stroke-width: 2;
+}
+
+.tentacle-pupil { fill: #10201c; }
+
+@keyframes tentacle-rise {
+  0% { transform: translateY(45%) rotate(-10deg); opacity: 0; }
+  70% { transform: translateY(-3%) rotate(3deg); opacity: 1; }
+  100% { transform: translateY(0) rotate(0deg); opacity: 1; }
+}
+
+@keyframes tentacle-sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@keyframes tentacle-open {
+  0% { transform: scaleY(0.05); opacity: 0; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/**
+ * The Flying Dutchman.
+ *
+ * Translucent, which nothing else on this board is, and that is the whole defence against a
+ * ship-shaped marker on a game made of ship sprites: the water reads straight through his timbers.
+ * Sea-green rather than the cold grey of --ship for the same reason. He phases on a 6s cycle instead
+ * of holding still - every other marker asserts a fact, this is the only one that should look unsure
+ * it is there.
+ */
+.dutchman-mark {
+  top: 3%;
+  left: 3%;
+  width: 94%;
+  height: 94%;
+  animation: dutchman-fade 1.1s ease-out;
+}
+
+.dutchman-body {
+  transform-origin: 50% 80%;
+  opacity: 0.86;
+  animation: dutchman-drift 6s ease-in-out infinite;
+}
+
+.dutchman-aura {
+  fill: #7fe3c4;
+  opacity: 0.13;
+  animation: dutchman-pulse 4.5s ease-in-out infinite;
+}
+
+/* Fill barely there, so the water shows through the hull. */
+.dutchman-hull {
+  fill: #8fdcc4;
+  fill-opacity: 0.22;
+  stroke: #c4f2e2;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.dutchman-spar {
+  fill: none;
+  stroke: #c4f2e2;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.dutchman-sail {
+  fill: #dff7ec;
+  fill-opacity: 0.26;
+  stroke: #d6f4e8;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.dutchman-rip {
+  fill: none;
+  stroke: #9fe6cc;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+.dutchman-wake {
+  fill: none;
+  stroke: #bff0dd;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.4;
+}
+
+.dutchman-lamp {
+  fill: #f4e08a;
+  opacity: 0.85;
+  animation: dutchman-lamp 3.2s ease-in-out infinite;
+}
+
+@keyframes dutchman-fade {
+  0% { opacity: 0; transform: translateX(-14%); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes dutchman-drift {
+  0%, 100% { transform: translateY(0) rotate(-2deg); opacity: 0.86; }
+  50% { transform: translateY(-2px) rotate(2deg); opacity: 0.62; }
+}
+
+@keyframes dutchman-pulse {
+  0%, 100% { opacity: 0.13; }
+  50% { opacity: 0.26; }
+}
+
+@keyframes dutchman-lamp {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.35; }
+}
+
+/**
+ * The bottle. The only manufactured object in the water, and allowed to look like it - hard edges and
+ * a straight line through it, where everything else out here is an animal with a silhouette to
+ * protect. Cream on bottle-green is the highest-contrast pair in the set, which is what survives the
+ * shrink to a 20px cell.
+ */
+.bottle-mark {
+  top: 6%;
+  left: 4%;
+  width: 92%;
+  height: 92%;
+  animation: bottle-arrive 0.65s ease-out;
+}
+
+.bottle-body {
+  transform-origin: 50% 62%;
+  animation: bottle-bob 4.6s ease-in-out infinite;
+}
+
+.bottle-glass {
+  fill: #2e7d5e;
+  fill-opacity: 0.82;
+  stroke: #0f3a2a;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.bottle-shine {
+  fill: none;
+  stroke: #b6f0d4;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.bottle-cork {
+  fill: #c99a5e;
+  stroke: #5e3d1c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.bottle-scroll {
+  fill: #f3e6c8;
+  stroke: #7a6438;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.bottle-scroll-line {
+  fill: none;
+  stroke: #a8905c;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.bottle-ribbon {
+  fill: none;
+  stroke: #b34a3c;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.bottle-ripple {
+  fill: none;
+  stroke: #cfe7f7;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  opacity: 0.45;
+  animation: bottle-ripple 3.4s ease-in-out infinite;
+}
+
+.bottle-ripple-2 { animation-delay: 1.2s; }
+
+@keyframes bottle-arrive {
+  0% { transform: translateY(20%) scale(0.7) rotate(-18deg); opacity: 0; }
+  70% { transform: translateY(-3%) scale(1.06) rotate(3deg); opacity: 1; }
+  100% { transform: translateY(0) scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes bottle-bob {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-3px) rotate(3deg); }
+}
+
+@keyframes bottle-ripple {
+  0%, 100% { opacity: 0.15; transform: scaleX(0.9); }
+  50% { opacity: 0.5; transform: scaleX(1.06); }
+}
+
+/**
+ * Alexander.
+ *
+ * Pale glazed ceramic under a crimson cap, thin dark stick limbs. Lavender is the only
+ * cool-but-not-blue thing out here, so it separates from the miss wash without shouting; and being
+ * light-under-dark is what carries him down to a 20px cell, where a single-tone marker goes to mush.
+ */
+.jar-mark {
+  top: 3%;
+  left: 4%;
+  width: 92%;
+  height: 94%;
+  animation: jar-arrive 0.7s ease-out;
+}
+
+/* transform-box so the origins below resolve against the 0 0 100 100 viewBox rather than each group's
+   own bounding box - the two states have very different bounds, and an origin has to mean one thing. */
+.jar-body {
+  transform-box: view-box;
+  transform-origin: 50% 70%;
+}
+
+/**
+ * Stuck, and CLIPPED - the only marker in this file that is.
+ *
+ * He is half an upside-down pot whose dome runs off the bottom edge of the square, so the square's own
+ * gridline is doing the work of the waterline. Every other marker sets `overflow: visible` because it
+ * is a whole thing sitting inside its cell; with that here, the buried half of him was painted across
+ * the square BELOW, which on this board is not cosmetic - that square carries somebody else's result,
+ * and a marker bleeding onto it is making a claim about water it has nothing to do with.
+ *
+ * So this one takes the FULL cell instead of the usual inset, and clips to it. The cut then lands
+ * exactly on the square's edge, which is why it reads as submerged rather than as cropped.
+ */
+.jar-mark.jar-mark-stuck {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Wedged, so he rocks rather than turns. Pivoting about the bottom of the cell means the dome barely
+   moves and the legs swing, which is the right way round for something stuck by its head. */
+.jar-mark-stuck .jar-body {
+  transform-origin: 50% 100%;
+  animation: jar-wedge 2.2s ease-in-out infinite;
+}
+
+.jar-mark-free .jar-body {
+  animation: jar-cheer 2.6s ease-in-out infinite;
+}
+
+.jar-pot {
+  fill: #cdb9cd;
+  stroke: #3f3a5c;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.jar-collar {
+  fill: #bda9c0;
+  stroke: #3f3a5c;
+  stroke-width: 2.2;
+}
+
+.jar-meat {
+  fill: #6b1435;
+  stroke: #3f3a5c;
+  stroke-width: 2.2;
+}
+
+.jar-meat-inner { fill: #a02350; }
+.jar-meat-shine { fill: #c8467a; opacity: 0.8; }
+
+.jar-band {
+  fill: none;
+  stroke: #4a4568;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.jar-shine {
+  fill: none;
+  stroke: #eadfe8;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+.jar-speck { fill: #a996ae; opacity: 0.55; }
+
+/* A STROKE, not a filled shape. These are meant to be a line or two wide, and a filled sliver that
+   thin either vanishes at 20px or thickens into a sausage at full screen. */
+.jar-limb {
+  fill: none;
+  stroke: #454863;
+  stroke-width: 4.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.jar-digit { stroke-width: 3; }
+
+/* Faster than anything else on the board, which is what reads as struggling. */
+.jar-flail {
+  transform-origin: 50% 50%;
+  animation: jar-flail 0.6s ease-in-out infinite alternate;
+}
+
+.jar-ripple {
+  fill: none;
+  stroke: #cfe7f7;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+.jar-spark {
+  fill: #f4e08a;
+  animation: jar-spark 1.8s ease-in-out infinite;
+}
+
+.jar-spark-2 { animation-delay: 0.6s; }
+
+@keyframes jar-arrive {
+  0% { transform: translateY(30%) scale(0.7); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* A wobble, not a swing. He is wedged: the point is that he can't get anywhere. */
+@keyframes jar-wedge {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+
+@keyframes jar-cheer {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-3px) rotate(2deg); }
+}
+
+@keyframes jar-flail {
+  from { transform: rotate(-11deg); }
+  to { transform: rotate(11deg); }
+}
+
+@keyframes jar-spark {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/**
+ * Patches.
+ *
+ * A big pale dome on a dark crouched mass - deliberately the exact inverse of Alexander, who is a
+ * pale body under a dark cap. Both are new, both sit on open water, so they had to be each other's
+ * negative or they would be each other's twin.
+ */
+.patches-mark {
+  top: 3%;
+  left: 3%;
+  width: 94%;
+  height: 97%;
+  animation: patches-pop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+
+.patches-body {
+  transform-origin: 50% 95%;
+  animation: patches-shrug 3.4s ease-in-out infinite;
+}
+
+.patches-skin {
+  fill: #e3c7a4;
+  stroke: #3b2c20;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.patches-armor {
+  fill: #4a5638;
+  stroke: #241c14;
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.patches-leather {
+  fill: #7a5a38;
+  stroke: #241c14;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.patches-boot {
+  fill: #46403a;
+  stroke: #241c14;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+/* Heavy, and deliberately asymmetric. This is the dark mark across the pale circle that keeps it
+   reading as a face rather than a pebble once the features stop resolving. */
+.patches-brow {
+  fill: none;
+  stroke: #3b2c20;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.patches-eye { fill: #241811; }
+
+.patches-lid {
+  fill: none;
+  stroke: #3b2c20;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.patches-smirk {
+  fill: none;
+  stroke: #6b4a30;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.patches-nose {
+  fill: none;
+  stroke: #6b4a30;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.patches-ripple {
+  fill: none;
+  stroke: #cfe7f7;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+/* From the wrist only. A full arm-wave would read as pleased to see you. */
+.patches-wave {
+  transform-box: view-box;
+  transform-origin: 68% 60%;
+  animation: patches-wave 2.4s ease-in-out infinite;
+}
+
+@keyframes patches-pop {
+  0% { transform: translateY(45%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes patches-shrug {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-2px) rotate(1.5deg); }
+}
+
+@keyframes patches-wave {
+  0%, 100% { transform: rotate(-7deg); }
+  50% { transform: rotate(9deg); }
+}
+
+/**
+ * Dead water, crossed out by the board's own deduction (and by any mark a player made back when
+ * middle-click did it by hand - see usePencilMarks).
+ *
+ * Drawn under the square's name rather than over it - the mark layer already sits below the lifted
+ * text - so a crossed-out square still says which boss it was. That matters: "we've ruled out
+ * Margit" is a thing a fleet says out loud, and it can't say it off a square it can no longer read.
+ */
+.ruled-mark {
+  top: 8%;
+  left: 8%;
+  width: 84%;
+  height: 84%;
+  stroke: var(--danger, #d05a5a);
+  stroke-width: 7;
+  stroke-linecap: round;
+  opacity: 0.85;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+/* A hit takes nearly the whole square. It used to be inset 8% around a star that only reached 80%
+   of its own viewBox - about two thirds of the cell, which is small enough to be missed entirely
+   when you're scanning a board of a hundred named squares. */
+/* 3% rather than flush to the edge: the burst carries a 2-unit dark stroke, and at 1% the tips of
+   the star bled over the grid line into the next square. */
+.hit-mark {
+  top: 3%;
+  left: 3%;
+  width: 94%;
+  height: 94%;
+}
+
+.miss-mark {
+  top: 5%;
+  left: 5%;
+  width: 90%;
+  height: 90%;
+}
+
+.sunk-mark {
+  top: 6%;
+  left: 6%;
+  width: 88%;
+  height: 88%;
+}
+
+.hit-mark-glow {
+  fill: #fff45a;
+  opacity: 0.16;
+}
+
+/**
+ * Big, but not opaque.
+ *
+ * A star this size drawn solid buries the square's name completely - and a hit square is one of
+ * the ones people most want to read, because it's what they're about to call out. So the fill is
+ * translucent and the shape is carried by a dark rim instead: from across the room it's a blazing
+ * star filling the cell, up close the boss name still reads through it. (The overlay solves the
+ * same problem the other way, by drawing names above the markers - see Overlay.css.)
+ */
+.hit-mark-burst {
+  fill: var(--hit);
+  fill-opacity: 0.78;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 2.5;
+  transform-origin: 50% 50%;
+  animation: hit-pop 0.32s ease-out;
+}
+
+@keyframes hit-pop {
+  0% { transform: scale(0.2); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* The ripple now rides on a square that is itself water-blue, so the rings are pale rather than
+   mid-blue - they have to read as spray ON the water instead of as more of it. */
+.miss-mark {
+  transform-origin: 50% 50%;
+  animation: miss-ripple 0.4s ease-out;
+}
+
+.miss-ring {
+  fill: none;
+  stroke: var(--splash);
+}
+
+.miss-ring-1 { stroke-width: 2.5; opacity: 0.4; }
+.miss-ring-2 { stroke-width: 3; opacity: 0.58; }
+.miss-ring-3 { stroke-width: 3.5; opacity: 0.78; }
+
+.miss-dot {
+  fill: #eaf7ff;
+  opacity: 0.85;
+}
+
+@keyframes miss-ripple {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.sunk-flame-outer {
+  fill: #ff5510;
+  opacity: 0.9;
+  transform-origin: 50% 68%;
+  animation: flame-flicker 1.6s ease-in-out infinite;
+}
+
+.sunk-flame-inner {
+  fill: #ffdc46;
+  opacity: 0.95;
+  transform-origin: 50% 63%;
+  animation: flame-flicker 1.3s ease-in-out infinite reverse;
+}
+
+@keyframes flame-flicker {
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  50% { transform: scaleY(1.08) scaleX(0.94); }
+}
+
+.sunk-smoke {
+  fill: #3a3a3a;
+  opacity: 0.55;
+  animation: smoke-drift 2.6s ease-in infinite;
+}
+
+.sunk-smoke-2 {
+  animation-delay: 0.9s;
+}
+
+@keyframes smoke-drift {
+  0% { transform: translateY(0) scale(0.6); opacity: 0.5; }
+  70% { opacity: 0.35; }
+  100% { transform: translateY(-14px) scale(1.15); opacity: 0; }
+}
+
+.bg-preview-valid {
+  background: var(--preview-valid);
+}
+
+.bg-preview-invalid {
+  background: var(--preview-invalid);
+}
+
+/**
+ * The hull's grid area, used whole - the inset that keeps a ship off its own grid lines is applied
+ * by the inner box instead (see HULL_FIT in BoardGrid).
+ *
+ * This carried `margin: 4%` and could not keep doing so. Percentage margins resolve against the
+ * containing block's INLINE size on all four edges, so a horizontal ship's top and bottom margins
+ * were 4% of the area's width - which grows with the ship. A carrier was squeezed to ~60% of its
+ * cell height while a destroyer kept ~92%, and on a board dragged wide and short the vertical
+ * margins exceeded the cell height outright and collapsed the hull to nothing.
+ */
+.bg-ship-overlay {
+  position: relative;
+  pointer-events: none;
+  /* Slightly translucent so a sunk wreck drawn over the board doesn't hide the boss name. */
+  opacity: 0.8;
+}
+
+.bg-ship-overlay-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+}

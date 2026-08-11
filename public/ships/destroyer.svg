@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 96" preserveAspectRatio="none">
+  <!--
+    Destroyer, 2 cells. Side-on profile, bow to the right.
+
+    Authored 96 units per cell, matching the PNGs this replaces: the hull sits in the lower half with the
+    superstructure above it, and the whole file is used as a CSS mask - only alpha matters, so the fill
+    colour is irrelevant and every "detail" is either an added shape or a hole punched with
+    fill-rule="evenodd". preserveAspectRatio="none" because .bg-ship-overlay-inner sets
+    mask-size: 100% 100%, exactly as it stretched the bitmap.
+
+    Deliberately the LOW one. Nothing on this ship climbs past a third of the box, where the cruiser's
+    tripod mast and the battleship's pagoda go nearly to the top - which is what stops a two-cell hull
+    from reading as a three-cell one that happens to be cropped. Flush deck, one gun forward, one funnel,
+    torpedo tubes amidships and depth charges aft: the whole ship is a hull with equipment on it.
+  -->
+  <g fill="#fff" fill-rule="evenodd">
+    <!-- Hull: square transom aft, raked stem forward, portholes cut out. -->
+    <path d="M10,58 H150 C166,59 178,64 186,70 C178,77 166,80 150,80 H16 C12,79 10,76 10,72 Z
+             M38,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0
+             M56,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0
+             M74,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- Depth charge racks over the stern. -->
+    <path d="M16,53 H34 V58 H16 Z" />
+
+    <!-- Torpedo tubes amidships: a low flat bank, the flattest thing in the fleet. -->
+    <path d="M62,52 H98 V58 H62 Z" />
+    <path d="M98,54 H108 V57 H98 Z" />
+
+    <!-- Bridge: one low box, no second step. -->
+    <path d="M112,46 H136 V58 H112 Z" />
+    <!-- Stub mast. Where the cruiser carries a tripod to the top of the box, this stops at a third. -->
+    <path d="M122,30 H126 V46 H122 Z" />
+    <path d="M116,34 H132 V36 H116 Z" />
+
+    <!-- One raked funnel, short. -->
+    <path d="M140,44 H154 L151,58 H137 Z" />
+
+    <!-- The single forward gun, barrel over the bow. -->
+    <path d="M156,51 H172 V58 H156 Z" />
+    <path d="M172,53 H184 V56 H172 Z" />
+  </g>
+</svg>

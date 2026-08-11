@@ -1,0 +1,12 @@
+-- A per-match seed, shown in the lobby and fed to the Elden Ring randomizer mod.
+--
+-- Lives on the room rather than being generated per client, because every player has to feed the
+-- SAME number into their own copy of the mod - a locally-rolled seed would hand each of them a
+-- different set of starting weapons and graces, which is precisely the thing it exists to prevent.
+--
+-- Stored as text, not a number. It's an identifier to be read aloud and copied, never arithmetic,
+-- and text sidesteps any question of how a large integer survives the JSON round trip. Generated
+-- as 9 digits: comfortably inside the "8 to 10" that was asked for, and the widest such range that
+-- still fits a signed 32-bit int (max 999,999,999 against 2,147,483,647), which is what most
+-- randomizers expect a seed to be.
+alter table rooms add column if not exists seed text;

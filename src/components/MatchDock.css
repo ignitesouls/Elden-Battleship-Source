@@ -1,0 +1,139 @@
+/**
+ * The bar across the bottom of the match screen.
+ *
+ * Deliberately shaped like the top bar: full width, one line tall, quiet. It holds the things you
+ * refer to rather than the things you watch, so it should be findable without ever asking for
+ * attention.
+ */
+.match-dock {
+  flex: none;
+  /* Anchor for the overlay popover, which opens upward out of the bar. */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* Row gap first: it only matters once the bar wraps, and then it wants to be tighter than the
+     column gap that separates groups along a line. */
+  gap: 0.3rem 0.6rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel);
+  min-width: 0;
+}
+
+.match-dock-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/**
+ * Every button in the bar, including the ones that came from the sidebar.
+ *
+ * EndMatchButton and LeaveMatchButton carry an inline `width: 100%`, which is right for the column
+ * they were written for and disastrous in a row - each one would claim the whole bar. An inline
+ * style can only be overridden with !important, hence this.
+ */
+.match-dock button {
+  width: auto !important;
+  flex: none;
+  font-size: 0.72rem !important;
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+}
+
+/* An error from End match / Leave match would otherwise stretch the bar; it stays on one line and
+   is still the loud red it needs to be. */
+.match-dock .error-text {
+  flex: none;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+/**
+ * The overlay builder, opened upward.
+ *
+ * The wrapper is a static flex item so the panel inside it resolves against .match-dock, pinning
+ * the popover to the bar's right edge rather than to wherever the wrapper collapsed to once its
+ * button was replaced. Capped and scrollable because the form is taller than most of the screen it
+ * would be covering.
+ */
+.match-dock-popover > .panel {
+  position: absolute;
+  right: 0.55rem;
+  bottom: calc(100% + 0.4rem);
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: 72vh;
+  overflow-y: auto;
+  z-index: 40;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+
+/**
+ * Room / seed / rejoin, one clickable chip each.
+ *
+ * The whole chip copies, so there is no separate button next to a five-character code - at this
+ * size that button was most of the row.
+ */
+.match-info-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.match-info-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.15rem 0.4rem !important;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.match-info-chip:hover {
+  border-color: var(--accent);
+}
+
+.match-info-chip-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.match-info-chip-value {
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.match-info-chip-accent .match-info-chip-value {
+  color: var(--accent);
+}
+
+.match-info-chip-copy {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.match-info-chip:hover .match-info-chip-copy {
+  color: var(--accent-bright);
+}
+
+/* Below the canvas breakpoint the bar is the only layout there is, so let it breathe over as many
+   lines as it needs instead of trying to stay one line tall on a phone. */
+@media (max-width: 900px) {
+  .match-dock-spacer {
+    display: none;
+  }
+
+  .match-dock-popover > .panel {
+    position: static;
+    width: 100%;
+    max-height: none;
+  }
+}

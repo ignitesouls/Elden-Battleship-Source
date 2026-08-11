@@ -1,0 +1,21 @@
+/**
+ * Sized to sit in a row of dock buttons without looking like a form field, and to stack quietly in
+ * the fixed layout's sidebar column - it is a preference you set once, not a control you watch.
+ */
+.fire-hold-select {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.fire-hold-select select {
+  font: inherit;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: inherit;
+}

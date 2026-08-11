@@ -1,0 +1,177 @@
+/* The canvas plus the dock under it, together filling the same budget the canvas used to own alone
+   (the viewport less #root's padding and the toolbar above). Sizing them as a flex column is what
+   lets the dock be a real element in flow rather than something overlaying the panels: the canvas
+   absorbs whatever the dock leaves, so panel fractions still resolve against space that is
+   actually free. */
+.match-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 100%;
+  height: calc(100vh - 5.5rem);
+  min-height: 0;
+}
+
+/* The positioning context every panel's percentages resolve against. */
+.match-canvas {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+
+.canvas-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+/* Also the drag handle. Kept as a distinct strip rather than making the whole panel draggable,
+   because the panels are full of things you click - squares, buttons, the roster. A dedicated bar
+   means firing at a square can never be mistaken for the start of a drag. */
+.canvas-panel-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--panel-border);
+  cursor: grab;
+  user-select: none;
+  touch-action: none; /* stop the browser claiming the gesture as a scroll before we see it */
+}
+
+.canvas-panel-bar:active {
+  cursor: grabbing;
+}
+
+/* Takes the slack so the layer buttons sit hard against the right edge, and truncates rather than
+   pushing them out of the panel - a narrow panel still has to be restackable. */
+.canvas-panel-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-panel-layers {
+  flex: none;
+  display: flex;
+  gap: 0.15rem;
+}
+
+/* Deliberately quiet until you go looking. These sit on every panel, all the time, and a row of
+   bright controls on each title bar would compete with the match itself. */
+.canvas-panel-layer-btn {
+  padding: 0 0.25rem;
+  font-size: 0.6rem;
+  line-height: 1.3;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+.canvas-panel-bar:hover .canvas-panel-layer-btn {
+  opacity: 0.85;
+}
+
+.canvas-panel-layer-btn:hover {
+  opacity: 1;
+  color: var(--accent-bright);
+  border-color: var(--panel-border);
+}
+
+/* Locked panels keep their title bar - it still says what they are - but stop advertising a grab
+   they won't honour. The grip and the layer buttons aren't rendered at all while locked. */
+.canvas-panel-locked .canvas-panel-bar,
+.canvas-panel-locked .canvas-panel-bar:active {
+  cursor: default;
+}
+
+.canvas-panel-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.4rem;
+}
+
+/* The board fills its panel edge to edge; padding would only shrink the grid. */
+.canvas-panel-body-flush {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.canvas-panel-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  /* Two hairlines rather than an icon, so it reads as a grip without taking a corner of the board. */
+  background: linear-gradient(
+    135deg,
+    transparent 0 45%,
+    var(--text-dim) 45% 55%,
+    transparent 55% 70%,
+    var(--text-dim) 70% 80%,
+    transparent 80%
+  );
+  opacity: 0.55;
+}
+
+.canvas-panel-grip:hover {
+  opacity: 1;
+}
+
+/* Free positioning has no sensible phone story - panels would overlap into unreachability on a
+   narrow viewport. Below the breakpoint the canvas collapses back to ordinary stacked flow, which
+   is the same fallback the rest of the match screen already uses. */
+@media (max-width: 900px) {
+  .match-canvas-wrap,
+  .match-canvas {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .canvas-panel {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .canvas-panel-grip {
+    display: none;
+  }
+
+  .canvas-panel-bar {
+    cursor: default;
+  }
+
+  /* Stacking is meaningless once the panels are in flow, and the buttons would be a lie. */
+  .canvas-panel-layers {
+    display: none;
+  }
+}

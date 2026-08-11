@@ -1,0 +1,93 @@
+import type { Attack } from "../types/battleship";
+
+/**
+ * Sentinel cell index for the "match started" marker row written into `attacks`.
+ *
+ * The match clock has to read the same start instant on every client, which means it must come
+ * from the database. `rooms` has no timestamp that resets per match (created_at is the room, not
+ * the match) and adding one needs DDL, so the marker rides in the attack log instead - which is
+ * already the per-match event log, is already realtime-synced, and is already wiped by the reset.
+ * A negative index can never collide with a real square, so it is invisible to the boards.
+ *
+ * Defined here rather than in rooms.ts so that the pure clock/report logic doesn't have to
+ * import the Supabase client (and its browser-only env vars) just to learn a constant.
+ */
+export const MATCH_START_MARKER = -1;
+
+/**
+ * When the match clock started, read from the shared start marker in the attack log so every
+ * player's clock agrees. Falls back to the earliest shot for matches that began before the
+ * marker existed, and null if there's nothing to anchor to yet.
+ */
+export function matchStartedAt(attacks: Attack[]): string | null {
+  const marker = attacks.find((a) => a.cell_index === MATCH_START_MARKER);
+  if (marker) return marker.created_at;
+
+  const real = attacks.filter((a) => a.cell_index >= 0);
+  if (real.length === 0) return null;
+  return real.reduce((earliest, a) => (a.created_at < earliest ? a.created_at : earliest), real[0].created_at);
+}
+
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * Battle opens with a countdown, not straight into fire: STARTING is a short "get ready" beat
+ * (the horn plays right as it begins - see Room.tsx's status-change effect), PREPARATION is a
+ * longer buffer to read the board before shots are allowed, then MATCH is the fight itself. All
+ * three are time windows measured from the single start marker in the attack log.
+ */
+export const DEFAULT_STARTING_SECONDS = 10;
+export const DEFAULT_PREPARATION_SECONDS = 4 * 60;
+
+export interface MatchTimings {
+  starting: number;
+  preparation: number;
+  /** Seconds from the marker until firing opens. */
+  matchBeginsAt: number;
+}
+
+/**
+ * Countdown lengths for a room. The columns are optional in the type because rooms created
+ * before the qol_batch migration don't have them - those fall back to the original constants
+ * rather than collapsing to a zero-length countdown.
+ */
+export function matchTimings(room?: { starting_seconds?: number; prep_seconds?: number } | null): MatchTimings {
+  const starting = room?.starting_seconds ?? DEFAULT_STARTING_SECONDS;
+  const preparation = room?.prep_seconds ?? DEFAULT_PREPARATION_SECONDS;
+  return { starting, preparation, matchBeginsAt: starting + preparation };
+}
+
+export type BattlePhaseName = "starting" | "preparation" | "match";
+
+export interface BattlePhaseInfo {
+  phase: BattlePhaseName;
+  /** Seconds left in the STARTING/PREPARATION countdown; 0 once MATCH begins. */
+  countdown: number;
+  /** Seconds elapsed since MATCH itself began; 0 before that. */
+  matchElapsed: number;
+}
+
+export function battlePhaseAt(
+  startedAt: string | null,
+  nowMs: number,
+  timings: MatchTimings
+): BattlePhaseInfo | null {
+  if (!startedAt) return null;
+  const elapsed = (nowMs - new Date(startedAt).getTime()) / 1000;
+
+  if (elapsed < timings.starting) {
+    return { phase: "starting", countdown: timings.starting - elapsed, matchElapsed: 0 };
+  }
+  if (elapsed < timings.matchBeginsAt) {
+    return { phase: "preparation", countdown: timings.matchBeginsAt - elapsed, matchElapsed: 0 };
+  }
+  return { phase: "match", countdown: 0, matchElapsed: elapsed - timings.matchBeginsAt };
+}

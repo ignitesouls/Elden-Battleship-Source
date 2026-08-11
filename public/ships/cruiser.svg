@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 96" preserveAspectRatio="none">
+  <!--
+    Cruiser, 3 cells. Side-on profile, bow to the right. See destroyer.svg for the authoring rules.
+
+    The three gun ships are the ones at real risk of reading as each other, so they are separated by
+    STRUCTURE rather than by decoration, on two axes a glance can pick up:
+
+      Turrets:  destroyer 1, cruiser 2, battleship 3. That escalation is also the fleet's pecking order,
+                so the count means something rather than just differing.
+      Skyline:  destroyer is a box bridge and one funnel. The battleship is a stacked pagoda and two
+                funnels. This one is a tripod mast over a tapered bridge, one tall funnel - and the
+                thing neither of the others has, an aircraft crane with a floatplane on its catapult
+                amidships, which puts a distinctive gap and a wing in the middle of the ship.
+  -->
+  <g fill="#fff" fill-rule="evenodd">
+    <!-- Hull: shallower than the battleship's, with a fine clipper bow. -->
+    <path d="M10,56 H236 C256,57 272,62 282,69 C272,77 256,80 236,80 H16 C12,79 10,75 10,70 Z
+             M40,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0
+             M58,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0
+             M76,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0
+             M94,67 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- Aft turret, trained astern. One of only two. -->
+    <path d="M46,48 H74 V56 H46 Z" />
+    <path d="M32,50 H46 V53 H32 Z" />
+
+    <!-- Crane, and the floatplane sitting on its catapult. Unique to this hull. -->
+    <path d="M92,34 H97 V56 H92 Z" />
+    <path d="M97,36 L124,44 L123,48 L96,40 Z" />
+    <path d="M112,50 H140 L136,54 H116 Z" />
+    <path d="M120,46 H130 L134,50 H116 Z" />
+
+    <!-- Bridge: tapered front, not a box and not a pagoda. -->
+    <path d="M150,40 H176 L180,46 V56 H150 Z" />
+    <path d="M158,32 H172 V40 H158 Z" />
+    <!-- Tripod mast. -->
+    <path d="M163,12 H167 V32 H163 Z" />
+    <path d="M156,32 L162,20 L164,21 L159,32 Z" />
+    <path d="M174,32 L168,20 L166,21 L171,32 Z" />
+
+    <!-- One funnel, taller and heavier than the destroyer's. -->
+    <path d="M188,28 H210 L206,56 H184 Z" />
+
+    <!-- Single forward turret: the gap where a battleship would carry a second one. -->
+    <path d="M228,48 H256 V56 H228 Z" />
+    <path d="M256,50 H278 V53 H256 Z" />
+  </g>
+</svg>

@@ -1,0 +1,202 @@
+/**
+ * The board browser source: one board, filling whatever the caster sized the source to.
+ *
+ * Fixed to the viewport rather than laid out in flow. An OBS Browser Source has a hard width and
+ * height and no scrollbars, so "the page" and "the frame" are the same rectangle - and the zoom
+ * transform needs a clipping box it can be measured against, which a flow-sized div isn't.
+ */
+.ovb-frame {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  /* Transparent: OBS composites this over the game capture. */
+  background: transparent;
+}
+
+/**
+ * The board at its rendered size, slid into view.
+ *
+ * Positioned with left/top rather than a transform, so the text is rasterised once at its final
+ * size and stays sharp through a stream encoder - see the note in OverlayBoard about why zoom is
+ * cell size here and not a scale().
+ *
+ * -- The transition is doing two jobs, and its timing serves the harder one --
+ *
+ * Obvious job: a caster jumping to another square carries the viewer's eye across rather than
+ * teleporting. Load-bearing job: frames arrive over a rate-limited broadcast channel roughly ten
+ * times a second (see MIN_SEND_GAP_MS), so during a drag this is what fills the ~100ms between one
+ * position and the next. Without it, a smooth gesture would land on stream as ten discrete jumps.
+ *
+ * Hence LINEAR and slightly longer than the send gap. Linear because each frame is a waypoint on a
+ * continuous gesture, not a destination - ease-out accelerates and decelerates within every single
+ * hop, which at ten hops a second reads as stuttering. Slightly longer than the gap so the next
+ * frame always arrives with the previous glide still in flight, and the motion never stalls between
+ * them; much longer and the board visibly trails the caster's hand.
+ *
+ * Only the offsets animate; a zoom change re-renders at a new cell size and should land immediately
+ * rather than smearing through intermediate sizes.
+ */
+.ovb-stage {
+  position: absolute;
+  /* Size to the board, not to the frame. Without this an absolutely-positioned box shrink-to-fits
+     against the available width, which is the frame - and then the measurement that drives the pan
+     is the frame's size rather than the board's, so the offsets are always zero. */
+  width: max-content;
+  transition: left 140ms linear, top 140ms linear;
+}
+
+/**
+ * Let the board overflow the source. THIS is what made zoom and pan look broken.
+ *
+ * BoardGrid wraps its grid in two boxes that both refuse to exceed their container:
+ *
+ *     .bg-wrap        { max-width: 100%; }
+ *     .bg-grid-scroll { max-width: 100%; overflow-x: auto; }
+ *
+ * Exactly right in the app - a board too wide for a phone scrolls inside its own panel instead of
+ * pushing the page sideways. Here it is fatal: zooming asks the grid to become larger than the
+ * source, and .bg-grid-scroll answered by clamping it to 100% and scrolling it internally. So the
+ * stage never grew, the measured board size stayed equal to the frame, every pan offset computed to
+ * zero, and past a certain zoom nothing on screen changed at all.
+ *
+ * Overflow is the whole design here: the board is deliberately bigger than the window, and
+ * .ovb-frame's own `overflow: hidden` is what clips it.
+ */
+.ovb-board .bg-wrap,
+.ovb-board .bg-grid-scroll {
+  max-width: none;
+  overflow: visible;
+}
+
+/*
+ * Square names carry the region/keyword colour and the cell stays dark - i.e. exactly what
+ * BoardGrid already does, which is why there is no rule here doing it. Noted rather than left
+ * blank because the cell WAS briefly tinted instead, and this is the deliberate choice: the stream
+ * shows the same board the players are looking at, so a colour key means one thing in both places.
+ */
+
+/**
+ * Let the board grow past BoardGrid's 1600px ceiling.
+ *
+ * That cap is right for the app: it stops a board on a 4K monitor from becoming a wall of squares
+ * bigger than anyone wants to look at. Here it silently broke the zoom. The zoom works by handing
+ * BoardGrid a larger and larger size, and `min(..., 1600px)` meant that on a 1000px source
+ * everything past 1.6x was clamped to the same number - the slider moved, the board did not, and
+ * from the outside the feature simply didn't work.
+ *
+ * Panning is what makes this safe to lift: the board being far larger than the frame is the normal
+ * state here, not an accident, and the frame clips it.
+ */
+.ovb-board .bg-grid {
+  width: var(--bg-max-vw);
+  height: var(--bg-max-vh);
+
+  /* The SAME cap again, in the font.
+     --bg-cell-font is derived from min(maxVh, maxVw, 1600px) too, so lifting only the width above
+     made the squares keep growing while their names stopped - a board of huge cells with tiny text.
+     Recomputed here from the real size. !important because BoardGrid sets this inline. */
+  --bg-cell-font: calc(var(--bg-max-vw) / var(--ovb-cells, 10) / 7.2) !important;
+}
+
+/**
+ * And the third cap: a 17px ceiling on the name itself.
+ *
+ * Right for the app, where 17px is as large as a square ever needs to be a foot from your face.
+ * Here the whole purpose of zooming is to make a name readable across a room through a stream
+ * encoder, so the ceiling is raised and the floor lifted off 7px - at which size it is not going to
+ * survive the encode anyway, and a caster zooming in is asking for the opposite.
+ *
+ * This governs ONE render - the first, before a cell exists to measure - because BoardGrid writes
+ * the fitted size inline from then on and inline wins. Which is why the real ceiling is now passed
+ * as a prop (see OVERLAY_MAX_FONT); this rule is what the very first frame looks like, and it takes
+ * --ovb-text so that frame isn't visibly the wrong size before the measured one replaces it.
+ */
+.ovb-board .bg-cell-text {
+  font-size: clamp(9px, calc(var(--bg-cell-font, 11px) * var(--bg-cell-fit, 1) * var(--ovb-text, 1)), 72px);
+}
+
+/**
+ * Two fleets share this board, so hulls overlap - and the square's name still has to win.
+ *
+ * BoardGrid already draws hulls under its text layer, so this is about the OVERLAP: two fleets on
+ * one grid put two sprites on the same square, and at full opacity the second simply replaces the
+ * first. Half-opaque, they mix toward a third colour and a contested square reads as contested.
+ */
+.ovb-board .bg-ship-overlay-inner {
+  opacity: 0.55;
+}
+
+/* The coordinate gutter, when the caster turns it off. Hidden rather than removed so the board
+   keeps the same footprint and nothing shifts under the pan offsets. */
+.ovb-no-coords .bg-coord {
+  visibility: hidden;
+}
+
+/**
+ * Coordinates a viewer can actually read.
+ *
+ * In the app these are deliberately quiet - dim, small, and secondary to the square names, because
+ * a player can point at their own screen and is holding the board in their head anyway. On stream
+ * they are the ONLY way to say where something is: a caster says "D7" and several thousand people
+ * have to find it themselves, through an encoder, on a board that may be half off-frame at zoom.
+ *
+ * So: bright, bold, and sized off the same cell measurement the square names use (so they scale
+ * with the board rather than with the viewport, which on a browser source means nothing). Floored
+ * well above the app's, since the reason to zoom is legibility in the first place.
+ *
+ * --ovb-text applies to the ceiling as well as the middle term, or a streamer asking for larger text
+ * would grow the names and leave the coordinates pinned at 44px - and on a zoomed board where half
+ * the labels are off frame, the coordinates are the half of this that a viewer needs most.
+ */
+.ovb-board .bg-coord {
+  color: #f2f7fb;
+  font-weight: 800;
+  font-size: clamp(
+    14px,
+    calc(var(--bg-cell-font, 11px) * 1.5 * var(--ovb-text, 1)),
+    calc(44px * var(--ovb-text, 1))
+  );
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+  /* The gutter tracks are `auto`, so this padding is what actually sets their thickness - without
+     it the labels sit hard against the outermost squares. */
+  padding: 0.12em 0.3em;
+}
+
+/* The row/column the cursor is pointing at, on the control page's monitor. Keeps the accent it has
+   in the app, at the weight everything else here is drawn with. */
+.ovb-board .bg-coord-active {
+  color: var(--accent-bright);
+}
+
+/* No cursor or hover response - this is a picture, not a board anyone can press. */
+.ovb-board .bg-cell {
+  cursor: default;
+}
+
+/* Fault light for a controller that has stopped sending - see the note in OverlayBoard. */
+.ovb-stale {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(120, 20, 20, 0.85);
+  color: #ffd9d9;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ?debug=1 readout. Deliberately loud and ugly - it is not meant to be left on. */
+.ovb-debug {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 0.2rem 0.45rem;
+  background: rgba(0, 0, 0, 0.85);
+  color: #7fffa6;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}

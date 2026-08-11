@@ -1,0 +1,269 @@
+/**
+ * The app-wide chrome strip.
+ *
+ * It used to be a right-anchored box that wrapped onto two or three rows as its contents grew,
+ * which made it a chunky block sitting over the top-right of the board and forced #root to reserve
+ * 3.25rem of dead space for it on every page. It's now a single row spanning the full width: it
+ * has a fixed height that nothing can push past, so the space below it is predictable and every
+ * board gets that reclaimed height back.
+ *
+ * Staying on one row on a phone means the labels have to go, not the bar - see the media queries at
+ * the bottom, which peel back text (never the emoji, and never the title attribute) as width runs
+ * out. That's why every control here is emoji + text rather than one or the other: the emoji is
+ * what survives at the narrow end, the text is what makes it unambiguous everywhere else.
+ */
+.tb-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+
+  display: flex;
+  align-items: center;
+  /* nowrap is the whole point: the bar shrinks its contents rather than growing a second row. */
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  height: 2.2rem;
+  padding: 0 0.6rem;
+
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Pushes everything else to the right edge, where it has always lived. */
+.tb-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tb-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+/* Shared geometry for links and toggles alike, so the row reads as one set of controls rather
+   than as buttons interleaved with text. */
+.tb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--text-dim);
+}
+
+/* :not() rather than plain .tb-item:hover so this doesn't out-specify the accented items below.
+   `a.tb-item:hover` would beat `.tb-brand:hover` on specificity and flatten the wordmark, the
+   return-to-room link and the active colorblind toggle all back to the same gray on hover. */
+.tb-item:not(.tb-brand, .tb-return, .tb-colorblind-on):hover {
+  color: var(--text);
+}
+
+button.tb-item {
+  padding: 0.22rem 0.45rem;
+}
+
+/* Emoji only ever sit next to their label, never alone in the flow, so they need no baseline
+   correction beyond matching the label's line box. Slightly larger than the text because emoji
+   glyphs carry a lot of internal padding and render optically smaller at the same size. */
+.tb-emoji {
+  font-size: 0.92rem;
+  line-height: 1;
+  /* Color emoji fonts first: without this, Windows can pick a monochrome fallback for some of
+     these and the bar loses the thing that makes it readable at narrow widths. */
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
+
+/* The display face, matching the Home page heading - it's the same wordmark, just small. */
+.tb-brand {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  flex: none;
+}
+
+.tb-brand:hover {
+  color: var(--accent-bright);
+}
+
+.tb-return {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tb-return:hover {
+  color: var(--accent-bright);
+}
+
+.tb-account {
+  color: var(--text);
+  max-width: 10rem;
+  overflow: hidden;
+}
+
+.tb-account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tb-avatar {
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  flex: none;
+}
+
+.tb-twitch {
+  background: #9146ff;
+  border-color: #9146ff;
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 0.22rem 0.5rem;
+  white-space: nowrap;
+}
+
+.tb-sep {
+  width: 1px;
+  height: 1.1rem;
+  flex: none;
+  background: var(--panel-border);
+}
+
+/* --- volume slider -------------------------------------------------------
+   Styled from scratch, and the reset at the top is the point of it: the global `input, select`
+   rule in index.css was landing on this range input too, wrapping it in a bordered box with
+   0.7rem of padding at each end. On a 66px control that left the track occupying only the middle
+   ~44px, with a dead gap either side - so the slider looked like it stopped short of both 0% and
+   100% because visually it did.
+
+   The fill is then placed at the THUMB'S CENTRE rather than at a flat percentage of the track. A
+   range input insets the thumb by half its width at each end (its centre travels between 6px and
+   width-6px, never to the edges), so a plain `... var(--tb-fill) * 100%` gradient would drift
+   away from the thumb by up to half a thumb - reintroducing a smaller version of the same gap.
+   Hence the 0-1 fraction from TopBar.tsx: it multiplies a length inside calc(), which a
+   percentage cannot do. */
+.tb-slider {
+  --tb-thumb: 12px;
+  --tb-track: 5px;
+
+  width: 66px;
+  height: var(--tb-thumb);
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.tb-slider::-webkit-slider-runnable-track {
+  height: var(--tb-track);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
+      calc(var(--tb-thumb) / 2 + var(--tb-fill, 0) * (100% - var(--tb-thumb))) 100%,
+    var(--panel-border);
+}
+
+.tb-slider::-moz-range-track {
+  height: var(--tb-track);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
+      calc(var(--tb-thumb) / 2 + var(--tb-fill, 0) * (100% - var(--tb-thumb))) 100%,
+    var(--panel-border);
+}
+
+.tb-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--tb-thumb);
+  height: var(--tb-thumb);
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  /* Centres the thumb on a track thinner than it is; WebKit alone needs this, as Firefox already
+     centres ::-moz-range-thumb for us. */
+  margin-top: calc((var(--tb-track) - var(--tb-thumb)) / 2);
+}
+
+.tb-slider::-moz-range-thumb {
+  width: var(--tb-thumb);
+  height: var(--tb-thumb);
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.tb-slider:hover::-webkit-slider-thumb {
+  background: var(--accent-bright);
+}
+
+.tb-slider:hover::-moz-range-thumb {
+  background: var(--accent-bright);
+}
+
+/* The global input:focus outline hugs the old padded box, which no longer exists here. */
+.tb-slider:focus {
+  outline: none;
+}
+
+.tb-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+.tb-on {
+  color: var(--text);
+}
+
+.tb-colorblind-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tb-colorblind-on:hover {
+  border-color: var(--accent-bright);
+  color: var(--accent-bright);
+}
+
+/* --- narrow screens ------------------------------------------------------
+   Text drops out in priority order rather than all at once, and the emoji plus the title tooltip
+   always remain, so nothing ever becomes unidentifiable - just terser. */
+@media (max-width: 900px) {
+  .tb-label {
+    display: none;
+  }
+
+  .tb-slider {
+    width: 48px;
+  }
+
+  .tb-account {
+    max-width: 7rem;
+  }
+}
+
+@media (max-width: 620px) {
+  .tb-bar {
+    gap: 0.35rem;
+    padding: 0 0.4rem;
+  }
+
+  /* The volume slider is the first thing to go: muting is one tap away on the speaker toggle, and
+     a 48px range control is not usable on a phone anyway. */
+  .tb-slider,
+  .tb-account-name {
+    display: none;
+  }
+}

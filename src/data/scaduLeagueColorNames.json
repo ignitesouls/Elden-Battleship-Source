@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "What Scadu League's colours MEAN, for the board's key. Same job and same keying as",
+    "rookieRumbleColorNames.json - read that one first, its notes cover both.",
+    "",
+    "Four of nine are named. The other five are deliberately left empty, and that is the honest",
+    "answer rather than a gap to be filled in later by guesswork: Rookie Rumble's palette is plainly",
+    "regional and says so in its own square names, and this one ISN'T. Romina is orange and 'Drain",
+    "the Water in the Church District' is yellow, and those are the same building - so any label",
+    "reading 'Shadow Keep' on either group would be telling a team something untrue about where a",
+    "square sends them, which is the one thing a colour key must never do.",
+    "",
+    "An empty string falls back to listing the group's own keywords, so an unnamed colour still",
+    "answers 'why is this square red' - just with examples instead of a name. Fill one in the moment",
+    "you know what the author meant by it; nothing else has to change.",
+    "",
+    "The four that are named:",
+    "  128, 128, 255  every square is the Cerulean Coast or the Finger Ruins fissure",
+    "  128, 255, 255  Rellana, Moonrithyll, the Divine Bird, Dryleaf Dane - Ensis and the road to it",
+    "  Fuchsia        all three are Belurat",
+    "  Red            Bayle, Senessax, Florissax, Igon, Dragon Communion - the dragon run"
+  ],
+  "255, 128, 0": "",
+  "128, 255, 255": "Castle Ensis / Moorth",
+  "Yellow": "",
+  "Red": "Dragons / Jagged Peak",
+  "128, 128, 255": "Cerulean Coast / Fissure",
+  "Fuchsia": "Belurat",
+  "Lime": "",
+  "Blue": "",
+  "255, 255, 128": ""
+}

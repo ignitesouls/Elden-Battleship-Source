@@ -1,0 +1,319 @@
+/**
+ * The caster's desk. Operated on a second monitor, one-handed, while talking.
+ *
+ * Two columns that don't reflow under each other until they genuinely can't fit: the preview and
+ * the controls have to be visible at the same time, because every control is aimed at something
+ * the preview is showing.
+ */
+/**
+ * Capped, not full-bleed.
+ *
+ * This is a desk, and a desk is a fixed set of controls you learn the position of. Stretched across
+ * a 2560px monitor the zoom slider became a metre long - a pixel of travel per 0.002x - and the
+ * URL fields ran off toward the horizon with a lake of empty blue underneath. Everything here has
+ * a natural size; the page should be that size and no wider.
+ */
+.cast {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 1100px;
+}
+
+.cast-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cast-status {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.cast-status-live {
+  color: #6fd08c;
+}
+
+.cast-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.cast-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: none;
+}
+
+/**
+ * The board as a map to aim with. Positioned so the frame rectangle can sit over it.
+ *
+ * `touch-action: none` is load-bearing for the drag: without it a pointer drag on a touchscreen or
+ * precision trackpad is claimed by the browser as a scroll gesture and the pointermove events stop
+ * arriving halfway through, which reads as the aim sticking.
+ */
+.cast-preview {
+  position: relative;
+  cursor: grab;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.cast-preview:active {
+  cursor: grabbing;
+}
+
+/**
+ * The monitor tracks the hand exactly while a drag is live.
+ *
+ * .ovb-stage carries a glide so the SOURCE can interpolate between the frames it receives over the
+ * wire. The preview receives nothing - it renders from local state, a frame behind the pointer at
+ * most - so the same glide here is pure lag: the board sags behind the cursor and springs after it
+ * on release, which reads as the drag being imprecise when it is exact. Only during the gesture;
+ * an arrow-key nudge or a zoom change still eases.
+ */
+.cast-dragging .ovb-stage {
+  transition: none;
+}
+
+/**
+ * The preview shrink-wraps the real grid rather than being given a size.
+ *
+ * `.ov-grid` is `width: max-content` with a 1px gap between cells and a 1px border, so its rendered
+ * size is never `boardSize x cell` - it is that plus the lines. Sizing this box by that arithmetic
+ * put the frame rectangle a few percent out at every zoom. Wrapping the real element means the
+ * rectangle's percentages are measured against exactly the box the source is panning, lines and
+ * all, so the two agree by construction instead of by luck.
+ */
+.cast-preview {
+  display: inline-block;
+  line-height: 0;
+}
+
+/* Same clamps the board source has to lift - see the long note in OverlayBoard.css. Without them
+   the preview's grid is scrolled inside a box narrower than itself and the right-hand columns are
+   simply cut off, which is what it was doing. */
+.cast-preview .bg-wrap,
+.cast-preview .bg-grid-scroll {
+  max-width: none;
+  overflow: visible;
+}
+
+/* No pointer handling inside the map: the drag belongs to .cast-preview, and BoardGrid's cells are
+   real buttons that would otherwise swallow it. */
+.cast-preview .bg-cell {
+  pointer-events: none;
+  cursor: inherit;
+}
+
+.cast-inline-btn {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  margin-left: 0.25rem;
+}
+
+.cast-inline-btn {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  margin-left: 0.25rem;
+}
+
+/**
+ * What the stream is currently framing.
+ *
+ * Drawn over the preview rather than by dimming everything outside it: a caster needs to read the
+ * squares they are ABOUT to move to as much as the ones on screen now, and a mask would hide
+ * exactly the part they are aiming at next.
+ */
+.cast-frame {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  transition: all 180ms ease-out;
+}
+
+/**
+ * "This board is not on stream right now."
+ *
+ * Over the monitor rather than instead of it: the caster still needs to see what they are aiming
+ * at while it's hidden, so they can put it back already pointed at the right square.
+ */
+.cast-hidden-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 16, 24, 0.72);
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+  /* Stated, not inherited - .cast-preview sets line-height:0 and would flatten this to nothing.
+     Same trap the coordinate labels fell into. */
+  line-height: 1.2;
+  pointer-events: none;
+  /* Above the board, which carries no z-index of its own; the drag handler is on the parent and
+     pointer-events:none keeps the veil out of it. */
+  z-index: 2;
+}
+
+/**
+ * The readout under the monitor. Wraps; never widens.
+ *
+ * It ends in the full name of whatever square is under the crosshair, which changes constantly
+ * while panning - and boss names run from "Rick" to "Lurnia Crystalian (Ringblade)". As a single
+ * nowrap line that made the whole left column resize on every frame of a drag, which threw the
+ * controls beside it left and right several times a second. Genuinely unpleasant to look at.
+ *
+ * The column's width is fixed to the monitor (see .cast-preview-wrap's inline width), so all this
+ * has to do is wrap inside it. min-height reserves the tallest it gets, so changing from one line
+ * to three doesn't make the box itself twitch either - the space is cheap and it is below
+ * everything, so nothing moves to pay for it.
+ */
+.cast-hint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  min-height: 3.3em;
+  /* A single unbroken token longer than the column would still push it out; nothing in the square
+     sets is that long today, but the guarantee should not depend on that. */
+  overflow-wrap: anywhere;
+}
+
+.cast-panel {
+  flex: 1 1 22rem;
+  min-width: 16rem;
+  max-width: 32rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* The preview shows one board per fleet, matching the source exactly. */
+.cast-preview-boards {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.cast-panel section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cast-panel h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.cast-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.cast-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/**
+ * A hand-sized, unambiguously horizontal slider.
+ *
+ * The global `input, select` rule in index.css is written for text fields and applies to this too:
+ * a border, a dark fill and 0.5rem of padding. On a range input that is both ugly - it reads as a
+ * long empty bar rather than a track - and dangerous, because the padded box is what browsers now
+ * consult to decide a slider's ORIENTATION. Chrome renders a range vertically once its box is
+ * taller than it is wide, so a slider squeezed narrow in a flex row can silently stand up.
+ *
+ * So: fixed width, no inherited box, and the orientation stated outright rather than left to be
+ * inferred. Its whole range is 1x to 6x - it neither needs nor can use more travel than this.
+ */
+.cast-row input[type="range"] {
+  flex: 0 0 auto;
+  width: 14rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  writing-mode: horizontal-tb;
+  direction: ltr;
+  cursor: pointer;
+}
+
+/**
+ * The aim pad: a 3x3 laid out like the keys it mirrors.
+ *
+ * Small and left-aligned rather than stretched across the panel - it is a keypad, and a keypad's
+ * whole virtue is that every key is where you left it. Stretching it would make the diagonals
+ * further from the centre than the orthogonals, which is exactly the spatial lie to avoid.
+ */
+.cast-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 2.1rem);
+  gap: 0.2rem;
+  width: max-content;
+}
+
+.cast-pad-key {
+  height: 2.1rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.cast-pad-key:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.cast-zoom-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  min-width: 2.5rem;
+}
+
+.cast-warn {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.cast-note {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+/**
+ * The 1:1 monitor: a real 1000x1000 viewport, scaled down for the screen.
+ *
+ * Scaled rather than re-laid-out at a smaller size, which is the whole point - at any other size
+ * the board would fit its cells differently and stop being what the stream is showing.
+ */
+.cast-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  overflow: hidden;
+}

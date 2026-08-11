@@ -1,0 +1,230 @@
+/**
+ * The spectator screen, sized to the window rather than to its contents.
+ *
+ * It used to be an ordinary stack: a clock, a mode switcher, boards capped at `calc(100vh - 11rem)`
+ * and a couple of buttons. Those add up to more than the viewport - the boards alone claimed all
+ * but 11rem of it - so the page scrolled, and the thing that scrolled off the top was the clock.
+ * A caster narrating "they're twelve minutes in" was the one person who couldn't see the time.
+ *
+ * So the page is a fixed-height column now: a bar that keeps everything you read, and a stage that
+ * takes exactly what's left. The boards are measured into the stage (see boardSideFor) rather than
+ * guessing at the chrome in vh, which is what makes it fit at any window size instead of at the one
+ * the constant was tuned on.
+ */
+.spectate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  /* #root's own 2.8rem top / 0.75rem bottom padding, which sits inside this budget. */
+  height: calc(100vh - 3.55rem);
+  min-height: 0;
+}
+
+/**
+ * Everything that isn't a board, on one line: clock, view switcher, host buttons.
+ *
+ * Wraps rather than scrolls. A second row costs the stage below some height, which is the correct
+ * thing to give up - it can't make the page taller than the window.
+ */
+.spectate-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.spectate-bar button {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.45rem;
+  /* EndMatchButton and LeaveMatchButton carry an inline width:100% for the column they were
+     written for; in a bar that makes one button claim the whole row. */
+  width: auto !important;
+  white-space: nowrap;
+}
+
+.spectate-bar .error-text {
+  font-size: 0.7rem;
+}
+
+/* Pushes the host's buttons to the right edge, away from the view switcher - they end a match, and
+   they should not sit under the cursor that is picking a fleet to watch. */
+.spectate-bar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A link styled as one of the bar's buttons - it opens a second monitor's worth of page, so it is
+   deliberately a real link (middle-clickable, draggable to another screen) rather than a button. */
+.spectate-cast-link {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.spectate-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.spectate-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--panel-border);
+}
+
+/* The live clock, flattened into the bar. Digits stay tabular so the bar doesn't twitch each second. */
+.spectate-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex: none;
+}
+
+.spectate-clock-phase {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+}
+
+.spectate-clock-time {
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Everything left after the bar. min-height:0 is load-bearing: without it this flex item refuses to
+   shrink below its content and pushes the page taller, which is the bug this file exists to fix. */
+.spectate-stage {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* The board area, which is what gets measured. See the note on the ref in SpectatorView. */
+.spectate-boards {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
+/**
+ * The caster's rail: battle log above, fleet rosters below.
+ *
+ * A fixed width rather than a fraction, because its contents don't benefit from more - the log is
+ * one short line per shot and a roster is a handful of names - while the boards benefit from every
+ * pixel it doesn't take. The rosters are capped at 45% and scroll, so a four-fleet room can't push
+ * the log out of the rail entirely.
+ */
+.spectate-rail {
+  flex: none;
+  width: 19rem;
+  max-width: 34vw;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+}
+
+.spectate-rail-rosters {
+  flex: none;
+  max-height: 45%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.spectate-grid {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px; /* must match the `gap` argument to boardSideFor */
+  justify-items: center;
+  align-items: center;
+}
+
+/**
+ * The move/resize alternative to the stage: the same budget, but as a positioning context the
+ * caster's panels resolve their fractions against.
+ *
+ * Replaces .spectate-stage rather than sitting inside it - the panels ARE the boards, the log and
+ * the rosters, so a rail beside them would be laying the same things out twice.
+ */
+.spectate-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Riding along with a crew: two boards plus its own notes, filling the stage. */
+.spectate-crew {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.spectate-note {
+  flex: none;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  /* Below this width the layout gives up on fitting: a phone can't show two boards and a bar at a
+     readable size, and a squashed board is worse than a scrollbar. */
+  .spectate {
+    height: auto;
+  }
+
+  .spectate-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+  }
+
+  /* Beside the boards there is no room for a rail, so it goes under them at full width. */
+  .spectate-stage {
+    flex-direction: column;
+  }
+
+  .spectate-rail {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    height: 24rem;
+  }
+
+  /* Free positioning has no sensible phone story, so CanvasPanel.css drops its panels back into
+     ordinary flow below this width. The canvas they sit in has to stop being a fixed-height box at
+     the same point, or the stacked panels would be clipped by it. */
+  .spectate-canvas {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}

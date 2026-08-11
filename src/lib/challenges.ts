@@ -1,0 +1,89 @@
+import {
+  squareSet,
+  buildBingoBoard,
+  buildFlatBoard,
+  SQUARE_SETS,
+  DEFAULT_SQUARE_SET,
+  squareTitle,
+  type Challenge,
+  type SquareSetId,
+  type Region,
+} from "./squareSets";
+import { rng, seedFrom } from "./seededRandom";
+
+export type { Challenge, SquareSetId, Region };
+export { SQUARE_SETS, SQUARE_SET_LIST, DEFAULT_SQUARE_SET, squareSet } from "./squareSets";
+export { rowSquareSet, busiestSquareSet } from "./squareSets";
+export { REGION_ORDER, REGION_LABELS, colorKeyFor } from "./squareSets";
+export type { SquareSetDef, ColorLegendEntry } from "./squareSets";
+
+/**
+ * The board's challenges, derived purely from the room id and its chosen square set.
+ *
+ * Deliberately not stored in the database: every client seeds the same shuffle from the same
+ * room id and independently computes an identical board, so there's nothing to sync, nothing
+ * that can drift between players, and no schema change needed to add or reorder challenges.
+ *
+ * The set id is seeded in alongside the room id, so switching sets in the lobby genuinely
+ * reshuffles rather than dealing the same positions out of a different pack.
+ *
+ * The default set is the exception: it seeds from the bare room id, exactly as it did before square
+ * sets existed. Mixing the id in there instead would re-deal every board already in play the moment
+ * this deployed - renaming squares under a live match - and would strand the Almanac, which
+ * reconstructs finished boards from the room id and could no longer reproduce a single archived one.
+ */
+export function challengesForRoom(
+  roomId: string,
+  count: number,
+  setId: SquareSetId | null | undefined = DEFAULT_SQUARE_SET,
+  /**
+   * The room's current randomizer seed, which is rerolled every time the room returns to the lobby.
+   *
+   * Without it the board is a pure function of the room id, so a second match in the same room
+   * dealt exactly the same squares in exactly the same places - the rematch was the same board.
+   * Omit (or pass null) to get the original room-id-only board, which is what rooms created before
+   * seeds existed still have.
+   */
+  seed?: string | null
+): Challenge[] {
+  const set = squareSet(setId);
+  const base = set.id === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${set.id}`;
+  const next = rng(seedFrom(seed ? `${base}:${seed}` : base));
+  const board =
+    set.format === "bingo"
+      ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors)
+      : buildFlatBoard(set.data, count, next);
+  // Hover text is settled here rather than at each board, because how a square reads on hover
+  // depends on which set it came from and this is the last point that knows. See squareTitle.
+  return board.map((c) => ({ ...c, title: squareTitle(c, set) }));
+}
+
+/**
+ * Works out which square set a finished match was played on, by rebuilding its board with each set
+ * and seeing which one puts the recorded names where the log says they were.
+ *
+ * The Almanac needs this and cannot simply look it up: it reads archived rows long after the room
+ * itself has been pruned, and `match_events` records only the squares somebody fired at. Storing
+ * the set id on every archived row would answer it for future matches while leaving every match
+ * already in the books unreadable; reconstruction answers it for both.
+ *
+ * Returns null when nothing matches - a set that has changed since the match was played, most
+ * likely - and callers should then fall back to what was actually fired at.
+ */
+export function detectSquareSet(
+  roomId: string,
+  cells: number,
+  fired: Array<{ cell: number; name: string }>,
+  seed?: string | null
+): SquareSetId | null {
+  if (fired.length === 0) return null;
+  // Three is plenty: names are near-unique across sets, and a single agreement could in principle
+  // be a name two sets share.
+  const sample = fired.slice(0, 3);
+
+  for (const set of Object.values(SQUARE_SETS)) {
+    const board = challengesForRoom(roomId, cells, set.id, seed);
+    if (sample.every(({ cell, name }) => board[cell]?.name === name)) return set.id;
+  }
+  return null;
+}

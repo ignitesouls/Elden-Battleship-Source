@@ -1,0 +1,41 @@
+/* One browser source's row. Sized to sit in the caster's wide desk panel and in the player's
+   narrow overlay popover without either needing its own copy of these rules. */
+.src-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.4rem;
+}
+
+.src-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.src-label {
+  flex: none;
+  min-width: 3rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.src-line input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.7rem;
+}
+
+.src-line button {
+  flex: none;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+}
+
+/* Indented to line up under the URL rather than under the label, so the eye reads label -> URL ->
+   size as one block instead of as two columns. */
+.src-size {
+  padding-left: 3.35rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}

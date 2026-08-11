@@ -1,0 +1,53 @@
+/**
+ * The small wordmark, and the loading screen built around it.
+ *
+ * Width is always set by the caller and the height left to `auto`, so the art keeps its ratio no
+ * matter what it's sized to - the intrinsic width/height attributes on the img are there to
+ * reserve the space before the file arrives, not to size it.
+ */
+.brand-mark {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* For the screens where the logo is a bystander rather than the subject - the error panel, mainly.
+   It's a bright white-glow mark on a dark page and reads as the loudest thing there at full
+   strength, which is wrong when the message underneath is what matters. */
+.brand-mark-dim {
+  opacity: 0.72;
+}
+
+.brand-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 0;
+  text-align: center;
+}
+
+/* The pulse is the only thing on these screens that says "still working" rather than "stopped".
+   It rides on opacity alone: transforms would move the art around while the page behind it is
+   still settling, and this has to sit still enough to read. */
+.brand-loading .brand-mark {
+  animation: brand-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes brand-pulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+/* Anyone who has asked for less motion gets the mark held at a steady middle opacity rather than
+   at either end of the pulse, so it looks deliberate instead of stuck mid-fade. */
+@media (prefers-reduced-motion: reduce) {
+  .brand-loading .brand-mark {
+    animation: none;
+    opacity: 0.7;
+  }
+}

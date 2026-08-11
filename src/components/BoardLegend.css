@@ -1,0 +1,54 @@
+.board-legend {
+  gap: 0.35rem;
+}
+
+.board-legend-title {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* Bar form - see the `inline` branch in BoardLegend. Label and swatches on one line, so the key
+   reads as part of the bar it sits in rather than as a card parked inside one. */
+.board-legend-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.board-legend-inline-label {
+  flex: none;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+/* Wraps rather than listing one per line: in the match sidebar this has to stay two or three lines
+   tall, because every row it takes is a row the fleet rosters below it lose. */
+.board-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.55rem;
+}
+
+.board-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Colour comes from --bg-region: set by the .bg-region-* class alongside it on a region-tagged set,
+   or written inline from the square's own hex on a keyword-tinted one. Either way it is the same
+   variable the square names are painted with, so a swatch can never disagree with the board it
+   describes. */
+.board-legend-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  flex: none;
+  border-radius: 2px;
+  background: var(--bg-region);
+}

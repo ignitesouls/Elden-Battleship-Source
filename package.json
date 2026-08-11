@@ -1,0 +1,33 @@
+{
+  "name": "elden-battleship",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Battleship on an Elden Ring board, in a browser. Built for tournament play.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint src scripts",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist -m \"deploy: %npm_package_version%\"",
+    "check": "node --experimental-strip-types scripts/check-boards.ts && node --experimental-strip-types scripts/check-deduction.ts && node --experimental-strip-types scripts/check-deep-water.ts && node --experimental-strip-types scripts/check-honors.ts && node --experimental-strip-types scripts/check-record-book.ts && node --experimental-strip-types scripts/check-record-chase.ts && node --experimental-strip-types scripts/check-match-names.ts && node --experimental-strip-types scripts/check-text-fit.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "gh-pages": "^6.3.0",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}

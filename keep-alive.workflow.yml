@@ -1,0 +1,53 @@
+# Supabase keep-alive
+#
+# Free-tier projects pause after ~7 days without API activity, which for a game played in
+# bursts means the first person back after a quiet fortnight hits a dead site. This makes one
+# real PostgREST query a day, which counts as activity and resets that clock.
+#
+# ── INSTALL ────────────────────────────────────────────────────────────────
+# Copy this file into the repo you deploy from, at:
+#     .github/workflows/keep-alive.yml
+#
+# Then add two repository secrets (Settings → Secrets and variables → Actions):
+#     SUPABASE_URL       https://zltjdeikpsbohvgtmmsn.supabase.co
+#     SUPABASE_ANON_KEY  (the same anon key that's already in the built bundle)
+#
+# The anon key isn't really secret - it ships inside the JS and is protected by RLS, not by
+# obscurity - but keeping it out of the workflow file avoids implying otherwise.
+#
+# ⚠ GITHUB DISABLES SCHEDULED WORKFLOWS after 60 days with no repository activity. So if the
+# repo itself sits untouched for two months, the keep-alive quietly stops and the project pauses
+# anyway. Re-enable it from the Actions tab, or make any commit, to restart the schedule.
+
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 06:17 UTC daily. Deliberately not on the hour: scheduled jobs at :00 sit in GitHub's
+    # busiest queue and are frequently delayed by 10-30 minutes or dropped entirely.
+    # Daily rather than weekly gives six days of slack against the 7-day pause window.
+    - cron: "17 6 * * *"
+  workflow_dispatch: # lets you run it by hand from the Actions tab to check it works
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the REST API
+        run: |
+          # A genuine PostgREST read - HEAD requests and unauthenticated pings don't reliably
+          # register as activity. `rooms` is public-select, so the anon key is enough.
+          code=$(curl -s -o /tmp/out -w '%{http_code}' \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/rooms?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+
+          echo "HTTP $code"
+          cat /tmp/out
+
+          # Fail loudly on anything unexpected. A silently-failing keep-alive is worse than none
+          # at all: you'd believe you were covered right up until the project paused.
+          if [ "$code" != "200" ]; then
+            echo "::error::Keep-alive ping failed with HTTP $code - the project may pause."
+            exit 1
+          fi

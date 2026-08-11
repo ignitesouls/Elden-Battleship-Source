@@ -1,0 +1,317 @@
+/* Cinzel, a Trajan-style Roman display serif. Licensed under the SIL Open Font License 1.1 -
+   full text in src/assets/fonts/OFL.txt, which is what permits vendoring it here.
+
+   Vendored rather than linked from Google's CDN deliberately: no third-party request on every page
+   view, nothing to break if fonts.gstatic.com is blocked or slow, and it can't quietly change
+   under us. 26 KB buys the whole 400-900 weight range, since this is a variable font.
+
+   font-display: swap so text paints immediately in the fallback and reflows once the file lands -
+   an invisible heading is worse than a heading in Georgia for a few hundred milliseconds. */
+@font-face {
+  font-family: "Cinzel";
+  src: url("./assets/fonts/cinzel-latin.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Board squares. Self-hosted for the same reasons as Cinzel above, and because the alternative was
+   naming Century Gothic in a stack and hoping - that face is proprietary Monotype, bundled with
+   Windows and Office rather than licensed for the web, so macOS and Linux players (and anyone
+   capturing the overlay on a Mac) would have silently got a different board.
+
+   Jost is the free take on the same idea: a geometric sans in the Futura line Century Gothic itself
+   descends from, OFL-licensed so it can ship in the bundle. 26 KB buys 100-900, being variable. */
+@font-face {
+  font-family: "Jost";
+  src: url("./assets/fonts/jost-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Display face for headings and labels only. The fallbacks are ordered by how close they get to
+     the same classical-Roman feel on a machine that hasn't loaded the woff2 yet: Trajan on design
+     machines, then Palatino/Book Antiqua on Windows, Palatino on macOS, Georgia everywhere. */
+  --font-display: "Cinzel", "Trajan Pro", "Palatino Linotype", "Book Antiqua", Palatino, Georgia,
+    serif;
+
+  /* Face for the board squares only - the one place text has to stay readable after being shrunk
+     into a cell, where Jost's open counters and even strokes hold up better than the body font's.
+     Kept off the rest of the site on purpose: this is the game surface, Cinzel is the identity.
+
+     The fallbacks only matter for the instant before the woff2 lands (font-display: swap), so they
+     are the nearest geometric sans each platform already has rather than anything exotic. */
+  --font-board: "Jost", "Century Gothic", Futura, "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  /* Nautical palette: deep-water navy hulls, weathered brass fittings, chart-paper text.
+     Brass replaces the old neon green as the accent - it reads as "ship" rather than
+     "terminal", and warm-on-cold gives far better separation than green-on-black did. */
+  --bg: #06121b;
+  --panel: #0e2231;
+  --panel-raised: #143047;
+  --panel-border: #1e4157;
+  --text: #e7ecef;
+  --text-dim: #8ba7b8;
+  --accent: #d9a441;
+  --accent-bright: #f0bd5c;
+  --danger: #d4503f;
+  --team0: #be1210;
+  --team1: #095ca8;
+  --ship: #6b8296;
+  --hit: #ff9c28;
+  --miss: #cfe0e8;
+  --sunk: #a01e1e;
+  --splash: #9fd8ff;
+  /* Whole-square washes for a resolved cell. A marker alone wasn't carrying far enough on a busy
+     board full of square names, so the square itself now takes the color and the marker sits on
+     top of it: open water blue for a miss, ember for a hit, char for a wreck. Dark enough that
+     --cell-text and its shadow stay legible over them. */
+  --miss-fill: #12557d;
+  --hit-fill: #6d2f06;
+  --sunk-fill: #4a1111;
+
+  /* Board surfaces - open water, with rigging-line grid gaps. */
+  --board-line: #1b3d52;
+  --cell: #0a1c28;
+  --cell-hover: #102c3d;
+  --cell-text: #bed0db;
+  --preview-valid: #3f9d7a99;
+  --preview-invalid: #c0453599;
+
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  /* Sunlight filtering down through water: brighter at the surface, black in the depths. */
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -10%, #1d4a63 0%, #0b2231 42%, #06121b 78%),
+    #06121b;
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Clears the fixed top bar, which would otherwise sit on top of page headings. Its height is
+     fixed at 2.2rem and it can no longer wrap onto a second row, so this only has to reserve that
+     plus a little breathing room - the old value had to allow for a bar that grew as its contents
+     did, and cost every page a whole extra line of vertical space to do it. */
+  padding: 2.8rem 0.75rem 0.75rem;
+  gap: 0.5rem;
+}
+
+/* Headings, board captions and the room code carry the display face; body copy, buttons and every
+   numeric readout stay on the UI font.
+   Cinzel is a caps-forward Roman serif - iconic in a title, tiring in a paragraph - and crucially
+   it has no tabular figures, so a live clock set in it would visibly wobble as the digit widths
+   changed each second. Words get the drama, numbers get the stability. */
+h1, h2, h3,
+.display,
+.bg-label {
+  font-family: var(--font-display);
+  /* Roman capitals were cut with generous spacing; without this the face reads cramped. */
+  letter-spacing: 0.05em;
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+h1 {
+  color: var(--accent);
+  text-shadow: 0 2px 12px rgba(217, 164, 65, 0.25);
+  /* Cinzel's lowercase is a small-caps-like variant, so titles look intentional in caps. */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* The harbor wordmark, standing in for the h1's lettering on the home page.
+   A block rather than the inline image it would be by default: inline content sits on the h1's
+   baseline and leaves a band of descender space beneath the art, which reads as a crooked gap
+   above the tagline.
+   Capped a good way short of the 480px column it sits in - the join form is what people came for,
+   and a logo running the full width of the card pushes the nickname field off a short screen. */
+.brand-logo {
+  display: block;
+  width: 100%;
+  max-width: 20rem;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* Brass rule under section headings - a bit of ship's-plaque trim. */
+.panel > h3 {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(217, 164, 65, 0.22);
+}
+
+a {
+  color: var(--accent);
+}
+
+button {
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-raised);
+  color: var(--text);
+  padding: 0.55rem 1.1rem;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+button:hover:not(:disabled) {
+  background: #1b3e59;
+  border-color: #2c5c78;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #241703;
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-bright);
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: #ffb0b0;
+}
+
+input, select {
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: #061620;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+}
+
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.12)), var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  /* Subtle inner top highlight reads like light catching a painted steel hull. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.error-text {
+  color: #ff8a8a;
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--panel-raised);
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+}
+
+/* --- narrow screens ------------------------------------------------------
+   Most `.row`s already wrap sensibly on their own, so this deliberately does NOT flip every row
+   to a column - doing that stacks button clusters and name+badge pairs into ugly towers. Only
+   the two hard-coded side-by-side battle layouts, which are explicitly nowrap and can't adapt,
+   are stacked here. Boards also drop their viewport-WIDTH cap so they can use the full column
+   (the height cap still applies, so they never grow taller than the screen). */
+@media (max-width: 900px) {
+  #root {
+    /* Still has to clear the top bar - it stays one fixed row at every width, shedding its text
+       labels rather than growing - so only the side and bottom padding tightens up here. */
+    padding: 2.8rem 0.5rem 0.5rem;
+  }
+
+  .panel {
+    padding: 0.9rem;
+  }
+
+  .battle-layout,
+  .battle-sidebar-split {
+    flex-direction: column !important;
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+  }
+
+  /* On a wide window the sidebar is pinned to the viewport height so the page can't scroll. Once
+     everything stacks vertically that's exactly wrong - the column now sits BELOW the board, and
+     holding it to one screen would crush the log and roster into nothing. */
+  .battle-sidebar {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .bg-grid {
+    width: min(var(--bg-max-vh, 78vh), 94vw, 1600px) !important;
+    height: min(var(--bg-max-vh, 78vh), 94vw, 1600px) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  /* Boss names can't stay legible at phone cell sizes; the tooltip carries the detail.
+
+     !important for the same reason .bg-grid above needs it: this stylesheet is bundled BEFORE
+     BoardGrid.css, and a media query adds no specificity - so without it the component's own
+     rule simply wins and this does nothing at all, which is what it had been doing.
+
+     No line-height here on purpose. It used to force 1, tighter even than the 1.1 that was
+     cutting the tails off g's and y's; inheriting the component's 1.25 keeps them intact. */
+  .bg-cell-text {
+    font-size: 7px !important;
+  }
+}

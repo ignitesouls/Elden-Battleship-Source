@@ -1,0 +1,29 @@
+-- Make a kick land immediately for everyone, instead of on their next reload.
+--
+-- NOT YET APPLIED to the live database as of 3 Aug 2026. Everything else in this directory has
+-- been; this is the one outstanding migration.
+--
+-- The client already handles it: useRoom subscribes to `players` and, on DELETE, drops the row and
+-- clears myPlayer so the kicked player gets the "you're no longer in this room" screen. That branch
+-- simply never runs, because the message never arrives.
+--
+-- Why: on DELETE, Postgres replicates only the columns in the table's REPLICA IDENTITY, which
+-- defaults to the primary key. `players` is keyed on `id` alone, so the deleted record is *just an
+-- id* - it carries no room_id for the subscription's `filter: room_id=eq.<room>` to match, and
+-- Realtime drops it. The same wall is why square_counts writes a tally of 0 rather than deleting a
+-- row, and why `attacks` got the same treatment in 20260725030000.
+--
+-- Confirmed empirically, including the control that proves the channel itself is healthy - UPDATE
+-- arrives, DELETE does not, and DELETE *does* arrive on an unfiltered channel, which pins it on the
+-- filter rather than on RLS:
+--
+--     node scripts/check-kick-realtime.mjs
+--
+-- Cost: delete and update records for this table get bigger in the WAL. On `players` that is
+-- nothing - a handful of narrow rows per room, written when somebody joins or picks a fleet. It is
+-- not a table anyone writes in a loop.
+--
+-- Nothing leaks: the full row is nickname, team and is_host, and "players select" is `using (true)`
+-- already - every client in the room can read all of it. The delete payload says nothing the roster
+-- wasn't already showing.
+alter table public.players replica identity full;

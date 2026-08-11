@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- The tab icon stays the hand-drawn SVG, which was cut for 16px; the logo's lettering is
+         unreadable at that size. This one is the home-screen icon instead: iOS ignores SVG
+         favicons outright, and Android Chrome falls back to apple-touch-icon when there's no web
+         manifest, so the single file covers both. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Elden Battleship</title>
+
+    <!-- Link-unfurl card. The room code IS the invite mechanism, so these links get pasted into
+         Discord and Twitch chat constantly; without these tags they unfurl as a bare gray URL.
+         Note the values are deliberately generic: HashRouter keeps the room code after the "#",
+         which browsers never send to the server, so a crawler fetching a room link sees exactly
+         the same HTML as the home page. Per-room previews would need server-side rendering. -->
+    <meta name="description" content="Multiplayer Battleship on an Elden Ring boss grid. Place your fleet, take aim, sink your rivals." />
+    <meta name="theme-color" content="#06121b" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Elden Battleship" />
+    <meta property="og:title" content="Elden Battleship" />
+    <meta property="og:description" content="Multiplayer Battleship on an Elden Ring boss grid. Place your fleet, take aim, sink your rivals." />
+    <meta property="og:url" content="https://kcbrazos.github.io/Elden-Battleship/" />
+    <!-- Absolute URL, unlike the icon above: Vite rewrites the base into href/src attributes when
+         it processes this file, but never into a meta content attribute - and a crawler on another
+         host has nothing to resolve a relative path against anyway.
+         1200x630 is the size Discord, Twitter and Slack all crop toward, and the card is drawn on
+         an opaque plate rather than shipped transparent, since an unfurl lands on whatever
+         background the client uses and the logo's glow disappears against a light one. -->
+    <meta property="og:image" content="https://kcbrazos.github.io/Elden-Battleship/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Elden Battleship" />
+    <!-- summary_large_image, not summary: with a card this wide the small variant crops it to a
+         square thumbnail and takes the wordmark's ends off with it. -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Elden Battleship" />
+    <meta name="twitter:description" content="Multiplayer Battleship on an Elden Ring boss grid. Place your fleet, take aim, sink your rivals." />
+    <meta name="twitter:image" content="https://kcbrazos.github.io/Elden-Battleship/og-card.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

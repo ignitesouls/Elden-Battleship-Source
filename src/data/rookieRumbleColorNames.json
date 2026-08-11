@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "What Rookie Rumble's colours MEAN, for the board's key.",
+    "",
+    "Keyed by the colour exactly as written in rookieRumbleColors.json - the named ones as the",
+    "author capitalises them, the rest as the same 'r, g, b' string. Kept beside that file rather",
+    "than inside it so it stays a verbatim copy of its author's and a new version can be dropped in",
+    "without these having to be re-applied.",
+    "",
+    "These names are OURS, not the author's. The squareset format records no name for what a colour",
+    "means (see KeywordColor in squareSetFormat.ts) - the author knows Lime is Limgrave and nobody",
+    "wrote it down - so each of these is read off the squares that colour actually catches. This set",
+    "makes that easy: its own squares name the groups out loud ('Kill 4 bosses in Caelid/",
+    "Dragonbarrow', 'Kill 5 bosses in Liurnia/ Chapel of Anticipation'), so six of the seven are the",
+    "set's own words back.",
+    "",
+    "Fuchsia is the exception and the one judgement call: gimmick kills (+0 weapon, 6+ parries,",
+    "consumables only, riding Torrent), dungeon sweeps and scattered collectables. It is the group",
+    "that is deliberately nowhere in particular, so it is named for what it asks rather than where.",
+    "",
+    "An empty string means nobody has worked out what a group is. The key then lists that group's",
+    "own keywords instead, which is honest and usually enough on a small group."
+  ],
+  "Lime": "Limgrave / Weeping",
+  "Blue": "Liurnia / Chapel",
+  "Red": "Radahn / Nokron",
+  "255, 128, 0": "Caelid / Dragonbarrow",
+  "Yellow": "Altus / Gelmir",
+  "170, 140, 0": "Leyndell / Sewers",
+  "Fuchsia": "Stunts & scavenging"
+}

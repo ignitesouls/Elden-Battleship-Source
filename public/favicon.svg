@@ -1,0 +1,47 @@
+<!--
+  Tab icon: a battleship in brass on deep-water navy.
+
+  Drawn for 16px first, not scaled down from something pretty. Everything is a chunky block with
+  no strokes thinner than ~3 units on this 64 grid (under a pixel once rendered), because a tab
+  favicon is the smallest thing in the entire product and fine detail just turns to grey mush.
+  Bow points right; the shapes read, left to right, as funnel / bridge / superstructure / gun.
+
+  The rounded navy plate is deliberate rather than a transparent silhouette: browser tab bars are
+  light in some themes and dark in others, and a bare brass ship disappears against one of them.
+  The plate guarantees contrast either way.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Elden Battleship">
+  <defs>
+    <!-- Echoes the app's own background: sunlight at the surface, black in the depths. -->
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12354a"/>
+      <stop offset="1" stop-color="#06121b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="13" fill="url(#sea)"/>
+
+  <g fill="#d9a441">
+    <!-- Mast. Kept wide enough to survive being a single pixel. -->
+    <rect x="31" y="9" width="3.5" height="12"/>
+
+    <!-- Bridge, superstructure, funnel -->
+    <rect x="27.5" y="20" width="9" height="8"/>
+    <rect x="23" y="27" width="17" height="11"/>
+    <rect x="14.5" y="24" width="6.5" height="14"/>
+
+    <!-- Forward turret and barrel -->
+    <rect x="43" y="32" width="9" height="6"/>
+    <rect x="51" y="33.5" width="9" height="2.6" rx="1.3"/>
+
+    <!-- Hull: flat deck, raked stern, bow to the right. -->
+    <path d="M4 38 H60 L52 51 C40 54.5 24 54.5 12 51 Z"/>
+  </g>
+
+  <!-- Waterline. Two short bars rather than a drawn wave - at 16px a wave is indistinguishable
+       from a smudge, but two separated marks still read as "sitting in water". -->
+  <g fill="#4fa8e0" opacity="0.85">
+    <rect x="7" y="56" width="19" height="3.2" rx="1.6"/>
+    <rect x="31" y="56" width="26" height="3.2" rx="1.6"/>
+  </g>
+</svg>

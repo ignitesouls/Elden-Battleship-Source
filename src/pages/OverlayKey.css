@@ -1,0 +1,76 @@
+/**
+ * The colour key as a stream strip: one line, spanning the screen, never moving.
+ *
+ * Laid out at its natural size and scaled to the source, exactly as the scorebug is - see the note
+ * in OverlayKey. Nothing here is in viewport units on purpose: the strip has one correct set of
+ * proportions and the scale factor is what adapts it, so editing this changes the design rather
+ * than fighting whatever height the streamer dragged the source to.
+ *
+ * Sized generously for the same reason as the scorebug: downscaling survives a stream encoder,
+ * upscaling doesn't.
+ */
+.ovk {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* Centred in the source, then scaled about that centre. Absolute so the transform can't disturb
+   any layout around it. nowrap is load-bearing: this is a strip, and a key that wraps to a second
+   line is a key that has changed height on somebody's scene mid-match. */
+.ovk-bar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+  white-space: nowrap;
+  padding: 0.5rem 1.4rem;
+  border-radius: 10px;
+  color: #eef4f8;
+  font-size: 1.6rem;
+  /* Overlays sit on busy footage, so contrast is carried by the text itself and not only by the
+     plate behind it - which the caster can turn off. */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+}
+
+/* The backing plate, dropped with ?plate=0. Only as wide as the text, so it scrims the strip and
+   not the whole width of the screen. */
+.ovk-plate {
+  background: rgba(6, 16, 24, 0.72);
+  border: 1px solid rgba(180, 210, 230, 0.22);
+}
+
+.ovk-label {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  opacity: 0.65;
+}
+
+.ovk-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/**
+ * Colour comes from --bg-region, set either by the .bg-region-* class beside it (region-tagged
+ * sets) or written inline from the square's own hex (keyword-tinted sets) - the same variable the
+ * square names themselves are painted with, so a swatch on stream cannot disagree with the board.
+ *
+ * A ring rather than a bare square: these are read at a distance through an encoder, against
+ * whatever is behind them, and a dark swatch on dark footage disappears without one.
+ */
+.ovk-swatch {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+  border-radius: 3px;
+  background: var(--bg-region);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}

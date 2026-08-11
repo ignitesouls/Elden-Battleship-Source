@@ -1,0 +1,115 @@
+/**
+ * The scorebug: fleet art, clock, fleet art.
+ *
+ * Laid out at its natural size and then scaled to fit the source - see the note in OverlayTimer.
+ * Nothing here is sized in viewport units, deliberately: the bar has one correct set of
+ * proportions, and the scale factor is what adapts it to a source, so a change here changes the
+ * design rather than fighting whatever height the streamer happened to drag it to.
+ *
+ * Sized generously. Downscaling stays sharp through a stream encoder, upscaling does not, so the
+ * natural size is the largest anyone is likely to want and every real source scales down from it.
+ */
+.ovt {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Centred on the source, then scaled about that centre. Absolute so the transform can't disturb
+   any layout around it. */
+.ovt-bar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  white-space: nowrap;
+}
+
+.ovt-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Equal basis both sides so the clock stays dead centre even when one fleet's name is longer. */
+  flex: 1 1 0;
+}
+
+.ovt-left {
+  align-items: flex-end;
+}
+
+.ovt-right {
+  align-items: flex-start;
+}
+
+.ovt-clock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.6rem 1.8rem;
+  border-radius: 12px;
+  background: rgba(6, 16, 24, 0.72);
+  border: 1px solid rgba(180, 210, 230, 0.22);
+}
+
+.ovt-phase {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #9fb8c8;
+}
+
+.ovt-time {
+  font-size: 4.6rem;
+  font-weight: 700;
+  line-height: 1;
+  /* Tabular figures, or the bug twitches every second as the digits change width. */
+  font-variant-numeric: tabular-nums;
+  color: #f2f7fa;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+/* The fleet cards come from the HUD overlay, where they sit in a narrow column at HUD scale. Here
+   they are the other half of a scorebug and are sized to match the clock beside them. */
+.ovt .ov-fleet {
+  background: rgba(6, 16, 24, 0.72);
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+}
+
+.ovt .ov-team-name {
+  font-size: 1.5rem;
+}
+
+.ovt .ov-afloat {
+  font-size: 1.3rem;
+}
+
+/* Hull silhouettes scale off one unit - see --ov-ship-unit in OverlayFleetStatus. Roughly twice
+   HUD size, with the height and gap following so the row stays in proportion. */
+.ovt {
+  --ov-ship-unit: 19px;
+}
+
+/**
+ * One row, never wrapped, so both fleets read as the same object.
+ *
+ * Wrapping is width-driven, and the two sides are not the same width - a longer team name pushes
+ * one card wider than the other, so the same five hulls broke 2-2-1 on the left and 2-3 on the
+ * right. Two fleets with identical ships looked like they had different fleets, which is precisely
+ * the thing this element exists to let a viewer compare at a glance.
+ */
+.ovt .ov-fleet-ships {
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.ovt .ov-fleet-ship {
+  height: 1.6rem;
+}
