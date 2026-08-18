@@ -10,10 +10,12 @@ import {
   type Region,
 } from "./squareSets";
 import { rng, seedFrom } from "./seededRandom";
+import { applyBoardPerm } from "./boardBalance";
 
 export type { Challenge, SquareSetId, Region };
 export { SQUARE_SETS, SQUARE_SET_LIST, DEFAULT_SQUARE_SET, squareSet } from "./squareSets";
 export { rowSquareSet, busiestSquareSet } from "./squareSets";
+export { displaySquareSet, squareSetVariants, bossSetForRoster, retargetBossSet } from "./squareSets";
 export { REGION_ORDER, REGION_LABELS, colorKeyFor } from "./squareSets";
 export type { SquareSetDef, ColorLegendEntry } from "./squareSets";
 
@@ -44,15 +46,32 @@ export function challengesForRoom(
    * Omit (or pass null) to get the original room-id-only board, which is what rooms created before
    * seeds existed still have.
    */
-  seed?: string | null
+  seed?: string | null,
+  /**
+   * The room's balanced layout: perm[cell] is the index into the seeded deal that this cell shows.
+   *
+   * Written once by the balance-board function, after both fleets are locked and before anything is
+   * fired, so that neither team's ships end up sitting on a wall of late-game bosses while the
+   * other's sit on tutorial soldiers. It reorders the board and never re-picks it - the squares in
+   * play stay a pure function of the arguments above, which is what the Almanac's census of unfired
+   * squares and auto-fire's flag coverage both rest on.
+   *
+   * Omit (or pass null) for the unbalanced deal. That is what every room created before balancing
+   * existed has, what every archived match has, and what a room gets when the balancer was
+   * unreachable - so this must stay a no-op rather than a fallback that guesses.
+   */
+  perm?: number[] | null
 ): Challenge[] {
   const set = squareSet(setId);
   const base = set.id === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${set.id}`;
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base));
-  const board =
+  const dealt =
     set.format === "bingo"
       ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors)
       : buildFlatBoard(set.data, count, next);
+  // Applied after the deal and never during it, so the sequence of next() calls above is untouched.
+  // Consuming the PRNG differently would re-deal every live board and strand every archived one.
+  const board = applyBoardPerm(dealt, perm);
   // Hover text is settled here rather than at each board, because how a square reads on hover
   // depends on which set it came from and this is the last point that knows. See squareTitle.
   return board.map((c) => ({ ...c, title: squareTitle(c, set) }));
@@ -74,7 +93,9 @@ export function detectSquareSet(
   roomId: string,
   cells: number,
   fired: Array<{ cell: number; name: string }>,
-  seed?: string | null
+  seed?: string | null,
+  /** The match's balanced layout, or null. Without it a balanced match matches no set at all. */
+  perm?: number[] | null
 ): SquareSetId | null {
   if (fired.length === 0) return null;
   // Three is plenty: names are near-unique across sets, and a single agreement could in principle
@@ -82,7 +103,7 @@ export function detectSquareSet(
   const sample = fired.slice(0, 3);
 
   for (const set of Object.values(SQUARE_SETS)) {
-    const board = challengesForRoom(roomId, cells, set.id, seed);
+    const board = challengesForRoom(roomId, cells, set.id, seed, perm);
     if (sample.every(({ cell, name }) => board[cell]?.name === name)) return set.id;
   }
   return null;

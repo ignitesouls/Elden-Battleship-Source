@@ -146,9 +146,11 @@ project's, added so a keyword-tinted set can print a readable key.
 
 **EldenBingo.** This project grew out of [EldenBingo](https://github.com/awsker/EldenBingo) by
 Asker, the desktop Bingo app the tournament scene was already using, and where the Battleship
-mode was first built as an addition to it. The web app shares no code with it. The fleet
-colours were matched to EldenBingo's so a player's colour means the same thing in both.
-EldenBingo is GPL-3.
+mode was first built as an addition to it. The web app carries none of its C#, but it is not
+independent of it either: the Battleship rules here were written by reading that implementation,
+`teamColors.ts` is a port of its `BingoConstants.cs` colour table so a player's colour means the
+same thing in both, and `squareSetFormat.ts` reads its squareset format. EldenBingo is GPL-3, and
+so is this — see the licence note below.
 
 This repository began as a clone of it, so commits before August 2026 contain the EldenBingo
 C# source, which is Asker's work and GPL-3. That desktop project has since been removed, as it
@@ -161,12 +163,25 @@ FromSoftware or Bandai Namco.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). Do what you like with it, and keep the copyright notice.
+GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+It was MIT until August 2026. The change was made because this project grew out of EldenBingo,
+which is GPL-3: the game rules were written by reading its Battleship implementation, the fleet
+colours came from its constants, and the squareset file format is its format. How much of that
+counts as a derivative work is genuinely arguable — mechanics are ideas, a colour table is closer
+to data than to expression, and file formats generally aren't protected at all. Matching the
+upstream licence means nobody has to decide. It also puts this in line with every other Ignite
+project, all of which are GPL-3.
 
 ### Using this?
 
-Please do. Fork it, run it for your own event, or take pieces out of it. That is what the
-licence is for, and nothing below is a condition of it.
+Please do. Fork it, run it for your own event, take pieces out of it. The only ask is that
+changes you distribute stay open under the same licence, which is what GPL means in practice —
+and if you do something interesting with it, say hello.
+
+Note that running a modified copy as a website is **not** distribution, so hosting your own
+version obliges you to publish nothing. That is deliberate; AGPL was the alternative and it
+seemed a heavier promise than this needs.
 
 I would like to hear about it, though. Open an issue, or find me as KCBrazos on GitHub.
 Knowing where this ends up is most of what makes it worth maintaining, and if you are running

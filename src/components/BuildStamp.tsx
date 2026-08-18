@@ -2,16 +2,16 @@
 declare const __BUILD_ID__: string;
 
 /**
- * The build identifier and the copyright line, parked in the bottom-left corner.
+ * The build identifier, parked in the bottom-left corner.
  *
- * The build id is purely a support tool: when someone's client is behaving oddly, the first
- * question is whether they're running the current bundle at all, and GitHub Pages' aggressive
- * index.html caching means the honest answer is often "no". Comparing this string beats guessing.
+ * Purely a support tool: when someone's client is behaving oddly, the first question is whether
+ * they're running the current bundle at all, and GitHub Pages' aggressive index.html caching means
+ * the honest answer is often "no". Comparing this string beats guessing.
  *
- * The copyright rides along with it because this is the one element on every screen that is
- * already tiny, dim and out of the way. It is deliberately NOT on the overlay routes: those get
- * composited onto somebody's stream, and a copyright line burned into a broadcast is nobody's
- * idea of a good time. App.tsx's Chrome is what keeps it off them.
+ * It used to carry a copyright line too, on the reasoning that this is the one element already
+ * tiny and out of the way enough to host one. That was solving a problem nobody had - the licence
+ * is in LICENSE, and a notice burned into the corner of every screen of a fan project was never
+ * doing any work. The build id is the part that earns its place.
  *
  * Kept dim and tiny so it never competes with the board, and selectable so the build id can be
  * pasted straight into chat.
@@ -36,7 +36,7 @@ export function BuildStamp() {
         userSelect: "text",
       }}
     >
-      build {__BUILD_ID__} · &copy; {new Date().getFullYear()} KCBrazos
+      build {__BUILD_ID__}
     </div>
   );
 }

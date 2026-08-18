@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { canonicalSquareName } from "./squareSetFormat";
 import type { ParticipantRow } from "./careerStats";
 
 export interface Profile {
@@ -93,33 +94,74 @@ export async function fetchProfiles(ids: string[]): Promise<Map<string, Profile>
  * Reads below are unchanged - the record books are still public to look at.
  */
 
-export async function fetchMatchFleets(limit = 1000) {
-  const { data, error } = await supabase
-    .from("match_fleets")
-    .select()
-    .order("finished_at", { ascending: false })
-    .limit(limit);
-  if (error || !data) return [];
-  return data as never[];
+/**
+ * Rows PostgREST will return in one response, however many were asked for.
+ *
+ * This is the server's `db-max-rows`, not a choice made here, and it is enforced SILENTLY: a
+ * `.limit(5000)` against a table holding 4816 rows comes back with 1000 of them, no error and
+ * nothing on the response saying it was cut. Asking via `.range(0, 4999)` gets the same 1000.
+ *
+ * That is worth spelling out because of how it fails downstream. Nothing breaks and no page goes
+ * blank - the newest rows are all there, so every screen renders something plausible. What it
+ * actually does is silently shorten history to whatever the newest thousand rows happen to cover,
+ * which for match_events was ONE DAY out of a three-week archive. The record book then computed its
+ * streak and timing records from that day alone: records set earlier were invisible, worse numbers
+ * held them, and because the window slides as new matches land, a standing record could vanish
+ * without anybody having beaten it.
+ *
+ * Raise this only to match a raised server setting. Setting it higher than the server's own cap
+ * puts the silent truncation straight back, because a short page is this loop's stop condition.
+ */
+const PAGE_SIZE = 1000;
+
+/**
+ * Reads a whole table the caller's way, a page at a time.
+ *
+ * Sorted by `finished_at` descending like every caller wants, but with `id` as a tiebreak, and that
+ * second key is load-bearing rather than tidiness: every row archived from one match shares one
+ * `finished_at`, so on ties alone Postgres is free to order two pages inconsistently and paging
+ * would then duplicate some rows and skip others. Breaking ties on the primary key makes the total
+ * order stable, so page boundaries land in the same place every time.
+ *
+ * Stops on a short page, on an error (returning what it has - a partial book beats a blank one),
+ * and at `limit`, which is the caller's ceiling rather than the server's.
+ */
+async function fetchAllRows<T>(table: string, limit: number): Promise<T[]> {
+  const out: T[] = [];
+
+  while (out.length < limit) {
+    const size = Math.min(PAGE_SIZE, limit - out.length);
+    const { data, error } = await supabase
+      .from(table)
+      .select()
+      .order("finished_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(out.length, out.length + size - 1);
+
+    if (error || !data) break;
+    out.push(...(data as T[]));
+    if (data.length < size) break; // the last page, so there is nothing after it
+  }
+
+  return out;
 }
 
-export async function fetchMatchEvents(limit = 5000) {
-  const { data, error } = await supabase
-    .from("match_events")
-    .select()
-    .order("finished_at", { ascending: false })
-    .limit(limit);
-  if (error || !data) return [];
-  return data as never[];
+export async function fetchMatchFleets(limit = 5000) {
+  return (await fetchAllRows("match_fleets", limit)) as never[];
 }
 
-/** Recent participation rows, newest first. The whole career table is small enough to aggregate client-side. */
-export async function fetchParticipants(limit = 2000): Promise<ParticipantRow[]> {
-  const { data, error } = await supabase
-    .from("match_participants")
-    .select()
-    .order("finished_at", { ascending: false })
-    .limit(limit);
-  if (error || !data) return [];
-  return (data as ParticipantRow[]).map((r) => ({ ...r, awards: Array.isArray(r.awards) ? r.awards : [] }));
+export async function fetchMatchEvents(limit = 50000) {
+  const rows = await fetchAllRows<{ challenge_name?: string | null }>("match_events", limit);
+  // Rows archived before a square was renamed still carry its old name. Folded here rather than in
+  // each of the several things that group on it - see canonicalSquareName.
+  return rows.map((r) => ({
+    ...r,
+    challenge_name: canonicalSquareName(r.challenge_name),
+  })) as never[];
+}
+
+/** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */
+export async function fetchParticipants(limit = 20000): Promise<ParticipantRow[]> {
+  const rows = await fetchAllRows<ParticipantRow>("match_participants", limit);
+  return rows.map((r) => ({ ...r, awards: Array.isArray(r.awards) ? r.awards : [] }));
 }

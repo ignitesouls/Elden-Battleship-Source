@@ -202,6 +202,27 @@ button.danger {
   color: #ffb0b0;
 }
 
+/* A real link wearing a button's clothes.
+   For the cases where the thing is genuinely a destination - it should be middle-clickable, open in
+   a new tab, and be draggable to a second monitor - but sits in a row of buttons and would look
+   like a stray piece of text if it were styled as prose. Borrows the button rules above rather than
+   restating them, so the two can't drift apart on a theme change. */
+a.link-button {
+  display: inline-block;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-raised);
+  color: var(--text);
+  text-decoration: none;
+  padding: 0.55rem 1.1rem;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+a.link-button:hover {
+  background: #1b3e59;
+  border-color: #2c5c78;
+}
+
 input, select {
   font-family: inherit;
   font-size: 0.95rem;

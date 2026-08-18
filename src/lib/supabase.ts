@@ -79,6 +79,26 @@ const pendingTwitchCallback = captureTwitchCallback();
 // it can render the "not configured yet" message below. Fall back to a syntactically valid
 // placeholder so the client can exist but simply fail requests until real values are set.
 export const supabase = createClient(url || "https://placeholder.supabase.co", anonKey || "placeholder-anon-key", {
+  realtime: {
+    /**
+     * Run realtime's keepalive in a Web Worker so a hidden tab keeps its connection.
+     *
+     * The heartbeat interval is 25s, and by default it's an ordinary setInterval on the main
+     * thread - which browsers throttle to roughly once a minute in a background tab, i.e. past
+     * the point the server gives up on us. The socket then dies and reconnects on a loop for as
+     * long as the tab stays hidden. A worker's timers aren't throttled, so the heartbeat keeps
+     * its real cadence.
+     *
+     * This is the half of the problem that hurts the views meant to be watched while nobody is
+     * clicking on them: the caster screen and the OBS overlays. Players get the other half from
+     * the visibility re-read in useRoom.
+     *
+     * Guarded because realtime-js throws outright when asked for a worker in a browser that has
+     * none, and this runs at module scope - an unguarded throw here takes the whole site down
+     * rather than degrading one feature.
+     */
+    worker: typeof Worker !== "undefined",
+  },
   auth: {
     // PKCE, not implicit. The implicit flow returns tokens in the URL *fragment*, which would
     // collide head-on with HashRouter's `#/room/...` routing; PKCE comes back as a `?code=`

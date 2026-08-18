@@ -1,4 +1,10 @@
-import type { Attack, ShipDefinition, ShipPlacement } from "../types/battleship";
+// The .ts is load-bearing, and the only import in src/ that carries one. The edge functions import
+// activeTeams() from this module, and Deno resolves specifiers literally - extensionless, it cannot
+// find this file and the whole worker fails to boot with "Module not found", taking auto-fire and
+// balance-board down with it. Vite and tsc both accept the extension (allowImportingTsExtensions),
+// so it costs nothing here. The alternative the other shared modules take is to have no imports at
+// all - see the note atop squareSetFormat.ts.
+import type { Attack, ShipDefinition, ShipPlacement } from "../types/battleship.ts";
 
 /**
  * An array of `size` copies of `fill`.
@@ -216,6 +222,41 @@ export function sunkCellOrientations(attacks: Attack[], boardSize: number): Map<
     }
   }
   return cells;
+}
+
+/**
+ * Which fleets have fired at each square, across a set of attacks.
+ *
+ * The composited caster board draws every shown fleet on one grid and merges the results worst-first
+ * (see the note in OverlayBoard) - so a square says what happened there but says nothing about who
+ * made it happen, which on a two-fleet board is half the story. This is the other half: cell index ->
+ * the teams that have fired at it, which BoardGrid draws as a ring in each fleet's own colour.
+ *
+ * Only RESOLVED shots count. A pending row is a shot the server hasn't judged yet, and ringing it
+ * would put a mark on an otherwise blank square - announcing that somebody fired there while the
+ * board still shows nothing. The ring appears with the result, or not at all.
+ *
+ * Sorted by team number rather than by who fired first, so a square's ring is in the same order as
+ * every other square's: the ring is read across a whole board at a glance, and segments that swapped
+ * sides from square to square would make it unreadable. Nothing here says anything about the fleets'
+ * ships, so it is as safe to send to a stream as the shot log it comes from.
+ */
+export function attackerTeamsByCell(attacks: Attack[]): Map<number, number[]> {
+  const byCell = new Map<number, Set<number>>();
+  for (const a of attacks) {
+    // Negative indices are bookkeeping rows (the match-start marker), not shots anyone fired.
+    if (a.cell_index < 0 || a.result === "pending") continue;
+    let teams = byCell.get(a.cell_index);
+    if (!teams) {
+      teams = new Set();
+      byCell.set(a.cell_index, teams);
+    }
+    teams.add(a.attacker_team);
+  }
+
+  const out = new Map<number, number[]>();
+  for (const [cell, teams] of byCell) out.set(cell, [...teams].sort((x, y) => x - y));
+  return out;
 }
 
 const CELL_LETTERS = "ABCDEFGHIJKLMNOPQR";

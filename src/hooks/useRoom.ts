@@ -8,7 +8,7 @@ import {
   eliminatedTeamsFromAttacks,
   initialHitsRemaining,
 } from "../lib/battleshipLogic";
-import { normalizeRoomCode, formatRoomCode } from "../lib/roomCode";
+import { normalizeRoomCode } from "../lib/roomCode";
 import { resetOwnTeamState } from "../lib/rooms";
 import { setTeamNameOverrides } from "../lib/teamColors";
 import type { DeepHide } from "../lib/deepWater";
@@ -62,8 +62,65 @@ const initialState: RoomState = {
   connection: "connecting",
 };
 
+/**
+ * Row-by-row shallow equality, used to decide whether a refetch is worth a render.
+ *
+ * Every table this compares is flat scalar columns, so a shallow compare is a real compare - and
+ * it is the cheap half of what makes resync() safe to call speculatively. Without it, each
+ * re-read would hand React four brand-new arrays and repaint the whole match screen: both boards,
+ * every marker, the log and the rosters. With it, the overwhelmingly common "we missed nothing"
+ * case costs four indexed selects and not a single render. That matters more here than almost
+ * anywhere else in the app, because this hook sits at the very top of the match tree - the same
+ * reason the battle clock was moved out of it (see hooks/useBattlePhase.ts).
+ *
+ * Positional, not keyed: both sides come from the same ordered query. Rows sharing a created_at -
+ * which auto-fire produces, one per defending fleet - could in principle come back in a different
+ * order and be read as a change. The cost of that is one wasted render on a resync, so it isn't
+ * worth a tiebreaker.
+ */
+function sameRows<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as Record<string, unknown>;
+    const y = b[i] as Record<string, unknown>;
+    const keys = Object.keys(x);
+    if (keys.length !== Object.keys(y).length) return false;
+    for (const key of keys) if (x[key] !== y[key]) return false;
+  }
+  return true;
+}
+
+/**
+ * Upsert one attack row into the log, keyed by id.
+ *
+ * Shared by the realtime handler and by the resolver further down, which now adopts the row it
+ * settled rather than waiting to be told about it. That second caller is why the no-change case
+ * returns `prev` by identity: it re-reads rows it usually already has, and this hook sits at the
+ * top of the match tree, so handing React a new array every time would repaint both boards, every
+ * marker, the log and the rosters for nothing.
+ */
+function withAttack(prev: RoomState, row: Attack): RoomState {
+  const attacks = [...prev.attacks];
+  const idx = attacks.findIndex((a) => a.id === row.id);
+  if (idx >= 0) {
+    if (sameRows([attacks[idx]], [row])) return prev;
+    attacks[idx] = row;
+  } else {
+    attacks.push(row);
+  }
+  return { ...prev, attacks };
+}
+
 export function useRoom(code: string | undefined) {
   const [state, setState] = useState<RoomState>(initialState);
+
+  /**
+   * The room's authoritative re-read, published for the visibility handler further down.
+   *
+   * A ref because resync() closes over both the room id and the subscription effect's `cancelled`
+   * flag, so it can't be lifted out of that effect without dragging both along with it.
+   */
+  const resyncRef = useRef<(() => Promise<void>) | null>(null);
 
   const patch = useCallback((partial: Partial<RoomState>) => {
     setState((prev) => ({ ...prev, ...partial }));
@@ -87,7 +144,20 @@ export function useRoom(code: string | undefined) {
           .eq("code", lookup)
           .maybeSingle();
         if (roomErr) throw roomErr;
-        if (!room) throw new Error(`No room found with code ${formatRoomCode(lookup)}`);
+        // A code that matches nothing is NOT an error - it's the ordinary end of a room's life.
+        // Rooms are pruned an hour after they go quiet, so every stale link, every bookmark and
+        // every "back to the room" in the top bar eventually lands here.
+        //
+        // This used to throw, which sent the page down the `state.error` branch: a bare line of red
+        // text with no way out of it. The room-gone panel the page already had (see Room.tsx) was
+        // unreachable for the entire case it was written for, and Room's roomGone check - the thing
+        // that forgets the room so the top bar stops offering it - could never fire either, so the
+        // dead link survived every visit. `error` is left for the failures that really are failures:
+        // no network, no database, a rejected read.
+        if (!room) {
+          if (!cancelled) patch({ loading: false, error: null, room: null });
+          return;
+        }
         if (cancelled) return;
 
         const { data: players, error: playersErr } = await supabase
@@ -200,15 +270,62 @@ export function useRoom(code: string | undefined) {
         };
 
         const onAttackChange = (payload: { new: unknown }) => {
-          setState((prev) => {
-            const attacks = [...prev.attacks];
-            const row = payload.new as Attack;
-            const idx = attacks.findIndex((a) => a.id === row.id);
-            if (idx >= 0) attacks[idx] = row;
-            else attacks.push(row);
-            return { ...prev, attacks };
-          });
+          setState((prev) => withAttack(prev, payload.new as Attack));
         };
+
+        /**
+         * Re-reads everything the realtime channel may have missed.
+         *
+         * Defined before the channel that calls it, and deliberately cheap to call on spec:
+         * overlapping calls collapse into the one already in flight, and a read that finds nothing
+         * new returns the previous arrays by identity so React bails out of the render entirely.
+         * Both properties exist so that the callers below can be blunt about when to re-read
+         * rather than clever, because every "clever" gate is a way to stay stale.
+         */
+        let inFlight: Promise<void> | null = null;
+
+        function resync(): Promise<void> {
+          inFlight ??= readEverything().finally(() => {
+            inFlight = null;
+          });
+          return inFlight;
+        }
+
+        async function readEverything() {
+          const [{ data: freshPlayers }, { data: freshAttacks }, { data: freshReady }, { data: freshRoom }] =
+            await Promise.all([
+              supabase.from("players").select().eq("room_id", roomId),
+              supabase.from("attacks").select().eq("room_id", roomId).order("created_at", { ascending: true }),
+              supabase.from("team_ready").select().eq("room_id", roomId),
+              supabase.from("rooms").select().eq("id", roomId).maybeSingle(),
+            ]);
+          if (cancelled) return;
+          setState((prev) => {
+            const room = (freshRoom as Room) ?? prev.room;
+            const players = (freshPlayers as Player[]) ?? prev.players;
+            const attacks = (freshAttacks as Attack[]) ?? prev.attacks;
+            const teamReady = (freshReady as TeamReady[]) ?? prev.teamReady;
+
+            // Stringified rather than shallow-compared: `rooms` carries ship_defs and board_perm,
+            // which come back as fresh arrays every read and would report a change on every pass.
+            // It's one small object, only on a resync.
+            const roomSame = JSON.stringify(room) === JSON.stringify(prev.room);
+            const playersSame = sameRows(players, prev.players);
+            const attacksSame = sameRows(attacks, prev.attacks);
+            const readySame = sameRows(teamReady, prev.teamReady);
+            if (roomSame && playersSame && attacksSame && readySame) return prev;
+
+            return {
+              ...prev,
+              room: roomSame ? prev.room : room,
+              players: playersSame ? prev.players : players,
+              attacks: attacksSame ? prev.attacks : attacks,
+              teamReady: readySame ? prev.teamReady : teamReady,
+            };
+          });
+        }
+
+        resyncRef.current = resync;
 
         channels.push(
           supabase
@@ -311,35 +428,34 @@ export function useRoom(code: string | undefined) {
               // was never replayed to us.
               if (cancelled) return;
               if (status === "SUBSCRIBED") {
-                setState((prev) => {
-                  if (prev.connection === "online") return prev;
-                  if (prev.connection === "offline") void resync();
-                  return { ...prev, connection: "online" };
-                });
+                // Re-read on EVERY join, including the first one, and not only when we'd first
+                // noticed going offline.
+                //
+                // The offline gate went first: it assumed a lost connection always announces
+                // itself, and it doesn't - phoenix skips the error callback for a channel that is
+                // already errored or closed, so a socket that dies quietly and comes back leaves
+                // `connection` on "online" and every row that landed in the gap stays missing
+                // until the page is reloaded.
+                //
+                // The FIRST-join gate went next, and it was the same mistake one step earlier. It
+                // assumed the initial read above already held everything, but that read runs
+                // before the websocket has even connected, so anything committed between the
+                // select and the channel joining is lost permanently - there is no replay. That
+                // window is where a shot gets stranded on "...": the row is read while it is still
+                // pending and the UPDATE that settles it arrives during the handshake. Auto-fire
+                // is what made that routine rather than theoretical, because the edge function
+                // inserts and resolves back to back, so the two are milliseconds apart instead of
+                // however long a human takes to answer.
+                //
+                // resync() no-ops when nothing changed, so being blunt here is close to free.
+                void resync();
+                setState((prev) => (prev.connection === "online" ? prev : { ...prev, connection: "online" }));
               } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
                 setState((prev) => (prev.connection === "offline" ? prev : { ...prev, connection: "offline" }));
               }
             })
         );
 
-        /** Re-reads everything the realtime channel may have missed while disconnected. */
-        async function resync() {
-          const [{ data: freshPlayers }, { data: freshAttacks }, { data: freshReady }, { data: freshRoom }] =
-            await Promise.all([
-              supabase.from("players").select().eq("room_id", roomId),
-              supabase.from("attacks").select().eq("room_id", roomId).order("created_at", { ascending: true }),
-              supabase.from("team_ready").select().eq("room_id", roomId),
-              supabase.from("rooms").select().eq("id", roomId).maybeSingle(),
-            ]);
-          if (cancelled) return;
-          setState((prev) => ({
-            ...prev,
-            room: (freshRoom as Room) ?? prev.room,
-            players: (freshPlayers as Player[]) ?? prev.players,
-            attacks: (freshAttacks as Attack[]) ?? prev.attacks,
-            teamReady: (freshReady as TeamReady[]) ?? prev.teamReady,
-          }));
-        }
       } catch (e) {
         if (!cancelled) patch({ loading: false, error: e instanceof Error ? e.message : String(e) });
       }
@@ -347,9 +463,48 @@ export function useRoom(code: string | undefined) {
 
     return () => {
       cancelled = true;
+      resyncRef.current = null;
       channels.forEach((c) => supabase.removeChannel(c));
     };
   }, [code, patch]);
+
+  /**
+   * Re-read the room whenever the tab comes back to the foreground.
+   *
+   * -- Why a backgrounded tab goes stale in the first place -----------------------------------
+   *
+   * Supabase stops refreshing the access token while the tab is hidden - auth-js does this
+   * deliberately, so that several tabs can't race each other through a rotating refresh token.
+   * The access token lasts an hour (supabase/config.toml, jwt_expiry). Realtime validates that
+   * token per channel, so a tab left hidden long enough loses its channel, and the rejoin that
+   * follows presents the same expired token and fails just as well. The board freezes, and no
+   * amount of waiting fixes it: the only thing that restarts the token ticker is the tab
+   * becoming visible again.
+   *
+   * That was survivable while firing meant clicking, because a player who wanted to shoot was
+   * already looking at the page. Auto-marking removed the reason to ever come back, so a player
+   * now spends an entire match hidden - the one state this was never exercised in.
+   *
+   * -- Why this is enough --------------------------------------------------------------------
+   *
+   * A plain PostgREST read is itself what un-sticks the token: supabase-js resolves the session
+   * before every request and refreshes it if it has expired, which emits TOKEN_REFRESHED, which
+   * hands realtime the new token and lets the channel rejoin. So re-reading here repairs the
+   * data AND the connection, without reaching into auth-js's own visibility handling to countermand
+   * it - which would put the rotating-refresh-token race back on the table.
+   *
+   * Nothing is fetched while hidden. The player isn't looking, live shots are landing in the
+   * database regardless (auto-marking runs server-side and never involves the browser), and
+   * polling a background tab is exactly the cost this is supposed to avoid.
+   */
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void resyncRef.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   // Fetch/refetch myFleet whenever myPlayer's team changes. The initial-load effect only
   // fetches it once at mount, and the fleets realtime subscription only updates it if a
@@ -523,12 +678,35 @@ export function useRoom(code: string | undefined) {
     if (pending.length === 0) return;
     pending.forEach((a) => inFlightRef.current.add(a.id));
 
+    /**
+     * Take the settled row into local state instead of waiting to be told about it.
+     *
+     * This is the part that makes a shot stuck on "..." heal itself. resolve_attack() is
+     * idempotent: called on a row that is already settled it returns the earlier verdict and
+     * writes NOTHING, so there is no UPDATE for realtime to deliver. A client that missed the
+     * original UPDATE was therefore asking for the answer on every subsequent shot in the room,
+     * getting it back, and throwing it away - the row stayed "pending" locally for the rest of the
+     * match while the database had said "miss" all along. Chewy watched a shot of KC's sit on "..."
+     * for exactly this reason.
+     *
+     * The row is re-read rather than patched from the RPC's return value because that value is
+     * only the verdict text, and a sunk line also needs the ship's name, size and placement.
+     * One indexed read by primary key, and only ever for a row we still hold as pending.
+     */
+    async function adoptResolved(id: string) {
+      const { data } = await supabase.from("attacks").select().eq("id", id).maybeSingle();
+      if (data) setState((prev) => withAttack(prev, data as Attack));
+    }
+
     (async () => {
       for (const attack of pending) {
         try {
           if (!rpcUnavailableRef.current) {
             const { error } = await supabase.rpc("resolve_attack", { p_attack_id: attack.id });
-            if (!error) continue;
+            if (!error) {
+              await adoptResolved(attack.id);
+              continue;
+            }
             // Only a missing function should demote us to the legacy path; a transient network
             // or permission error must not permanently disable the good one.
             const missing = /could not find the function|does not exist|schema cache/i.test(error.message);
@@ -600,6 +778,9 @@ export function useRoom(code: string | undefined) {
             })
             .eq("id", attack.id);
 
+          // Same reason as the RPC path: don't make our own write come back to us the long way.
+          await adoptResolved(attack.id);
+
           if (allShipsSunk(outcome.newShipSunk)) {
             await supabase
               .from("team_ready")
@@ -612,9 +793,17 @@ export function useRoom(code: string | undefined) {
     })();
   }, [state.attacks, state.myPlayer, state.room, state.players]);
 
-  // End the match once every team but one has lost its whole fleet. Run by ANY client, from
-  // public data only, because the team that just died is exactly the one least likely to still
-  // be around to declare it. The write is idempotent, so clients racing to call it is harmless.
+  // End the match once every team but one has lost its whole fleet. Run by any client HOLDING A
+  // FLEET (or hosting), from public data only, because the team that just died is exactly the one
+  // least likely to still be around to declare it. The write is idempotent, so clients racing to
+  // call it is harmless.
+  //
+  // Spectators used to run it too, and the "rooms update by player" policy let them. They can't
+  // any more - see the spectators_cannot_disrupt migration - because the front page now publishes
+  // every live battle, so "somebody watching this room" stopped meaning "somebody the room knows".
+  // Skipping it here rather than letting the write bounce off RLS keeps the two in step: a blocked
+  // update returns no error and no rows, so a spectator would burn finishedRef on a write that
+  // never happened and then never look again.
   const finishedRef = useRef(false);
   useEffect(() => {
     const room = state.room;
@@ -623,6 +812,8 @@ export function useRoom(code: string | undefined) {
       return;
     }
     if (finishedRef.current) return;
+    const me = state.myPlayer;
+    if (!me || (me.team === null && !me.is_host)) return;
 
     const teams = activeTeams(state.players);
     if (teams.length < 2) return; // a solo/empty room has no one to lose to
@@ -644,7 +835,7 @@ export function useRoom(code: string | undefined) {
       .then(({ error }) => {
         if (error) finishedRef.current = false; // let a later pass retry
       });
-  }, [state.room, state.attacks, state.players, state.teamReady]);
+  }, [state.room, state.attacks, state.players, state.teamReady, state.myPlayer]);
 
   // Realtime Presence: announce ourselves and track who else is actually connected.
   const myPlayerId = state.myPlayer?.id;

@@ -247,19 +247,44 @@ function fitsAt(w: Widths, font: number, cellW: number, cellH: number): boolean 
  * and is wrong by however much the two differ. Jost is a wide face and the system fallback usually
  * isn't, so this is not a small error - it is the difference between a name fitting and not.
  *
- * Both caches are therefore thrown away once the real font arrives, and every board re-renders. It
- * happens once, early, and usually before anything is on screen at all.
+ * Both caches are therefore thrown away when the real font arrives, and every board re-renders.
  */
 let version = 0;
 const listeners = new Set<() => void>();
 
+function refit() {
+  widths.clear();
+  fits.clear();
+  // The context goes too. Chromium resolves the family behind `ctx.font` when the property is SET,
+  // so a context built while Jost was still downloading keeps measuring the fallback no matter how
+  // many times its cache is emptied - and a stale measurer is exactly the bug this is here to fix.
+  measurer = undefined;
+  version++;
+  for (const notify of listeners) notify();
+}
+
 if (typeof document !== "undefined" && document.fonts) {
-  void document.fonts.ready.then(() => {
-    widths.clear();
-    fits.clear();
-    version++;
-    for (const notify of listeners) notify();
-  });
+  /**
+   * `loadingdone`, not just `ready`. This used to hang on `ready` alone, which fires ONCE and by
+   * then is usually already too late:
+   *
+   *   - `--font-board` is used by nothing except a board square, and the fonts are `font-display:
+   *     swap`, so Jost doesn't begin downloading until the first board paints.
+   *   - A board only paints once the room has come back from Supabase, which on every overlay
+   *     source is well after the document's `load` event.
+   *
+   * So `document.fonts.ready` resolved on an empty queue while the page was still waiting on the
+   * network, the invalidation was spent on caches that were also empty, and every name measured
+   * after that - i.e. all of them - kept its fallback-font width forever. On stream, where names
+   * are drawn several times larger than in the app, "Misbegotten" then missed its line by about a
+   * character and `overflow-wrap: anywhere` broke it as "Misbegotte / n".
+   *
+   * `loadingdone` fires per batch of faces, so it catches a download that starts at any point in
+   * the page's life. Harmless to fire more than once: re-rendering a board loads no new fonts, so
+   * there is nothing here to feed itself.
+   */
+  document.fonts.addEventListener("loadingdone", refit);
+  void document.fonts.ready.then(refit);
 }
 
 /**

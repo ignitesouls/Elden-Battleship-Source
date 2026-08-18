@@ -19,15 +19,11 @@ import {
 import { fitText, useTextFit, breakSegments } from "../lib/textFit";
 import type { MarkKind } from "../hooks/usePencilMarks";
 import type { DeepMark } from "../lib/deepWater";
+import type { CellVisual } from "../lib/cellVisuals";
 
-export type CellVisual =
-  | "empty"
-  | "ship"
-  | "hit"
-  | "miss"
-  | "sunk"
-  | "preview-valid"
-  | "preview-invalid";
+// Defined next to `cellVisuals`, which is what every board builds its squares with. Re-exported
+// here because that is where the boards already import it from, alongside the component itself.
+export type { CellVisual } from "../lib/cellVisuals";
 
 /**
  * One crewmate's tally on one square, ready to draw.
@@ -63,6 +59,14 @@ export interface ShipOverlay {
   horizontal: boolean;
   shipName: string;
   colorHex: string;
+  /**
+   * Draw it as a hull that isn't settled yet - faded, inside a dashed berth.
+   *
+   * Used by a crew watching their captain place the fleet: those hulls are real enough to talk
+   * about ("not D4, they'll want that for the Carrier") but every one of them can still move, and a
+   * board that drew them exactly like a confirmed fleet would be quietly lying about that.
+   */
+  ghost?: boolean;
 }
 
 interface BoardGridProps {
@@ -99,6 +103,21 @@ interface BoardGridProps {
   maxVw?: number | string;
   /** Text drawn inside each cell (the challenge). Omit for a plain board. */
   cellText?: (index: number) => { label: string; title?: string; region?: Region; color?: string } | null;
+  /**
+   * Paint each square's own background with its challenge colour, as a wash. Omit for a plain board.
+   *
+   * For the boards too small to carry a name - the fleet board is a tenth of the fire board's area,
+   * and its squares are already carrying a hull sprite. Colour is the only part of a square's
+   * identity that survives at that size, and it's enough to answer the question those boards are
+   * actually asked: which bosses am I sitting on? A player reads a colour off their own hull, finds
+   * the same colour on the big board, and has their answer without counting coordinates.
+   *
+   * Takes the same shape as cellText, and resolves through the same two schemes for the same reason
+   * (see legendItems) - so a square's fill can never name a different group than its name does. The
+   * fill is mixed down hard: see .bg-cell-tinted, which is also why this only reaches unfired
+   * squares.
+   */
+  cellTint?: (index: number) => { region?: Region; color?: string } | null;
   /**
    * Client-local marks made by hand (right-click). Purely cosmetic, never sent anywhere.
    * "guess" pins a square as worth a look; "ruled" is a legacy cross - see usePencilMarks.
@@ -158,6 +177,19 @@ interface BoardGridProps {
    */
   textBoost?: number;
   /**
+   * Who fired at each square, as a list of fleet colours - drawn as a ring around the square.
+   *
+   * For the composited boards, where every shown fleet shares one grid and a square's result is
+   * merged worst-first: the marker says what happened, and this says whose shot it was. Two fleets
+   * on the same square split the ring between them, in the order given - build it with
+   * `attackerTeamsByCell`, which sorts by team so the split lands the same way on every square.
+   *
+   * Colours rather than team numbers because the palette is a preference (see teamColors), and a
+   * board should not have to know that. Omit on any board that already answers "whose?" by being
+   * one fleet's board - the players' own fire board is fired at by one fleet only.
+   */
+  firedBy?: ReadonlyMap<number, string[]>;
+  /**
    * Hard ceiling on a square's font size, overriding the per-layout defaults below.
    *
    * The defaults are sized for somebody a foot from a monitor. A browser source is read through an
@@ -216,6 +248,27 @@ const HULL_FIT = 0.92;
 /** The grid line between two cells. Must match `gap` in .bg-grid - a hull spans these as well as cells. */
 const GRID_GAP = 2;
 
+/**
+ * What paints one square's attribution ring: a flat colour for one fleet, equal wedges for several.
+ *
+ * A conic gradient rather than one element per fleet, because the ring is drawn by masking the
+ * middle out of a filled box (see .bg-shot-ring) and a gradient survives that with no geometry of
+ * its own - two fleets or five, it is the same one box. `from 180deg` starts the sweep at the bottom
+ * and comes round the left side, so with the usual two fleets the first team owns the left half and
+ * the second the right, which is the order they are listed in everywhere else.
+ *
+ * Returned as a `background` shorthand value, which accepts a colour and an image alike - so the one
+ * custom property covers both cases and the stylesheet needs no second rule for the single-fleet one.
+ */
+function ringPaint(colors: string[]): string {
+  if (colors.length === 1) return colors[0];
+  const step = 100 / colors.length;
+  // Both stops on every wedge (`c 20% 40%`), so the segments meet at a hard edge instead of blending
+  // - a ring that faded from one fleet's colour into the other's would name neither of them.
+  const stops = colors.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`).join(", ");
+  return `conic-gradient(from 180deg, ${stops})`;
+}
+
 export function BoardGrid({
   boardSize,
   cellVisual,
@@ -230,6 +283,7 @@ export function BoardGrid({
   maxVh = 82,
   maxVw = 92,
   cellText,
+  cellTint,
   markedCells,
   onToggleMark,
   autoRuledCells,
@@ -238,6 +292,7 @@ export function BoardGrid({
   fill,
   deepCells,
   holdToFireMs,
+  firedBy,
   textBoost = 1,
   maxCellFont,
 }: BoardGridProps) {
@@ -605,6 +660,10 @@ export function BoardGrid({
     const col = rawCol + 2;
     const text = cellText?.(i);
     const fit = text ? fitFor(text.label) : null;
+    // A square's own colour, on the boards that use fill instead of a name. Only meaningful on an
+    // unfired square - .bg-cell-tinted is written so a result fill wins - but the class goes on
+    // regardless, because the variable it carries is what the fill reads once the square is cleared.
+    const tint = cellTint?.(i);
     const mark = markedCells?.get(i);
     // One cross, from either source. The board's deduction is the only thing that still makes these;
     // a "ruled" mark is a hand-made one left in a player's storage from when middle-click did it, and
@@ -622,8 +681,18 @@ export function BoardGrid({
     // Being held counts as annotated so the name lifts clear of the fill sweeping up behind it -
     // reading which square you are about to commit to is the entire point of the pause.
     const holding = holdIndex === i;
+    // Whose shots landed here. In practice every ringed square is already `resolved` - the ring is
+    // built from resolved shots - but it earns its own place in the test rather than leaning on that,
+    // so the ring can never be the one thing on a square with no layer to draw it in.
+    const fired = firedBy?.get(i);
     const annotated =
-      resolved || Boolean(deep) || Boolean(mark) || Boolean(ruled) || cellCounts.length > 0 || holding;
+      resolved ||
+      Boolean(deep) ||
+      Boolean(mark) ||
+      Boolean(ruled) ||
+      cellCounts.length > 0 ||
+      holding ||
+      Boolean(fired?.length);
     // Darken cells to the left of the hovered cell in its row, and above it in its column,
     // to draw the eye out to the row/column labels along the board's edges.
     const axisShadow =
@@ -637,10 +706,16 @@ export function BoardGrid({
         data-cell={i}
         className={`bg-cell bg-${visual}${axisShadow ? " bg-cell-axis-shadow" : ""}${
           interactive ? "" : " bg-cell-inert"
-        }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}`}
+        }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}${
+          tint ? ` bg-cell-tinted${tint.region ? ` bg-region-${tint.region}` : ""}` : ""
+        }`}
         style={{
           gridRow: row,
           gridColumn: col,
+          // Keyword-tinted sets have no class to hang a colour on, so theirs arrives as a hex and
+          // goes into the same variable .bg-region-* sets - exactly as the square NAMES do a few
+          // lines below, and for the same reason.
+          ...(tint?.color ? { ["--bg-region" as string]: tint.color } : null),
           // The fill has to finish exactly when the shot goes, and the player chose how long that
           // is - so the animation's duration comes from the same number as the timer.
           ...(holding ? { ["--bg-hold-ms" as string]: `${holdMs}ms` } : null),
@@ -721,6 +796,16 @@ export function BoardGrid({
     if (annotated) {
       marks.push(
         <div key={`m${i}`} className="bg-cell-mark-layer" style={{ gridRow: row, gridColumn: col }}>
+          {/* Whose shot it was, hugging the square's edge. First in the layer so a result marker,
+              a pencil star or a tally is drawn over it rather than under it - this is context for
+              what happened on the square, not the thing that happened. */}
+          {fired && fired.length > 0 && (
+            <span
+              className="bg-shot-ring"
+              aria-hidden
+              style={{ ["--bg-ring-paint" as string]: ringPaint(fired) }}
+            />
+          )}
           {visual === "hit" && <HitMark />}
           {/* Anything found in the water stands in for the splash on its own square rather than
               floating over it - the shot that found it was a miss, so both would otherwise draw
@@ -841,10 +926,12 @@ export function BoardGrid({
             return (
               <div
                 key={i}
-                className="bg-ship-overlay"
+                className={`bg-ship-overlay${s.ghost ? " bg-ship-overlay-ghost" : ""}`}
                 style={{
                   gridRow: s.horizontal ? s.row + 2 : `${s.row + 2} / span ${s.size}`,
                   gridColumn: s.horizontal ? `${s.col + 2} / span ${s.size}` : s.col + 2,
+                  // The dashed berth is drawn in the fleet's own color, which only the caller knows.
+                  ...(s.ghost ? { ["--bg-ghost-line" as string]: s.colorHex } : null),
                 }}
               >
                 {/*

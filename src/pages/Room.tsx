@@ -26,7 +26,7 @@ import { deepWater, deepMarks, type DeepHide } from "../lib/deepWater";
 import { TeamBox } from "../components/TeamBox";
 import { HostTakeover } from "../components/HostTakeover";
 import { formatRoomCode } from "../lib/roomCode";
-import { useBattlePhase } from "../hooks/useBattlePhase";
+import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import { TeamPicker } from "../components/TeamPicker";
 import { SpectateWithCrew } from "../components/SpectateWithCrew";
@@ -34,6 +34,8 @@ import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
 import { challengesForRoom } from "../lib/challenges";
+import type { Challenge } from "../lib/challenges";
+import { squaresRevealed } from "../lib/overlayReveal";
 import { playSfx } from "../lib/sfx";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
 import { MatchClock } from "../components/MatchClock";
@@ -49,14 +51,23 @@ import {
   type SpectatorPanelId,
 } from "../lib/spectatorLayout";
 import type { PanelBox } from "../lib/panelLayout";
+import { cellVisuals } from "../lib/cellVisuals";
 import type { Attack, Room as RoomType, Fleet, Player } from "../types/battleship";
 import "./Spectator.css";
+
+/** Stable identity for a fleet with nothing sunk yet, so the visuals memo allocates nothing extra. */
+const EMPTY_SUNK: ReadonlyMap<number, boolean> = new Map();
 
 export function Room() {
   const { code } = useParams<{ code: string }>();
   const state = useRoom(code);
   const prevStatus = useRef<string | null>(null);
-  const battlePhase = useBattlePhase(state.attacks, state.room);
+  // The NAME only. This hook sits at the top of the match screen, so anything that changes here
+  // re-renders both boards, the log and every roster below it - and the one thing this page wants
+  // out of the clock is the horn cue below, which fires on a phase change. Taking the ticking
+  // variant here was re-rendering the entire match screen once a second for a number nothing on
+  // this page draws. See useBattlePhase.
+  const battlePhase = useBattlePhaseName(state.attacks, state.room);
   const prevPhase = useRef<string | null>(null);
 
   // Horn #1: the battle begins (STARTING countdown opens).
@@ -91,12 +102,11 @@ export function Room() {
   // previous phase, so loading the page into an already-running match doesn't blast the horn at
   // someone who just arrived.
   useEffect(() => {
-    const phase = battlePhase?.phase ?? null;
-    if (phase === "match" && prevPhase.current !== null && prevPhase.current !== "match") {
+    if (battlePhase === "match" && prevPhase.current !== null && prevPhase.current !== "match") {
       playSfx("prepare");
     }
-    prevPhase.current = phase;
-  }, [battlePhase?.phase]);
+    prevPhase.current = battlePhase;
+  }, [battlePhase]);
 
   // Battle opens the instant every fleet has confirmed its placement.
   //
@@ -124,10 +134,22 @@ export function Room() {
     if (!teams.every((t) => ready.has(t))) return;
 
     battleStartedRef.current = true;
-    startBattle(room.id).catch((e) => {
-      battleStartedRef.current = false;
-      setHostError(e instanceof Error ? e.message : String(e));
-    });
+    startBattle(room.id)
+      .then((balance) => {
+        // Said out loud, to the one person who can do anything about it. An unbalanced board is not
+        // an error - the match starts and plays - but it is the match's fairness quietly not
+        // happening, and it used to go only to a console line nobody reads. `already_balanced` is
+        // this same client having been beaten to it, which is the guard working rather than a fault.
+        if (balance.balanced || balance.reason === "already_balanced") return;
+        setHostError(
+          `This board was NOT balanced against the fleets (${balance.reason ?? "unknown"}). It is ` +
+            `playing as the raw seeded deal, which may be lopsided. Consider restarting the match.`
+        );
+      })
+      .catch((e) => {
+        battleStartedRef.current = false;
+        setHostError(e instanceof Error ? e.message : String(e));
+      });
   }, [state.room, state.myPlayer, state.players, state.teamReady]);
 
   // Remembers where you are so the top bar can offer a way back from the leaderboard, a captain's
@@ -145,7 +167,18 @@ export function Room() {
   // is resolved in here and rendered inside a single fragment below rather than early-returned.
   function renderPhase() {
   if (state.loading) return <LoadingScreen>Loading room...</LoadingScreen>;
-  if (state.error) return <p className="error-text">{state.error}</p>;
+  // A real failure - no network, a rejected read - as opposed to a room that simply isn't there,
+  // which is the case below and no longer arrives here. Given a way out for the same reason that
+  // one has: whatever went wrong, a dead end is not the answer to it.
+  if (state.error) {
+    return (
+      <div className="panel stack" style={{ width: "min(420px, 100%)", alignItems: "center", textAlign: "center" }}>
+        <h2 style={{ margin: 0 }}>Couldn't open this room</h2>
+        <p className="error-text" style={{ margin: 0 }}>{state.error}</p>
+        <Link to="/">Return to harbor</Link>
+      </div>
+    );
+  }
 
   // Deleted by an admin, or swept up by the room pruner while this tab sat open. Previously a bare
   // line of red text with nowhere to go from it.
@@ -425,6 +458,9 @@ function JoinForm({ code }: { code: string }) {
 
 type SpectatorMode = "attacks" | "all" | "crew" | number;
 
+/** Stable identity, so hiding the board does not re-render the whole spectator view. */
+const NO_CHALLENGES: Challenge[] = [];
+
 function SpectatorView({
   room,
   activeTeamsList,
@@ -462,10 +498,15 @@ function SpectatorView({
   // The same squares the players are looking at. Derived from the room exactly as BattlePhase
   // derives it - id, set and seed - so a spectator calling out "they just took C4" is naming the
   // square the fleet has on their own screen.
-  const challenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed),
-    [room.id, boardSize, room.square_set, room.seed]
+  const dealtChallenges = useMemo(
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
   );
+  // Held back through the RANDOMIZATION window, on the same beat as the players own board and the
+  // overlays - a spectator reading out the squares ten seconds before the crews can see them would
+  // be calling a board that is still being dealt. See lib/overlayReveal.ts.
+  const battlePhase = useBattlePhaseName(attacks, room);
+  const challenges = squaresRevealed(room.status, battlePhase) ? dealtChallenges : NO_CHALLENGES;
   /**
    * Everything in the water, for the caster (see lib/deepWater.ts).
    *
@@ -515,6 +556,27 @@ function SpectatorView({
     return out;
   }, [attacks, activeTeamsList, boardSize]);
   const sunkFor = (team: number) => sunkByTeam.get(team) ?? new Map<number, boolean>();
+
+  /**
+   * Each shown fleet's board, resolved in one walk of the log per fleet.
+   *
+   * This is the page that most needed it: the per-cell filter it replaces ran once per square PER
+   * FLEET, so a four-fleet view filtered the whole attack log four hundred times to draw one frame.
+   * See lib/cellVisuals.
+   */
+  const visualsByTeam = useMemo(() => {
+    const out = new Map<number, Map<number, CellVisual>>();
+    for (const team of activeTeamsList) {
+      out.set(
+        team,
+        cellVisuals(
+          attacks.filter((a) => a.defender_team === team),
+          sunkByTeam.get(team) ?? EMPTY_SUNK
+        )
+      );
+    }
+    return out;
+  }, [attacks, activeTeamsList, sunkByTeam]);
   // Who is out, for the rail's rosters. From the public attack log rather than team_ready, which a
   // fleet that lost its last hull and closed the tab never gets to write.
   const eliminatedTeams = eliminatedTeamsFromAttacks(attacks, shipDefs.length);
@@ -539,14 +601,8 @@ function SpectatorView({
   }, [spectatorCounts, players, showShips]);
 
   function visualFor(team: number) {
-    const sunk = sunkFor(team);
-    return (index: number): CellVisual => {
-      if (sunk.has(index)) return "sunk";
-      const hits = attacks.filter((a) => a.defender_team === team && a.cell_index === index);
-      if (hits.some((a) => a.result === "hit")) return "hit";
-      if (hits.some((a) => a.result === "miss")) return "miss";
-      return "empty";
-    };
+    const visuals = visualsByTeam.get(team);
+    return (index: number): CellVisual => visuals?.get(index) ?? "empty";
   }
 
   /** A team's ships, drawn from their fleet row (spectator-only read). */
@@ -725,7 +781,7 @@ function SpectatorView({
         {!overShoulder && status === "placement" && (
           <span className="spectate-note">
             {showShips && canSeeShips
-              ? "Fleets are being placed - ships appear as they're confirmed."
+              ? "Fleets are being placed - each hull appears as its captain puts it down, and can still move until they confirm."
               : "Every fleet is placing their ships..."}
           </span>
         )}

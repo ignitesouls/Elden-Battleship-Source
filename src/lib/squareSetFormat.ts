@@ -110,11 +110,83 @@ export const REGION_LABELS: Record<Region, string> = {
   general: "Anywhere",
 };
 
+/**
+ * Squares that have been renamed, old name -> the name they carry now.
+ *
+ * `name` is a square's identity in `match_events`, so a rename would otherwise cut its history in
+ * two: every match played before the rename says one thing and every match after says another, and
+ * the Almanac - which groups on that string and nothing else - would show the same boss twice with
+ * half its attempts each. Worse, its board reconstruction confirms a rebuilt board by checking that
+ * the recorded names sit in the recorded cells, so a renamed square among a match's first shots
+ * would make that whole board unidentifiable and cost it every never-fired square it could have
+ * contributed.
+ *
+ * Folding old names into new is the cheaper half of the trade. It loses the ability to ask what a
+ * square was called at the time, which nothing asks; it keeps the stats, which everything reads.
+ *
+ * Applied by canonicalSquareName at the point archived rows are read (see lib/profiles and
+ * lib/matchArchive), so nothing downstream has to know a rename ever happened. The admin panel is
+ * the deliberate exception: it shows and deletes actual database rows, so it reads them as stored.
+ *
+ * Entries live forever - the old rows they exist for never stop being old rows.
+ *
+ * An entry MISSING from here is silent: nothing errors, the square simply stops being the same
+ * square. scripts/audit-square-names.mjs is what makes that audible - it reads every distinct name
+ * the archive holds and reports the ones that no longer land on anything. Run it after any rename.
+ */
+export const RENAMED_SQUARES: Record<string, string> = {
+  // Undated, and recovered rather than remembered: these renames were made before this map existed,
+  // and were found by audit-square-names.mjs as names in the archive matching no square. Each target
+  // is what the board REBUILDS to in the cells those rows were fired at - unanimous across every
+  // match that reconstructs - rather than whichever square the old name reads like. Worth saying,
+  // because two of them do not read like their answer: "CK Gaol" is the Stormhill Evergaol Crucible
+  // Knight, and "Splitting Avatar" is the Mountaintops Minor Erdtree one.
+  "LG BKA": "LG Black Knife",
+  "Black Knife BKA": "Liurnia Black Knife",
+  "Sage's BKA": "Sage's Cave Black Knife",
+  "Sainted BKA": "Black Knife Near Sainted HG",
+  "Black Knife Cem Shade": "Liurnia Cem Shade",
+  "CK Gaol": "LG Crucible Knight",
+  "Carian Onyx": "Liurnia Onyx Lord",
+  "Caelem Pumpkin Heads": "Pumpkin Head Duo",
+  "Splitting Avatar": "Mountaintops Avatar",
+
+  // 13 Aug 2026 - boss set brought in line with the game's own names: full titles where the square
+  // had a nickname, and Liurnia's duplicated bosses labelled by where they actually stand.
+  "Demi-Human Family": "Demi-Human Chiefs",
+  "Liurnia East Night Cav": "Liurnia Highway North Night Cav",
+  "Liurnia West Avatar": "Liurnia South Avatar",
+  "Liurnia East Avatar": "Liurnia North Avatar",
+  "Rennala": "Rennala, Queen of the Full Moon",
+  "Sewer Mohg": "Mohg, the Omen",
+  "Lake of Rot Astel": "Astel, Naturalborn of the Void",
+  "Rellana": "Rellana, Twin Moon Knight",
+
+  // 15 Aug 2026 - the same pass, one square late.
+  "Goldfrey": "Golden Godfrey",
+
+  // 15 Aug 2026 - four squares brought into line with the family each belongs to, so the odd one out
+  // stops being the one somebody eventually renames: the Onyx Lords and the Duelists now both read
+  // <region> <boss>, the Pumpkin Heads agree on two words, and a duo says so like every other duo.
+  "Sealed Onyx": "Altus Onyx Lord",
+  "LG Pumpkinhead": "LG Pumpkin Head",
+  "Putrid Duelist": "Consecrated Duelist",
+  "Omenkiller Miranda": "Omenkiller Miranda Duo",
+  // Capitalisation only - the other three Deathbirds spell it with a small b.
+  "Weeping DeathBird": "Weeping Deathbird",
+};
+
+/** A recorded square name as it is spelled today. Anything not renamed passes straight through. */
+export function canonicalSquareName<T extends string | null | undefined>(name: T): T {
+  return (name == null ? name : RENAMED_SQUARES[name] ?? name) as T;
+}
+
 export interface Challenge {
   /**
    * The square's full name, and its identity. Archived to match_events and matched against when
    * the Almanac works out which set a finished match used, so it must stay exactly as authored -
-   * shortening happens in `short`, never here.
+   * shortening happens in `short`, never here. Renaming one anyway means an entry in
+   * RENAMED_SQUARES, or its history before the rename is orphaned.
    */
   name: string;
   /** What to print in the cell: `name` unless that's too long to read at board size. */

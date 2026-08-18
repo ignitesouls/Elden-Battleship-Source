@@ -3,30 +3,163 @@ import { Link } from "react-router-dom";
 import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type Profile } from "../lib/profiles";
 import { SquareSetTabs } from "../components/SquareSetTabs";
 import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
-import { aggregateCareers, type ParticipantRow } from "../lib/careerStats";
+import { aggregateCareers, type CareerStats, type ParticipantRow } from "../lib/careerStats";
 import { buildRecordBook } from "../lib/recordBook";
+import { squarePace, paceLabel, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 import { RecordBook } from "../components/RecordBook";
-import { fetchRecentMatchReports } from "../lib/rooms";
-import { AdminPanel } from "../components/AdminPanel";
 import { LoadingScreen } from "../components/BrandMark";
 import type { MatchEventRow } from "../lib/almanac";
-import type { MatchReportRow } from "../types/battleship";
 
-type SortKey = "wins" | "winRate" | "sunk" | "accuracy" | "matches";
+type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
+type Direction = "asc" | "desc";
 
-const SORTS: Array<{ key: SortKey; label: string }> = [
-  { key: "wins", label: "Wins" },
-  { key: "winRate", label: "Win %" },
-  { key: "sunk", label: "Ships sunk" },
-  { key: "accuracy", label: "Accuracy" },
-  { key: "matches", label: "Matches" },
+/** A career row with the two things the table needs that aggregation doesn't carry. */
+interface Row extends CareerStats {
+  /** Median seconds per square, or null when they haven't enough squares to have a pace yet. */
+  pace: number | null;
+  /** The name as SHOWN, so sorting by captain matches what the reader is looking at. */
+  displayName: string;
+}
+
+interface Column {
+  key: SortKey;
+  label: string;
+  /**
+   * A second line under the heading, for a column whose name doesn't say which number it is.
+   *
+   * Pace has one because "pace" alone doesn't distinguish a median from an average, and those are
+   * genuinely different numbers here - across this archive the medians sit inside a 40-second band
+   * while the means spread over ninety, because a single twenty-minute boss drags an average and
+   * leaves a median alone. A reader comparing two captains deserves to know which they are reading.
+   */
+  sublabel?: string;
+  align: "left" | "right";
+  /**
+   * Which way the first click sorts.
+   *
+   * Every column opens on its most interesting end: most wins, most hits - and for pace, the
+   * FASTEST, which is the low number. A column whose first click buries what people came to see is
+   * a column they have to click twice.
+   */
+  firstDirection: Direction;
+  /** The whole stat in a sentence, on hover. Every column has one - see the note on the header. */
+  title: string;
+}
+
+/**
+ * Every column carries a `title`, including the ones whose heading looks self-explanatory.
+ *
+ * "Hits" and "Sunk" read as obvious until you ask whether a hit that sinks a ship counts once or
+ * twice, or whether "shots" means squares taken or trigger-pulls. The headings can't answer that in
+ * four characters and the answers are not guessable, so the explanation lives one hover away rather
+ * than nowhere. Consistency is deliberate too: a tooltip on some headings and not others teaches
+ * people that hovering usually does nothing.
+ */
+const COLUMNS: Column[] = [
+  {
+    key: "name",
+    label: "Captain",
+    align: "left",
+    firstDirection: "asc",
+    title: "Signed-in captains are grouped by account; guests by nickname, so two guests sharing a name share a row. Click a name for their full record on this board.",
+  },
+  {
+    key: "wins",
+    label: "W-L",
+    align: "right",
+    firstDirection: "desc",
+    title: "Wins and losses across every finished match on this board. Draws are archived but not shown - no match has ever ended without a winner.",
+  },
+  {
+    key: "winRate",
+    label: "Win %",
+    align: "right",
+    firstDirection: "desc",
+    title: "Share of finished matches won. Sorting by this falls back to total wins, so a single lucky match doesn't top the table.",
+  },
+  {
+    key: "shots",
+    label: "Shots",
+    align: "right",
+    firstDirection: "desc",
+    title: "Squares taken. One shot per square earned, whether it landed or not - a shot at three enemy fleets still counts once.",
+  },
+  {
+    key: "hits",
+    label: "Hits",
+    align: "right",
+    firstDirection: "desc",
+    title: "Shots that landed on an enemy ship. A shot that lands on more than one fleet counts once.",
+  },
+  {
+    key: "sunk",
+    label: "Sunk",
+    align: "right",
+    firstDirection: "desc",
+    title: "Enemy ships finished off. The sinking shot counts as a hit as well.",
+  },
+  {
+    key: "accuracy",
+    label: "Acc.",
+    align: "right",
+    firstDirection: "desc",
+    title: "Accuracy - hits as a share of shots fired, over this whole board.",
+  },
+  {
+    key: "pace",
+    label: "pace",
+    sublabel: "median",
+    align: "right",
+    firstDirection: "asc",
+    title: `Square pace - the time from one square falling to the next, taken as a median across every square they have fired on this board. The median rather than the average, so one long boss doesn't stand in for the whole evening. Needs ${MIN_GAPS_FOR_PACE} squares before it shows.`,
+  },
 ];
+
+/**
+ * Ascending comparison for one column. The caller flips it for descending.
+ *
+ * The secondary keys are not decoration. Sorting on a rate alone puts whoever has the smallest
+ * sample on top, so every rate falls back to the volume behind it and every count falls back to the
+ * rate - which keeps a captain with 9 hits from outranking one with 9 hits at twice the accuracy.
+ */
+function compare(a: Row, b: Row, key: SortKey): number {
+  switch (key) {
+    case "name":
+      return a.displayName.localeCompare(b.displayName);
+    case "wins":
+      return a.wins - b.wins || a.winRate - b.winRate;
+    case "winRate":
+      return a.winRate - b.winRate || a.wins - b.wins;
+    case "shots":
+      return a.shots - b.shots || a.hits - b.hits;
+    case "hits":
+      return a.hits - b.hits || a.accuracy - b.accuracy;
+    case "sunk":
+      return a.sunk - b.sunk || a.hits - b.hits;
+    case "accuracy":
+      return a.accuracy - b.accuracy || a.hits - b.hits;
+    case "pace":
+      // Nulls are handled before this is reached - see the sort below.
+      return (a.pace ?? 0) - (b.pace ?? 0) || b.shots - a.shots;
+  }
+}
 
 export function Leaderboard() {
   const [rows, setRows] = useState<ParticipantRow[] | null>(null);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
   const [sort, setSort] = useState<SortKey>("wins");
-  const [matches, setMatches] = useState<MatchReportRow[]>([]);
+  const [direction, setDirection] = useState<Direction>("desc");
+
+  /** Clicking the column you're already on flips it; clicking a new one opens it its own way. */
+  const sortBy = (key: SortKey) => {
+    if (key === sort) {
+      setDirection((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSort(key);
+    setDirection(COLUMNS.find((c) => c.key === key)?.firstDirection ?? "desc");
+  };
+
   /**
    * Archived shots, for the streak and timing records only.
    *
@@ -35,8 +168,6 @@ export function Leaderboard() {
    * book appears with most of itself filled in and the rest arrives a moment later.
    */
   const [events, setEvents] = useState<MatchEventRow[] | null>(null);
-  // Bumped after an admin deletes something, to re-read both the careers and the match list.
-  const [reload, setReload] = useState(0);
 
   // Which board's records are on show. Null until the rows arrive, then whichever set has been
   // played most - opening on an empty table for a set nobody has touched helps nobody.
@@ -48,10 +179,9 @@ export function Leaderboard() {
       setRows(data);
       setSetId((current) => current ?? busiestSquareSet(data));
       setProfiles(await fetchProfiles(data.map((r) => r.user_id).filter(Boolean) as string[]));
-      setMatches((await fetchRecentMatchReports(200)) as MatchReportRow[]);
       setEvents((await fetchMatchEvents()) as MatchEventRow[]);
     })();
-  }, [reload]);
+  }, []);
 
   const shownSet = setId ?? DEFAULT_SQUARE_SET;
 
@@ -68,26 +198,35 @@ export function Leaderboard() {
     return out;
   }, [rows]);
 
-  const careers = useMemo(() => {
+  /** Median seconds per square, per captain, for the board on show. */
+  const paces = useMemo(
+    () => squarePace((events ?? []).filter((e) => rowSquareSet(e) === shownSet)),
+    [events, shownSet]
+  );
+
+  const careers = useMemo<Row[]>(() => {
     // Careers are aggregated per set, never across: an accuracy averaged over boss kills and
     // "acquire 3 painting rewards" describes neither board.
     const list = aggregateCareers((rows ?? []).filter((r) => rowSquareSet(r) === shownSet));
-    // Secondary keys stay meaningful: sorting by accuracy alone would put a 1-shot fluke on top.
-    return [...list].sort((a, b) => {
-      switch (sort) {
-        case "winRate":
-          return b.winRate - a.winRate || b.wins - a.wins;
-        case "sunk":
-          return b.sunk - a.sunk || b.wins - a.wins;
-        case "accuracy":
-          return b.accuracy - a.accuracy || b.shots - a.shots;
-        case "matches":
-          return b.matches - a.matches || b.wins - a.wins;
-        default:
-          return b.wins - a.wins || b.winRate - a.winRate;
+    return list.map((c) => ({
+      ...c,
+      pace: paces.get(c.key) ?? null,
+      displayName: profileName(c.userId ? profiles.get(c.userId) : undefined) ?? c.nickname,
+    }));
+  }, [rows, shownSet, paces, profiles]);
+
+  const sorted = useMemo(() => {
+    return [...careers].sort((a, b) => {
+      // A captain without a pace yet sits at the bottom in BOTH directions rather than sorting as
+      // zero, which would otherwise read as infinitely fast. Same for any column that can be blank.
+      if (sort === "pace" && (a.pace === null || b.pace === null)) {
+        if (a.pace === null && b.pace === null) return b.shots - a.shots;
+        return a.pace === null ? 1 : -1;
       }
+      const cmp = compare(a, b, sort);
+      return direction === "asc" ? cmp : -cmp;
     });
-  }, [rows, sort, shownSet]);
+  }, [careers, sort, direction]);
 
   /**
    * The record book, for the same board the table is showing.
@@ -135,39 +274,91 @@ export function Leaderboard() {
         />
 
         <div className="panel stack" style={{ gap: "0.6rem" }}>
-          <div className="row" style={{ gap: "0.35rem", flexWrap: "wrap" }}>
-            <span className="muted" style={{ fontSize: "0.78rem" }}>Sort by</span>
-            {SORTS.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setSort(s.key)}
-                style={{
-                  fontSize: "0.75rem",
-                  padding: "0.2rem 0.5rem",
-                  borderColor: sort === s.key ? "var(--accent)" : undefined,
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
               <thead>
+                {/* Top-aligned throughout, because one heading is two lines tall and the default
+                    middle alignment would centre the other seven against it - leaving "Acc." sitting
+                    between "pace" and "median" rather than level with "pace". */}
                 <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem" }}>#</th>
-                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem" }}>Captain</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>W-L-D</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Win %</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Shots</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Hits</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Sunk</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Acc.</th>
+                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem", verticalAlign: "top" }}>
+                    #
+                  </th>
+                  {COLUMNS.map((col) => {
+                    const active = sort === col.key;
+                    return (
+                      <th
+                        key={col.key}
+                        // Announces the sorted column and its direction to a screen reader, which is
+                        // otherwise the one thing the arrow says that nothing else does.
+                        aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+                        style={{ textAlign: col.align, fontWeight: 500, padding: 0, verticalAlign: "top" }}
+                      >
+                        {/* A real button, not a click handler on the th: this is the page's main
+                            control now that the row of sort buttons is gone, and it has to be
+                            reachable by keyboard and announced as pressable. */}
+                        <button
+                          type="button"
+                          onClick={() => sortBy(col.key)}
+                          title={col.title}
+                          style={{
+                            width: "100%",
+                            background: "none",
+                            border: "none",
+                            padding: "0.25rem 0.4rem",
+                            font: "inherit",
+                            fontWeight: active ? 600 : 500,
+                            color: active ? "var(--accent)" : "inherit",
+                            textAlign: col.align,
+                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
+                            // A two-line heading has to sit on the same baseline as the one-line
+                            // ones, so the stack grows DOWNWARD from a common top edge.
+                            justifyContent: "flex-start",
+                            alignItems: col.align === "left" ? "flex-start" : "flex-end",
+                            gap: 0,
+                            lineHeight: 1.15,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.2rem",
+                            }}
+                          >
+                            {col.label}
+                            {/* Only the sorted column carries an arrow. Showing a dimmed one on every
+                                header turns eight headings into eight pieces of punctuation. */}
+                            <span aria-hidden style={{ fontSize: "0.6rem", opacity: active ? 1 : 0 }}>
+                              {direction === "asc" ? "▲" : "▼"}
+                            </span>
+                          </span>
+                          {/* Dimmer and smaller even when the column is sorted: it qualifies the
+                              heading rather than being part of it, and matching weight would read
+                              as two headings stacked. */}
+                          {col.sublabel && (
+                            <span
+                              style={{
+                                fontSize: "0.68em",
+                                fontWeight: 400,
+                                opacity: 0.72,
+                                letterSpacing: "0.02em",
+                              }}
+                            >
+                              {col.sublabel}
+                            </span>
+                          )}
+                        </button>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {careers.map((c, i) => {
+                {sorted.map((c, i) => {
                   const p = c.userId ? profiles.get(c.userId) : undefined;
                   const num = { padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
                   return (
@@ -191,7 +382,7 @@ export function Leaderboard() {
                           {p?.avatar_url && (
                             <img src={p.avatar_url} alt="" width={20} height={20} style={{ borderRadius: "50%" }} />
                           )}
-                          <span>{profileName(p) ?? c.nickname}</span>
+                          <span>{c.displayName}</span>
                           {!c.verified && (
                             <span className="badge" title="Not signed in - grouped by nickname only">
                               guest
@@ -199,15 +390,23 @@ export function Leaderboard() {
                           )}
                         </Link>
                       </td>
+                      {/* Wins and losses only. Draws are archived but never shown here: they need
+                          a match to end with no winner at all, which has happened zero times, and a
+                          third number that is always 0 is a column of noise. */}
                       <td style={num}>
                         {c.wins}-{c.losses}
-                        {c.draws > 0 ? `-${c.draws}` : ""}
                       </td>
                       <td style={num}>{Math.round(c.winRate * 100)}%</td>
                       <td style={num}>{c.shots}</td>
                       <td style={{ ...num, color: "var(--hit)" }}>{c.hits}</td>
                       <td style={{ ...num, color: "var(--sunk)" }}>{c.sunk}</td>
                       <td style={num}>{Math.round(c.accuracy * 100)}%</td>
+                      {/* Pace rides on the shot log, which lands after the table has already drawn,
+                          so an empty cell means "still reading" for the first moment and "not
+                          enough squares yet" after that. They read differently on purpose. */}
+                      <td style={{ ...num, color: c.pace === null ? "var(--text-dim)" : undefined }}>
+                        {c.pace !== null ? paceLabel(c.pace) : events === null ? "..." : "-"}
+                      </td>
                     </tr>
                   );
                 })}
@@ -216,15 +415,17 @@ export function Leaderboard() {
           </div>
 
           <span className="muted" style={{ fontSize: "0.7rem" }}>
+            Click a heading to sort by it; click it again to flip the order. Hover any heading for
+            what the number means - pace is the median time from one square falling to the next, and
+            needs {MIN_GAPS_FOR_PACE} squares before it shows.
+          </span>
+          <span className="muted" style={{ fontSize: "0.7rem" }}>
             Guests are grouped by nickname, so two people using the same name share a row. Signing
             in with Twitch gives you a record only you can add to.
           </span>
         </div>
         </>
       )}
-
-      {/* Renders nothing unless the signed-in account is an admin. */}
-      <AdminPanel matches={matches} onChanged={() => setReload((n) => n + 1)} />
     </div>
   );
 }

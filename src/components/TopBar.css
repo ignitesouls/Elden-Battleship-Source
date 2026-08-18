@@ -62,7 +62,7 @@
 /* :not() rather than plain .tb-item:hover so this doesn't out-specify the accented items below.
    `a.tb-item:hover` would beat `.tb-brand:hover` on specificity and flatten the wordmark, the
    return-to-room link and the active colorblind toggle all back to the same gray on hover. */
-.tb-item:not(.tb-brand, .tb-return, .tb-colorblind-on):hover {
+.tb-item:not(.tb-brand, .tb-return, .tb-admin, .tb-colorblind-on):hover {
   color: var(--text);
 }
 
@@ -102,6 +102,26 @@ button.tb-item {
 
 .tb-return:hover {
   color: var(--accent-bright);
+}
+
+/* What the room is doing, hung off the code it belongs to. Dimmed and unbolded so the code stays
+   the thing you read - this is the footnote, not the link. */
+.tb-return-state {
+  margin-left: 0.3rem;
+  font-weight: 400;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+/* The same red the Admin panel's heading uses, so the door and the room behind it match. Excluded
+   from the shared hover rule above for the same reason .tb-return is - it would flatten to gray. */
+.tb-admin {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tb-admin:hover {
+  filter: brightness(1.25);
 }
 
 .tb-account {
@@ -241,7 +261,10 @@ button.tb-item {
    Text drops out in priority order rather than all at once, and the emoji plus the title tooltip
    always remain, so nothing ever becomes unidentifiable - just terser. */
 @media (max-width: 900px) {
-  .tb-label {
+  .tb-label,
+  /* Goes with the labels, and for the same reason: the room CODE is what identifies the link,
+     and "in battle" is the first thing that can be spared to keep it on one line. */
+  .tb-return-state {
     display: none;
   }
 

@@ -4,6 +4,8 @@ import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET } from ".
 import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type Profile } from "../lib/profiles";
 import { playerPace, playerKills, playerBestKills, type MatchEventRow } from "../lib/almanac";
 import { LoadingScreen } from "../components/BrandMark";
+import { AutoFireSetup } from "../components/AutoFireSetup";
+import { useAuthProfile } from "../hooks/useAuthProfile";
 import {
   aggregateCareers,
   headToHeadRecords,
@@ -17,6 +19,11 @@ import {
 export function PlayerStats() {
   const { key: rawKey } = useParams<{ key: string }>();
   const playerKey = decodeURIComponent(rawKey ?? "");
+  // Careers are keyed on user id for signed-in captains and on nickname for guests, so this only
+  // ever matches on the former - which is correct: a guest has no durable identity to hang a
+  // permanent token on, and that is the whole reason auto-marking needs a sign-in.
+  const viewer = useAuthProfile();
+  const isMe = Boolean(viewer?.isTwitch && viewer.userId === playerKey);
   const [rows, setRows] = useState<ParticipantRow[] | null>(null);
   const [events, setEvents] = useState<MatchEventRow[]>([]);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
@@ -112,6 +119,12 @@ export function PlayerStats() {
         </Link>
       </div>
 
+      {/* Only on your own page. This is a public career page - anyone can open anyone's - so the
+          token panel is gated on the viewer being the captain it belongs to, not merely on being
+          signed in. RLS would refuse to hand over someone else's token regardless; this is what
+          stops the controls appearing at all where they'd make no sense. */}
+      {isMe && <AutoFireSetup />}
+
       <div className="panel stack" style={{ gap: "0.4rem" }}>
         <h3 style={{ margin: 0 }}>Career</h3>
         <div className="row" style={{ gap: "0.6rem", flexWrap: "wrap" }}>
@@ -130,7 +143,7 @@ export function PlayerStats() {
         <div className="panel stack" style={{ gap: "0.25rem" }}>
           <h3 style={{ margin: 0 }}>Personal bests</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Quickest squares this captain has taken, timed from when firing opened - hits and misses alike.
+            Quickest squares this captain has taken, each timed from their previous one - hits and misses alike.
           </span>
           {bestKills.map((k, i) => (
             <div
@@ -141,6 +154,7 @@ export function PlayerStats() {
               <span style={{ minWidth: 0 }}>
                 <span className="muted">{i + 1}. </span>
                 <strong>{k.challenge ?? "Unknown square"}</strong>
+                {k.previous && <span className="muted"> · after {k.previous}</span>}
                 {k.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · sank a ship</span>}
                 {k.result === "hit" && <span style={{ color: "var(--hit)" }}> · hit</span>}
               </span>

@@ -404,6 +404,17 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
+# The auto-fire endpoint is called by a native mod running inside Elden Ring, which holds no Supabase
+# session and has no bearer token to send - so the gateway must not demand one. Authentication is the
+# per-player ingest token in the request body, checked by the function itself against ingest_tokens.
+#
+# This deliberately differs from twitch-login, which leaves verification ON because it identifies its
+# caller from a session that a browser already has. Turning it off here makes the endpoint publicly
+# reachable; what it cannot do is anything useful without a valid token, and a token only ever fires
+# shots in whatever room its owner is currently playing in.
+[functions.auto-fire]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

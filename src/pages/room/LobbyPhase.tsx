@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { beginPlacementPhase, kickPlayer, setTeamName, rerollSeed } from "../../lib/rooms";
+import { useEffect, useRef, useState } from "react";
+import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed, updateRoomSettings } from "../../lib/rooms";
+import { retargetBossSet } from "../../lib/challenges";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { CommunityLinks } from "../../components/CommunityLinks";
@@ -37,6 +38,41 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
       setBusy(false);
     }
   }
+
+  /**
+   * Keeps a boss room on the cut of the board its roster calls for, as people arrive and leave.
+   *
+   * The rule is in retargetBossSet; this is only the thing that applies it. It has to be reactive
+   * rather than settled when the host picks "Bosses", because the host usually picks before anybody
+   * has joined - a room set up for a 2v2 and then filled to a 3v3 has to end up on the full board
+   * without the host thinking about it, which is the entire point of the roster deciding.
+   *
+   * The lobby is the only safe place for it. Every reader downstream - the Almanac, the overlays,
+   * both Edge Functions - rebuilds boards from `square_set`, so changing it re-deals the squares;
+   * doing that during placement would rename the board under players who had already laid out a
+   * fleet on it, and after firing opens it would be a different match. In the lobby nobody has
+   * committed to anything yet.
+   *
+   * The host alone writes, though the RLS policy would let any player in the room: four clients
+   * agreeing on the same value would still be four writes and four re-deals for one roster change.
+   * A host who has wandered off leaves the room on whatever it last had, which is a stale setting
+   * and not a wrong board - the host has to come back to start the match anyway.
+   */
+  const syncing = useRef(false);
+  useEffect(() => {
+    if (!myPlayer.is_host) return;
+    const want = retargetBossSet(room.square_set, players);
+    if (want === null || syncing.current) return;
+    syncing.current = true;
+    void updateRoomSettings(room.id, { square_set: want })
+      // Deliberately silent. This is a correction nobody asked for, so a failed one is not an error
+      // to put in front of the host - the room stays on the set it had, which is a playable board,
+      // and the next roster change tries again.
+      .catch(() => {})
+      .finally(() => {
+        syncing.current = false;
+      });
+  }, [myPlayer.is_host, room.id, room.square_set, players]);
 
   // Still needed for the live/away dot beside each name. The takeover's own copy of this moved into
   // HostTakeover, which needs it on the match screens too.
@@ -175,6 +211,23 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
     }
   }
 
+  /**
+   * Passes command of my fleet to a crewmate. Offered only in the lobby: once ships are going down
+   * the captain is mid-layout, and the database refuses it there anyway (see the captain_handoff
+   * migration).
+   */
+  async function handleHandOver(playerId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await handOverCaptaincy(playerId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack" style={{ width: "min(760px, 100%)" }}>
       {/* The lobby is the longest a screen sits still on stream - it's what's up while players
@@ -244,7 +297,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       {/* Above the team picker: what you're playing decides which fleet you want to be on, and
           the host usually sets it before anyone picks. */}
-      <MatchSettings room={room} isHost={myPlayer.is_host} onError={setError} />
+      <MatchSettings room={room} players={players} isHost={myPlayer.is_host} onError={setError} />
 
       <TeamPicker
         room={room}
@@ -258,32 +311,59 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
         {usedTeams.map((team) => {
           const color = TEAM_COLORS[team];
           const teamPlayers = players.filter((p) => p.team === team);
+          const captain = captainOf(players, team);
+          const iCaptainThis = captain?.id === myPlayer.id;
           return (
             <div key={team} className="panel stack" style={{ flex: 1, minWidth: 180 }}>
               {/* The fleet's own captain renames it; the host can rename any, since they run the
                   room. Everyone else just reads it. */}
-              {myPlayer.is_host || captainOf(players, team)?.id === myPlayer.id ? (
+              {myPlayer.is_host || iCaptainThis ? (
                 <TeamNameField roomId={room.id} team={team} colorHex={color.hex} />
               ) : (
                 <h3 style={{ color: color.hex, margin: 0 }}>{teamName(team)}</h3>
               )}
               <div className="stack" style={{ gap: "0.3rem" }}>
                 {teamPlayers.length === 0 && <span className="muted">Empty</span>}
-                {teamPlayers.map((p) => (
-                  <div key={p.id} className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-                    <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                      <PresenceDot id={p.id} />
-                      {p.nickname} {p.is_host && <span className="badge">host</span>}
-                      {captainOf(players, team)?.id === p.id && <span className="badge">captain</span>}
-                      {p.id === myPlayer.id && <span className="badge">you</span>}
-                    </span>
-                    {myPlayer.is_host && p.id !== myPlayer.id && (
-                      <button disabled={busy} onClick={() => handleKick(p.id)} title="Kick">
-                        Kick
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {teamPlayers.map((p) => {
+                  // Presence hasn't reported yet while the list is empty, which must not read as
+                  // "everybody is away" - the same guard HostTakeover makes.
+                  const away = onlinePlayerIds.length > 0 && !online.has(p.id);
+                  return (
+                    <div key={p.id} className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
+                      <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                        <PresenceDot id={p.id} />
+                        {p.nickname} {p.is_host && <span className="badge">host</span>}
+                        {captain?.id === p.id && <span className="badge">captain</span>}
+                        {p.id === myPlayer.id && <span className="badge">you</span>}
+                      </span>
+                      <div className="row" style={{ gap: "0.3rem", flex: "none" }}>
+                        {/* Command passes downwards only - a captain hands it over, nobody takes it.
+                            Which is why an absent crewmate is refused rather than merely warned
+                            about: only a captain can hand it on, so handing it to a closed tab
+                            leaves the fleet with nobody able to place its ships. */}
+                        {iCaptainThis && p.id !== myPlayer.id && (
+                          <button
+                            disabled={busy || away}
+                            onClick={() => void handleHandOver(p.id)}
+                            style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}
+                            title={
+                              away
+                                ? `${p.nickname} is away - command would be stuck with them`
+                                : `Hand command of this fleet to ${p.nickname}, who then places its ships`
+                            }
+                          >
+                            Make captain
+                          </button>
+                        )}
+                        {myPlayer.is_host && p.id !== myPlayer.id && (
+                          <button disabled={busy} onClick={() => handleKick(p.id)} title="Kick">
+                            Kick
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );

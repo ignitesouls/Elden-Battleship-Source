@@ -1,5 +1,5 @@
 import { formatDuration } from "../lib/matchTime";
-import { useBattlePhase } from "../hooks/useBattlePhase";
+import { useBattleClock } from "../hooks/useBattlePhase";
 import type { Attack, Room } from "../types/battleship";
 
 interface Props {
@@ -12,14 +12,20 @@ interface Props {
   compact?: boolean;
 }
 
+// The first window is where the board is dealt against the fleets standing on it (see
+// lib/boardBalance.ts), and where the squares are still blank because of it. Named for what is
+// happening rather than for the fact that something is: the phase key stays `starting`, since
+// renaming it would churn matchTime, useBattlePhase and every consumer to change one word on screen.
 const PHASE_LABEL = {
-  starting: "Starting",
+  starting: "Randomization",
   preparation: "Preparation",
   match: "Match",
 } as const;
 
 export function MatchClock({ attacks, room, maxVh = 34, maxVw = 26, compact }: Props) {
-  const info = useBattlePhase(attacks, room);
+  // The one component on the match screen that genuinely draws seconds, and so the one that takes
+  // the ticking hook. Everything else reads the phase name instead - see useBattlePhase.
+  const info = useBattleClock(attacks, room);
   const label = info ? PHASE_LABEL[info.phase] : "Match";
   // STARTING/PREPARATION count down toward zero, so they read as negative time; MATCH counts up.
   const display = info

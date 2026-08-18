@@ -1,4 +1,5 @@
 import { participantKey } from "./careerStats";
+import { archivedShots, MIN_GAP_SECONDS } from "./recordBook";
 import type { ShipPlacement, ShipDefinition } from "../types/battleship";
 
 export interface MatchFleetRow {
@@ -27,6 +28,8 @@ export interface MatchEventRow {
   square_set?: string | null;
   /** Seed the board was dealt from; needed to rebuild it after the room is pruned. */
   board_seed?: string | null;
+  /** How the balancer rearranged that deal, if it did. Null for every unbalanced match. */
+  board_perm?: number[] | null;
 }
 
 /** Minimal shape of a participant row, for the cross-table stats below. */
@@ -164,31 +167,78 @@ export function bossStats(events: MatchEventRow[]): BossStat[] {
   return out.sort((a, b) => b.attempts - a.attempts || a.name.localeCompare(b.name));
 }
 
-export interface FirstBloodRecord {
+/** One square with the fight behind it timed - see {@link timedSquares}. */
+export interface QuickSquareRecord {
+  key: string;
   nickname: string;
   challenge: string | null;
+  /** How long the fight took, NOT when it landed. */
   seconds: number;
   matchKey: string;
+  finishedAt: string;
   /** Kept so the board can mark the ones that also found a ship. */
   result: string;
+  /** The square before it, which is what this one was timed from. */
+  previous: string | null;
 }
 
 /**
- * The quickest squares taken on record, hit or miss.
+ * Every square whose fight can be timed, with how long that fight took.
  *
- * Same reasoning as {@link bossStats}: the clock measures the fight, and whether a ship was under
- * the square is the opponent's doing, not the runner's. A miss belongs on the leaderboard.
+ * `match_seconds` is WHEN a square fell, not how long it took to take. Under the fire-on-kill rule
+ * the fight is the gap back to that captain's previous shot - which is what squarePace has always
+ * measured, and what the boards below now rank on. Ranking on `match_seconds` instead ranks by how
+ * early somebody fired, so only opening shots could ever place: the Almanac board read 0:04 to 0:34
+ * against a median square of about two and a half minutes, because it was really a list of who got
+ * their first square in quickest.
+ *
+ * The two exclusions are squarePace's, for squarePace's reasons:
+ *
+ *   - an opening shot has nothing to be measured back from. The clock before it is the lobby, the
+ *     placement phase, and whatever fight the captain was already in when firing opened - not work
+ *     on that square. Opening squares have their own record, "Quickest first blood".
+ *   - a gap under MIN_GAP_SECONDS is one duo fight filling two squares, or a banked kill fired next
+ *     to the following one. Neither is a fast square, and either would sit at the top forever.
+ *
+ * Built on archivedShots so a three-team match counts each trigger-pull once: the archive writes one
+ * row per opposing fleet, and gaps taken off raw rows would be a string of zeroes.
  */
-export function fastestKills(events: MatchEventRow[], limit = 10): FirstBloodRecord[] {
-  return events
-    .filter((e) => e.match_seconds !== null && e.match_seconds >= 0)
-    .map((e) => ({
-      nickname: e.nickname,
-      challenge: e.challenge_name,
-      seconds: e.match_seconds as number,
-      matchKey: e.match_key,
-      result: e.result,
-    }))
+function timedSquares(events: MatchEventRow[]): QuickSquareRecord[] {
+  const out: QuickSquareRecord[] = [];
+  // archivedShots sorts by match, then by time - exactly the order a gap is measured in.
+  const previous = new Map<string, { seconds: number; challenge: string | null }>();
+
+  for (const shot of archivedShots(events)) {
+    const run = `${shot.matchKey}|${shot.key}`;
+    const before = previous.get(run);
+    previous.set(run, { seconds: shot.seconds, challenge: shot.challenge });
+    if (before === undefined) continue;
+
+    const gap = shot.seconds - before.seconds;
+    if (gap < MIN_GAP_SECONDS) continue;
+    out.push({
+      key: shot.key,
+      nickname: shot.nickname,
+      challenge: shot.challenge,
+      seconds: gap,
+      matchKey: shot.matchKey,
+      finishedAt: shot.finishedAt,
+      result: shot.result,
+      previous: before.challenge,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * The quickest squares on record, hit or miss.
+ *
+ * Same reasoning as {@link bossStats} on hit versus miss: the clock measures the fight, and whether
+ * a ship was under the square is the opponent's doing, not the runner's. A miss belongs here.
+ */
+export function fastestKills(events: MatchEventRow[], limit = 10): QuickSquareRecord[] {
+  return timedSquares(events)
     .sort((a, b) => a.seconds - b.seconds)
     .slice(0, limit);
 }
@@ -307,9 +357,15 @@ export function playerKills(events: MatchEventRow[], key: string): PlayerKill[] 
     .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt) || a.seconds - b.seconds);
 }
 
-/** This player's quickest squares, hit or miss - their personal record board. */
-export function playerBestKills(events: MatchEventRow[], key: string, limit = 5): PlayerKill[] {
-  return playerKills(events, key)
+/**
+ * This player's quickest squares, hit or miss - their personal record board.
+ *
+ * Timed as fights, per {@link timedSquares}, not as positions on the match clock. The log above is
+ * the other way round on purpose: a log is a record of when things happened.
+ */
+export function playerBestKills(events: MatchEventRow[], key: string, limit = 5): QuickSquareRecord[] {
+  return timedSquares(events)
+    .filter((s) => s.key === key)
     .sort((a, b) => a.seconds - b.seconds)
     .slice(0, limit);
 }
@@ -343,7 +399,8 @@ export function bossFrequency(
     roomId: string,
     cells: number,
     fired: Array<{ cell: number; name: string }>,
-    seed: string | null
+    seed: string | null,
+    perm: number[] | null
   ) => string[]
 ): BossFrequency[] {
   const stats = new Map<string, BossFrequency>();
@@ -370,7 +427,10 @@ export function bossFrequency(
     // Per MATCH, not per room: a room that played three matches dealt three different boards
     // from three different seeds, so the seed has to come off these rows rather than the room.
     const seed = evs.find((e) => e.board_seed)?.board_seed ?? null
-    const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed) : [];
+    // Per match for the same reason, and from the same rows: a balanced board was rearranged after
+    // the fleets went down, so the seed alone no longer says where anything ended up.
+    const perm = evs.find((e) => e.board_perm)?.board_perm ?? null
+    const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed, perm) : [];
     const allNames = rebuilt.length > 0 ? rebuilt : [...firedNames];
     for (const n of allNames) touch(n).appeared++;
     for (const n of firedNames) touch(n).fired++;

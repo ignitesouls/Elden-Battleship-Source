@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
-import { createRoom, joinRoom, fetchRecentMatchReports } from "../lib/rooms";
+import { useNavigate, Link } from "react-router-dom";
+import { createRoom, joinRoom, fetchRecentMatchReports, fetchLiveBattles, type LiveBattle } from "../lib/rooms";
+import { serverNow } from "../lib/serverTime";
 import { getLastNickname, storeLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -23,6 +24,42 @@ export function Home() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     void fetchRecentMatchReports(6).then((rows) => setRecent(rows as MatchReportRow[]));
+  }, []);
+
+  /**
+   * The matches being fought right now.
+   *
+   * Polled rather than subscribed. A realtime channel on `rooms` would be live to the second, but
+   * it would also be a channel held open by every idle front page on the site - and the front page
+   * is the one screen people leave sitting there. Every twenty seconds is well inside the pace this
+   * changes at: a match runs for tens of minutes, and the cost of being a few seconds stale is a
+   * card that lingers a moment after the last hull goes down.
+   *
+   * Nothing is fetched while the tab is hidden, for the same reason useRoom stops reading: nobody
+   * is looking, and a background tab quietly polling forever is how a free Supabase project's
+   * request budget disappears.
+   */
+  const [live, setLive] = useState<LiveBattle[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+
+    const read = () => {
+      if (document.visibilityState !== "visible") return;
+      void fetchLiveBattles().then((rows) => {
+        if (!cancelled) setLive(rows);
+      });
+    };
+
+    read();
+    const timer = setInterval(read, 20_000);
+    // So a tab brought back to the front is current immediately, rather than up to 20s behind.
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", read);
+    };
   }, []);
 
   // A signed-in player's own nickname wins; their Twitch display name is only adopted when they
@@ -211,6 +248,22 @@ export function Home() {
         </form>
       </div>
 
+      {/* Between creating a room and reading about finished ones, because that is the order of the
+          question being asked: is there anything on right now, and if not, what have I missed?
+          Renders nothing when the sea is quiet - an empty panel saying "no battles" is a bigger
+          thing on the page than the fact deserves. */}
+      {live.length > 0 && (
+        <div className="panel stack" style={{ gap: "0.45rem" }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+            <h3 style={{ margin: 0 }}>Current battles</h3>
+            <span className="muted" style={{ fontSize: "0.7rem" }}>Fighting now</span>
+          </div>
+          {live.map((b) => (
+            <LiveRow key={b.code} battle={b} />
+          ))}
+        </div>
+      )}
+
       {recent.length > 0 && (
         <div className="panel stack" style={{ gap: "0.45rem" }}>
           <h3 style={{ margin: 0 }}>Recent battles</h3>
@@ -224,6 +277,40 @@ export function Home() {
           never pushes the create/join controls down. */}
       <CommunityLinks />
       <SiteFooter />
+    </div>
+  );
+}
+
+/**
+ * One match in progress, and the way into it.
+ *
+ * The way in is "Watch", not "Join", and the link carries ?spectate=1 - the same link the lobby
+ * hands out as its "Spectator link". Both halves are deliberate. A match already in battle has its
+ * fleets placed and locked, so there is no seat to take even if the word invited you to look for
+ * one; and routing through the room's own join form means the nickname is collected exactly where
+ * it always was, rather than in a second copy of that flow living on the front page.
+ */
+function LiveRow({ battle }: { battle: LiveBattle }) {
+  // serverNow, not Date.now: created_at is a Postgres timestamp, so a skewed PC clock would
+  // otherwise report a match that started ten minutes ago as an hour old, or as not yet begun.
+  const minutes = Math.max(0, Math.round((serverNow() - new Date(battle.created_at).getTime()) / 60000));
+
+  return (
+    <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.82rem" }}>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <strong>{formatRoomCode(battle.code)}</strong>
+        <div className="muted" style={{ fontSize: "0.7rem" }}>
+          {battle.fleets} fleet{battle.fleets === 1 ? "" : "s"} · {battle.players} aboard · opened {minutes}m ago
+        </div>
+      </span>
+      <Link
+        to={`/room/${battle.code}?spectate=1`}
+        className="link-button"
+        style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", whiteSpace: "nowrap" }}
+        title="Watch this match. Fleets are already placed, so there's no seat to take - you'll join as a spectator."
+      >
+        Watch
+      </Link>
     </div>
   );
 }

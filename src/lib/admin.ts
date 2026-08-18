@@ -20,12 +20,17 @@ export interface AdminStatus {
  * Asks the database rather than inferring anything client-side. Nothing here is a security
  * boundary - RLS is - so a tampered response only ever reveals buttons whose actions the server
  * would still refuse. It exists to avoid showing controls that would fail.
+ *
+ * `enabled` skips the pair of round trips entirely, for callers that already know the answer is no.
+ * The top bar uses it: admin rights hang off a Twitch account, so an anonymous visitor asking is
+ * two guaranteed `false`s on every page of the site. Answers `false, done` rather than staying in
+ * `loading` forever, so a caller can render its "not for you" state without special-casing this.
  */
-export function useAdminStatus(): AdminStatus {
+export function useAdminStatus(enabled = true): AdminStatus {
   const [status, setStatus] = useState<AdminStatus>({ isAdmin: false, isOwner: false, loading: true });
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !enabled) {
       setStatus({ isAdmin: false, isOwner: false, loading: false });
       return;
     }
@@ -47,7 +52,7 @@ export function useAdminStatus(): AdminStatus {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [enabled]);
 
   return status;
 }

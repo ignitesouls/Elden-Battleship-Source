@@ -1,12 +1,19 @@
 import { useMemo, type ReactNode } from "react";
 import { BoardGrid, type CellVisual, type ShipOverlay, type SquareCount } from "./BoardGrid";
 import { sunkCellOrientations, eliminatedTeamsFromAttacks } from "../lib/battleshipLogic";
+import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom } from "../lib/challenges";
+import type { Challenge } from "../lib/challenges";
+import { squaresRevealed } from "../lib/overlayReveal";
+import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { ruledOutCells } from "../lib/deduction";
 import { deepMarks, type DeepWater } from "../lib/deepWater";
 import { teamName, teamHex } from "../lib/teamColors";
 import { boardSideFor } from "../hooks/useBoxSize";
 import type { Attack, Fleet, Room } from "../types/battleship";
+
+/** Stable identity, so hiding the board does not re-render both boards on each tick. */
+const NO_CHALLENGES: Challenge[] = [];
 
 interface Props {
   room: Room;
@@ -69,10 +76,15 @@ export function SpectateWithCrew({
 
   // Riding along means reading the same squares the crew reads, on both of their boards - the
   // whole point is following what they're deciding between, which bare colored cells can't carry.
-  const challenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed),
-    [room.id, boardSize, room.square_set, room.seed]
+  const dealtChallenges = useMemo(
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
   );
+  // Held back through the RANDOMIZATION window, on the same beat as the players own board and the
+  // overlays - a spectator reading out the squares ten seconds before the crews can see them would
+  // be calling a board that is still being dealt. See lib/overlayReveal.ts.
+  const battlePhase = useBattlePhaseName(attacks, room);
+  const challenges = squaresRevealed(room.status, battlePhase) ? dealtChallenges : NO_CHALLENGES;
   const cellText = (i: number) => {
     const c = challenges[i];
     if (!c) return null;
@@ -90,22 +102,14 @@ export function SpectateWithCrew({
   const firedSunk = sunkCellOrientations(outgoing, boardSize);
   const takenSunk = sunkCellOrientations(incoming, boardSize);
 
-  /** What this crew knows about enemy waters: only squares they have personally fired at. */
-  function targetVisual(index: number): CellVisual {
-    if (firedSunk.has(index)) return "sunk";
-    const shots = outgoing.filter((a) => a.cell_index === index);
-    if (shots.some((a) => a.result === "hit")) return "hit";
-    if (shots.some((a) => a.result === "miss")) return "miss";
-    return "empty";
-  }
+  // Both boards resolved in one walk of the log each, rather than one filter per square - see
+  // lib/cellVisuals. What this crew knows about enemy waters is only the squares they have
+  // personally fired at, which is `outgoing` doing that job rather than any rule in here.
+  const targetVisuals = cellVisuals(outgoing, firedSunk);
+  const ownVisuals = cellVisuals(incoming, takenSunk);
 
-  function ownVisual(index: number): CellVisual {
-    if (takenSunk.has(index)) return "sunk";
-    const hits = incoming.filter((a) => a.cell_index === index);
-    if (hits.some((a) => a.result === "hit")) return "hit";
-    if (hits.some((a) => a.result === "miss")) return "miss";
-    return "empty";
-  }
+  const targetVisual = (index: number): CellVisual => targetVisuals.get(index) ?? "empty";
+  const ownVisual = (index: number): CellVisual => ownVisuals.get(index) ?? "empty";
 
   // Enemy hulls this crew has actually sunk. Read off the resolved attack rows, never from the
   // opposing fleet - so the view stays exactly as blind as the crew is.

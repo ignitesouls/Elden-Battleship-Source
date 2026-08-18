@@ -42,6 +42,15 @@ export interface Room {
   seed?: string | null;
   /** Which pool the board's squares come from - see lib/squareSets. Null means the default. */
   square_set?: string | null;
+  /**
+   * Where the balancer put the squares: perm[cell] indexes into the seeded deal.
+   *
+   * Written once by the balance-board function, between the last fleet being confirmed and the
+   * first shot being possible, so no fleet ends up parked on a wall of late-game bosses while
+   * another sits on tutorial soldiers. Null means the plain seeded deal - true of every room from
+   * before balancing existed, and of any room whose balancer was unreachable.
+   */
+  board_perm?: number[] | null;
 }
 
 /** Every board size a room can be set to. 5x5 is a bingo card; 12x12 is a long evening. */

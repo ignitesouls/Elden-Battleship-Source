@@ -24,3 +24,13 @@ Thumbs.db
 
 # Claude Code local state. settings.local.json is personal; the rest is runtime scratch.
 .claude/
+
+# Supabase CLI scratch. .temp/start-secrets holds a service-role key for the local stack - it is
+# only the well-known demo key every local install shares, but a scanner cannot tell that and a
+# committed file called start-secrets is a bad habit to start. .branches is just the branch name.
+supabase/.branches/
+supabase/.temp/
+
+# Throwaway calibration scratch. Underscore-prefixed, hardcoded absolute paths, and written
+# against the retired reachability model - kept on disk, never in history.
+scripts/_*_tmp.*

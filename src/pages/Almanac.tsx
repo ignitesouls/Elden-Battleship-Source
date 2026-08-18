@@ -7,7 +7,7 @@ import { CaptainCards } from "../components/CaptainCards";
 import type { ParticipantRow } from "../lib/careerStats";
 import { matchName } from "../lib/matchName";
 import { teamName, teamHex } from "../lib/teamColors";
-import { challengesForRoom, detectSquareSet, rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
+import { challengesForRoom, detectSquareSet, rowSquareSet, busiestSquareSet, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
 import { SquareSetTabs } from "../components/SquareSetTabs";
 import {
   placementHeatmap,
@@ -71,7 +71,9 @@ export function Almanac() {
     for (const [key, evs] of groupEventsByMatch(allEvents)) {
       const stored = evs.find((e) => e.square_set)?.square_set;
       if (stored) {
-        out.set(key, stored);
+        // Folded, because this map decides which TAB a match sits under. The board it was actually
+        // dealt from is recovered in `freq` below, which is the only reader here that needs it.
+        out.set(key, displaySquareSet(stored));
         continue;
       }
       const roomId = evs.find((e) => e.room_id)?.room_id;
@@ -79,7 +81,8 @@ export function Almanac() {
         .filter((e) => e.challenge_name && e.cell_index >= 0)
         .map((e) => ({ cell: e.cell_index, name: e.challenge_name as string }));
       const cells = evs[0].board_size * evs[0].board_size;
-      out.set(key, (roomId ? detectSquareSet(roomId, cells, fired) : null) ?? DEFAULT_SQUARE_SET);
+      const perm = evs.find((e) => e.board_perm)?.board_perm ?? null;
+      out.set(key, displaySquareSet((roomId ? detectSquareSet(roomId, cells, fired, null, perm) : null) ?? DEFAULT_SQUARE_SET));
     }
     return out;
   }, [allEvents]);
@@ -111,15 +114,17 @@ export function Almanac() {
   const shape = useMemo(() => matchShape(events, parts), [events, parts]);
   const freq = useMemo(
     // Rebuilds each board's full challenge list from its room id, which is what reveals squares
-    // nobody ever fired at. Everything here is one set's matches already, so that's the set to
-    // rebuild with.
+    // nobody ever fired at. Everything here is one TAB's matches, which can be more than one stored
+    // set: the boss tab holds both cuts of the boss board. So each candidate is tried and the one
+    // that reproduces the log is the board - a board that cannot is the wrong board, and counting
+    // only the squares actually shot beats inventing a denominator.
     () =>
-      bossFrequency(events, (roomId, cells, fired, seed) => {
-        const board = challengesForRoom(roomId, cells, shownSet, seed).map((c) => c.name)
-        // A board that cannot reproduce what the log says was fired at is the wrong board - better
-        // to count only the squares actually shot than to invent a denominator.
-        const agrees = fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)
-        return agrees ? board : []
+      bossFrequency(events, (roomId, cells, fired, seed, perm) => {
+        for (const setId of squareSetVariants(shownSet)) {
+          const board = challengesForRoom(roomId, cells, setId, seed, perm).map((c) => c.name)
+          if (fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)) return board
+        }
+        return []
       }),
     [events, shownSet]
   );
@@ -338,7 +343,8 @@ export function Almanac() {
               <div className="panel stack" style={{ gap: "0.25rem" }}>
                 <h3 style={{ margin: 0 }}>Quickest squares on record</h3>
                 <span className="muted" style={{ fontSize: "0.7rem" }}>
-                  Every square taken, whether or not a ship was hiding under it.
+                  How long the fight took - timed from that captain's previous square, whether or not a ship was
+                  hiding under this one. Opening squares belong to first blood instead.
                 </span>
                 {records.map((r, i) => (
                   <div
@@ -350,6 +356,9 @@ export function Almanac() {
                       <span className="muted">{i + 1}. </span>
                       <strong>{r.challenge ?? "Unknown"}</strong>
                       <span className="muted"> - {r.nickname}</span>
+                      {/* Which square it was timed from: the pair IS the record, the same way the
+                          record book's gap entry reads "X then Y". */}
+                      {r.previous && <span className="muted"> · after {r.previous}</span>}
                       {r.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · sank a ship</span>}
                       {r.result === "hit" && <span style={{ color: "var(--hit)" }}> · hit</span>}
                     </span>

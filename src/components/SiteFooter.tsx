@@ -1,18 +1,21 @@
 /**
- * Who made this, what it may be used for, and how to reach the person who made it.
+ * What this is, and how to reach the person who made it.
  *
  * Two lines, deliberately. This sits on a page whose job is getting people into a match, and almost
  * everyone reading it is a runner about to join a room rather than a developer deciding whether to
- * fork the project. So the invitation to get in touch is reduced to a link: the few people it is
- * written for will click it, and everyone else can ignore it without reading a paragraph aimed at
- * somebody else.
+ * fork the project. So the invitation is reduced to a link: the few people it is written for will
+ * click it, and everyone else can ignore it without reading a paragraph aimed at somebody else.
+ *
+ * There is deliberately no copyright line or licence name here. It used to carry both, and neither
+ * did any work on this page - the licence lives in LICENSE where anyone who cares will look, and a
+ * copyright notice on a fan project's front page is posturing. What replaced them is the only part
+ * that was ever worth saying out loud: if you're using it, get in touch.
  *
  * The disclaimer is the line that earns its place outright. Fan projects live on tolerance rather
  * than on licences, and saying plainly what this is not costs almost nothing.
  *
  * Not shown during placement or battle, for the same reason CommunityLinks isn't: a link that
- * navigates away from a live match is a hazard, and nobody mid-game is reading a licence. The
- * corner build stamp carries a bare copyright line for those screens.
+ * navigates away from a live match is a hazard.
  */
 export function SiteFooter() {
   return (
@@ -30,9 +33,9 @@ export function SiteFooter() {
       }}
     >
       <span>
-        &copy; {new Date().getFullYear()} KCBrazos &middot; MIT licensed &middot;{" "}
+        Free and open source &middot; using it for something?{" "}
         <a href="https://github.com/kcbrazos" target="_blank" rel="noreferrer">
-          Get in touch
+          Say hello
         </a>
       </span>
 

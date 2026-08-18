@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { updateRoomSettings } from "../lib/rooms";
 import { formatDuration } from "../lib/matchTime";
-import { SQUARE_SET_LIST, squareSet, DEFAULT_SQUARE_SET } from "../lib/challenges";
+import { SQUARE_SET_LIST, squareSet, displaySquareSet, bossSetForRoster, DEFAULT_SQUARE_SET } from "../lib/challenges";
 import { strictFill } from "../lib/squareSetFormat";
 import { BOARD_SIZES, FLEET_PRESETS, DEFAULT_FLEET_PRESET, fleetFor } from "../types/battleship";
-import type { Room, ShipDefinition } from "../types/battleship";
+import type { Room, Player, ShipDefinition } from "../types/battleship";
 
 /**
  * Preparation lengths the host can pick, every minute from none up to ten.
@@ -15,6 +15,16 @@ import type { Room, ShipDefinition } from "../types/battleship";
  */
 const PREP_MAX_MINUTES = 10;
 const PREP_CHOICES = Array.from({ length: PREP_MAX_MINUTES + 1 }, (_, m) => m * 60);
+
+/**
+ * A prep length as it reads in the dropdown: a bare minute count, the unit living in the field
+ * label. Clock faces down a list of whole minutes are all zeroes after the colon and harder to
+ * scan than "0 1 2 3". A length that isn't a whole minute can only be one set by hand, so it
+ * keeps the clock rather than being rounded into a lie.
+ */
+function prepLabel(seconds: number): string {
+  return seconds % 60 === 0 ? String(seconds / 60) : formatDuration(seconds);
+}
 
 /**
  * Which preset a room's fleet matches, or null for one from before fleets scaled with the board.
@@ -30,6 +40,8 @@ function presetNameOf(shipDefs: ShipDefinition[], boardSize: number): string | n
 
 interface Props {
   room: Room;
+  /** The lobby's roster, which decides which cut of the boss board "Bosses" means. */
+  players: Player[];
   isHost: boolean;
   onError: (message: string | null) => void;
 }
@@ -43,7 +55,7 @@ interface Props {
  * starts, which is also the last moment changing them is safe: after placement begins, the board
  * size is baked into fleets that players have already laid out.
  */
-export function MatchSettings({ room, isHost, onError }: Props) {
+export function MatchSettings({ room, players, isHost, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -60,6 +72,9 @@ export function MatchSettings({ room, isHost, onError }: Props) {
     ? PREP_CHOICES
     : [...PREP_CHOICES, prepSeconds].sort((a, b) => a - b);
   const set = squareSet(room.square_set ?? DEFAULT_SQUARE_SET);
+  // What the room is told it is playing. Identical to `set` except on a variant, which describes
+  // itself as its parent because that is the only set anyone here chose - see squareSets.variantOf.
+  const shownSet = squareSet(displaySquareSet(set.id));
 
   const shipCells = shipDefs.reduce((n, s) => n + s.size, 0);
 
@@ -80,7 +95,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
     }
   }
 
-  const summary = `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${set.label} · ${formatDuration(
+  const summary = `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label} · ${formatDuration(
     prepSeconds
   )} prep`;
 
@@ -137,23 +152,32 @@ export function MatchSettings({ room, isHost, onError }: Props) {
             {shipDefs.map((s) => `${s.name} (${s.size})`).join(" · ")}
           </span>
 
+          {/* One button per set a person can choose. The boss button is the one that does not write
+              its own id: which cut of the boss board it means is the roster's answer, not the
+              host's, and picking it here rather than in the click handler alone is what makes it
+              land right when the host chooses Bosses before anyone has joined - the sync in
+              LobbyPhase then follows the roster from there. */}
           <Field label="Squares">
             {SQUARE_SET_LIST.map((s) => (
               <Choice
                 key={s.id}
-                active={set.id === s.id}
+                active={displaySquareSet(set.id) === s.id}
                 busy={busy}
-                onClick={() => void apply({ square_set: s.id })}
+                onClick={() =>
+                  void apply({
+                    square_set: s.id === DEFAULT_SQUARE_SET ? bossSetForRoster(players) : s.id,
+                  })
+                }
               >
                 {s.label}
               </Choice>
             ))}
           </Field>
           <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
-            {set.blurb}
+            {shownSet.blurb}
           </span>
 
-          <Field label="Preparation time before firing opens">
+          <Field label="Preparation time before firing opens (minutes)">
             <select
               value={prepSeconds}
               disabled={busy}
@@ -161,7 +185,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
             >
               {prepChoices.map((seconds) => (
                 <option key={seconds} value={seconds}>
-                  {formatDuration(seconds)}
+                  {prepLabel(seconds)}
                   {seconds === 0 ? " - none" : ""}
                 </option>
               ))}
@@ -173,7 +197,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               than let it be discovered as two squares wanting the same boss. */}
           {shortfall > 0 && (
             <span className="muted" style={{ fontSize: "0.72rem", color: "var(--hit)" }}>
-              {set.label} covers {cleanFill} of {cells} squares cleanly - the last {shortfall} will
+              {shownSet.label} covers {cleanFill} of {cells} squares cleanly - the last {shortfall} will
               overlap goals already on the board. A smaller board fits it better.
             </span>
           )}

@@ -55,6 +55,14 @@ Outstanding:
 - `20260806000000_deep_water_hides`, which moves the placing of everything hiding in the water
   into the database, so it can be kept off squares the fleets are sitting on. Until it is run,
   matches simply have nothing hidden in them - the app degrades rather than breaking.
+- `20260813000000_captain_handoff`, which adds `hand_over_captaincy()` behind the lobby's "Make
+  captain" button, and stops `team_joined_at` being backdated mid-match. Until it is run that
+  button fails with a message saying so; nothing else changes.
+- `20260814000000_board_balance`, which adds `rooms.board_perm` and `match_events.board_perm`,
+  guards the first against being written by anyone but the balancer, and restamps
+  `archive_match()` to record it. Pairs with the `balance-board` edge function: until both are
+  in place boards are dealt exactly as they are today, unbalanced, and nothing else changes.
+  Run the migration before deploying the function - the function's only write is that column.
 
 ## Checking it
 
@@ -66,6 +74,7 @@ node scripts/check-double-shots.mjs    # one square wounds a hull once, however 
 node scripts/check-square-counts.mjs   # shared square tallies, and the RLS around them
 node scripts/check-host-powers.mjs     # what a host may and may not do to other players
 node scripts/check-kick-realtime.mjs   # the DELETE-over-Realtime problem above
+node scripts/check-captain-handoff.mjs # who may hand a fleet's command on, and when
 ```
 
 They need `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` for cleanup. That key is not public and

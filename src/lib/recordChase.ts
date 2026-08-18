@@ -127,6 +127,14 @@ interface Track {
   gapUnits?: (n: number) => string;
 }
 
+/**
+ * Which records get chased live. Opt-in, and short on purpose.
+ *
+ * The timing records are absent because they are set the moment they happen and there is no closing
+ * on them. "Worst accuracy" is absent for a different reason: it is a joke that lands in the record
+ * book, read after the fact, and would not land at all as a live callout telling somebody in front
+ * of an audience that they are two points off the worst game ever played. Leave it out.
+ */
 const TRACKS: Track[] = [
   { id: "hits", value: (t) => t.hits, near: NEAR.count, units: (n) => plural(n, "hit") },
   { id: "sunk", value: (t) => t.sunk, near: NEAR.count, units: (n) => plural(n, "ship") },

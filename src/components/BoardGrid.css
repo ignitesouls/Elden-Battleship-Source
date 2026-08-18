@@ -342,6 +342,36 @@
 }
 
 /**
+ * A square wearing its own challenge's colour, for the boards with no room to write the name.
+ *
+ * -- Why only an untouched square ----------------------------------------------------------------
+ *
+ * Scoped to .bg-empty, so a hit, a miss, a sunk hull or a placement preview keeps its own fill
+ * untouched. Those fills are the board's actual news, and they are already the loudest thing on it
+ * by design (see the note below on why a resolved square colours its whole self) - a tint competing
+ * with them would be trading the answer to "what happened here" for the answer to "which region was
+ * this", which is the wrong way round. The class still lands on those squares, carrying the colour
+ * ready for a fill that is simply not being drawn.
+ *
+ * -- Why 20% -------------------------------------------------------------------------------------
+ *
+ * These colours were picked to be read as TEXT on a dark cell (see .bg-region-* above), so they are
+ * light and saturated - at full strength as a fill they would out-shout the hull sprites drawn over
+ * them, which are the reason anyone is looking at this board. Mixed a fifth of the way into the
+ * normal cell they land as a dark wash: enough that eight regions separate into visible groups and
+ * a colour can be matched against the key, not enough to make the board read as a bag of sweets or
+ * to dim a hull. Raise it and the sprites start to lose; the hull is 0.8 opaque and has nowhere to
+ * go.
+ *
+ * Named rather than written into the mix, because it is the one number here that can only really be
+ * judged on a live board: set --bg-tint on .bg-grid (or on one board's wrapper) to move every
+ * square at once without touching the rule.
+ */
+.bg-cell-tinted.bg-empty {
+  background: color-mix(in srgb, var(--bg-region, transparent) var(--bg-tint, 20%), var(--cell));
+}
+
+/**
  * A resolved square colors its whole self, not just the middle of it.
  *
  * The markers alone were too quiet: on a ten-by-ten board carrying a boss name in every square, a
@@ -370,6 +400,47 @@
 
 .bg-cell-mark-layer {
   position: relative;
+  pointer-events: none;
+}
+
+/**
+ * The attribution ring: which fleet fired at this square, in that fleet's own colour.
+ *
+ * A filled box with its own middle masked out, rather than a `border`. Two things need that. A
+ * border can only be one colour per edge, so two fleets sharing a square could not split it; and a
+ * border's width is a fixed length, which on a board that runs from a 38px cell on a phone to a
+ * 90px one in a 1000px browser source would be a hairline at one end and a frame at the other.
+ * Masking a padded box leaves the padding to set the thickness, and a percentage padding resolves
+ * against the cell's WIDTH on all four sides - so the ring is the same number of pixels all the way
+ * round even on the match canvas, where a square can be dragged out of square. The floor keeps it
+ * from vanishing entirely on the smallest boards.
+ *
+ * z-index 2: above the square's fill, below the name (3) and the tallies (4). The ring is the answer
+ * to "whose?", which is a question you ask after reading the square - it must never be what you read
+ * INSTEAD of the square.
+ *
+ * The paint itself comes from the board - a flat colour or a conic gradient, see ringPaint.
+ */
+.bg-shot-ring {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: max(2px, 6.5%);
+  background: var(--bg-ring-paint);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  /* The pair that cuts the middle out: the standard property and the WebKit one, which takes a
+     different keyword for the same operation. OBS's browser source is Chromium and honours both. */
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  /* A dark hairline just inside the ring's outer edge, so a fleet colour still reads as a ring where
+     it meets a bright square fill or a neighbour's ring across the 2px grid gap. Inset only: an
+     outer shadow falls outside the border box, which is exactly what the mask above clips away. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
 
@@ -532,6 +603,32 @@
  * happen on a board and it should be unmistakable from across a room - and because it only ever
  * appears on water, where there is no hull or hit marker for it to compete with.
  */
+/**
+ * -- Why nothing down here loops forever any more -------------------------------------------------
+ *
+ * Every idle animation in this file used to be `infinite`, and that turned out to be the single most
+ * expensive thing the site does. The arithmetic is unkind: `sunkCellOrientations` marks EVERY cell of
+ * a sunk hull, so one dead Carrier is five squares, each drawing a SunkMark carrying two flames and
+ * two smoke puffs. Late in a four-fleet match the fire board can hold forty-odd wrecked squares and
+ * the fleet board another seventeen - two hundred-odd SVG elements, all animating, all the time.
+ *
+ * And they cannot be animated cheaply. Chromium composites transform/opacity animations on their own
+ * GPU layer only for HTML elements; an SVG CHILD element can't be promoted, so every frame of every
+ * one of these is a main-thread repaint of the board region under it - the boss names included. The
+ * result is a 60fps raster loop that never ends and gets worse the longer the match runs, which is
+ * exactly what players reported: fans at 100%, and the game itself going choppy beside it.
+ *
+ * So each of these now runs for roughly six seconds and stops. The mechanism is deliberately just an
+ * iteration count plus `forwards` rather than a JS timer and a class: a CSS animation starts when the
+ * element is first painted, which for a marker IS the moment the thing was found or the hull went
+ * down, and it settles itself with no state, no re-render and nothing for React to schedule. The
+ * keyframes were already written so that 0% and 100% agree (or, for the smoke and the bubbles, so
+ * that the last frame is the thing having drifted away), which is why freezing on the final frame
+ * looks like the animation finishing rather than like it being cut off.
+ *
+ * The arrival animations are untouched. They were always one-shot, and they are the half of this
+ * anybody actually watches.
+ */
 .whale-mark {
   top: 4%;
   left: 4%;
@@ -542,7 +639,7 @@
 
 .whale-body {
   transform-origin: 50% 60%;
-  animation: whale-bob 3.4s ease-in-out infinite;
+  animation: whale-bob 3.4s ease-in-out 2 forwards;
 }
 
 /**
@@ -602,13 +699,15 @@
   stroke: var(--accent, #e8c072);
   stroke-width: 2.4;
   opacity: 0.9;
-  animation: whale-halo-drift 3.4s ease-in-out infinite;
+  animation: whale-halo-drift 3.4s ease-in-out 2 forwards;
 }
 
+/* Ends on the last frame of the rise, which is opacity 0 - so the last breath drifts up and is gone
+   rather than freezing as a bubble stuck in mid-water. */
 .whale-bubble {
   fill: #eaf7ff;
   opacity: 0.7;
-  animation: whale-bubble-rise 2.8s ease-in-out infinite;
+  animation: whale-bubble-rise 2.8s ease-in-out 2 forwards;
 }
 
 .whale-bubble-2 { animation-delay: 0.5s; }
@@ -654,7 +753,7 @@
 
 .laboon-body {
   transform-origin: 50% 60%;
-  animation: whale-bob 4.2s ease-in-out infinite;
+  animation: whale-bob 4.2s ease-in-out 2 forwards;
 }
 
 .laboon-hull {
@@ -705,7 +804,7 @@
   stroke-width: 2.2;
   stroke-linecap: round;
   opacity: 0.75;
-  animation: laboon-breathe 3s ease-in-out infinite;
+  animation: laboon-breathe 3s ease-in-out 2 forwards;
 }
 
 @keyframes laboon-arrive {
@@ -739,7 +838,7 @@
 
 .tentacle-body {
   transform-origin: 45% 100%;
-  animation: tentacle-sway 5s ease-in-out infinite;
+  animation: tentacle-sway 5s ease-in-out 1 forwards;
 }
 
 .tentacle-limb {
@@ -845,13 +944,13 @@
 .dutchman-body {
   transform-origin: 50% 80%;
   opacity: 0.86;
-  animation: dutchman-drift 6s ease-in-out infinite;
+  animation: dutchman-drift 6s ease-in-out 1 forwards;
 }
 
 .dutchman-aura {
   fill: #7fe3c4;
   opacity: 0.13;
-  animation: dutchman-pulse 4.5s ease-in-out infinite;
+  animation: dutchman-pulse 4.5s ease-in-out 1 forwards;
 }
 
 /* Fill barely there, so the water shows through the hull. */
@@ -897,7 +996,7 @@
 .dutchman-lamp {
   fill: #f4e08a;
   opacity: 0.85;
-  animation: dutchman-lamp 3.2s ease-in-out infinite;
+  animation: dutchman-lamp 3.2s ease-in-out 2 forwards;
 }
 
 @keyframes dutchman-fade {
@@ -936,7 +1035,7 @@
 
 .bottle-body {
   transform-origin: 50% 62%;
-  animation: bottle-bob 4.6s ease-in-out infinite;
+  animation: bottle-bob 4.6s ease-in-out 1 forwards;
 }
 
 .bottle-glass {
@@ -989,7 +1088,7 @@
   stroke-width: 1.8;
   stroke-linecap: round;
   opacity: 0.45;
-  animation: bottle-ripple 3.4s ease-in-out infinite;
+  animation: bottle-ripple 3.4s ease-in-out 2 forwards;
 }
 
 .bottle-ripple-2 { animation-delay: 1.2s; }
@@ -1056,11 +1155,11 @@
    moves and the legs swing, which is the right way round for something stuck by its head. */
 .jar-mark-stuck .jar-body {
   transform-origin: 50% 100%;
-  animation: jar-wedge 2.2s ease-in-out infinite;
+  animation: jar-wedge 2.2s ease-in-out 3 forwards;
 }
 
 .jar-mark-free .jar-body {
-  animation: jar-cheer 2.6s ease-in-out infinite;
+  animation: jar-cheer 2.6s ease-in-out 2 forwards;
 }
 
 .jar-pot {
@@ -1117,7 +1216,7 @@
 /* Faster than anything else on the board, which is what reads as struggling. */
 .jar-flail {
   transform-origin: 50% 50%;
-  animation: jar-flail 0.6s ease-in-out infinite alternate;
+  animation: jar-flail 0.6s ease-in-out 10 alternate forwards;
 }
 
 .jar-ripple {
@@ -1130,7 +1229,7 @@
 
 .jar-spark {
   fill: #f4e08a;
-  animation: jar-spark 1.8s ease-in-out infinite;
+  animation: jar-spark 1.8s ease-in-out 3 forwards;
 }
 
 .jar-spark-2 { animation-delay: 0.6s; }
@@ -1178,7 +1277,7 @@
 
 .patches-body {
   transform-origin: 50% 95%;
-  animation: patches-shrug 3.4s ease-in-out infinite;
+  animation: patches-shrug 3.4s ease-in-out 2 forwards;
 }
 
 .patches-skin {
@@ -1253,7 +1352,7 @@
 .patches-wave {
   transform-box: view-box;
   transform-origin: 68% 60%;
-  animation: patches-wave 2.4s ease-in-out infinite;
+  animation: patches-wave 2.4s ease-in-out 3 forwards;
 }
 
 @keyframes patches-pop {
@@ -1376,14 +1475,14 @@
   fill: #ff5510;
   opacity: 0.9;
   transform-origin: 50% 68%;
-  animation: flame-flicker 1.6s ease-in-out infinite;
+  animation: flame-flicker 1.6s ease-in-out 4 forwards;
 }
 
 .sunk-flame-inner {
   fill: #ffdc46;
   opacity: 0.95;
   transform-origin: 50% 63%;
-  animation: flame-flicker 1.3s ease-in-out infinite reverse;
+  animation: flame-flicker 1.3s ease-in-out 5 reverse forwards;
 }
 
 @keyframes flame-flicker {
@@ -1394,7 +1493,7 @@
 .sunk-smoke {
   fill: #3a3a3a;
   opacity: 0.55;
-  animation: smoke-drift 2.6s ease-in infinite;
+  animation: smoke-drift 2.6s ease-in 2 forwards;
 }
 
 .sunk-smoke-2 {
@@ -1432,6 +1531,28 @@
   opacity: 0.8;
 }
 
+/*
+ * A hull the captain has put down but not confirmed, on a crewmate's board.
+ *
+ * Faded rather than recoloured: the fleet colour is how you tell whose board you're looking at, and
+ * a placement that arrived in some other colour would read as another team's ship on your own water.
+ * The dashed berth is what carries the meaning - it's the outline of a mooring, not a hull - and it
+ * is drawn in the fleet's colour from --bg-ghost-line, set inline because only the board's caller
+ * knows which team this is.
+ */
+.bg-ship-overlay-ghost {
+  opacity: 0.45;
+}
+
+.bg-ship-overlay-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 4%;
+  border: 1px dashed var(--bg-ghost-line, currentColor);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
 .bg-ship-overlay-inner {
   position: absolute;
   top: 50%;
@@ -1441,4 +1562,59 @@
   -webkit-mask-repeat: no-repeat;
   mask-size: 100% 100%;
   -webkit-mask-size: 100% 100%;
+}
+
+/**
+ * Reduced motion: nothing on the board moves at all.
+ *
+ * This file only honoured the setting for the hold-to-fire sweep, which meant somebody who had asked
+ * their OS for less motion still got every wreck flickering and every creature bobbing at them. The
+ * markers are all built the same way - a static drawing with an animation layered over it - so
+ * switching the animations off leaves the drawing exactly as it is meant to look, which is why this
+ * can be a blanket rule rather than a per-marker alternative.
+ *
+ * It also happens to be the cheapest the board can possibly render, so it doubles as the escape hatch
+ * for anyone playing the game on the same machine and wanting the browser to do as little as it can.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .whale-mark,
+  .whale-body,
+  .whale-halo,
+  .whale-bubble,
+  .laboon-mark,
+  .laboon-body,
+  .laboon-spout,
+  .tentacle-mark,
+  .tentacle-body,
+  .tentacle-eye,
+  .dutchman-mark,
+  .dutchman-body,
+  .dutchman-aura,
+  .dutchman-lamp,
+  .bottle-mark,
+  .bottle-body,
+  .bottle-ripple,
+  .jar-mark,
+  .jar-mark-stuck .jar-body,
+  .jar-mark-free .jar-body,
+  .jar-flail,
+  .jar-spark,
+  .patches-mark,
+  .patches-body,
+  .patches-wave,
+  .hit-mark-burst,
+  .miss-mark,
+  .sunk-flame-outer,
+  .sunk-flame-inner,
+  .sunk-smoke {
+    animation: none;
+  }
+
+  /* The two that animate TO nothing rather than back to where they started, so switching the
+     animation off has to restate where they should sit. Both are atmosphere around a drawing that
+     reads perfectly well without them. */
+  .whale-bubble,
+  .sunk-smoke {
+    opacity: 0.4;
+  }
 }

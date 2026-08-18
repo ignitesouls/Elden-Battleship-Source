@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { useBoxSize } from "../hooks/useBoxSize";
-import { useBattlePhase } from "../hooks/useBattlePhase";
+import { useBattleClock } from "../hooks/useBattlePhase";
 import { activeTeams } from "../lib/battleshipLogic";
 import { formatDuration } from "../lib/matchTime";
 import { teamName, teamHex } from "../lib/teamColors";
@@ -13,7 +13,8 @@ import { readTextSize } from "../lib/overlayText";
 import "./Overlay.css";
 import "./OverlayTimer.css";
 
-const PHASE_LABEL = { starting: "Starting", preparation: "Preparation", match: "Match" } as const;
+// See MatchClock for why the label and the phase key differ.
+const PHASE_LABEL = { starting: "Randomization", preparation: "Preparation", match: "Match" } as const;
 
 /**
  * The scorebug: the match clock, with each fleet's surviving hulls drawn either side of it.
@@ -35,7 +36,7 @@ export function OverlayTimer() {
   const { code } = useParams<{ code: string }>();
   const [params] = useSearchParams();
   const state = useRoom(code);
-  const phase = useBattlePhase(state.attacks, state.room);
+  const phase = useBattleClock(state.attacks, state.room);
   const [frameRef, frame] = useBoxSize<HTMLDivElement>();
   const [barRef, bar] = useBoxSize<HTMLDivElement>();
 

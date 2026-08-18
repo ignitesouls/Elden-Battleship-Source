@@ -61,22 +61,22 @@ export function ArchivedMatch() {
   }, [matchKey]);
 
   const boardSize = detail ? archivedBoardSize(detail) : 10;
-  const source = detail ? archivedBoardSource(detail) : { roomId: null, seed: null };
+  const source = detail ? archivedBoardSource(detail) : { roomId: null, seed: null, perm: null };
   const setId = detail ? archivedSquareSet(detail) : null;
 
   /**
    * The squares this match was played on.
    *
-   * Rebuilt from the room id, set and seed - the same three inputs the live board used - so a
-   * recap names the squares that were actually on screen. Matches archived before those columns
-   * existed have no room id, and fall back below to naming only what was fired at.
+   * Rebuilt from the room id, set, seed and balanced layout - the same four inputs the live board
+   * used - so a recap names the squares that were actually on screen. Matches archived before those
+   * columns existed have no room id, and fall back below to naming only what was fired at.
    */
   const challenges = useMemo(
     () =>
       source.roomId
-        ? challengesForRoom(source.roomId, boardSize * boardSize, setId, source.seed)
+        ? challengesForRoom(source.roomId, boardSize * boardSize, setId, source.seed, source.perm)
         : null,
-    [source.roomId, source.seed, boardSize, setId]
+    [source.roomId, source.seed, source.perm, boardSize, setId]
   );
 
   /**

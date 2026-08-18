@@ -3,7 +3,8 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
 import { useBoxSize } from "../hooks/useBoxSize";
-import { activeTeams, sunkCellOrientations } from "../lib/battleshipLogic";
+import { activeTeams, sunkCellOrientations, attackerTeamsByCell } from "../lib/battleshipLogic";
+import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom } from "../lib/challenges";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
@@ -20,6 +21,7 @@ import {
 } from "../lib/overlayCast";
 import { readTextSize, OVERLAY_MAX_FONT } from "../lib/overlayText";
 import { squaresRevealed } from "../lib/overlayReveal";
+import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import "./Overlay.css";
 import "./OverlayBoard.css";
@@ -184,6 +186,8 @@ export function OverlayBoard() {
   }, [frame.w, frame.h, report, cast?.at]);
 
   const room = state.room;
+  // Drives the reveal gate below: names hold until the board has finished being dealt.
+  const battlePhase = useBattlePhaseName(state.attacks, room);
   if (!room) return null;
 
   // A URL that pins the view outranks the channel entirely - see pinnedView. Nothing is "stale"
@@ -196,9 +200,9 @@ export function OverlayBoard() {
   // Blank water until the shooting starts, exactly as the players' own placement board is - see
   // lib/overlayReveal.ts. A captain must not be able to read the squares off their own source
   // while they still have hulls in hand.
-  const revealed = squaresRevealed(room.status);
+  const revealed = squaresRevealed(room.status, battlePhase);
   const teams = activeTeams(state.players);
-  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed);
+  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
   const shown = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
 
   /**
@@ -238,18 +242,27 @@ export function OverlayBoard() {
    */
   const relevant = state.attacks.filter((a) => shown.includes(a.defender_team));
   const sunkCells = sunkCellOrientations(relevant, boardSize);
+  /**
+   * Whose shot each square was, in each fleet's colour - drawn as a ring around the square.
+   *
+   * Worked out here from the public shot log rather than sent down the cast channel, exactly as the
+   * things hiding in the water are: it is derived from rows every spectator can already read, so a
+   * pinned source with no controller behind it shows the same rings as a caster-driven one, and the
+   * cast protocol gains nothing to go stale.
+   */
+  const firedBy = new Map(
+    [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
+  );
   // Every fleet's shots, not `relevant`: what is hiding in the water belongs to the sea rather than to
   // any one board, and the shot that found it may well have been aimed at a fleet this source isn't
   // showing. No team passed to deepMarks - a caster's board holds nothing back.
   const deepCells = deepMarks(deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides));
 
-  const cellVisual = (index: number): CellVisual => {
-    if (sunkCells.has(index)) return "sunk";
-    const here = relevant.filter((a) => a.cell_index === index);
-    if (here.some((a) => a.result === "hit")) return "hit";
-    if (here.some((a) => a.result === "miss")) return "miss";
-    return "empty";
-  };
+  // One walk of the shown fleets' shots rather than one filter of the whole log per square - which
+  // on a source re-rendering off the cast heartbeat was the most expensive thing this page did.
+  // See lib/cellVisuals for the precedence, which is the same merge described above.
+  const visuals = cellVisuals(relevant, sunkCells);
+  const cellVisual = (index: number): CellVisual => visuals.get(index) ?? "empty";
 
   // Square as big as the shorter side of the source, then multiplied by the zoom. A board is
   // square, so a wide source simply leaves margin either side at 1x - see the size note on the
@@ -285,6 +298,10 @@ export function OverlayBoard() {
           cellVisual={cellVisual}
           ships={ships}
           sunkOrientation={sunkCells}
+          // Who fired at each square, in that fleet's colour. Always on: a composited board that
+          // cannot say whose shot a square was is only half a board, and it is not a setting anybody
+          // would want to reach for mid-match. See attackerTeamsByCell.
+          firedBy={firedBy}
           // Drawn the moment any of it is found - see lib/deepWater.ts. This source needs no frame
           // from the desk to know: the finds are in the public log, so it works them out for itself
           // and they appear on stream by themselves.

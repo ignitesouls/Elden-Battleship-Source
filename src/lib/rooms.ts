@@ -294,10 +294,45 @@ export async function leaveRoom(playerId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Takes over hosting. The UI only offers this when presence shows the current host offline. */
+/**
+ * Takes over hosting. The UI only offers this when presence shows the current host offline.
+ *
+ * Can be legitimately refused, which is why the returned flag is checked rather than only the
+ * error. Since the front page started publishing live battles, the room can be joined by people it
+ * has never met, and hosting is the key to every other host-only lock - so the function now grants
+ * it only to someone who was in the room before the match started (see the
+ * spectators_cannot_disrupt migration). A stranger who walked in mid-battle gets `false`.
+ */
 export async function claimHost(playerId: string): Promise<void> {
-  const { error } = await supabase.rpc("claim_room_host", { p_player_id: playerId });
+  const { data, error } = await supabase.rpc("claim_room_host", { p_player_id: playerId });
   if (error) throw error;
+  if (data === false) {
+    throw new Error(
+      "Only someone who was already in this room when the match started can take over hosting."
+    );
+  }
+}
+
+/**
+ * Captain-only: hands command of the fleet to a crewmate.
+ *
+ * Goes through an RPC rather than an update because it writes another player's row, which
+ * "players update own" forbids from the browser. The function re-checks the caller is the current
+ * captain and that the room is still in the lobby, so this is enforced, not merely unoffered.
+ */
+export async function handOverCaptaincy(targetPlayerId: string): Promise<void> {
+  const { error } = await supabase.rpc("hand_over_captaincy", { p_target: targetPlayerId });
+  if (!error) return;
+
+  // PostgREST reports an unknown function as PGRST202. Worth naming, because the symptom before the
+  // migration is run is a button that fails with "schema cache" and nothing that says why.
+  if (error.code === "PGRST202" || /hand_over_captaincy/.test(error.message)) {
+    throw new Error(
+      "This room's database doesn't have the handover function yet - see " +
+        "supabase/migrations/20260813000000_captain_handoff.sql."
+    );
+  }
+  throw error;
 }
 
 /** Creates the fleet row for a team if it doesn't exist yet. Safe to call repeatedly. */
@@ -372,7 +407,79 @@ export async function confirmPlacement(roomId: string, team: number, confirmed: 
 // from the rooms module alongside startBattle().
 export { MATCH_START_MARKER };
 
-export async function startBattle(roomId: string): Promise<void> {
+/**
+ * How long the board balancer gets before the room starts without it.
+ *
+ * Was 3s, on the reasoning that the work is a fraction of a millisecond and the rest is just
+ * network. That stopped being true: the tests now bind on most boards, so the function draws up to
+ * 300 layouts and declumps each one, which is 413ms of compute in the worst case. On top of that
+ * sits a cold function boot - measured at 871ms - and half a dozen sequential queries inside it.
+ * Three seconds was close enough to that total to be a coin toss, and losing the toss is silent.
+ *
+ * Ten seconds is long to watch, but the thing being waited for is the entire fairness of the match,
+ * and a room that starts unbalanced cannot be fixed afterwards. balance-board also refuses to write
+ * a layout once the room has left placement, so overshooting this timeout is now safe rather than
+ * merely unlikely - see the `too_late` guard there.
+ */
+const BALANCE_TIMEOUT_MS = 10000;
+
+/**
+ * Finishes dealing the board against the fleets now standing on it.
+ *
+ * Both fleets are down and neither can move again, which makes this the only honest moment for it:
+ * balance it any earlier and you are balancing against ships that can still be picked up, any later
+ * and somebody has already fired at a square that is about to become a different square.
+ *
+ * Still best-effort in the sense that it never throws: a project with no balance-board deployed, an
+ * unmigrated database or a function that hangs all end with board_perm null, and a room that cannot
+ * start is much worse than a room with an unbalanced board.
+ *
+ * What it is no longer is SILENT. This used to swallow every outcome into a console line, and two
+ * consecutive matches duly went out unbalanced - one of them visibly lopsided - without anyone
+ * noticing until the board was on screen. The reason now comes back to the caller so the host can
+ * be told, because an unbalanced match is a thing you want to know about before it is played, not
+ * after somebody complains about the board.
+ */
+export interface BalanceOutcome {
+  balanced: boolean;
+  /** Why not, when it isn't. `already_balanced` is the one benign case - see startBattle. */
+  reason?: string;
+}
+
+async function balanceBoardFor(roomId: string): Promise<BalanceOutcome> {
+  try {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timed out")), BALANCE_TIMEOUT_MS)
+    );
+    const { data, error } = await Promise.race([
+      supabase.functions.invoke("balance-board", { body: { roomId } }),
+      timeout,
+    ]);
+    // A non-2xx refusal - not_host, not_signed_in - arrives as an error rather than as data, so the
+    // reason has to be dug out of the response body before it is lost.
+    if (error) {
+      const body = await (error as { context?: { json?: () => Promise<unknown> } }).context
+        ?.json?.()
+        .catch(() => null);
+      const reason = (body as { reason?: string } | null)?.reason;
+      return { balanced: false, reason: reason ?? (error as Error).message };
+    }
+    if (data && !data.balanced) return { balanced: false, reason: data.reason };
+    return { balanced: true };
+  } catch (err) {
+    return { balanced: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function startBattle(roomId: string): Promise<BalanceOutcome> {
+  // Before anything else, and before the status flip, so no client can enter 'battle' and render
+  // the unbalanced board for a frame. Awaited rather than fired off for the same reason.
+  //
+  // The outcome is returned rather than dropped, so the host learns that a match is about to be
+  // played on an unbalanced board while there is still someone to tell. `already_balanced` is the
+  // benign one - a duplicate caller, which startBattle explicitly tolerates.
+  const balance = await balanceBoardFor(roomId);
+
   // Hide everything in the water before anyone can shoot at it (see lib/deepWater.ts). This is the
   // only moment it can happen: every fleet is confirmed, so the squares no fleet occupies are
   // finally a fixed set, and nothing has been fired at yet, so no square has been claimed as water.
@@ -404,6 +511,8 @@ export async function startBattle(roomId: string): Promise<void> {
 
   const { error } = await supabase.from("rooms").update({ status: "battle" }).eq("id", roomId);
   if (error) throw error;
+
+  return balance;
 }
 
 export async function beginPlacementPhase(roomId: string): Promise<void> {
@@ -560,19 +669,102 @@ export async function resetRoomToLobby(roomId: string, activeTeamsList: number[]
   // lobby come through here - "Play again" off the report, and the host's "End match" - and both
   // mean the next game, so both get a new world.
   //
-  // Written even if the column doesn't exist yet on an un-migrated project? No: that would fail the
-  // whole reset. Retry without it instead, because getting everyone back to the lobby matters more
+  // The balanced layout is cleared in the same breath, and for the same reason the deep-water hides
+  // are: it was dealt against fleets that are about to be wiped and re-placed, so carrying it into
+  // the next match would balance the new board against ships nobody has any more. Clearing it is
+  // also what lets balance-board run again - it refuses a room that already has one.
+  //
+  // Written even if the columns don't exist yet on an un-migrated project? No: that would fail the
+  // whole reset. Retry without them instead, because getting everyone back to the lobby matters more
   // than the seed.
-  const patch = { status: "lobby", winner_team: null, seed: generateSeed() };
+  const patch = { status: "lobby", winner_team: null, seed: generateSeed(), board_perm: null };
   const { error: roomErr } = await supabase.from("rooms").update(patch).eq("id", roomId);
   if (roomErr) {
-    if (!/seed/i.test(roomErr.message)) throw roomErr;
+    if (!/seed|board_perm/i.test(roomErr.message)) throw roomErr;
     const { error: retryErr } = await supabase
       .from("rooms")
       .update({ status: "lobby", winner_team: null })
       .eq("id", roomId);
     if (retryErr) throw retryErr;
   }
+}
+
+/** A battle in progress, as the front page's "Current battles" list needs it. */
+export interface LiveBattle {
+  code: string;
+  /** How many people are in the room at all - crews and spectators alike. */
+  players: number;
+  /** Fleets with at least one player on them, which is what "2 fleets" on the card means. */
+  fleets: number;
+  /** When the room was opened. Not when the match started - see fetchLiveBattles. */
+  created_at: string;
+}
+
+/**
+ * Every match currently being fought, for the front page.
+ *
+ * Deliberately `status = 'battle'` and nothing else. A lobby is somebody's room being arranged and
+ * a placement phase is a match that hasn't opened yet - neither is a thing to walk in on, and
+ * listing them would turn the front page into a directory of rooms to gatecrash. 'finished' is out
+ * for the opposite reason: it's over, and the recap is already in "Recent battles" below.
+ *
+ * Two reads rather than a join, exactly as listRooms() does it for the admin: PostgREST can only
+ * aggregate through a foreign-table select, and the counting is cheaper here than the round trip
+ * saved. Rooms cap at 15 (see the room-limit migration) so both reads are small by construction.
+ *
+ * Every column read here is already world-readable ("rooms select" / "players select" are both
+ * `using (true)`), so this publishes no fact a room code didn't already expose. What it does change
+ * is that the codes themselves are now public - which is what the spectators_cannot_disrupt
+ * migration exists to make safe.
+ */
+export async function fetchLiveBattles(): Promise<LiveBattle[]> {
+  const { data: rooms, error } = await supabase
+    .from("rooms")
+    .select("id, code, created_at")
+    .eq("status", "battle")
+    .order("created_at", { ascending: false });
+  if (error || !rooms || rooms.length === 0) return [];
+
+  const ids = rooms.map((r) => r.id);
+  const { data: players } = await supabase.from("players").select("room_id, team").in("room_id", ids);
+
+  const heads = new Map<string, number>();
+  const crews = new Map<string, Set<number>>();
+  for (const p of players ?? []) {
+    heads.set(p.room_id, (heads.get(p.room_id) ?? 0) + 1);
+    if (p.team === null) continue;
+    const teams = crews.get(p.room_id) ?? new Set<number>();
+    teams.add(p.team);
+    crews.set(p.room_id, teams);
+  }
+
+  return rooms.map((r) => ({
+    code: r.code,
+    players: heads.get(r.id) ?? 0,
+    fleets: crews.get(r.id)?.size ?? 0,
+    created_at: r.created_at,
+  }));
+}
+
+/**
+ * Is this room still there, and what is it doing?
+ *
+ * Null means gone - pruned after its idle hour, deleted by an admin, or never existed. Used by the
+ * top bar to decide whether the way back to "your" room is worth offering, which it previously
+ * assumed on the strength of a localStorage key that nothing ever refuted.
+ *
+ * Swallows read failures as `undefined`, which is deliberately NOT null: an offline browser or a
+ * blocked read is not evidence that the room is gone, and treating it as such would pull the link
+ * out from under someone whose match is fine and whose wifi isn't.
+ */
+export async function lookupRoom(code: string): Promise<{ code: string; status: string } | null | undefined> {
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("code, status")
+    .eq("code", normalizeRoomCode(code))
+    .maybeSingle();
+  if (error) return undefined;
+  return data ?? null;
 }
 
 /**

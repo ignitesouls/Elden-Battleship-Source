@@ -15,11 +15,13 @@ import { BoardLegend } from "../../components/BoardLegend";
 import { CanvasPanel } from "../../components/CanvasPanel";
 import { MatchDock } from "../../components/MatchDock";
 import { FireHoldSelect } from "../../components/FireHoldSelect";
+import { AutoFireStatus } from "../../components/AutoFireStatus";
 import { FIRE_HOLD_DEFAULT, FIRE_HOLD_KEY, FIRE_HOLD_VALUES } from "../../lib/fireHold";
 import { HostTakeover } from "../../components/HostTakeover";
 import { useMatchLayout } from "../../hooks/useMatchLayout";
 import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout";
-import { challengesForRoom, rowSquareSet } from "../../lib/challenges";
+import { challengesForRoom, rowSquareSet, type Challenge } from "../../lib/challenges";
+import { squaresRevealed } from "../../lib/overlayReveal";
 import { groupIntoShots } from "../../lib/attackFeed";
 import { deepWater, deepMarks, bottleNote, type DeepHide, type DeepMark } from "../../lib/deepWater";
 import { buildPlayerStats } from "../../lib/matchReport";
@@ -28,11 +30,15 @@ import { recordChases, liveTallies } from "../../lib/recordChase";
 import { RecordChases } from "../../components/RecordChases";
 import { fetchParticipants } from "../../lib/profiles";
 import { cellLabel, sunkCellOrientations, eliminatedTeamsFromAttacks } from "../../lib/battleshipLogic";
-import { useBattlePhase } from "../../hooks/useBattlePhase";
+import { cellVisuals } from "../../lib/cellVisuals";
+import { useBattlePhaseName } from "../../hooks/useBattlePhase";
 import { usePencilMarks, NOTE_HINT } from "../../hooks/usePencilMarks";
 import { useStoredToggle, useStoredNumber } from "../../hooks/useStoredToggle";
 import { ruledOutCells, AUTO_RULE_HINT } from "../../lib/deduction";
 import type { Room, Fleet, Player, Attack, TeamReady } from "../../types/battleship";
+
+/** Stable identity, so hiding the board does not re-render every panel on each tick. */
+const NO_CHALLENGES: Challenge[] = [];
 
 /** Remembered per browser, not per room - it's how someone likes to read a board. */
 const AUTO_RULE_KEY = "eb_auto_rule_v2";
@@ -91,9 +97,9 @@ export function BattlePhase({
   const boardSize = room.board_size;
   const shipDefs = room.ship_defs;
   const opponentTeams = activeTeamsList.filter((t) => t !== myTeam);
-  const challenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed),
-    [room.id, boardSize, room.square_set, room.seed]
+  const dealtChallenges = useMemo(
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
   );
 
   const incoming = attacks.filter((a) => a.defender_team === myTeam);
@@ -106,8 +112,26 @@ export function BattlePhase({
   }
 
   // Firing only opens once MATCH begins - STARTING/PREPARATION are a countdown buffer first.
-  const battlePhase = useBattlePhase(attacks, room);
-  const canFire = battlePhase?.phase === "match";
+  //
+  // The NAME, not the clock: all this component wants is the boolean below, and taking the ticking
+  // variant meant re-rendering both boards every second to re-derive a value that changes twice a
+  // match. The clock panel draws the seconds itself. See useBattlePhase.
+  const battlePhase = useBattlePhaseName(attacks, room);
+  const canFire = battlePhase === "match";
+
+  /**
+   * What the board is allowed to say yet.
+   *
+   * The squares are still being dealt through the RANDOMIZATION window - that is the whole point of
+   * it - so until it ends this component has no board to show, and everything downstream of here
+   * reads an empty list: no names on the fire board, no region tint under your own hulls, no colour
+   * key, nothing in the dock. Gated once, here, rather than at each of the six places that draw
+   * some part of a square, because those are easy to add a seventh to and never notice.
+   *
+   * `squaresRevealed` is the same rule the overlays follow, so a stream and the players it is
+   * pointed at reveal the board on the same beat. See lib/overlayReveal.ts.
+   */
+  const challenges = squaresRevealed(room.status, battlePhase) ? dealtChallenges : NO_CHALLENGES;
 
   const { marks, toggle: toggleMark, clear: clearPencilMarks } = usePencilMarks(room.code);
 
@@ -391,22 +415,25 @@ export function BattlePhase({
     return () => clearTimeout(t);
   }, [toast]);
 
-  function myDefenseVisual(index: number): CellVisual {
-    if (defenseSunkCells.has(index)) return "sunk";
-    const hits = incoming.filter((a) => a.cell_index === index);
-    if (hits.some((a) => a.result === "hit")) return "hit";
-    if (hits.some((a) => a.result === "miss")) return "miss";
-    return "empty"; // own ships are drawn as sprite overlays instead of flat cell color
-  }
+  // Every square's result in one pass over the log rather than one pass per square - see
+  // lib/cellVisuals, which is where that walk and its precedence rules now live for every board.
+  const defenseVisuals = useMemo(
+    () => cellVisuals(incoming, defenseSunkCells),
+    // incoming and defenseSunkCells are both derived from `attacks` and rebuilt every render, so
+    // their identities can't be deps without defeating the memo entirely.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [attacks, myTeam, boardSize]
+  );
+  const fireVisuals = useMemo(
+    () => cellVisuals(outgoing, fireSunkCells),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [attacks, myTeam, boardSize]
+  );
 
-  // One shot hits every opponent at once; show the best (most informative) outcome per cell.
-  function fireGridVisual(index: number): CellVisual {
-    if (fireSunkCells.has(index)) return "sunk";
-    const shots = outgoing.filter((a) => a.cell_index === index);
-    if (shots.some((a) => a.result === "hit")) return "hit";
-    if (shots.some((a) => a.result === "miss")) return "miss";
-    return "empty";
-  }
+  // Own ships are drawn as sprite overlays instead of a flat cell colour, so an untouched square
+  // on either board is simply empty.
+  const myDefenseVisual = (index: number): CellVisual => defenseVisuals.get(index) ?? "empty";
+  const fireGridVisual = (index: number): CellVisual => fireVisuals.get(index) ?? "empty";
 
   const myShipOverlays: ShipOverlay[] = (myFleet.placements ?? []).map((p) => ({
     row: p.startRow,
@@ -540,6 +567,33 @@ export function BattlePhase({
     />
   );
 
+  /**
+   * The player's own fleet, shared by both layouts for the same reason the fire board is.
+   *
+   * Its squares are a fraction of the fire board's and already hold a hull, so they can't carry a
+   * name - they wear the challenge's colour instead. That is what turns this from a picture of where
+   * the ships are into an answer to the question players were actually asking it: which bosses am I
+   * sitting on? Match the colour under a hull to the same colour on the fire board (or in the key)
+   * and you have it, without reading a single coordinate off either board.
+   */
+  const fleetBoard = (fill: boolean) => (
+    <BoardGrid
+      boardSize={boardSize}
+      cellVisual={myDefenseVisual}
+      label={fill ? undefined : "Your fleet"}
+      ships={myShipOverlays}
+      sunkOrientation={defenseSunkCells}
+      cellTint={(i) => {
+        const c = challenges[i];
+        if (!c) return null;
+        return { region: c.region, color: c.color };
+      }}
+      maxVh={fill ? undefined : 34}
+      maxVw={fill ? undefined : 26}
+      fill={fill}
+    />
+  );
+
   // One panel for every roster rather than one per team: a 3- or 4-team match would otherwise spawn
   // windows the player never positioned, and a saved layout would stop being valid at a different
   // lobby size.
@@ -595,6 +649,9 @@ export function BattlePhase({
       {/* Same control as the dock's, because the fixed layout has no dock and this is not a setting
           anyone should have to switch layouts to reach. */}
       <FireHoldSelect value={fireHoldMs} onChange={setFireHoldMs} />
+      {/* Same control as the dock's, for the same reason: the fixed layout has no dock, and this is
+          not something anyone should have to switch layouts to find. */}
+      <AutoFireStatus squareSet={room.square_set} />
       {noteCount > 0 && (
         <button onClick={clearMarks} style={{ fontSize: "0.78rem" }} title={NOTE_HINT}>
           Clear {noteCount} note{noteCount === 1 ? "" : "s"}
@@ -702,13 +759,7 @@ export function BattlePhase({
               <RecordChases chases={chases} />
             </CanvasPanel>
             <CanvasPanel {...panelProps("fleet")} flush>
-              <BoardGrid
-                boardSize={boardSize}
-                cellVisual={myDefenseVisual}
-                ships={myShipOverlays}
-                sunkOrientation={defenseSunkCells}
-                fill
-              />
+              {fleetBoard(true)}
             </CanvasPanel>
             <CanvasPanel {...panelProps("log")} flush>
               <AttackFeed
@@ -775,15 +826,7 @@ export function BattlePhase({
         >
           <MatchClock attacks={attacks} room={room} maxVh={34} maxVw={26} />
 
-          <BoardGrid
-            boardSize={boardSize}
-            cellVisual={myDefenseVisual}
-            label="Your fleet"
-            ships={myShipOverlays}
-            sunkOrientation={defenseSunkCells}
-            maxVh={34}
-            maxVw={26}
-          />
+          {fleetBoard(false)}
 
           {/* Two side-by-side stacks so neither the log nor the fleet cards leave a tall
               column of dead space beside the board. nowrap + a zero flex-basis is load-bearing:

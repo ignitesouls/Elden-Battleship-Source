@@ -6,16 +6,18 @@ import { groupIntoShots, outcomeText } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
 import { challengesForRoom } from "../lib/challenges";
 import { formatDuration, matchTimings, matchStartedAt } from "../lib/matchTime";
-import { useBattlePhase } from "../hooks/useBattlePhase";
+import { useBattleClock, useBattlePhaseName } from "../hooks/useBattlePhase";
 import { teamName, teamHex } from "../lib/teamColors";
 import { OverlayGrid, type OverlayLayer } from "../components/OverlayGrid";
 import { OverlayFleetStatus } from "../components/OverlayFleetStatus";
 import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
 import { squaresRevealed } from "../lib/overlayReveal";
+import type { Attack, Room } from "../types/battleship";
 import "./Overlay.css";
 import "../components/BoardGrid.css";
 
-const PHASE_LABEL = { starting: "Starting", preparation: "Preparation", match: "Match" } as const;
+// See MatchClock for why the label and the phase key differ.
+const PHASE_LABEL = { starting: "Randomization", preparation: "Preparation", match: "Match" } as const;
 
 /**
  * Transparent stream overlay, designed to be dropped into OBS as a Browser Source.
@@ -49,7 +51,8 @@ export function Overlay() {
   }, []);
 
   const room = state.room;
-  const phase = useBattlePhase(state.attacks, room);
+  // Drives the reveal gate below: names hold until the board has finished being dealt.
+  const battlePhase = useBattlePhaseName(state.attacks, room);
   const startedAt = matchStartedAt(state.attacks);
   const timings = matchTimings(room);
 
@@ -80,7 +83,7 @@ export function Overlay() {
   const teams = activeTeams(state.players);
   // Counting is now OverlayFleetStatus's job - it needs to know which hulls went down, not how
   // many, so it derives both from the sunk_ship_name on each attack.
-  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed);
+  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm);
 
   // ?team=N marks the streamer's own fleet so viewers can tell at a glance which side they're on.
   const rawTeam = params.get("team");
@@ -97,7 +100,7 @@ export function Overlay() {
   const cellPx = Math.min(96, Math.max(8, Number(params.get("cell") ?? 20) || 20));
   // Opt-in AND phase-gated: the squares stay blank until the match starts, so this column can't be
   // read as a placement cheat sheet either. See lib/overlayReveal.ts.
-  const showNames = params.get("names") === "1" && squaresRevealed(room.status);
+  const showNames = params.get("names") === "1" && squaresRevealed(room.status, battlePhase);
   const showCoords = params.get("coords") !== "0";
   // Which edge of the browser source the column hugs. Only matters when the source is wider than
   // the overlay itself, which it usually is once you've sized it to a screen edge.
@@ -168,18 +171,9 @@ export function Overlay() {
     return formatDuration(since - timings.matchBeginsAt);
   }
 
-  const clock = phase
-    ? phase.phase === "match"
-      ? formatDuration(phase.matchElapsed)
-      : `-${formatDuration(phase.countdown)}`
-    : "--:--";
-
   return (
     <div className={`ov ov-${side}`}>
-      <div className="ov-card ov-clock">
-        <span className="ov-phase">{phase ? PHASE_LABEL[phase.phase] : "Match"}</span>
-        <span className="ov-time">{clock}</span>
-      </div>
+      <OverlayClock attacks={state.attacks} room={room} />
 
       {/* The boss names live HERE rather than on the board.
           A hundred names cannot be rendered into a 200px-wide grid at any font size that survives
@@ -280,6 +274,35 @@ export function Overlay() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The clock card, as its own component purely so that the tick stops here.
+ *
+ * `useBattleClock` re-renders whatever calls it once a second, and this used to be called by the
+ * Overlay page itself - which meant that every second, on the streamer's machine, an OBS browser
+ * source rebuilt the room's whole challenge list, regrouped the entire attack log into shots, re-ran
+ * the deep-water reveal and recomputed a result layer for every fleet, before re-rendering every
+ * board on the overlay. All of it to move two digits.
+ *
+ * Nothing else on the page read `phase`, so lifting the card out is a pure structural move: the same
+ * markup lands in the same slot, and the parent now re-renders only when match data actually changes.
+ * Same trick, same reason, as MatchClock on the player's screen - see useBattlePhase.
+ */
+function OverlayClock({ attacks, room }: { attacks: Attack[]; room: Room | null }) {
+  const phase = useBattleClock(attacks, room);
+  const clock = phase
+    ? phase.phase === "match"
+      ? formatDuration(phase.matchElapsed)
+      : `-${formatDuration(phase.countdown)}`
+    : "--:--";
+
+  return (
+    <div className="ov-card ov-clock">
+      <span className="ov-phase">{phase ? PHASE_LABEL[phase.phase] : "Match"}</span>
+      <span className="ov-time">{clock}</span>
     </div>
   );
 }

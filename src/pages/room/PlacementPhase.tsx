@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../../components/BoardGrid";
 import { validatePlacements, randomPlacements, isCaptain, captainOf } from "../../lib/battleshipLogic";
 import { submitPlacement, confirmPlacement } from "../../lib/rooms";
+import { usePlacementDraftSync } from "../../lib/placementDraft";
 import { teamName, teamHex } from "../../lib/teamColors";
 import { EndMatchButton } from "../../components/EndMatchButton";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
+import { MatchInfoBox } from "../../components/MatchInfoBox";
 import { TeamBox } from "../../components/TeamBox";
 import type { Room, Fleet, Player, ShipPlacement, TeamReady } from "../../types/battleship";
 
@@ -37,7 +39,8 @@ export function PlacementPhase({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Adopt server state once (e.g. a teammate already placed some ships) without clobbering local edits.
+  // Adopt server state once, without clobbering local edits. Now also how a captain who reloaded
+  // mid-placement gets their half-built fleet back: the draft they were working on is on the row.
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     if (!hydrated && myFleet.placements) {
@@ -48,9 +51,57 @@ export function PlacementPhase({
     }
   }, [hydrated, myFleet.placements]);
 
+  /**
+   * A crewmate's copy tracks the row, so a promotion doesn't start from a blank board.
+   *
+   * Captaincy has no succession step - it is simply whoever picked the fleet earliest and is still
+   * here (see team_captain) - so a captain closing their tab hands the controls to a crewmate
+   * instantly, mid-placement. Hydrating once at mount was enough when this screen was read-only for
+   * them, but now that the draft is on the row their working copy has to keep up with it: otherwise
+   * the new captain's first click would write whatever the board looked like when THEY joined,
+   * silently wiping the ships the previous one had put down.
+   */
+  useEffect(() => {
+    if (iAmCaptain) return;
+    setPlacements(myFleet.placements ?? []);
+  }, [iAmCaptain, myFleet.placements]);
+
+  /**
+   * Share the layout with the crew as it's built, rather than only at "Confirm fleet".
+   *
+   * A fleet is placed by one person and played by all of them, and until now the rest of the crew
+   * watched a blank board and were handed the finished thing - too late to say "not D4". Their board
+   * is fed by the fleet row (see lib/placementDraft for why that route and not a broadcast channel),
+   * so all this has to do is keep the row current.
+   *
+   * Stops once the fleet is confirmed: from that point submitPlacement() owns the row, and the
+   * layout isn't a draft any more.
+   */
+  usePlacementDraftSync(
+    room.id,
+    myTeam,
+    placements,
+    hydrated && iAmCaptain && !myFleet.placement_confirmed,
+    myFleet.placements
+  );
+
   const boardSize = room.board_size;
   const shipDefs = room.ship_defs;
   const placedShipIndices = new Set(placements.map((p) => p.shipIndex));
+
+  /**
+   * The layout this screen draws: my own working copy as the captain, the captain's live one as
+   * crew.
+   *
+   * Crew read the row directly rather than through the local `placements` state, which hydrates
+   * exactly once and would therefore freeze on whatever the board held when they arrived.
+   */
+  const shownPlacements = iAmCaptain ? placements : (myFleet.placements ?? []);
+  /** How many teammates are watching this board besides the captain. */
+  const crewCount = players.filter((p) => p.team === myTeam && p.id !== myPlayerId).length;
+  // Hulls that can still move, drawn as ghosts. Only ever true for crew: a captain's own board is
+  // their working copy and drawing it half-transparent would just make it harder to place against.
+  const draftShips = !iAmCaptain && !myFleet.placement_confirmed;
 
   const { valid: allValid, shipGrid } = useMemo(
     () => validatePlacements(boardSize, shipDefs, placements),
@@ -119,13 +170,14 @@ export function PlacementPhase({
     return "empty"; // placed ships are drawn as sprite overlays instead of flat cell color
   }
 
-  const shipOverlays: ShipOverlay[] = placements.map((p) => ({
+  const shipOverlays: ShipOverlay[] = shownPlacements.map((p) => ({
     row: p.startRow,
     col: p.startCol,
     size: shipDefs[p.shipIndex].size,
     horizontal: p.isHorizontal,
     shipName: shipDefs[p.shipIndex].name,
     colorHex: teamHex(myTeam),
+    ghost: draftShips,
   }));
 
   /** Which already-placed ship occupies a cell, or -1. */
@@ -249,7 +301,11 @@ export function PlacementPhase({
         <BoardGrid
           boardSize={boardSize}
           cellVisual={cellVisual}
-          label={`${teamName(myTeam)} - ${captain?.nickname ?? "your captain"} is placing`}
+          label={
+            myFleet.placement_confirmed
+              ? `${teamName(myTeam)} - fleet confirmed`
+              : `${teamName(myTeam)} - ${captain?.nickname ?? "your captain"} is placing`
+          }
           ships={shipOverlays}
           maxVh="calc(100vh - 5.5rem)"
           maxVw={62}
@@ -263,16 +319,22 @@ export function PlacementPhase({
             <h3 style={{ margin: 0 }}>Standing by</h3>
             <span className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.4 }}>
               <strong>{captain?.nickname ?? "Your captain"}</strong> is laying out the fleet - the
-              first crewmate to pick a fleet captains it. You'll see each ship as it's placed.
+              first crewmate to pick a fleet captains it, unless they handed command on back in the
+              lobby. Every hull appears here as they put it down, and nothing is settled until they
+              confirm, so speak up while it can still move.
             </span>
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {myFleet.placement_confirmed
                 ? allReady
                   ? "Every fleet is ready. Battle starting..."
                   : `Confirmed. Waiting on: ${notReadyTeams.map((t) => teamName(t)).join(", ")}`
-                : `${placements.length} of ${shipDefs.length} ships placed.`}
+                : `${shownPlacements.length} of ${shipDefs.length} ships placed.`}
             </span>
           </div>
+
+          {/* Same box the captain has. See the note beside theirs for why the seed follows the
+              room out of the lobby. */}
+          <SeedBox room={room} />
 
           {activeTeamsList.map((team) => (
             <TeamBox
@@ -306,6 +368,12 @@ export function PlacementPhase({
           <button disabled={saving || allReady} onClick={handleUnconfirm}>
             Edit placement
           </button>
+          {/* The single best moment for this to be on screen: the fleet is done, the match hasn't
+              started, and waiting on the other teams is exactly when somebody realises they still
+              haven't set their run up. */}
+          <div style={{ width: "100%", textAlign: "left" }}>
+            <SeedBox room={room} />
+          </div>
           {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
           <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
         </div>
@@ -342,6 +410,8 @@ export function PlacementPhase({
           overflowY: "auto",
         }}
       >
+        <SeedBox room={room} />
+
         {activeTeamsList.map((team) => (
           <TeamBox
             key={team}
@@ -396,6 +466,15 @@ export function PlacementPhase({
           Click a placed ship to rotate it. <strong>R</strong> flips the selected ship.
         </span>
 
+        {/* Said plainly, because a captain who doesn't know this is being watched will assume the
+            crew are looking at a blank board and narrate the whole thing over voice. */}
+        {crewCount > 0 && (
+          <span className="muted" style={{ fontSize: "0.7rem", lineHeight: 1.35 }}>
+            {crewCount === 1 ? "Your crewmate sees" : `Your ${crewCount} crewmates see`} each hull as
+            you put it down, before you confirm.
+          </span>
+        )}
+
         {error && <div className="error-text">{error}</div>}
 
         <button className="primary" disabled={!allPlaced || !allValid || saving} onClick={handleConfirm}>
@@ -407,4 +486,24 @@ export function PlacementPhase({
       </div>
     </div>
   );
+}
+
+/**
+ * The room's randomizer seed, carried out of the lobby onto the placement screen.
+ *
+ * The lobby used to be the only place this number existed, which quietly assumed everyone had their
+ * game open and set up before the host clicked "Start ship placement". In practice somebody always
+ * doesn't - they joined late, they were still installing the mod, their game crashed - and the
+ * moment placement began, the one screen showing the seed was gone. They were left asking for it in
+ * voice chat while the rest of the room waited on them.
+ *
+ * Placement is in fact the ideal window to be setting a run up: nothing has been fired, and the
+ * match cannot start until every fleet confirms, so there is real time here. The number just has to
+ * be on screen. Read-only deliberately - the lobby keeps the reroll, because rolling a new seed once
+ * people have started building their runs against the old one is how you waste everybody's evening.
+ */
+function SeedBox({ room }: { room: Room }) {
+  // The room code rides along because it costs one line and answers the other question a late
+  // arrival is being asked in voice chat. A room predating the seed migration simply shows the code.
+  return <MatchInfoBox roomCode={room.code} seed={room.seed} />;
 }

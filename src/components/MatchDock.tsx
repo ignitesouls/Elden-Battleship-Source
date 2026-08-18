@@ -4,6 +4,7 @@ import { OverlayLinkBox } from "./OverlayLinkBox";
 import { EndMatchButton } from "./EndMatchButton";
 import { LeaveMatchButton } from "./LeaveMatchButton";
 import { FireHoldSelect } from "./FireHoldSelect";
+import { AutoFireStatus } from "./AutoFireStatus";
 import { NOTE_HINT } from "../hooks/usePencilMarks";
 import { AUTO_RULE_HINT } from "../lib/deduction";
 import type { Challenge } from "../lib/challenges";
@@ -84,6 +85,10 @@ export function MatchDock({
       </button>
 
       <FireHoldSelect value={holdMs} onChange={onChangeHoldMs} />
+
+      {/* Next to the fire-hold control because they are the same kind of thing: how this player's
+          shots get committed. Renders nothing at all on the objectives boards. */}
+      <AutoFireStatus squareSet={squareSet} />
 
       {markCount > 0 && (
         <button className="match-dock-btn" onClick={onClearMarks} title={NOTE_HINT}>

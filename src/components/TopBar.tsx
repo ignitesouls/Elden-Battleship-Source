@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { getActiveRoom } from "../lib/playerSession";
+import { useActiveRoom } from "../hooks/useActiveRoom";
 import { formatRoomCode } from "../lib/roomCode";
 import { getVolume, setVolume } from "../lib/sfx";
 import { isColorblindMode, setColorblindMode } from "../lib/teamColors";
 import { isTwitchLoginConfigured, signInWithTwitch, signOut } from "../lib/supabase";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
+import { useAdminStatus } from "../lib/admin";
 import "./TopBar.css";
 
 /**
@@ -19,13 +20,31 @@ import "./TopBar.css";
  * everywhere else. Neither alone was enough - text-only made the bar wide and gray, and the earlier
  * icon-only version had a bare ◑ for the palette toggle that nobody could read.
  */
+/**
+ * The room's status as something to read rather than a column value.
+ *
+ * Null while the check is still out, and null for 'finished' too - a match that's over is a recap
+ * waiting to be read, and labelling the way back to it "finished" reads as "nothing to see".
+ */
+function roomDoing(status: string | null): string | null {
+  if (status === "lobby") return "in the lobby";
+  if (status === "placement") return "placing fleets";
+  if (status === "battle") return "in battle";
+  return null;
+}
+
 export function TopBar() {
   const profile = useAuthProfile();
-  // Read on every render rather than held in state: it changes from another component (and another
-  // tab), and this bar re-renders on navigation anyway, which is exactly when it matters.
+  // Only asked once there's a Twitch session to ask about - this bar is on every page in the app,
+  // and admin rights are keyed to a Twitch account, so asking while anonymous is two round trips
+  // per page load with a foregone answer. Re-asked on sign-in/out, so the door appears the moment
+  // an admin logs in rather than after a reload.
+  const { isAdmin } = useAdminStatus(!!profile?.isTwitch);
   const { pathname } = useLocation();
-  const activeRoom = getActiveRoom();
-  const inThatRoom = activeRoom ? pathname.toUpperCase().startsWith(`/ROOM/${activeRoom}`) : false;
+  // Checked against the database, not merely remembered - see useActiveRoom for why a stored code
+  // was never evidence that there was anything on the other end of it.
+  const activeRoom = useActiveRoom();
+  const inThatRoom = activeRoom ? pathname.toUpperCase().startsWith(`/ROOM/${activeRoom.code}`) : false;
   const [volume, setVolumeState] = useState(getVolume);
   // Remembers the level you were at so unmuting restores it instead of guessing a default.
   const [premuteVolume, setPremuteVolume] = useState(() => (getVolume() > 0 ? getVolume() : 0.7));
@@ -72,13 +91,20 @@ export function TopBar() {
           return from. */}
       {activeRoom && !inThatRoom && (
         <Link
-          to={`/room/${activeRoom}`}
+          to={`/room/${activeRoom.code}`}
           className="tb-item tb-return"
-          title="Back to the room you're in"
+          title={`Back to the room you're in${roomDoing(activeRoom.status) ? ` - ${roomDoing(activeRoom.status)}` : ""}`}
         >
           {/* A plain arrow, not an emoji: this one is a direction, and every emoji that means
               "ship" or "harbor" would read as a destination instead. */}
-          <span>← {formatRoomCode(activeRoom)}</span>
+          <span>← {formatRoomCode(activeRoom.code)}</span>
+          {/* What the room is doing, once it's known. Worth the few characters: "still in the
+              lobby" and "in battle" are the difference between wandering back at leisure and
+              having left a match running. Absent until the check lands, so the bar doesn't
+              flicker a word in on load. */}
+          {roomDoing(activeRoom.status) && (
+            <span className="tb-return-state">{roomDoing(activeRoom.status)}</span>
+          )}
         </Link>
       )}
 
@@ -129,7 +155,36 @@ export function TopBar() {
           <span className="tb-label">Almanac</span>
         </Link>
 
+        {/* Only for admins, and only once the check has come back - rendering it while `loading`
+            would flash a control at every visitor for the length of a round trip. This is not a
+            security boundary (RLS is); the page behind it makes the same check for anyone who
+            types the URL. Tinted like the panel's own heading so it reads as the one item in this
+            bar that isn't for everybody. */}
+        {isAdmin && (
+          <Link to="/admin" className="tb-item tb-admin" title="Admin - records, live rooms and administrators">
+            <span className="tb-emoji">🛠️</span>
+            <span className="tb-label">Admin</span>
+          </Link>
+        )}
+
         <span className="tb-sep" />
+
+        {/* As a bare ◑ this looked broken: it only recolors TEAMS, so on any screen without a board
+            or roster it appears to do nothing at all. Saying "on/off" gives it visible feedback
+            everywhere, and the accent border does the same job when the label is hidden.
+
+            Ahead of the sound controls so that the two plain toggles sit together and the slider
+            ends the bar: with it in the middle, the volume track split the button pair and left the
+            colorblind toggle marooned on the far end of a control it has nothing to do with. */}
+        <button
+          onClick={toggleColorblind}
+          aria-pressed={colorblind}
+          className={`tb-item${colorblind ? " tb-colorblind-on" : ""}`}
+          title="Colorblind mode - swaps the default red/blue fleets for a colorblind-safe blue/orange pair. Affects boards, rosters and the leaderboard."
+        >
+          <span className="tb-emoji">🎨</span>
+          <span className="tb-label">Colorblind {colorblind ? "on" : "off"}</span>
+        </button>
 
         {/* Both toggles state the CURRENT state ("Sound on") rather than the action ("Mute") -
             mixing the two conventions side by side is what makes toolbars ambiguous about whether a
@@ -144,6 +199,8 @@ export function TopBar() {
           <span className="tb-emoji">{muted ? "🔇" : "🔊"}</span>
           <span className="tb-label">Sound {muted ? "off" : "on"}</span>
         </button>
+        {/* Kept next to its own toggle rather than swapped across with it - a volume track adrift
+            from the speaker it controls is a worse bar than either ordering. */}
         <input
           type="range"
           min={0}
@@ -156,19 +213,6 @@ export function TopBar() {
           // painted in CSS from this fraction. See TopBar.css for why it's 0-1 and not a percent.
           style={{ ["--tb-fill" as string]: volumePercent / 100 }}
         />
-
-        {/* As a bare ◑ this looked broken: it only recolors TEAMS, so on any screen without a board
-            or roster it appears to do nothing at all. Saying "on/off" gives it visible feedback
-            everywhere, and the accent border does the same job when the label is hidden. */}
-        <button
-          onClick={toggleColorblind}
-          aria-pressed={colorblind}
-          className={`tb-item${colorblind ? " tb-colorblind-on" : ""}`}
-          title="Colorblind mode - swaps the default red/blue fleets for a colorblind-safe blue/orange pair. Affects boards, rosters and the leaderboard."
-        >
-          <span className="tb-emoji">🎨</span>
-          <span className="tb-label">Colorblind {colorblind ? "on" : "off"}</span>
-        </button>
       </div>
     </div>
   );

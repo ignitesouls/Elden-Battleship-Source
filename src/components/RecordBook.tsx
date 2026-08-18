@@ -23,20 +23,31 @@ interface Props {
  * The number leads, in the accent colour, because that is the thing people come back to check.
  */
 export function RecordBook({ records, profiles, squareSet, loadingShots }: Props) {
-  const held = records.filter((r) => r.holder !== null);
-  if (held.length === 0) return null;
+  /*
+   * An unheld record is SHOWN, as an unclaimed line, rather than dropped from the list.
+   *
+   * It used to be filtered out, which read as a shorter book rather than as a gap - and that is
+   * exactly how a real bug hid in here for as long as it did. The archived shot log was being
+   * silently truncated by the server (see fetchAllRows in lib/profiles), so on the quieter boards
+   * the four shot-derived records had no holder and simply weren't rendered. Nothing looked wrong;
+   * the book just quietly had four fewer lines than it was supposed to.
+   *
+   * An empty line is also honest on its own terms - "nobody has strung three hits together on this
+   * board yet" is a fact about the board, and one worth a reader knowing.
+   */
+  if (records.every((r) => r.holder === null)) return null;
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
         <h3 style={{ margin: 0 }}>Record Book</h3>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          Best single game on this board. Ties go to whoever did it first.
+          The standout single games on this board. Ties go to whoever did it first.
         </span>
       </div>
 
       <div className="stack" style={{ gap: "0.55rem" }}>
-        {held.map((record) => (
+        {records.map((record) => (
           <RecordRow key={record.id} record={record} profiles={profiles} squareSet={squareSet} />
         ))}
       </div>
@@ -59,7 +70,28 @@ function RecordRow({
   profiles: Map<string, Profile>;
   squareSet: SquareSetId;
 }) {
-  const holder = record.holder!;
+  const holder = record.holder;
+
+  // Unclaimed: the record's name and what it takes to set it, dimmed. Deliberately the same row
+  // shape as a held one, so the book reads as a fixed list of records with some still open rather
+  // than as two different kinds of thing.
+  if (!holder) {
+    return (
+      <div className="row" style={{ gap: "0.6rem", alignItems: "baseline", opacity: 0.55 }}>
+        <span style={{ fontSize: "1.1rem", flexShrink: 0 }} aria-hidden>
+          {record.emoji}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="display" style={{ fontSize: "0.98rem" }}>
+            {record.label}
+          </span>
+          <div className="muted" style={{ fontSize: "0.72rem" }}>
+            {["unclaimed", record.note].filter(Boolean).join(" · ")}
+          </div>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>

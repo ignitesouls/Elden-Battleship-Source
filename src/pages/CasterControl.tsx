@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
-import { activeTeams, sunkCellOrientations, cellLabel } from "../lib/battleshipLogic";
+import { activeTeams, sunkCellOrientations, attackerTeamsByCell, cellLabel } from "../lib/battleshipLogic";
+import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom, rowSquareSet } from "../lib/challenges";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
@@ -17,6 +18,7 @@ import { useBoxSize } from "../hooks/useBoxSize";
 import { SourceRow } from "../components/SourceRow";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import { squaresRevealed } from "../lib/overlayReveal";
+import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import {
   useCastPublisher,
   DEFAULT_VIEW,
@@ -76,6 +78,8 @@ export function CasterControl() {
   const [dragging, setDragging] = useState(false);
 
   const room = state.room;
+  // Drives the reveal gate below: names hold until the board has finished being dealt.
+  const battlePhase = useBattlePhaseName(state.attacks, room);
   const teams = useMemo(() => activeTeams(state.players), [state.players]);
 
   /**
@@ -267,9 +271,9 @@ export function CasterControl() {
   }
 
   const boardSize = room.board_size;
-  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed);
+  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
   /** Whether the squares may be named yet - see lib/overlayReveal.ts. */
-  const revealed = squaresRevealed(room.status);
+  const revealed = squaresRevealed(room.status, battlePhase);
 
   /**
    * Warn only when it actually bites: a placement view is selected and there is nothing to send.
@@ -298,13 +302,20 @@ export function CasterControl() {
 
   const relevant = state.attacks.filter((a) => shownTeams.includes(a.defender_team));
   const sunkCells = sunkCellOrientations(relevant, boardSize);
-  const cellVisual = (index: number): CellVisual => {
-    if (sunkCells.has(index)) return "sunk";
-    const here = relevant.filter((a) => a.cell_index === index);
-    if (here.some((a) => a.result === "hit")) return "hit";
-    if (here.some((a) => a.result === "miss")) return "miss";
-    return "empty";
-  };
+  /**
+   * The attribution rings - the same derivation the source makes, from the same shots.
+   *
+   * Built from `relevant` rather than from every attack, so it answers the question the board in
+   * front of it is actually asking: on a single-fleet view the rings describe the shots that fleet
+   * has taken, not shots at a board nobody is looking at.
+   */
+  const firedBy = new Map(
+    [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
+  );
+  // Resolved in one pass, exactly as the source does it - the monitor and the board it is driving
+  // have to merge a square the same way. See lib/cellVisuals.
+  const visuals = cellVisuals(relevant, sunkCells);
+  const cellVisual = (index: number): CellVisual => visuals.get(index) ?? "empty";
 
   // Identical to the source's own sizing, because the monitor IS the source at display scale.
   const boardPx = Math.round(SOURCE_SIZE * view.zoom);
@@ -448,6 +459,7 @@ export function CasterControl() {
                   cellVisual={cellVisual}
                   ships={ships}
                   sunkOrientation={sunkCells}
+                  firedBy={firedBy}
                   deepCells={deepCells}
                   // Matches the source exactly - the monitor has to BE the frame, not resemble it.
                   coordEdges="all"

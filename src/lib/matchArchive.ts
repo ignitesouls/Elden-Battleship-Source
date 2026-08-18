@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { deepFromAwards, type ArchivedDeep } from "./deepArchive";
+import { canonicalSquareName } from "./squareSetFormat";
 import type { Award, PlayerStats } from "./matchReport";
 import type { ShipDefinition, ShipPlacement } from "../types/battleship";
 import { DEFAULT_SQUARE_SET, type SquareSetId } from "./challenges";
@@ -58,6 +59,7 @@ export interface ArchivedEvent {
   room_id?: string | null;
   square_set?: string | null;
   board_seed?: string | null;
+  board_perm?: number[] | null;
 }
 
 /** Everything needed to draw one archived match's recap. */
@@ -95,7 +97,13 @@ export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatc
   return {
     report: (report.data as ArchivedMatch) ?? null,
     fleets: (fleets.data as ArchivedFleet[]) ?? [],
-    events: (events.data as ArchivedEvent[]) ?? [],
+    // A match old enough to predate a square's rename recorded the old name. The recap redraws the
+    // board from today's set, so the two have to be speaking the same language - see
+    // canonicalSquareName.
+    events: ((events.data as ArchivedEvent[]) ?? []).map((e) => ({
+      ...e,
+      challenge_name: canonicalSquareName(e.challenge_name),
+    })),
   };
 }
 
@@ -115,7 +123,7 @@ export function archivedSquareSet(detail: ArchivedMatchDetail): SquareSetId {
 }
 
 /**
- * The room id and board seed a match's squares were dealt from.
+ * The room id, board seed and balanced layout a match's squares were dealt from.
  *
  * Only `match_events` carries either, and only for matches archived since those columns landed -
  * without them the board cannot be reconstructed, and the recap falls back to showing just the
@@ -124,10 +132,12 @@ export function archivedSquareSet(detail: ArchivedMatchDetail): SquareSetId {
 export function archivedBoardSource(detail: ArchivedMatchDetail): {
   roomId: string | null;
   seed: string | null;
+  perm: number[] | null;
 } {
   return {
     roomId: detail.events.find((e) => e.room_id)?.room_id ?? detail.fleets.find((f) => f.room_id)?.room_id ?? null,
     seed: detail.events.find((e) => e.board_seed)?.board_seed ?? null,
+    perm: detail.events.find((e) => e.board_perm)?.board_perm ?? null,
   };
 }
 

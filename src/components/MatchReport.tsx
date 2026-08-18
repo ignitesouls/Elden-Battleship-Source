@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import { TheDeep, type DeepEntry } from "./TheDeep";
 import { sunkCellOrientations } from "../lib/battleshipLogic";
+import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom } from "../lib/challenges";
 import { finalFinds, finalMarks, bottleNote, type DeepHide, type DeepMark } from "../lib/deepWater";
 import { buildMatchReport, formatReportText } from "../lib/matchReport";
@@ -40,8 +41,8 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
   );
   const boardSize = room.board_size;
   const challenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed),
-    [room.id, boardSize, room.square_set, room.seed]
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
   );
   const shipDefs = room.ship_defs;
   const sunkCells = useMemo(() => sunkCellOrientations(attacks, boardSize), [attacks, boardSize]);
@@ -106,14 +107,34 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
     setTimeout(() => setCopied(false), 1800);
   }
 
+  /**
+   * Each fleet's board, resolved in one walk of the log per fleet rather than one filter of the
+   * whole log per square - see lib/cellVisuals. `deepCellsFor` below reads these too, and used to
+   * re-filter the log once per find on top of that.
+   *
+   * -- Note the sunk set this passes ---------------------------------------------------------------
+   *
+   * Only the square that dealt the final blow, taken from the rows themselves, rather than every
+   * cell of the hull as `sunkCellOrientations` would give. That is what this board has always drawn
+   * and is preserved deliberately: a fleet's own board burns the whole hull, and the spectator page
+   * fixed the same discrepancy on its boards (see the note on sunkByTeam in Room.tsx), so this recap
+   * is now the last place the two disagree. Changing it moves what `deepCellsFor` will carry as
+   * well, which makes it a decision about the recap rather than a change of shape - so it is left
+   * exactly as it was.
+   */
+  const visualsByTeam = useMemo(() => {
+    const out = new Map<number, Map<number, CellVisual>>();
+    for (const team of activeTeamsList) {
+      const rows = attacks.filter((a) => a.defender_team === team);
+      const killing = new Set(rows.filter((a) => a.result === "sunk").map((a) => a.cell_index));
+      out.set(team, cellVisuals(rows, killing));
+    }
+    return out;
+  }, [attacks, activeTeamsList]);
+
   function visualFor(team: number) {
-    return (index: number): CellVisual => {
-      const incoming = attacks.filter((a) => a.defender_team === team && a.cell_index === index);
-      if (incoming.some((a) => a.result === "sunk")) return "sunk";
-      if (incoming.some((a) => a.result === "hit")) return "hit";
-      if (incoming.some((a) => a.result === "miss")) return "miss";
-      return "empty";
-    };
+    const visuals = visualsByTeam.get(team);
+    return (index: number): CellVisual => visuals?.get(index) ?? "empty";
   }
 
   /**

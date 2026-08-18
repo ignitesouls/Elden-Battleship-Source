@@ -7,8 +7,8 @@
  * exactly the number of fleets on the board. That is the kind of wrong that renders as a plausible
  * number nobody can disprove, so it gets its own cases here.
  *
- * The rules the book promises also get pinned down: positive records only, a floor under the accuracy
- * record so one lucky shot can't hold it forever, and ties going to whoever got there first.
+ * The rules the book promises also get pinned down: a floor under both accuracy records so neither a
+ * lucky shot nor an unlucky one can hold one forever, and ties going to whoever got there first.
  *
  * Run with bare Node:
  *
@@ -107,15 +107,128 @@ const holderOf = (book: ReturnType<typeof buildRecordBook>, id: string) => find(
   check('and the holder is not one of them', !find(book, 'hits')?.chasers.some((c) => c.nickname === 'Ada'))
 }
 
-// -- 2. nothing negative is ever a record ---------------------------------
+// -- 2. the wooden spoon ---------------------------------------------------
 {
-  const rows = [part({ nickname: 'Ada', match_key: 'm1', shots: 40, hits: 1, misses: 39 })]
+  const rows = [
+    part({ nickname: 'Ada', match_key: 'm1', shots: 40, hits: 1, misses: 39 }),
+    part({ nickname: 'Bo', match_key: 'm1', shots: 20, hits: 9, misses: 11 }),
+    part({ nickname: 'Cy', match_key: 'm2', shots: 10, hits: 8, misses: 2 }),
+  ]
   const book = buildRecordBook(rows)
-  const ids = book.map((r) => r.id).join(',')
+
   check(
-    'there is no record for missing',
-    !/miss|worst|spoon/i.test(ids) && !book.some((r) => /miss|worst/i.test(r.label)),
-    ids
+    'worst accuracy goes to the lowest rate, not the most misses',
+    holderOf(book, 'worst-accuracy')?.nickname === 'Ada',
+    `${holderOf(book, 'worst-accuracy')?.display} (${holderOf(book, 'worst-accuracy')?.detail})`
+  )
+  // Bo missed 11 to Cy's 2, so a book counting misses instead of rating them would rank these the
+  // other way round. It is the rate that is the record.
+  check(
+    'and the chasers are ordered by rate too',
+    find(book, 'worst-accuracy')?.chasers[0]?.nickname === 'Bo',
+    find(book, 'worst-accuracy')?.chasers.map((c) => `${c.nickname} ${c.display}`).join(', ')
+  )
+  check(
+    'the positive accuracy record is untouched by it',
+    holderOf(book, 'accuracy')?.nickname === 'Cy',
+    holderOf(book, 'accuracy')?.nickname ?? 'nobody'
+  )
+  check('and it reads last, after every achievement', book.at(-1)?.id === 'worst-accuracy', book.at(-1)?.id)
+}
+
+// -- 2b. a hitless game, which the two kinds of board treat differently -----
+{
+  const rows = [
+    part({ nickname: 'Ada', match_key: 'm1', shots: 12, hits: 1 }),
+    part({ nickname: 'Blank', match_key: 'm1', shots: MIN_SHOTS_FOR_ACCURACY, hits: 0 }),
+  ]
+
+  // Off the boss board a 0% is the record outright: those boards hold a handful of matches, so
+  // there is no long run of future ones for an unbeatable record to spoil.
+  const quiet = buildRecordBook(rows, [], 'objectives')
+  check(
+    'on a quiet board a game where nothing landed takes it outright',
+    holderOf(quiet, 'worst-accuracy')?.nickname === 'Blank',
+    holderOf(quiet, 'worst-accuracy')?.display
+  )
+
+  // On the boss board it is excluded, because 0% can only be equalled and a tie goes to whoever got
+  // there first - the record would be dead from the day it was set, on the board people read most.
+  const bosses = buildRecordBook(rows, [], 'bosses')
+  check(
+    'on the boss board it is skipped for the worst game that connected',
+    holderOf(bosses, 'worst-accuracy')?.nickname === 'Ada',
+    `${holderOf(bosses, 'worst-accuracy')?.display} (${holderOf(bosses, 'worst-accuracy')?.detail})`
+  )
+  check(
+    'and the boss board says so in the note',
+    /at least one hit/.test(find(bosses, 'worst-accuracy')?.note ?? ''),
+    find(bosses, 'worst-accuracy')?.note
+  )
+  check(
+    'while the quiet board does not claim that',
+    !/at least one hit/.test(find(quiet, 'worst-accuracy')?.note ?? ''),
+    find(quiet, 'worst-accuracy')?.note
+  )
+  // An omitted set id means the boss board, the same way it does for every other record here.
+  check(
+    'an unspecified board is treated as the boss board',
+    holderOf(buildRecordBook(rows), 'worst-accuracy')?.nickname === 'Ada',
+    holderOf(buildRecordBook(rows), 'worst-accuracy')?.nickname ?? 'nobody'
+  )
+  check(
+    'and a boss board with only hitless games leaves it unheld',
+    holderOf(buildRecordBook([part({ nickname: 'Blank', match_key: 'm1', shots: 9, hits: 0 })], [], 'bosses'), 'worst-accuracy') === null
+  )
+
+  // The floor matters more at this end: one miss and walking away is 0%, and being handed the
+  // wooden spoon for a single shot is the version of this nobody finds funny.
+  const unlucky = [
+    part({ nickname: 'OneMiss', match_key: 'm1', shots: 1, hits: 0 }),
+    part({ nickname: 'Ada', match_key: 'm2', shots: 20, hits: 4 }),
+  ]
+  check(
+    'a single unlucky shot does not qualify',
+    holderOf(buildRecordBook(unlucky, [], 'objectives'), 'worst-accuracy')?.nickname === 'Ada',
+    holderOf(buildRecordBook(unlucky, [], 'objectives'), 'worst-accuracy')?.nickname ?? 'nobody'
+  )
+  check(
+    'and with nobody over the floor it is simply unheld',
+    holderOf(buildRecordBook([part({ nickname: 'OneMiss', match_key: 'm1', shots: 1, hits: 0 })], [], 'objectives'), 'worst-accuracy') === null
+  )
+}
+
+// -- 2c. a withheld player is excused from ONE record, not from the book ---
+{
+  // The real entry in WITHHELD, so this fails loudly if that id is ever edited or the wiring is
+  // dropped. Elymis's own worst boss game was 1 of 20; the numbers here just have to be extreme
+  // enough to top every category outright, so nothing can pass by accident.
+  const ELYMIS = 'cbe3bcf8-d1d2-4616-bd71-50f81aea57f9'
+  const rows = [
+    part({ nickname: 'Elymis', user_id: ELYMIS, match_key: 'm1', shots: 40, hits: 1, sunk: 9 }),
+    part({ nickname: 'KC', match_key: 'm1', shots: 13, hits: 4 }),
+  ]
+  const book = buildRecordBook(rows, [], 'bosses')
+
+  check(
+    'the withheld player does not hold the wooden spoon',
+    holderOf(book, 'worst-accuracy')?.nickname === 'KC',
+    `${holderOf(book, 'worst-accuracy')?.nickname} ${holderOf(book, 'worst-accuracy')?.display}`
+  )
+  check(
+    'nor is he listed one line down as chasing it',
+    !find(book, 'worst-accuracy')?.chasers.some((c) => c.nickname === 'Elymis'),
+    find(book, 'worst-accuracy')?.chasers.map((c) => c.nickname).join(', ') || 'no chasers'
+  )
+  // The whole point of keying WITHHELD by record: it is one record, not a ban.
+  check(
+    'but he still holds everything else he earned',
+    holderOf(book, 'sunk')?.nickname === 'Elymis' && holderOf(book, 'shots')?.nickname === 'Elymis',
+    `sunk: ${holderOf(book, 'sunk')?.nickname}, shots: ${holderOf(book, 'shots')?.nickname}`
+  )
+  check(
+    'and an unwithheld player with the same numbers would hold it',
+    holderOf(buildRecordBook([{ ...rows[0], user_id: null }, rows[1]], [], 'bosses'), 'worst-accuracy')?.nickname === 'Elymis'
   )
 }
 

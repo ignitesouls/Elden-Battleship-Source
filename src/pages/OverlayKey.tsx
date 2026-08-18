@@ -6,6 +6,7 @@ import { legendItems } from "../lib/legend";
 import { fitScale } from "../lib/overlayFit";
 import { challengesForRoom } from "../lib/challenges";
 import { squaresRevealed } from "../lib/overlayReveal";
+import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { readOpacity } from "../lib/overlayCast";
 import { readTextSize } from "../lib/overlayText";
 import "./Overlay.css";
@@ -47,9 +48,11 @@ export function OverlayKey() {
   }, []);
 
   const room = state.room;
+  // Drives the reveal gate below: names hold until the board has finished being dealt.
+  const battlePhase = useBattlePhaseName(state.attacks, room);
   const boardSize = room?.board_size ?? 0;
   const challenges = useMemo(
-    () => (room ? challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed) : []),
+    () => (room ? challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm) : []),
     [room, boardSize]
   );
 
@@ -63,7 +66,7 @@ export function OverlayKey() {
    * third for the minute or two of placement, which is the honest picture: there is nothing to
    * read yet.
    */
-  if (!squaresRevealed(room.status)) return null;
+  if (!squaresRevealed(room.status, battlePhase)) return null;
 
   const { items, heading } = legendItems(challenges, room.square_set);
   // A set that tints nothing (Ringus) has no key to show. Render nothing at all rather than an

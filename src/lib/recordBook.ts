@@ -18,10 +18,16 @@ import type { MatchEventRow } from "./almanac";
  *     makes the timing and streak records possible at all - they were never stored as numbers, but the
  *     shots they are made of were.
  *
- * Two rules apply throughout. Records are POSITIVE only: there is no most-missed and no worst
- * accuracy, because a record book people enjoy reading is one nobody is afraid of appearing in. And
- * ties go to whoever did it FIRST - a record is held until it is beaten, not shared with whoever
+ * Ties go to whoever did it FIRST - a record is held until it is beaten, not shared with whoever
  * equalled it later.
+ *
+ * The book used to be positive-only, on the reasoning that one people enjoy reading is one nobody is
+ * afraid of appearing in. That rule has been lifted for exactly one entry, "Worst accuracy", which is
+ * a deliberate wooden spoon rather than the first of a set. If more get added, the thing to keep an
+ * eye on is the ratio: a book that is mostly celebration can carry a joke at somebody's expense, and
+ * one that is mostly pillory stops being fun to appear in at all.
+ *
+ * The negative records stay out of lib/recordChase - see the note on TRACKS there.
  */
 
 export interface RecordHolder {
@@ -52,12 +58,15 @@ export interface RecordEntry {
 }
 
 /**
- * Minimum shots before an accuracy counts.
+ * Minimum shots before an accuracy counts, at either end of the book.
  *
  * Not a judgement about how much shooting is impressive - accuracy is accuracy. It exists so the
- * record stays beatable: without a floor it is permanently held by whoever once fired a single lucky
- * shot, and 100% can only be equalled, which the first-holder tie-break then refuses. Five is low
- * enough that a short match on a small board still qualifies.
+ * records stay beatable: without a floor the best is permanently held by whoever once fired a single
+ * lucky shot, and 100% can only be equalled, which the first-holder tie-break then refuses. The
+ * worst has the same shape upside down, and it matters more there - one player opening with a single
+ * miss and never firing again is a 0% nobody can ever beat, and being handed the wooden spoon for
+ * one shot is not a joke anyone finds funny. Five is low enough that a short match on a small board
+ * still qualifies at both ends.
  */
 export const MIN_SHOTS_FOR_ACCURACY = 5;
 
@@ -83,19 +92,33 @@ export const MIN_GAP_SECONDS = 10;
 const CHASERS = 2;
 
 /**
+ * Whether this is the boss board.
+ *
+ * Compared against the id rather than looked up through squareSets, which binds the .json files:
+ * this module is import-free on purpose so scripts/check-record-book.ts can exercise it under bare
+ * Node. Unknown and null ids mean the boss board, exactly as squareSets.rowSquareSet has it - which
+ * also makes the archive's pre-square-set rows, all of them boss matches, come out right.
+ *
+ * Every cut of the boss board counts, listed out for the same reason: callers hand this whatever
+ * they have, and a caller passing a stored id rather than a folded one would otherwise be told its
+ * squares were not bosses. Keep in step with the variants in squareSets.ts.
+ */
+const BOSS_BOARDS = new Set(["bosses", "bosses-2v2"]);
+
+function isBossBoard(id: SquareSetId | null | undefined): boolean {
+  return id === undefined || id === null || BOSS_BOARDS.has(id);
+}
+
+/**
  * What one square on this set's board IS, in words.
  *
  * The boss board's squares are bosses; every other set's are errands, collectables and multi-part
  * goals that no single noun covers, so they stay "squares". Only prose needs this and nothing
  * branches on it - but "quickest two bosses" on a board of "acquire 3 painting rewards" is simply a
  * lie, and the gap record reads that line out loud on every set.
- *
- * Compared against the id rather than looked up through squareSets, which binds the .json files:
- * this module is import-free on purpose so scripts/check-record-book.ts can exercise it under bare
- * Node. Unknown and null ids mean the boss board, exactly as squareSets.rowSquareSet has it.
  */
 function squareNoun(id: SquareSetId | null | undefined): { one: string; many: string } {
-  return id === undefined || id === null || id === "bosses"
+  return isBossBoard(id)
     ? { one: "boss", many: "bosses" }
     : { one: "square", many: "squares" };
 }
@@ -302,6 +325,42 @@ function clock(seconds: number): string {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
+ * Players held out of one particular record, by record id.
+ *
+ * This is an EDITORIAL OVERRIDE and not a data fix, which is worth being blunt about in the one
+ * place it lives. The games listed here happened, the numbers are real, and nothing below changes
+ * the archive, the career table, the Almanac, or any other record - the excused player still holds
+ * everything they earned and still appears everywhere else on the site. All this does is decline to
+ * print one name against one record.
+ *
+ * It exists because one of the nine is a wooden spoon, and nobody volunteers for that. Being named
+ * the worst on a public board is the sort of thing that should be undoable without deleting
+ * somebody's match history to do it, and this is the small door for that.
+ *
+ * Scoped per record rather than per person on purpose. Keep the list short, and prefer taking an
+ * entry OUT of here to putting one in: a record book carrying a long list of exceptions has stopped
+ * recording anything, and at that point the honest move is to drop the record instead.
+ */
+const WITHHELD: Readonly<Record<string, readonly string[]>> = {
+  "worst-accuracy": [
+    // Elymis, whose 5% (1 of 20, RUSTYCORSAIR) would otherwise stand on the boss board. Withheld at
+    // the board owner's request; KC's 8% carries it in the meantime. Remove this line to hand it back.
+    "cbe3bcf8-d1d2-4616-bd71-50f81aea57f9",
+  ],
+};
+
+/**
+ * Whether a row may hold `recordId` at all - see WITHHELD.
+ *
+ * Applied to the CANDIDATES rather than to the finished entry, so an excused player drops out of the
+ * chasers too. Filtering only the holder would leave them listed one line below as "chased by", which
+ * is the same name on the same record for the same game, and would defeat the point entirely.
+ */
+function eligibleFor(recordId: string, row: ParticipantRow): boolean {
+  return !WITHHELD[recordId]?.includes(participantKey(row));
+}
+
+/**
  * Builds the whole book.
  *
  * @param rows participation rows, already filtered to one square set - an accuracy record set on a
@@ -402,6 +461,48 @@ export function buildRecordBook(
       ...rank(
         quickestGaps(shots),
         (c) => ({ display: clock(c.value), detail: c.detail }),
+        false
+      ),
+    },
+    /**
+     * The wooden spoon, and the one entry in the book that isn't an achievement.
+     *
+     * Last on purpose. The book is read top to bottom, so everything above this is somebody's best
+     * night and this is the punchline at the end of it - putting it up next to "Best accuracy",
+     * where it would sort naturally, turns a joke into a scoreboard of shame two lines long.
+     *
+     * On the BOSS BOARD it requires a hit, and everywhere else it does not. The reason is that a 0%
+     * game ends the record permanently: zero cannot be beaten, only equalled, and a tie goes to
+     * whoever got there first - so the line is dead from the day it is set, on the board people
+     * actually read. Requiring a hit puts the floor at one hit in n shots instead, which every
+     * longer game can beat, so the record stays alive. The quieter boards keep the honest version:
+     * they hold a handful of matches, a 0% there is a rarity worth crediting, and there is no long
+     * run of future matches for a dead record to spoil.
+     *
+     * The `note` carries the difference, because a reader on the boss board seeing 3% needs to know
+     * why the 0% game they remember isn't the one on the board.
+     */
+    {
+      id: "worst-accuracy",
+      emoji: "🌊",
+      label: "Worst accuracy",
+      note: isBossBoard(squareSetId)
+        ? `${MIN_SHOTS_FOR_ACCURACY} shots or more, and at least one hit`
+        : `${MIN_SHOTS_FOR_ACCURACY} shots or more`,
+      ...rank(
+        rows
+          .filter(
+            (r) =>
+              eligibleFor("worst-accuracy", r) &&
+              r.shots >= MIN_SHOTS_FOR_ACCURACY &&
+              (r.hits > 0 || !isBossBoard(squareSetId))
+          )
+          .map((r) => {
+            const c = fromRow(r, r.hits / r.shots);
+            c.detail = `${r.hits} of ${r.shots} shots`;
+            return c;
+          }),
+        (c) => ({ display: `${Math.round(c.value * 100)}%`, detail: c.detail }),
         false
       ),
     },
