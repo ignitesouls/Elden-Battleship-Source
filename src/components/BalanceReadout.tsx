@@ -92,7 +92,7 @@ export function BalanceReadout({
             {ordinal(fairness.percentile)} percentile
           </span>
           <span className="muted" style={{ fontSize: "0.72rem" }}>
-            Fairer than {fairness.percentile}% of the {fairness.sample} scored{" "}
+            Fairer than {fairness.percentile}% of the {fairness.sample}{" "}
             {fairness.sample === 1 ? "match" : "matches"} on record
           </span>
         </div>
@@ -102,10 +102,19 @@ export function BalanceReadout({
         </span>
       )}
 
-      <div className="stack" style={{ gap: "0.3rem", marginTop: "0.2rem" }}>
-        <GapBar label="The deal was" seconds={balance.dealt} scale={scale} tone="var(--text-dim)" />
+      {/* The one sentence that has to land before any number does.
+          Everything below it - the bars, the improvement, the stranded line - is meaningless to a
+          reader who does not already know that squares differ in difficulty and that the board gets
+          shuffled after the ships go down. The panel used to assume both. It says them instead. */}
+      <span className="muted" style={{ fontSize: "0.72rem" }}>
+        Some squares take far longer to beat than others, so a fleet sitting on slow ones is harder
+        to sink. Before the first shot, the squares are shuffled to even that out.
+      </span>
+
+      <div className="stack" style={{ gap: "0.3rem", marginTop: "0.1rem" }}>
+        <GapBar label="Before shuffling" seconds={balance.dealt} scale={scale} tone="var(--text-dim)" />
         <GapBar
-          label={unbalanced ? "Played as dealt" : "The board played"}
+          label={unbalanced ? "Never shuffled" : "As played"}
           seconds={balance.played}
           scale={scale}
           tone={band.color}
@@ -113,42 +122,38 @@ export function BalanceReadout({
       </div>
 
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        Seconds between the two fleets at their closest-matched ships - the longest against the
-        longest, the shortest against the shortest. Lower is fairer.
+        How much longer one side's ships took to sink than the other's - each fleet's toughest ship
+        against the other's toughest, then the next, and so on down. Lower is fairer.
       </span>
 
       <div className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
         {unbalanced ? (
           <span className="muted">
-            This board was never balanced - the squares fell where the seed put them, which is how
-            every match worked before the balancer.
+            This board was never shuffled - the squares fell where they fell, which is how every
+            match worked until recently.
           </span>
         ) : improved > 0 ? (
-          <span className="muted">
-            The balancer moved the squares and took {gapLabel(improved)} off the gap.
-          </span>
+          <span className="muted">Shuffling the squares made this board {gapLabel(improved)} fairer.</span>
         ) : (
-          <span className="muted">
-            The balancer accepted the layout it drew; the deal was already inside the limit.
-          </span>
+          <span className="muted">The squares were already even enough to leave alone.</span>
         )}
 
-        {/* The one number here that decides matches rather than describing them. A wide gap between
-            two fleets who both had time to finish is a wide gap; a fleet holding a hull gated longer
-            than the match lasted could not have been beaten in the time available. */}
+        {/* The one number here that decides matches rather than describing them. Two fleets who both
+            had time to finish can be far apart and it is only a gap; a fleet with a ship that could
+            not have been sunk in the time available was never going to win, whatever it did. */}
         {stranded !== null && (
           <span style={{ color: stranded > 0 ? "var(--sunk)" : "var(--text-dim)" }}>
             {stranded === 0
-              ? "Neither fleet was holding a ship the match ran out of time for."
+              ? "Both sides could have been sunk in the time this match ran."
               : stranded === 1
-              ? "One fleet held a ship gated longer than the whole match lasted."
-              : `${stranded} fleets held a ship gated longer than the whole match lasted.`}
+              ? "One side had a ship that could not have been sunk in the time this match ran."
+              : `${stranded} sides had a ship that could not have been sunk in the time this match ran.`}
           </span>
         )}
 
         {balance.accepted === false && (
           <span style={{ color: "var(--sunk)" }}>
-            No layout in the balancer's whole budget met the rules. This was the fairest it found.
+            No even layout could be found for this board. This was the best of the ones tried.
           </span>
         )}
       </div>
