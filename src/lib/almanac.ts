@@ -522,3 +522,77 @@ export function boardSizesPresent(fleets: MatchFleetRow[], events: MatchEventRow
   for (const e of events) s.add(e.board_size);
   return [...s].sort((a, b) => a - b);
 }
+
+/** One square with everything the almanac knows about it - see {@link mergeSquareStats}. */
+export interface SquareRow {
+  name: string;
+  /** Times it has been shot at. Zero for a square nobody has ever taken. */
+  attempts: number;
+  hits: number;
+  sunk: number;
+  /** Null rather than 0 when it has never been fired at: no attempts is not a 0% hit rate. */
+  hitRate: number | null;
+  medianSeconds: number | null;
+  timed: number;
+  fastest: { seconds: number; nickname: string } | null;
+  /** Boards it appeared on, including the ones where it was left alone. */
+  appeared: number;
+  /** Boards where somebody actually shot at it. */
+  fired: number;
+  opened: number;
+  missRate: number;
+}
+
+/**
+ * Shooting stats and board frequency for every square, in one row each.
+ *
+ * Built from the union of the two, not from {@link bossStats} alone. bossStats is assembled out of
+ * match_events, which by definition only records shots that happened - so the squares that are most
+ * worth reading about, the ones nobody has ever fired at, are exactly the ones missing from it.
+ * {@link bossFrequency} rebuilds the whole board and is the only side that has them.
+ */
+export function mergeSquareStats(stats: BossStat[], freq: BossFrequency[]): SquareRow[] {
+  const rows = new Map<string, SquareRow>();
+  const touch = (name: string): SquareRow => {
+    let r = rows.get(name);
+    if (!r) {
+      r = {
+        name,
+        attempts: 0,
+        hits: 0,
+        sunk: 0,
+        hitRate: null,
+        medianSeconds: null,
+        timed: 0,
+        fastest: null,
+        appeared: 0,
+        fired: 0,
+        opened: 0,
+        missRate: 0,
+      };
+      rows.set(name, r);
+    }
+    return r;
+  };
+
+  for (const f of freq) {
+    const r = touch(f.name);
+    r.appeared = f.appeared;
+    r.fired = f.fired;
+    r.opened = f.opened;
+    r.missRate = f.missRate;
+  }
+
+  for (const s of stats) {
+    const r = touch(s.name);
+    r.attempts = s.attempts;
+    r.hits = s.hits;
+    r.sunk = s.sunk;
+    r.hitRate = s.attempts > 0 ? s.hitRate : null;
+    r.medianSeconds = s.medianSeconds;
+    r.timed = s.timed;
+    r.fastest = s.fastest;
+  }
+
+  return [...rows.values()];
+}

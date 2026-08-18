@@ -8,10 +8,10 @@ import { buildRecordBook } from "../lib/recordBook";
 import { squarePace, paceLabel, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 import { RecordBook } from "../components/RecordBook";
 import { LoadingScreen } from "../components/BrandMark";
+import { SortHeader, useSortColumns, type SortColumn } from "../components/SortHeader";
 import type { MatchEventRow } from "../lib/almanac";
 
 type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
-type Direction = "asc" | "desc";
 
 /** A career row with the two things the table needs that aggregation doesn't carry. */
 interface Row extends CareerStats {
@@ -19,31 +19,6 @@ interface Row extends CareerStats {
   pace: number | null;
   /** The name as SHOWN, so sorting by captain matches what the reader is looking at. */
   displayName: string;
-}
-
-interface Column {
-  key: SortKey;
-  label: string;
-  /**
-   * A second line under the heading, for a column whose name doesn't say which number it is.
-   *
-   * Pace has one because "pace" alone doesn't distinguish a median from an average, and those are
-   * genuinely different numbers here - across this archive the medians sit inside a 40-second band
-   * while the means spread over ninety, because a single twenty-minute boss drags an average and
-   * leaves a median alone. A reader comparing two captains deserves to know which they are reading.
-   */
-  sublabel?: string;
-  align: "left" | "right";
-  /**
-   * Which way the first click sorts.
-   *
-   * Every column opens on its most interesting end: most wins, most hits - and for pace, the
-   * FASTEST, which is the low number. A column whose first click buries what people came to see is
-   * a column they have to click twice.
-   */
-  firstDirection: Direction;
-  /** The whole stat in a sentence, on hover. Every column has one - see the note on the header. */
-  title: string;
 }
 
 /**
@@ -55,7 +30,7 @@ interface Column {
  * than nowhere. Consistency is deliberate too: a tooltip on some headings and not others teaches
  * people that hovering usually does nothing.
  */
-const COLUMNS: Column[] = [
+const COLUMNS: SortColumn<SortKey>[] = [
   {
     key: "name",
     label: "Captain",
@@ -147,18 +122,7 @@ function compare(a: Row, b: Row, key: SortKey): number {
 export function Leaderboard() {
   const [rows, setRows] = useState<ParticipantRow[] | null>(null);
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
-  const [sort, setSort] = useState<SortKey>("wins");
-  const [direction, setDirection] = useState<Direction>("desc");
-
-  /** Clicking the column you're already on flips it; clicking a new one opens it its own way. */
-  const sortBy = (key: SortKey) => {
-    if (key === sort) {
-      setDirection((d) => (d === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setSort(key);
-    setDirection(COLUMNS.find((c) => c.key === key)?.firstDirection ?? "desc");
-  };
+  const { sort, direction, sortBy } = useSortColumns(COLUMNS, "wins");
 
   /**
    * Archived shots, for the streak and timing records only.
@@ -276,87 +240,16 @@ export function Leaderboard() {
         <div className="panel stack" style={{ gap: "0.6rem" }}>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
-              <thead>
-                {/* Top-aligned throughout, because one heading is two lines tall and the default
-                    middle alignment would centre the other seven against it - leaving "Acc." sitting
-                    between "pace" and "median" rather than level with "pace". */}
-                <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem", verticalAlign: "top" }}>
-                    #
-                  </th>
-                  {COLUMNS.map((col) => {
-                    const active = sort === col.key;
-                    return (
-                      <th
-                        key={col.key}
-                        // Announces the sorted column and its direction to a screen reader, which is
-                        // otherwise the one thing the arrow says that nothing else does.
-                        aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
-                        style={{ textAlign: col.align, fontWeight: 500, padding: 0, verticalAlign: "top" }}
-                      >
-                        {/* A real button, not a click handler on the th: this is the page's main
-                            control now that the row of sort buttons is gone, and it has to be
-                            reachable by keyboard and announced as pressable. */}
-                        <button
-                          type="button"
-                          onClick={() => sortBy(col.key)}
-                          title={col.title}
-                          style={{
-                            width: "100%",
-                            background: "none",
-                            border: "none",
-                            padding: "0.25rem 0.4rem",
-                            font: "inherit",
-                            fontWeight: active ? 600 : 500,
-                            color: active ? "var(--accent)" : "inherit",
-                            textAlign: col.align,
-                            cursor: "pointer",
-                            display: "flex",
-                            flexDirection: "column",
-                            // A two-line heading has to sit on the same baseline as the one-line
-                            // ones, so the stack grows DOWNWARD from a common top edge.
-                            justifyContent: "flex-start",
-                            alignItems: col.align === "left" ? "flex-start" : "flex-end",
-                            gap: 0,
-                            lineHeight: 1.15,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "0.2rem",
-                            }}
-                          >
-                            {col.label}
-                            {/* Only the sorted column carries an arrow. Showing a dimmed one on every
-                                header turns eight headings into eight pieces of punctuation. */}
-                            <span aria-hidden style={{ fontSize: "0.6rem", opacity: active ? 1 : 0 }}>
-                              {direction === "asc" ? "▲" : "▼"}
-                            </span>
-                          </span>
-                          {/* Dimmer and smaller even when the column is sorted: it qualifies the
-                              heading rather than being part of it, and matching weight would read
-                              as two headings stacked. */}
-                          {col.sublabel && (
-                            <span
-                              style={{
-                                fontSize: "0.68em",
-                                fontWeight: 400,
-                                opacity: 0.72,
-                                letterSpacing: "0.02em",
-                              }}
-                            >
-                              {col.sublabel}
-                            </span>
-                          )}
-                        </button>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
+              {/* Not sticky: this table scrolls with the PAGE rather than inside a box, and a
+                  header pinned to the viewport would float over the record book above it. */}
+              <SortHeader
+                columns={COLUMNS}
+                sort={sort}
+                direction={direction}
+                onSort={sortBy}
+                leading="#"
+                sticky={false}
+              />
               <tbody>
                 {sorted.map((c, i) => {
                   const p = c.userId ? profiles.get(c.userId) : undefined;

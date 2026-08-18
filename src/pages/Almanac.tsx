@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchMatchFleets, fetchMatchEvents, fetchParticipants, fetchProfiles, type Profile } from "../lib/profiles";
+import { fetchMatchFleets, fetchMatchEvents, fetchParticipants, fetchProfiles, profileName, type Profile } from "../lib/profiles";
 import { fetchArchivedMatches, type ArchivedMatch } from "../lib/matchArchive";
 import { buildScoutingReports } from "../lib/scouting";
 import { CaptainCards } from "../components/CaptainCards";
@@ -17,12 +17,17 @@ import {
   boardSizesPresent,
   playerPace,
   bossFrequency,
+  mergeSquareStats,
   matchShape,
   groupEventsByMatch,
   type MatchFleetRow,
   type MatchEventRow,
   type Heatmap,
+  type SquareRow,
+  type PlayerPace,
 } from "../lib/almanac";
+import { SortHeader, useSortColumns, type SortColumn } from "../components/SortHeader";
+import { squarePace, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 
 const COL_LETTERS = "ABCDEFGHIJKLMNOPQR";
 
@@ -111,6 +116,8 @@ export function Almanac() {
   const reports = useMemo(() => buildScoutingReports(parts, events), [parts, events]);
 
   const pace = useMemo(() => playerPace(events), [events]);
+  // The leaderboard's measure of the same thing, shown beside this page's. See the pace table.
+  const paceMedians = useMemo(() => squarePace(events), [events]);
   const shape = useMemo(() => matchShape(events, parts), [events, parts]);
   const freq = useMemo(
     // Rebuilds each board's full challenge list from its room id, which is what reveals squares
@@ -128,11 +135,6 @@ export function Almanac() {
       }),
     [events, shownSet]
   );
-  const mostMissed = useMemo(
-    () => freq.filter((b) => b.appeared >= 2 && b.fired < b.appeared).sort((a, b) => b.missRate - a.missRate || b.appeared - a.appeared).slice(0, 8),
-    [freq]
-  );
-  const openers = useMemo(() => freq.filter((b) => b.opened > 0).sort((a, b) => b.opened - a.opened).slice(0, 8), [freq]);
 
   const sizes = useMemo(() => boardSizesPresent(shownFleets, events), [shownFleets, events]);
   const boardSize = size ?? sizes[0] ?? 10;
@@ -141,7 +143,8 @@ export function Almanac() {
     () => (mode === "ships" ? placementHeatmap(shownFleets, boardSize) : shotHeatmap(events, boardSize)),
     [mode, shownFleets, events, boardSize]
   );
-  const bosses = useMemo(() => bossStats(events), [events]);
+  // Every square on the board in one row, not just the ones somebody shot at - see mergeSquareStats.
+  const squares = useMemo(() => mergeSquareStats(bossStats(events), freq), [events, freq]);
   const records = useMemo(() => fastestKills(events, 8), [events]);
 
   if (fleets === null) return <p className="muted">Consulting the almanac...</p>;
@@ -257,86 +260,10 @@ export function Almanac() {
               <HeatGrid map={map} />
             </div>
 
-            {bosses.length > 0 && (
-              <div className="panel stack" style={{ gap: "0.4rem" }}>
-                <h3 style={{ margin: 0 }}>Bosses</h3>
-                <span className="muted" style={{ fontSize: "0.72rem" }}>
-                  Times are median seconds after firing opens, counted from every shot - hit or miss, the boss took
-                  just as long.
-                </span>
-                <div style={{ overflowX: "auto", maxHeight: "24rem", overflowY: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-                    <thead>
-                      <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                        <th style={{ textAlign: "left", fontWeight: 500, padding: "0.2rem 0.4rem" }}>Boss</th>
-                        <th style={{ fontWeight: 500, padding: "0.2rem 0.4rem" }}>Shot at</th>
-                        <th style={{ fontWeight: 500, padding: "0.2rem 0.4rem" }}>Hit %</th>
-                        <th style={{ fontWeight: 500, padding: "0.2rem 0.4rem" }}>Median</th>
-                        <th style={{ textAlign: "left", fontWeight: 500, padding: "0.2rem 0.4rem" }}>Fastest</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bosses.map((b) => {
-                        const num = { padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
-                        return (
-                          <tr key={b.name} style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)" }}>
-                            <td style={{ textAlign: "left", padding: "0.2rem 0.4rem" }}>{b.name}</td>
-                            <td style={num}>{b.attempts}</td>
-                            <td style={num}>{Math.round(b.hitRate * 100)}%</td>
-                            <td style={num} title={`${b.timed} timed ${b.timed === 1 ? "shot" : "shots"}`}>
-                              {b.medianSeconds !== null ? fmt(b.medianSeconds) : "-"}
-                            </td>
-                            <td style={{ textAlign: "left", padding: "0.2rem 0.4rem" }} className="muted">
-                              {b.fastest ? `${fmt(b.fastest.seconds)} - ${b.fastest.nickname}` : "-"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            <SquaresTable rows={squares} />
 
-            {(pace.length > 0 || mostMissed.length > 0 || openers.length > 0) && (
-              <div className="row" style={{ gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-                {pace.length > 0 && (
-                  <RankList
-                    title="Square pace"
-                    caption="Mean seconds between a player's own shots. Lower is faster."
-                    items={pace.slice(0, 8).map((p) => ({
-                      key: p.nickname,
-                      primary: p.nickname,
-                      secondary: `${p.shots} shots · ${p.matches} matches`,
-                      value: fmt(p.secondsPerShot),
-                    }))}
-                  />
-                )}
-                {mostMissed.length > 0 && (
-                  <RankList
-                    title="Most ignored"
-                    caption="Appeared on the board but was never fired at."
-                    items={mostMissed.map((b) => ({
-                      key: b.name,
-                      primary: b.name,
-                      secondary: `skipped on ${b.appeared - b.fired} of ${b.appeared} boards`,
-                      value: `${Math.round(b.missRate * 100)}%`,
-                    }))}
-                  />
-                )}
-                {openers.length > 0 && (
-                  <RankList
-                    title="Opening shots"
-                    caption="Most often the very first square of a match."
-                    items={openers.map((b) => ({
-                      key: b.name,
-                      primary: b.name,
-                      secondary: `${b.appeared} appearances`,
-                      value: `x${b.opened}`,
-                    }))}
-                  />
-                )}
-              </div>
+            {pace.length > 0 && (
+              <PaceTable rows={pace} medians={paceMedians} profiles={profiles} setId={shownSet} />
             )}
 
             {records.length > 0 && (
@@ -475,35 +402,6 @@ function BigStat({ label, value, sub, hint }: { label: string; value: string | n
   );
 }
 
-function RankList({
-  title,
-  caption,
-  items,
-}: {
-  title: string;
-  caption: string;
-  items: Array<{ key: string; primary: string; secondary: string; value: string }>;
-}) {
-  return (
-    <div className="panel stack" style={{ flex: "1 1 15rem", minWidth: "14rem", gap: "0.3rem" }}>
-      <h3 style={{ margin: 0 }}>{title}</h3>
-      <span className="muted" style={{ fontSize: "0.7rem" }}>{caption}</span>
-      {items.map((it, i) => (
-        <div key={it.key} className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.8rem" }}>
-          <span style={{ minWidth: 0 }}>
-            <span className="muted">{i + 1}. </span>
-            <strong>{it.primary}</strong>
-            <div className="muted" style={{ fontSize: "0.68rem" }}>{it.secondary}</div>
-          </span>
-          <strong style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-            {it.value}
-          </strong>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * Grid where each cell's brightness is its share of the busiest cell.
  *
@@ -560,6 +458,363 @@ function HeatGrid({ map }: { map: Heatmap }) {
           </>
         ))}
       </div>
+    </div>
+  );
+}
+
+type SquareSortKey = "name" | "attempts" | "hitRate" | "median" | "appeared" | "ignored" | "opened" | "fastest";
+
+/**
+ * Every number the almanac holds about a square, in one sortable table.
+ *
+ * This replaced three separate boards - the boss table, "most ignored" and "opening shots" - which
+ * were three top-eight cuts of the same rows. A cut of eight is a headline, and headlines are what
+ * the panels above are for; the question people actually bring to this table is about one square
+ * they care about, and that square is almost never in anybody's top eight. Sorting answers both:
+ * click Ignored and the old "most ignored" board is the top of the column, only it keeps going.
+ */
+const SQUARE_COLUMNS: SortColumn<SquareSortKey>[] = [
+  {
+    key: "name",
+    label: "Square",
+    align: "left",
+    firstDirection: "asc",
+    title: "The square as it reads on the board.",
+  },
+  {
+    key: "attempts",
+    label: "Shot at",
+    align: "right",
+    firstDirection: "desc",
+    title: "Times this square has been taken, across every match on this board. One per trigger-pull, hit or miss.",
+  },
+  {
+    key: "hitRate",
+    label: "Hit %",
+    align: "right",
+    firstDirection: "desc",
+    title: "Share of those shots that landed on an enemy ship. That is where people HIDE ships, not how hard the square is - the fight is the same either way.",
+  },
+  {
+    key: "median",
+    label: "Median",
+    sublabel: "on the clock",
+    align: "right",
+    firstDirection: "asc",
+    title: "Median time into the match at which this square falls - when it usually gets taken, not how long it takes. Every shot counts, hit or miss.",
+  },
+  {
+    key: "appeared",
+    label: "Seen",
+    align: "right",
+    firstDirection: "desc",
+    title: "Boards this square has appeared on, whether or not anybody shot at it. Rebuilt from each match's seed, which is the only way to see a square nobody touched.",
+  },
+  {
+    key: "ignored",
+    label: "Ignored",
+    align: "right",
+    firstDirection: "desc",
+    title: "Share of the boards it appeared on where nobody fired at it at all. 100% means it has never been taken.",
+  },
+  {
+    key: "opened",
+    label: "Opened",
+    align: "right",
+    firstDirection: "desc",
+    title: "Times this square was the very first shot of a match.",
+  },
+  {
+    key: "fastest",
+    label: "Fastest",
+    align: "left",
+    firstDirection: "asc",
+    title: "The earliest this square has ever fallen, and who took it.",
+  },
+];
+
+/**
+ * Ascending comparison for one column. The caller flips it for descending.
+ *
+ * The secondary keys are not decoration. Sorting on a rate alone puts whoever has the smallest
+ * sample on top, so every rate falls back to the volume behind it - which keeps a square seen once
+ * and skipped from outranking one skipped on thirty boards out of thirty.
+ */
+function compareSquares(a: SquareRow, b: SquareRow, key: SquareSortKey): number {
+  switch (key) {
+    case "name":
+      return a.name.localeCompare(b.name);
+    case "attempts":
+      return a.attempts - b.attempts || (a.hitRate ?? 0) - (b.hitRate ?? 0);
+    case "hitRate":
+      return (a.hitRate ?? 0) - (b.hitRate ?? 0) || a.attempts - b.attempts;
+    case "median":
+      return (a.medianSeconds ?? 0) - (b.medianSeconds ?? 0) || b.timed - a.timed;
+    case "appeared":
+      return a.appeared - b.appeared || a.attempts - b.attempts;
+    case "ignored":
+      return a.missRate - b.missRate || a.appeared - b.appeared;
+    case "opened":
+      return a.opened - b.opened || a.appeared - b.appeared;
+    case "fastest":
+      return (a.fastest?.seconds ?? 0) - (b.fastest?.seconds ?? 0) || a.attempts - b.attempts;
+  }
+}
+
+/** Columns where a square can simply have no number yet, which is not the same as having a low one. */
+function squareMissing(row: SquareRow, key: SquareSortKey): boolean {
+  if (key === "hitRate") return row.hitRate === null;
+  if (key === "median") return row.medianSeconds === null;
+  if (key === "fastest") return row.fastest === null;
+  return false;
+}
+
+function SquaresTable({ rows }: { rows: SquareRow[] }) {
+  const { sort, direction, sortBy } = useSortColumns(SQUARE_COLUMNS, "attempts");
+
+  const sorted = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      // A square nobody has fired at yet sits at the bottom in BOTH directions rather than sorting
+      // as though its time were zero - it would otherwise top every timing column it cannot answer.
+      const am = squareMissing(a, sort);
+      const bm = squareMissing(b, sort);
+      if (am !== bm) return am ? 1 : -1;
+      const cmp = compareSquares(a, b, sort);
+      return direction === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sort, direction]);
+
+  if (rows.length === 0) return null;
+
+  const untouched = rows.filter((r) => r.fired === 0).length;
+
+  return (
+    <div className="panel stack" style={{ gap: "0.4rem" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0 }}>Squares</h3>
+        <span className="muted" style={{ fontSize: "0.7rem" }}>
+          {rows.length} squares seen{untouched > 0 ? ` · ${untouched} never taken` : ""}
+        </span>
+      </div>
+      <span className="muted" style={{ fontSize: "0.72rem" }}>
+        Every square this board has ever dealt, including the ones nobody has fired at. Times are
+        median seconds after firing opens, counted from every shot - hit or miss, the square took
+        just as long.
+      </span>
+      <div style={{ overflowX: "auto", maxHeight: "30rem", overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+          <SortHeader columns={SQUARE_COLUMNS} sort={sort} direction={direction} onSort={sortBy} leading="#" />
+          <tbody>
+            {sorted.map((r, i) => {
+              const num = { padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
+              // Never taken on any board it appeared on. Dimmed rather than flagged: at the top of
+              // the Ignored column it is the whole point, and everywhere else it is just context.
+              const untaken = r.appeared > 0 && r.fired === 0;
+              return (
+                <tr key={r.name} style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)" }}>
+                  <td style={{ textAlign: "left", padding: "0.2rem 0.4rem", color: "var(--text-dim)" }}>{i + 1}</td>
+                  <td style={{ textAlign: "left", padding: "0.2rem 0.4rem", color: untaken ? "var(--text-dim)" : undefined }}>
+                    {r.name}
+                  </td>
+                  <td style={{ ...num, color: r.attempts === 0 ? "var(--text-dim)" : undefined }}>{r.attempts}</td>
+                  <td style={num}>{r.hitRate !== null ? `${Math.round(r.hitRate * 100)}%` : "-"}</td>
+                  <td style={num} title={r.timed > 0 ? `${r.timed} timed ${r.timed === 1 ? "shot" : "shots"}` : undefined}>
+                    {r.medianSeconds !== null ? fmt(r.medianSeconds) : "-"}
+                  </td>
+                  {/* A dash rather than 0 when the board could not be rebuilt: the match's room row
+                      is gone, so "seen 0 times" would be a claim the data cannot make. */}
+                  <td style={{ ...num, color: r.appeared === 0 ? "var(--text-dim)" : undefined }}>
+                    {r.appeared > 0 ? r.appeared : "-"}
+                  </td>
+                  <td style={{ ...num, color: untaken ? "var(--accent)" : r.missRate === 0 ? "var(--text-dim)" : undefined }}>
+                    {r.appeared > 0 ? `${Math.round(r.missRate * 100)}%` : "-"}
+                  </td>
+                  <td style={{ ...num, color: r.opened === 0 ? "var(--text-dim)" : undefined }}>{r.opened}</td>
+                  <td style={{ textAlign: "left", padding: "0.2rem 0.4rem" }} className="muted">
+                    {r.fastest ? `${fmt(r.fastest.seconds)} - ${r.fastest.nickname}` : "-"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <span className="muted" style={{ fontSize: "0.7rem" }}>
+        Click a heading to sort by it; click it again to flip the order. Hover any heading for what
+        the number means.
+      </span>
+    </div>
+  );
+}
+
+type PaceSortKey = "name" | "matches" | "shots" | "median" | "average" | "best";
+
+const PACE_COLUMNS: SortColumn<PaceSortKey>[] = [
+  {
+    key: "name",
+    label: "Captain",
+    align: "left",
+    firstDirection: "asc",
+    title: "Signed-in captains are grouped by account; guests by nickname, so two guests sharing a name share a row. Click a name for their full record on this board.",
+  },
+  {
+    key: "matches",
+    label: "Matches",
+    align: "right",
+    firstDirection: "desc",
+    title: "Finished matches they have fired in on this board.",
+  },
+  {
+    key: "shots",
+    label: "Shots",
+    align: "right",
+    firstDirection: "desc",
+    title: "Squares taken across all of them.",
+  },
+  {
+    key: "median",
+    label: "Pace",
+    sublabel: "median",
+    align: "right",
+    firstDirection: "asc",
+    title: `Square pace - the time from one square falling to the next, taken as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
+  },
+  {
+    key: "average",
+    label: "Pace",
+    sublabel: "average",
+    align: "right",
+    firstDirection: "asc",
+    title: "The same work as a mean: elapsed time over squares taken, worked out within each match and then averaged across matches, so the days between sessions never count as thinking time. It counts every gap, including the pair a duo boss fills at once - which is why it sits away from the median.",
+  },
+  {
+    key: "best",
+    label: "Best match",
+    align: "right",
+    firstDirection: "asc",
+    title: "Their fastest single match by that average. Click it to open the match.",
+  },
+];
+
+/** A pace row: the page's own average, plus the leaderboard's median where there is enough for one. */
+interface PaceRow extends PlayerPace {
+  median: number | null;
+}
+
+function comparePace(a: PaceRow, b: PaceRow, key: PaceSortKey): number {
+  switch (key) {
+    case "name":
+      return a.nickname.localeCompare(b.nickname);
+    case "matches":
+      return a.matches - b.matches || a.shots - b.shots;
+    case "shots":
+      return a.shots - b.shots || a.matches - b.matches;
+    case "median":
+      // Nulls are handled before this is reached - see the sort below.
+      return (a.median ?? 0) - (b.median ?? 0) || b.shots - a.shots;
+    case "average":
+      return a.secondsPerShot - b.secondsPerShot || b.shots - a.shots;
+    case "best":
+      return (a.bestMatch?.seconds ?? 0) - (b.bestMatch?.seconds ?? 0) || b.shots - a.shots;
+  }
+}
+
+/**
+ * Every captain's pace, both ways of measuring it.
+ *
+ * Two columns because they are genuinely different numbers and the gap between them is itself
+ * readable: the median asks what a normal square looks like for someone, the average asks how their
+ * whole evening went, and one twenty-minute wall moves the second and leaves the first alone. A
+ * captain whose average sits far above their median met a bad boss; they did not have a slow night.
+ */
+function PaceTable({
+  rows,
+  medians,
+  profiles,
+  setId,
+}: {
+  rows: PlayerPace[];
+  medians: Map<string, number>;
+  profiles: Map<string, Profile>;
+  setId: SquareSetId;
+}) {
+  const { sort, direction, sortBy } = useSortColumns(PACE_COLUMNS, "median");
+
+  const sorted = useMemo(() => {
+    const withMedian: PaceRow[] = rows.map((r) => ({ ...r, median: medians.get(r.key) ?? null }));
+    return withMedian.sort((a, b) => {
+      // A captain without a median yet sits at the bottom in BOTH directions rather than sorting as
+      // though they were infinitely fast.
+      if (sort === "median" && a.median !== b.median && (a.median === null || b.median === null)) {
+        return a.median === null ? 1 : -1;
+      }
+      const cmp = comparePace(a, b, sort);
+      return direction === "asc" ? cmp : -cmp;
+    });
+  }, [rows, medians, sort, direction]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="panel stack" style={{ gap: "0.4rem" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0 }}>Square pace</h3>
+        <span className="muted" style={{ fontSize: "0.7rem" }}>
+          {sorted.length} {sorted.length === 1 ? "captain" : "captains"}
+        </span>
+      </div>
+      <span className="muted" style={{ fontSize: "0.72rem" }}>
+        How long a captain takes over one square. Lower is faster - and under the fire-on-kill rule
+        that gap is one square's work, start to finish.
+      </span>
+      <div style={{ overflowX: "auto", maxHeight: "26rem", overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+          <SortHeader columns={PACE_COLUMNS} sort={sort} direction={direction} onSort={sortBy} leading="#" />
+          <tbody>
+            {sorted.map((r, i) => {
+              const num = { padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
+              const p = profiles.get(r.key);
+              return (
+                <tr key={r.key} style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)" }}>
+                  <td style={{ textAlign: "left", padding: "0.2rem 0.4rem", color: "var(--text-dim)" }}>{i + 1}</td>
+                  <td style={{ textAlign: "left", padding: "0.2rem 0.4rem" }}>
+                    {/* Carries the set through, so a captain's page shows the same board's numbers
+                        as the row that was clicked to reach it. */}
+                    <Link
+                      to={`/player/${encodeURIComponent(r.key)}?set=${encodeURIComponent(setId)}`}
+                      style={{ display: "flex", alignItems: "center", gap: "0.4rem", textDecoration: "none", color: "var(--text)" }}
+                    >
+                      {p?.avatar_url && (
+                        <img src={p.avatar_url} alt="" width={18} height={18} style={{ borderRadius: "50%" }} />
+                      )}
+                      <span>{profileName(p) ?? r.nickname}</span>
+                    </Link>
+                  </td>
+                  <td style={num}>{r.matches}</td>
+                  <td style={num}>{r.shots}</td>
+                  <td style={{ ...num, color: r.median === null ? "var(--text-dim)" : undefined }}>
+                    {r.median !== null ? fmt(r.median) : "-"}
+                  </td>
+                  <td style={num}>{fmt(r.secondsPerShot)}</td>
+                  <td style={num}>
+                    {r.bestMatch ? (
+                      <Link to={`/match/${encodeURIComponent(r.bestMatch.matchKey)}`} style={{ textDecoration: "none" }}>
+                        {fmt(r.bestMatch.seconds)}
+                      </Link>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <span className="muted" style={{ fontSize: "0.7rem" }}>
+        A median needs {MIN_GAPS_FOR_PACE} squares before it shows; the average appears from the
+        first match. Guests are grouped by nickname, so two people using the same name share a row.
+      </span>
     </div>
   );
 }
