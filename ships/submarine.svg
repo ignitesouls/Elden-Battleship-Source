@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 96" preserveAspectRatio="none">
+  <!--
+    Submarine, 3 cells. Side-on profile, bow to the right. See destroyer.svg for the authoring rules.
+
+    The same length as the cruiser and the only hull that could never be mistaken for it: no funnel, no
+    turrets, no bridge - one capsule sitting low in the water with a single fairwater and a pair of
+    periscopes. It is also the flattest skyline of the five, which is what makes it read at a glance.
+
+    Deliberately the closest of the five to the sprite it replaces: the old submarine.png was the one
+    piece of that set that already read as a specific vessel, so its proportions are kept.
+  -->
+  <g fill="#fff" fill-rule="evenodd">
+    <!-- Pressure hull: rounded both ends, riding low. The slot is the deck edge, punched as a hole. -->
+    <path d="M34,58 C16,58 6,63 6,70 C6,77 16,82 34,82 H254 C272,82 282,77 282,70 C282,63 272,58 254,58 Z
+             M26,61 H262 V63.5 H26 Z" />
+
+    <!-- Fairwater, with the rounded forward face these have and nothing else does. -->
+    <path d="M118,38 C118,34 121,32 126,32 H154 C159,32 162,34 162,38 V58 H118 Z" />
+
+    <!-- Periscope and snorkel. -->
+    <path d="M130,16 H134 V32 H130 Z" />
+    <path d="M140,22 H143.5 V32 H140 Z" />
+
+    <!-- Diving planes aft, the one thing breaking the capsule's line. Kept inside the viewBox: the
+         root viewport clips, so anything at a negative x is silently lost. -->
+    <path d="M8,66 L1,63 V77 L8,74 Z" />
+  </g>
+</svg>

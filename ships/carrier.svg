@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 96" preserveAspectRatio="none">
+  <!--
+    Aircraft carrier, 5 cells. Side-on profile, bow to the right. See destroyer.svg for the rules.
+
+    Built around the three things that say "aircraft carrier" in profile and are true of nothing else in
+    the fleet:
+
+      1. The flight deck is a full-length slab that OVERHANGS the hull at both ends. Every other hull
+         here is widest at the waterline; this one is widest at the deck, which changes the outline
+         rather than the decoration.
+      2. A ski-jump ramp at the bow. Unmistakable at any size, and it survives being three squares wide
+         on a stream board when a parked aircraft would not.
+      3. The island is a small block offset well aft of centre, with the deck running clean past it -
+         where every other ship carries its bridge amidships with a funnel behind it.
+
+    Two aircraft are parked aft. They are the first thing to disappear at small sizes, which is why
+    they are the last thing the shape depends on.
+  -->
+  <g fill="#fff" fill-rule="evenodd">
+    <!-- Hull, narrower than the deck and set in from both ends. -->
+    <path d="M30,58 H424 C442,60 456,66 464,73 C452,80 436,84 418,84 H36 C31,82 30,78 30,72 Z
+             M52,71 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M76,71 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M100,71 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M124,71 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M148,71 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0" />
+
+    <!-- Flight deck: overhangs aft at x=8, runs the whole length, and ramps up over the bow. -->
+    <path d="M8,46 H392 C420,46 444,39 462,26 L472,33 C452,50 426,58 392,58 H8 Z" />
+
+    <!-- Sponsons under the deck edge - the lumps that give a carrier its cluttered waterline. -->
+    <path d="M232,58 H258 V65 H232 Z" />
+    <path d="M360,58 H382 V64 H360 Z" />
+
+    <!-- Island: aft of centre, deliberately small against all that deck. -->
+    <path d="M300,28 H352 V46 H300 Z" />
+    <path d="M312,20 H338 V28 H312 Z" />
+    <!-- Uptake, integral to the island rather than a separate funnel. -->
+    <path d="M340,22 H352 V28 H340 Z" />
+    <!-- Lattice mast and yardarm. -->
+    <path d="M321,6 H326 V20 H321 Z" />
+    <path d="M310,10 H338 V13 H310 Z" />
+
+    <!-- Two aircraft parked aft: blunt fuselage, swept fin. -->
+    <path d="M118,38 H132 L138,46 H110 Z" />
+    <path d="M170,38 H184 L190,46 H162 Z" />
+  </g>
+</svg>

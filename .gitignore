@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Secrets.
+#
+# .env.local carries the Supabase SERVICE ROLE key, which the check scripts use and which must
+# never be committed. The `anon` key that ships inside the browser bundle is a different thing and
+# is public by design - row-level security is what protects the data, not the secrecy of that key.
+.env
+.env.*
+!.env.example
+
+# Logs and editor droppings
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local state. settings.local.json is personal; the rest is runtime scratch.
+.claude/

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 96" preserveAspectRatio="none">
+  <!--
+    Battleship, 4 cells. Side-on profile, bow to the right. See destroyer.svg for the authoring rules.
+
+    The heavy one, and it should look it from across a room: the tallest silhouette in the fleet, a
+    stacked pagoda bridge climbing nearly to the top of the box, TWO funnels, and three turrets whose
+    barrels are long enough to overhang the hull. Highest freeboard of the five as well - the hull is
+    drawn deeper than the cruiser's on purpose, so even the waterline says which ship this is.
+  -->
+  <g fill="#fff" fill-rule="evenodd">
+    <!-- Hull: deep, with a bluff bow rather than the cruiser's fine one. -->
+    <path d="M10,54 H330 C354,55 370,61 380,70 C370,79 354,82 330,82 H16 C12,81 10,77 10,70 Z
+             M40,68 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M62,68 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M84,68 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M106,68 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0
+             M128,68 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0" />
+
+    <!-- Aft turret, trained astern. -->
+    <path d="M60,44 H98 V54 H60 Z" />
+    <path d="M38,47 H60 V51 H38 Z" />
+
+    <!-- Pagoda: four steps and a topmast. Nothing else in the fleet is built like this. -->
+    <path d="M150,34 H198 V54 H150 Z" />
+    <path d="M158,24 H190 V34 H158 Z" />
+    <path d="M166,16 H182 V24 H166 Z" />
+    <path d="M171,4 H176 V16 H171 Z" />
+    <path d="M160,9 H188 V12 H160 Z" />
+
+    <!-- Two funnels, the aft one shorter. -->
+    <path d="M206,30 H228 L225,54 H203 Z" />
+    <path d="M236,36 H254 L251,54 H233 Z" />
+
+    <!-- Forward pair, superfiring, with barrels over the bow. -->
+    <path d="M262,40 H300 V50 H262 Z" />
+    <path d="M300,43 H326 V47 H300 Z" />
+    <path d="M306,48 H344 V56 H306 Z" />
+    <path d="M344,50 H374 V54 H344 Z" />
+  </g>
+</svg>
