@@ -9,6 +9,7 @@ import {
   archivedBoardSize,
   archivedBoardSource,
   archivedDeep,
+  archivedBalance,
   archivedSquareSet,
   archivedTeams,
   type ArchivedMatchDetail,
@@ -18,6 +19,7 @@ import { formatRoomCode } from "../lib/roomCode";
 import { matchEpithet } from "../lib/matchName";
 import { buildReplay } from "../lib/replay";
 import { MatchReplay } from "../components/MatchReplay";
+import { BalanceReadout } from "../components/BalanceReadout";
 import { BrandMark, LoadingScreen } from "../components/BrandMark";
 
 /**
@@ -100,6 +102,9 @@ export function ArchivedMatch() {
    * partial list as the whole story.
    */
   const deep = useMemo(() => (detail ? archivedDeep(detail) : null), [detail]);
+
+  /** How fair this board was, as the balancer recorded it - see lib/matchBalance. */
+  const balance = useMemo(() => (detail ? archivedBalance(detail) : null), [detail]);
 
   /** The same finds keyed by square, which is what the boards below draw from. */
   const deepByCell = useMemo(
@@ -325,6 +330,8 @@ export function ArchivedMatch() {
           )}
         </div>
       )}
+
+      <BalanceReadout balance={balance} duration={detail.report?.duration ?? null} />
 
       <div className="stack" style={{ alignItems: "center", gap: "0.4rem", width: "100%" }}>
         {/* The replay opens on the final board, so this is still the same recap it always was -

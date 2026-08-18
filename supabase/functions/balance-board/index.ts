@@ -36,7 +36,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
 import { buildFlatBoard } from '../../../src/lib/squareSetFormat.ts'
-import { balanceBoard, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
+import { balanceBoard, scoreLayout, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
 import bossData2v2 from '../../../src/data/battleshipChallenges2v2.json' with { type: 'json' }
@@ -296,9 +296,41 @@ Deno.serve(async (req) => {
     // could land its permutation after that - re-dealing every square under players who were
     // already looking at the board, and invalidating any shot already taken. The room having moved
     // on is a perfectly ordinary outcome and the right response is to drop the layout on the floor.
+    // -- what the balancer knew ---------------------------------------------------------------
+    //
+    // Everything below was already computed above and used to be returned to the caller and dropped.
+    // Stored now, because the alternative is balance-stats re-deriving it from the archive later at
+    // about 400ms a match - a full re-deal and a fresh rejection sample to recover numbers that are
+    // sitting in `result` right here. See the match_balance migration.
+    //
+    // `topCost` needs one extra pass, and it is the cheap kind: scoreLayout only prices the fleets
+    // against a cost array, with no sampling. It is the slowest square gating each fleet's slowest
+    // ship - which is what says a fleet was holding a hull that could not have been sunk in the time
+    // the match actually ran. That comparison needs a duration, which does not exist yet at deal
+    // time, so the number is stored and the recap makes the comparison once the match has ended.
+    const playedCost = result.perm.map((from) => deal.cost[from])
+    const topCost = scoreLayout(playedCost, occupied).profiles.map((profile) => profile[0] ?? 0)
+
+    const balanceReport = {
+      v: 1,
+      source: 'deal',
+      // Seconds. The widest same-rank gap between two fleets, in the seeded deal and as played.
+      dealt: Math.round(result.rankGapBefore),
+      played: Math.round(result.rankGapAfter),
+      limit: result.rankLimit,
+      attempts: result.attempts,
+      accepted: result.accepted,
+      teams: occupied.length,
+      clumpBefore: result.clumpBefore,
+      clumpAfter: result.clumpAfter,
+      regionLow: result.regionLow,
+      topCost: topCost.map((c) => Math.round(c)),
+      at: new Date().toISOString(),
+    }
+
     const { data: written, error } = await admin
       .from('rooms')
-      .update({ board_perm: result.perm })
+      .update({ board_perm: result.perm, balance_report: balanceReport })
       .eq('id', roomId)
       .eq('status', 'placement')
       .is('board_perm', null)

@@ -10,6 +10,8 @@ import { archiveMatch } from "../lib/archiveMatch";
 import { supabase } from "../lib/supabase";
 import { teamName, teamHex } from "../lib/teamColors";
 import { BrandMark } from "./BrandMark";
+import { BalanceReadout } from "./BalanceReadout";
+import { asMatchBalance } from "../lib/matchBalance";
 import type { Attack, Fleet, Player, Room, ShipPlacement } from "../types/battleship";
 
 interface Props {
@@ -293,6 +295,12 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
       <button onClick={copy} className="primary">
         {copied ? "Copied to clipboard!" : "Copy match report"}
       </button>
+
+      {/* Between the scoreboard and the boards, which is where the question comes up: the
+          scoreboard says who won, the boards are about to show what they were shooting at, and this
+          is whether the two sides were shooting at comparable work. Read straight off the room -
+          balance-board wrote it there before the first shot, so it needs no archive round trip. */}
+      <BalanceReadout balance={asMatchBalance(room.balance_report)} duration={report.duration} />
 
       <TheDeep
         entries={deepEntries}

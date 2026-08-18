@@ -51,6 +51,21 @@ export interface Room {
    * before balancing existed, and of any room whose balancer was unreachable.
    */
   board_perm?: number[] | null;
+  /**
+   * What the balancer made of the board it just dealt - see lib/matchBalance.
+   *
+   * Written by balance-board in the same update as board_perm, and copied onto the match by
+   * archive_match, so the recap can say how fair the board was without anything re-deriving it.
+   * Null wherever board_perm is null, and on every room from before it was kept.
+   *
+   * Typed `unknown` rather than as the record it holds, and not for want of a type: this file is
+   * in the import graph of the edge functions, which run under Deno, and lib/matchBalance reaches
+   * lib/supabase - a browser module built around import.meta.env and window. Even as `import
+   * type` that put the whole browser client in front of Deno's type checker and broke `deno
+   * check` on balance-board. It is also the more honest declaration: the column is jsonb, so it
+   * genuinely is unknown until asMatchBalance has looked at it, which is what every reader does.
+   */
+  balance_report?: unknown;
 }
 
 /** Every board size a room can be set to. 5x5 is a bingo card; 12x12 is a long evening. */

@@ -4,6 +4,7 @@ import { canonicalSquareName } from "./squareSetFormat";
 import type { Award, PlayerStats } from "./matchReport";
 import type { ShipDefinition, ShipPlacement } from "../types/battleship";
 import { DEFAULT_SQUARE_SET, type SquareSetId } from "./challenges";
+import { asMatchBalance, type MatchBalance } from "./matchBalance";
 
 /**
  * Reading finished matches back out of the record books.
@@ -35,6 +36,13 @@ export interface ArchivedMatch {
   report_text: string;
   square_set?: string | null;
   finished_at: string;
+  /**
+   * How fair the board was, as the balancer recorded it at deal time - see lib/matchBalance.
+   *
+   * Null on every match archived before the record was kept, and on every board dealt from a square
+   * set with no cost data. The admin sweep backfills what it can.
+   */
+  balance?: MatchBalance | null;
 }
 
 export interface ArchivedFleet {
@@ -164,6 +172,16 @@ export function archivedDeep(detail: ArchivedMatchDetail): ArchivedDeep & { salv
     ),
     salvaged: true,
   };
+}
+
+/**
+  * This match's fairness record, or null when it has none.
+  *
+  * Narrowed rather than trusted: the column is jsonb, so anything could be in it, and the recap
+  * would rather draw no panel than a panel of undefineds.
+  */
+export function archivedBalance(detail: ArchivedMatchDetail): MatchBalance | null {
+  return asMatchBalance(detail.report?.balance);
 }
 
 /** The teams that took part, in order. */

@@ -674,13 +674,25 @@ export async function resetRoomToLobby(roomId: string, activeTeamsList: number[]
   // the next match would balance the new board against ships nobody has any more. Clearing it is
   // also what lets balance-board run again - it refuses a room that already has one.
   //
+  // The balance record goes with it, and that one is not housekeeping. balance-board writes the two
+  // together, so they only disagree when the balancer does not run at all on the next match - and a
+  // room that kept the old record through a failed re-balance would archive the match that WAS
+  // played with the fairness of the match before it. A wrong number here is worse than none: it is
+  // read on the recap, and every other match is ranked against it.
+  //
   // Written even if the columns don't exist yet on an un-migrated project? No: that would fail the
   // whole reset. Retry without them instead, because getting everyone back to the lobby matters more
   // than the seed.
-  const patch = { status: "lobby", winner_team: null, seed: generateSeed(), board_perm: null };
+  const patch = {
+    status: "lobby",
+    winner_team: null,
+    seed: generateSeed(),
+    board_perm: null,
+    balance_report: null,
+  };
   const { error: roomErr } = await supabase.from("rooms").update(patch).eq("id", roomId);
   if (roomErr) {
-    if (!/seed|board_perm/i.test(roomErr.message)) throw roomErr;
+    if (!/seed|board_perm|balance_report/i.test(roomErr.message)) throw roomErr;
     const { error: retryErr } = await supabase
       .from("rooms")
       .update({ status: "lobby", winner_team: null })
