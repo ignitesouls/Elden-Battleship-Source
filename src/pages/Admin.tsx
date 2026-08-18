@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminPanel } from "../components/AdminPanel";
+import { BalanceStats } from "../components/BalanceStats";
 import { LoadingScreen } from "../components/BrandMark";
 import { useAdminStatus } from "../lib/admin";
 import { fetchRecentMatchReports } from "../lib/rooms";
@@ -58,10 +59,12 @@ export function Admin() {
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
         <h1>Admin</h1>
-        <p className="muted">Records, live rooms and administrators.</p>
+        <p className="muted">Records, live rooms, administrators and board balance.</p>
       </div>
 
       <AdminPanel matches={matches} onChanged={() => setReload((n) => n + 1)} />
+
+      <BalanceStats />
     </div>
   );
 }

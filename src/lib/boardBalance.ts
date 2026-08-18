@@ -366,7 +366,7 @@ export function limitsFor(rules: BalanceRules = DEFAULT_RULES): { rankGap: numbe
 }
 
 /** Widest minus narrowest. Fewer than two values means there is no gap to speak of. */
-function spread(values: number[]): number {
+export function spread(values: number[]): number {
   if (values.length < 2) return 0;
   let min = Infinity;
   let max = -Infinity;
@@ -375,6 +375,85 @@ function spread(values: number[]): number {
     if (v > max) max = v;
   }
   return max - min;
+}
+
+/**
+ * Normalises raw fleet input into the ships this module will actually score.
+ *
+ * Cells are bounds-checked and de-duplicated per ship, ships with nothing left are dropped, and
+ * fleets with no ships left are dropped entirely. A cell two fleets both occupy counts toward both:
+ * a hull sitting on a square the enemy is also sitting on still has to be shot off it.
+ *
+ * Exported so that anything scoring a board after the fact - the admin stats sweep - starts from
+ * exactly the same ships the balancer started from, rather than from its own reading of a placement.
+ */
+export function normalizeFleets(
+  fleets: Array<{ team: number; ships: number[][] }>,
+  cells: number
+): number[][][] {
+  const active: number[][][] = [];
+  for (const fleet of fleets) {
+    const ships: number[][] = [];
+    for (const ship of fleet.ships ?? []) {
+      const own = new Set<number>();
+      for (const c of ship) {
+        if (Number.isInteger(c) && c >= 0 && c < cells) own.add(c);
+      }
+      if (own.size > 0) ships.push([...own]);
+    }
+    if (ships.length > 0) active.push(ships);
+  }
+  return active;
+}
+
+/**
+ * A fleet's cost profile: what each of its ships costs, longest first.
+ *
+ * A ship costs the slowest square on it, because it only sinks once every one of its cells has been
+ * fired at. Sorting matters as much as the maximum does - two fleets can have identical longest
+ * ships and still be nothing like each other if one of them has a ship that falls in half the time,
+ * which is the ship that gets picked off while the match is still being played.
+ *
+ * `costAt` is a lookup rather than an array because the balancer scores a board it is still
+ * permuting, and has to read cost through the permutation it is currently trying.
+ */
+export function shipCostProfile(ships: number[][], costAt: (cell: number) => number): number[] {
+  return ships.map((s) => Math.max(...s.map(costAt))).sort((a, b) => b - a);
+}
+
+/**
+ * The widest same-rank gap between any two fleets, in seconds.
+ *
+ * Compared RANK BY RANK: the longest ship against the longest, the shortest against the shortest. A
+ * single summary - the max, or a total - is what let a board through where both fleets took about
+ * 86 minutes to eliminate but one of them had a ship gated at 50 minutes and the other's cheapest
+ * was 77. Ranks past the shortest fleet's length are not compared, because a fleet with fewer ships
+ * has nothing to put opposite them.
+ */
+export function rankGapOf(profiles: number[][]): number {
+  if (profiles.length < 2) return 0;
+  const ranks = Math.min(...profiles.map((p) => p.length));
+  let worst = 0;
+  for (let i = 0; i < ranks; i++) {
+    worst = Math.max(worst, spread(profiles.map((p) => p[i])));
+  }
+  return worst;
+}
+
+/**
+ * Scores one fixed layout, with no redrawing.
+ *
+ * `balanceBoard` reports `rankGapBefore` for the layout it was handed, but getting at it costs a
+ * full rejection-sampling run. This is that measurement on its own, for scoring boards that have
+ * already been played and cannot be changed.
+ */
+export function scoreLayout(
+  cost: number[],
+  fleets: Array<{ team: number; ships: number[][] }>
+): { rankGap: number; profiles: number[][] } {
+  const active = normalizeFleets(fleets, cost.length);
+  const profiles = active.map((ships) => shipCostProfile(ships, (c) => cost[c]));
+  return { rankGap: rankGapOf(profiles), profiles };
 }
 
 /**
@@ -397,21 +476,8 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
   const perm: number[] = new Array(cells);
   for (let i = 0; i < cells; i++) perm[i] = i;
 
-  // Each fleet as a list of ships, each ship a list of cells, bounds-checked. A cell several fleets
-  // occupy counts toward every one of them: a hull sitting on a square the enemy happens to be
-  // sitting on too still has to be shot off it, so it is part of what that fleet costs to sink.
-  const active: number[][][] = [];
-  for (const fleet of fleets) {
-    const ships: number[][] = [];
-    for (const ship of fleet.ships ?? []) {
-      const own = new Set<number>();
-      for (const c of ship) {
-        if (Number.isInteger(c) && c >= 0 && c < cells) own.add(c);
-      }
-      if (own.size > 0) ships.push([...own]);
-    }
-    if (ships.length > 0) active.push(ships);
-  }
+  // Each fleet as a list of ships, each ship a list of cells, bounds-checked. See normalizeFleets.
+  const active = normalizeFleets(fleets, cells);
 
   /** Every cell a fleet holds, for the region floor - which counts squares, not ships. */
   const cellsOfFleet = (ships: number[][]) => {
@@ -422,32 +488,15 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
   const { rankGap: rankLimit } = limitsFor(rules);
 
-  /**
-   * A fleet's cost profile: what each of its ships costs, longest first.
-   *
-   * A ship costs the slowest square on it, because it only sinks once every one of its cells has
-   * been fired at. Sorting matters as much as the maximum does - two fleets can have identical
-   * longest ships and still be nothing like each other if one of them has a ship that falls in half
-   * the time, which is the ship that gets picked off while the match is still being played.
-   */
-  const profileOf = (ships: number[][]) =>
-    ships.map((s) => Math.max(...s.map((c) => cost[perm[c]]))).sort((a, b) => b - a);
+  /** See shipCostProfile. Read through `perm`, which the redraw loop is still changing. */
+  const profileOf = (ships: number[][]) => shipCostProfile(ships, (c) => cost[perm[c]]);
 
   /** All the fairness measures for the layout `perm` currently describes. */
   const measure = () => {
     const profiles = active.map(profileOf);
 
-    // Compared RANK BY RANK: the longest ship against the longest, the shortest against the
-    // shortest. A single summary - the max, or a total - is what let a board through where both
-    // fleets took about 86 minutes to eliminate but one of them had a ship gated at 50 minutes and
-    // the other's cheapest was 77. Ranks past the shortest fleet's length are not compared, because
-    // a fleet with fewer ships has nothing to put opposite them.
-    const ranks = Math.min(...profiles.map((p) => p.length));
-    let worstRank = 0;
-    for (let i = 0; i < ranks; i++) {
-      const at = profiles.map((p) => p[i]);
-      worstRank = Math.max(worstRank, spread(at));
-    }
+    // Rank by rank, and see rankGapOf for why that rather than any single summary.
+    const worstRank = rankGapOf(profiles);
 
     // The fewest floored-region squares any fleet holds. Null with no floor, so the acceptance test
     // reads the same either way and nothing has to branch on whether a floor exists.
