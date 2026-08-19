@@ -144,10 +144,10 @@ export function BalanceReadout({
         {stranded !== null && (
           <span style={{ color: stranded > 0 ? "var(--sunk)" : "var(--text-dim)" }}>
             {stranded === 0
-              ? "Both sides could have been sunk in the time this match ran."
+              ? "Both sides' ships sat on squares that usually do get finished in a match this long."
               : stranded === 1
-              ? "One side had a ship that could not have been sunk in the time this match ran."
-              : `${stranded} sides had a ship that could not have been sunk in the time this match ran.`}
+              ? "One side had a ship on squares that usually aren't finished in a match this long."
+              : `${stranded} sides had ships on squares that usually aren't finished in a match this long.`}
           </span>
         )}
 
