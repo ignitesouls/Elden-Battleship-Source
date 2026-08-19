@@ -38,6 +38,23 @@ export interface MatchBalance {
   rebalanced?: number;
   /** The threshold this board was held to, in seconds. */
   limit?: number;
+  /**
+   * The same board on the second fairness test, in WHOLE SQUARES rather than seconds.
+   *
+   * How many more squares past the long-square line the worst-off fleet held - the measure the rank
+   * gap above cannot see, because pricing a ship at its slowest square discards every other cell on
+   * it. See LONG_GAP in boardBalance.ts.
+   *
+   * Optional like everything else here, and for a sharper reason than usual: every match dealt
+   * before the second test shipped has a record without these, and a swept record only has them
+   * once balance-stats has been re-run. Absent means unmeasured, never zero.
+   */
+  longDealt?: number;
+  longPlayed?: number;
+  /** Sweep only, and the counterpart to `rebalanced`. */
+  longRebalanced?: number;
+  /** The long-square threshold this board was held to, in squares. */
+  longLimit?: number;
   /** Layouts drawn. 1 means the first fleet-blind draw passed and nothing was steered. */
   attempts?: number;
   /** False only when no draw in the whole budget met the rules and this was the fairest of them. */

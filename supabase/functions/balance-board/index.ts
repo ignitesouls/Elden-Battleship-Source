@@ -318,6 +318,13 @@ Deno.serve(async (req) => {
       dealt: Math.round(result.rankGapBefore),
       played: Math.round(result.rankGapAfter),
       limit: result.rankLimit,
+      // Whole squares. The second test, on the cells the rank gap throws away - how many more
+      // squares past the long-square line the worst-off fleet held, dealt and as played. Stored
+      // beside the rank gap rather than folded into it because a board can pass one and fail the
+      // other, which is why the second test exists at all. See LONG_GAP in boardBalance.ts.
+      longDealt: result.longGapBefore,
+      longPlayed: result.longGapAfter,
+      longLimit: result.longLimit,
       attempts: result.attempts,
       accepted: result.accepted,
       teams: occupied.length,
@@ -352,6 +359,10 @@ Deno.serve(async (req) => {
       rankGapBefore: Math.round(result.rankGapBefore),
       rankGapAfter: Math.round(result.rankGapAfter),
       rankLimit: result.rankLimit,
+      // Whole squares, not seconds. See LONG_GAP in boardBalance.ts.
+      longGapBefore: result.longGapBefore,
+      longGapAfter: result.longGapAfter,
+      longLimit: result.longLimit,
       // Null on the default profile. Otherwise the fewest dlc squares any one fleet holds - below
       // the floor means the board could not carry it, which is the honest way that reads.
       regionLow: result.regionLow,

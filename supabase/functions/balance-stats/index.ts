@@ -154,6 +154,13 @@ interface ScoredMatch {
   dealt: number
   played: number
   rebalanced: number
+  /**
+   * The same three boards measured on the second test instead: how many more squares past the
+   * long-square line the worst-off fleet held. Whole squares, not seconds. See LONG_GAP.
+   */
+  longDealt: number
+  longPlayed: number
+  longRebalanced: number
   /** How many fleets held at least one ship gated longer than the match actually lasted. */
   strandedFleets: number
 }
@@ -370,6 +377,10 @@ Deno.serve(async (req) => {
       })
 
       const played = scoreLayout(playedCosts.cost, fleets)
+      // The raw deal on the second test. `redraw` reports its own before/after, but the deal's
+      // long-square gap is measured here for the same reason `played` is: it is the board as it
+      // existed, not the board the redraw would have produced.
+      const dealtScore = scoreLayout(dealtCosts.cost, fleets)
 
       // "Stranded" = holding a ship whose slowest square costs more than the whole match lasted, so
       // it could not have been sunk in the time the match actually ran. One fleet stranded and the
@@ -389,6 +400,9 @@ Deno.serve(async (req) => {
         dealt: redraw.rankGapBefore,
         played: played.rankGap,
         rebalanced: redraw.rankGapAfter,
+        longDealt: dealtScore.longGap,
+        longPlayed: played.longGap,
+        longRebalanced: redraw.longGapAfter,
         strandedFleets,
       })
     }
@@ -418,6 +432,10 @@ Deno.serve(async (req) => {
               // Sweep-only: what TODAY's balancer would make of the same deal. There is no such
               // number at deal time, because at deal time today's balancer is the only one there is.
               rebalanced: Math.round(m.rebalanced),
+              // The same three on the second test, in whole squares. See LONG_GAP.
+              longDealt: m.longDealt,
+              longPlayed: m.longPlayed,
+              longRebalanced: m.longRebalanced,
               stranded: m.strandedFleets,
               teams: m.teams,
               hadPerm: m.hadPerm,

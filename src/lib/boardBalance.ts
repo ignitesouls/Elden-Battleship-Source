@@ -57,9 +57,22 @@
  * it is symmetric, it names no cell, and it is a far smaller edge than reading a lopsided board off
  * the screen and knowing the match was decided before anyone fired.
  *
- * Measured over 600 boards per configuration: two-team boards accept 100% of the time at every size,
- * at a median of 7 redraws on a 10x10 and 3 on a 12x12. Small boards work hardest - a 7x7 runs to
- * about 29 draws - because a fraction-of-fleet threshold bites hardest on a short fleet.
+ * -- Why there are two tests and not one ---------------------------------------------------------
+ *
+ * The rank gap prices a ship at its slowest square, which is right about when a ship SINKS and blind
+ * to everything else about it. Seven ships on a 24-cell fleet is seven numbers out of twenty-four,
+ * and the rank comparison then collapses those seven into one. Two fleets can match on it exactly
+ * and still be nothing alike - one with four cells the enemy clears inside half an hour, the other
+ * with no cell under forty minutes anywhere.
+ *
+ * So a second test counts whole squares instead of measuring seconds: neither fleet may hold more
+ * than one more square past the long-square line than the other. It asks the coarser question, and
+ * the coarser question is the one this cost model can answer honestly - see LONG_GAP for the board
+ * that made the case and for what the model's resolution actually is.
+ *
+ * Measured over 250 boards per configuration: two-team boards accept at every size, at a median of
+ * 16 draws on a 10x10 and 20 on a 12x12 with both tests applied. The long-square test is what most
+ * of that budget now goes on - it binds on about a fifth of the layouts the rank gap alone accepts.
  *
  * -- Why declumping is exempt from all that ------------------------------------------------------
  *
@@ -107,66 +120,97 @@ export function applyBoardPerm<T>(board: T[], perm?: number[] | null): T[] {
 }
 
 /**
- * How many unreached cells two fleets may differ by, per cell of fleet.
+ * Past this, a square is one nobody reliably finishes inside a match.
  *
- * 0.03 is 0.51 cells on a 17-cell fleet: the two fleets must be within about half a square of each
- * other in expected-unreached terms. That is roughly a tenth of a fleet's own burden of ~5.3, and
- * it is deliberately tight.
+ * 80 minutes, just under the archive's median match of about 82. A square costing more than that is
+ * not merely slow - it is one the enemy is more likely than not to run out of clock on, so a cell
+ * holding one is a cell that may simply never be fired at.
  *
- * -- Why this used to be five times looser, and why that was wrong -------------------------------
+ * Measured over 3380 archived fleet cells, share eventually fired at by the fleet that needed it:
  *
- * It was 2.5/17, chosen so the test would almost never bind - the argument being that a test which
- * rarely fires gives nothing away about where anybody's ships are, and that a full crew can send
- * somebody to cover a bad square anyway. Both halves of that turned out to be worth less than the
- * fairness they were paying for. A 24-cell fleet was allowed a gap of 3.5 and a difference of SIX
- * untakeable squares, and a real match duly shipped with one fleet holding four squares the enemy
- * reaches under 35% of the time against the other's one. Nothing flagged it, because nothing was
- * meant to: it passed with room to spare.
+ *     under 30:00   99%          65:00-80:00   88%
+ *     30:00-45:00   98%          past 80:00    72%
+ *     45:00-65:00   91%
  *
- * The cost of tightening it is close to nothing, which is the part that settles the argument. Over
- * 600 dealt boards per configuration, two-team boards accept on 100% of draws at every size, at a
- * median of 7 redraws on a 10x10 and 3 on a 12x12. Mean gap actually played falls from 0.88 to 0.25
- * on a 10x10, and the mean difference in untakeable squares falls from 1.28 to 0.00.
+ * The fall is between the last two rows, which is the argument for the line being somewhere in that
+ * neighbourhood rather than for any exact minute in it. 80 puts it at the top of the fall rather
+ * than partway down: everything the test counts is a square that goes unfired more than a quarter of
+ * the time, and squares in the 75-80 band - which are finished about four times in five - are no
+ * longer counted against the fleet holding them.
  *
- * -- Why a flat fraction already makes small boards stricter -------------------------------------
- *
- * The gap between two fleets is a difference of sums, so its spread grows like the square root of
- * the fleet, while a threshold set as a fraction of the fleet grows with the fleet itself. Small
- * boards are therefore held to a tighter standard automatically, without a second dial to tune -
- * which is why the redraw loop works harder on a 7x7 than on a 12x12 and why the small boards are
- * where the budget below actually gets spent.
+ * The checker used 75 for this from the rework onward, while the balancer had no opinion. Now that
+ * the balancer tests against it the number lives here and the checker reads it, so there is one
+ * definition rather than two that can drift. It replaces the retired HARD_REACH, which was a
+ * probability threshold from when a square's cost was a share of boards rather than a time.
  */
-export const GAP_PER_CELL = 0.03;
+export const LONG_SQUARE_SECONDS = 80 * 60;
 
 /**
- * Below this reach, a square counts as one the enemy probably never gets to.
+ * How many more long squares one fleet may hold than another.
  *
- * 0.4 is where the archive thins out: 31 of 206 squares sit below it, against 86 above 0.8. Those 31
- * are the ones that decide whether a fleet can be finished off at all.
+ * One, flat, at every board size - so on most boards the two fleets hold the SAME number of squares
+ * the enemy probably cannot finish, and never more than one apart.
+ *
+ * -- Why a second test at all, when there is already a rank gap -----------------------------------
+ *
+ * Because the rank gap prices a ship at its slowest square and throws the rest away. On a 7-ship,
+ * 24-cell fleet that is seven numbers out of twenty-four, and then the rank comparison collapses
+ * those seven into one. A fleet whose every cell is expensive and a fleet with four cheap cells and
+ * one brutal one can produce the same profile, and they are not the same match.
+ *
+ * GHOSTLY HULL is the board that made the case. Both fleets held 24 cells; the profiles interleaved
+ * to a rank gap of 3:58, inside the 5:00 limit and the 4th percentile of the whole archive - one of
+ * the fairest boards this has ever produced. What the profiles could not say was that one fleet had
+ * no cell cheaper than 42 minutes against the other's four under 28, and cost 83 minutes more to
+ * clear in total. The side shooting at it fired all 24 of its cells and needed the full 98 minutes;
+ * the other side never fired four of its enemy's cells at all.
+ *
+ * -- And what this test does NOT catch about it ---------------------------------------------------
+ *
+ * That board does not fail this test, and the reason is worth writing down rather than discovering
+ * again. Its asymmetry sat almost entirely in the 75-80 minute band: counted past 75 the fleets are
+ * seven long squares against five, and counted past LONG_SQUARE_SECONDS they are four against five -
+ * inside the limit, and tilted the other way. Three of one fleet's expensive squares are of the kind
+ * that get finished about four times in five, which is what the line at 80 deliberately stops
+ * counting against a fleet.
+ *
+ * So this is a test that would have caught boards LIKE Ghostly Hull rather than Ghostly Hull itself.
+ * Both facts are true and neither cancels the other: it binds on a quarter of the 10x10 layouts the
+ * rank gap alone accepts, so it rejects a great many real boards - and the specific one that
+ * prompted it is not among them. Tightening the gap to zero would catch it, at a median of 34 draws
+ * instead of 15 and boards that start failing to find any layout at all, which is a worse trade than
+ * the board is worth.
+ *
+ * -- Why a count of whole squares, and not more seconds -------------------------------------------
+ *
+ * The rank gap already spends the precision this cost model has. Across 777 archived sunk ships, a
+ * ship's slowest square predicts when it was actually sunk with r = 0.40 and a residual RMSE of
+ * 17:48 - so a 5:00 threshold is being enforced well inside its own noise, and tightening it
+ * further buys nothing real. A count of long squares asks a coarser question the model can actually
+ * answer: not "how many minutes apart are these fleets" but "does one side hold more squares the
+ * enemy will run out of clock on".
+ *
+ * It is also the only fairness rule here that can be said in one sentence, which is worth something
+ * on a stream: both fleets hold about the same number of squares that take longer than a match.
+ *
+ * -- What it costs --------------------------------------------------------------------------------
+ *
+ * Over 300 boards per size, it rejects 15% of the layouts the rank test alone accepts at 8x8, 23% at
+ * 10x10 and 30% at 12x12 - so between a seventh and a third of the boards that previously shipped
+ * are now redrawn. The median run is 6, 15 and 18 draws, worst 82, 121 and 218, and no board at any
+ * size failed to find an acceptable layout inside MAX_ATTEMPTS.
+ *
+ * Measured on the balancer's own rank-only output rather than on raw deals, which matters more than
+ * it sounds: the rank test binds on 94% of raw 10x10 deals, so asking the question of raw deals
+ * leaves a denominator of about nine boards in a hundred and an answer that moves twenty points
+ * between runs. The population the question is about is the layouts that would have SHIPPED.
+ *
+ * It also, unexpectedly, makes the positional tell smaller rather than larger: long squares under a
+ * hull against on open water moves from 21.7% vs 20.1% to 20.9% vs 20.5%. Equalising the count
+ * between fleets pins the rate on ship cells to the rate on the board, where the rank test alone
+ * leaves it free to drift.
  */
-export const HARD_REACH = 0.4;
-
-/**
- * How many more hard-to-reach squares one fleet may hold than another, per cell of fleet.
- *
- * A second test, because the sum above is an average and averages hide bottlenecks: a fleet holding
- * two untakeable squares among fifteen easy ones can total the same as one holding fifteen medium
- * squares, and those are not the same match.
- *
- * 0.08 rounds to a limit of 1 on fleets up to 17 cells and 2 on a 24-cell one - so on most boards
- * the two fleets must hold the SAME number of untakeable squares, not merely a similar number. The
- * old 5/17 allowed six apart on a 24-cell fleet, which is the hole SILENTBARNACLE went through.
- */
-export const HARD_GAP_PER_CELL = 0.08;
-
-/**
- * Floor for the hard-square test, however small the fleet.
- *
- * One, so the smallest fleets are held to an exact match rather than being allowed a free square.
- * This used to be two on the reasoning that a gap of one is noise - true of a single board, but the
- * point of the test is not to spot a fluke, it is to refuse to PLAY one when a redraw is free.
- */
-export const MIN_HARD_GAP = 1;
+export const LONG_GAP = 1;
 
 /**
  * How many layouts to draw before giving up and playing the best one seen.
@@ -186,9 +230,10 @@ const MAX_ATTEMPTS = 300;
 /**
  * How far apart two fleets' ships may be at the same rank, in seconds.
  *
- * The one fairness number. Ships are sorted longest-first within each fleet and compared position
- * by position - longest against longest, cheapest against cheapest - and no pair may differ by more
- * than this.
+ * The first of the two fairness numbers, and the one that speaks in time. Ships are sorted
+ * longest-first within each fleet and compared position by position - longest against longest,
+ * cheapest against cheapest - and no pair may differ by more than this. LONG_GAP is the other, and
+ * covers what pricing a ship at its slowest square necessarily discards.
  *
  * Rank by rank rather than by any single summary, because a summary is what let the bad boards
  * through. On the match that prompted all of this, both fleets took about 86 minutes to eliminate:
@@ -243,6 +288,10 @@ const SAMPLE = 8;
 export interface BalanceRules {
   /** How far apart two fleets' ships may be at the same rank, in seconds. See RANK_GAP_SECONDS. */
   rankGapSeconds: number;
+  /** What counts as a square the enemy probably cannot finish. See LONG_SQUARE_SECONDS. */
+  longSquareSeconds: number;
+  /** How many more of those one fleet may hold than another. See LONG_GAP. */
+  longGap: number;
   /** How many layouts to draw before playing the best one seen. */
   maxAttempts: number;
   /**
@@ -259,6 +308,8 @@ export interface BalanceRules {
 /** The tests every board is held to. A small-crew board adds a region floor on top. */
 export const DEFAULT_RULES: BalanceRules = {
   rankGapSeconds: RANK_GAP_SECONDS,
+  longSquareSeconds: LONG_SQUARE_SECONDS,
+  longGap: LONG_GAP,
   maxAttempts: MAX_ATTEMPTS,
   regionFloor: null,
 };
@@ -328,6 +379,17 @@ export interface BalanceResult {
   /** The threshold this board was held to, in seconds. */
   rankLimit: number;
   /**
+   * How many more long squares the worst-off fleet held than the best-off, dealt and as played.
+   *
+   * Whole squares, not seconds - see LONG_GAP. Reported alongside the rank gap rather than folded
+   * into it because the two say different things and a board can pass either one while failing the
+   * other, which is the entire reason the second test exists.
+   */
+  longGapBefore: number;
+  longGapAfter: number;
+  /** The long-square threshold this board was held to, in squares. */
+  longLimit: number;
+  /**
    * The fewest floored-region squares any one fleet ends up holding, or null when no floor applied.
    *
    * The number worth logging: it is what the floor was trying to raise, and comparing it to
@@ -361,8 +423,8 @@ export interface BalanceResult {
  *
  * Exported because the checker asserts against it and the edge function reports it.
  */
-export function limitsFor(rules: BalanceRules = DEFAULT_RULES): { rankGap: number } {
-  return { rankGap: rules.rankGapSeconds };
+export function limitsFor(rules: BalanceRules = DEFAULT_RULES): { rankGap: number; longGap: number } {
+  return { rankGap: rules.rankGapSeconds, longGap: rules.longGap };
 }
 
 /** Widest minus narrowest. Fewer than two values means there is no gap to speak of. */
@@ -422,6 +484,28 @@ export function shipCostProfile(ships: number[][], costAt: (cell: number) => num
 }
 
 /**
+ * How many of a fleet's CELLS cost more than the long-square line. See LONG_SQUARE_SECONDS.
+ *
+ * Cells rather than ships, and that is the point of it: the rank profile already speaks in ships and
+ * cannot see a hull that is expensive all the way along. A cell a fleet shares with the enemy counts
+ * for both, the same way it does everywhere else here - both sides still have to shoot it off.
+ *
+ * `costAt` is a lookup for the same reason shipCostProfile's is: this is read through a permutation
+ * the redraw loop is still changing.
+ */
+export function longSquareCount(
+  ships: number[][],
+  costAt: (cell: number) => number,
+  threshold: number
+): number {
+  const seen = new Set<number>();
+  for (const s of ships) for (const c of s) seen.add(c);
+  let n = 0;
+  for (const c of seen) if (costAt(c) > threshold) n++;
+  return n;
+}
+
+/**
  * The widest same-rank gap between any two fleets, in seconds.
  *
  * Compared RANK BY RANK: the longest ship against the longest, the shortest against the shortest. A
@@ -449,11 +533,13 @@ export function rankGapOf(profiles: number[][]): number {
  */
 export function scoreLayout(
   cost: number[],
-  fleets: Array<{ team: number; ships: number[][] }>
-): { rankGap: number; profiles: number[][] } {
+  fleets: Array<{ team: number; ships: number[][] }>,
+  longSquareSeconds: number = LONG_SQUARE_SECONDS
+): { rankGap: number; profiles: number[][]; longCounts: number[]; longGap: number } {
   const active = normalizeFleets(fleets, cost.length);
   const profiles = active.map((ships) => shipCostProfile(ships, (c) => cost[c]));
-  return { rankGap: rankGapOf(profiles), profiles };
+  const longCounts = active.map((ships) => longSquareCount(ships, (c) => cost[c], longSquareSeconds));
+  return { rankGap: rankGapOf(profiles), profiles, longCounts, longGap: spread(longCounts) };
 }
 
 /**
@@ -486,7 +572,7 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     return out;
   };
 
-  const { rankGap: rankLimit } = limitsFor(rules);
+  const { rankGap: rankLimit, longGap: longLimit } = limitsFor(rules);
 
   /** See shipCostProfile. Read through `perm`, which the redraw loop is still changing. */
   const profileOf = (ships: number[][]) => shipCostProfile(ships, (c) => cost[perm[c]]);
@@ -497,6 +583,12 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
     // Rank by rank, and see rankGapOf for why that rather than any single summary.
     const worstRank = rankGapOf(profiles);
+
+    // The second test, on the cells the profile above throws away. See LONG_GAP.
+    const longCounts = active.map((ships) =>
+      longSquareCount(ships, (c) => cost[perm[c]], rules.longSquareSeconds)
+    );
+    const worstLong = spread(longCounts);
 
     // The fewest floored-region squares any fleet holds. Null with no floor, so the acceptance test
     // reads the same either way and nothing has to branch on whether a floor exists.
@@ -511,7 +603,7 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       if (low === Infinity) low = null;
     }
 
-    return { rankGap: worstRank, profiles, regionLow: low };
+    return { rankGap: worstRank, longGap: worstLong, profiles, regionLow: low };
   };
 
   const before = measure();
@@ -602,6 +694,9 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       rankGapBefore: before.rankGap,
       rankGapAfter: before.rankGap,
       rankLimit,
+      longGapBefore: before.longGap,
+      longGapAfter: before.longGap,
+      longLimit,
       regionLow: before.regionLow,
       attempts: 0,
       accepted: true,
@@ -696,6 +791,7 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
   // accepted one an unbiased draw from the layouts that pass rather than a walk toward the line.
   let best: number[] | null = null;
   let bestGap = Infinity;
+  let bestLong = Infinity;
   let bestLow: number | null = floor ? -1 : null;
   let bestClump = clumpBefore;
   let attempts = 0;
@@ -713,24 +809,43 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
     const now = measure();
     const floorMet = !floor || (now.regionLow ?? 0) >= floor.min;
-    if (!canBalance || (now.rankGap <= rankLimit && floorMet)) {
+    if (!canBalance || (now.rankGap <= rankLimit && now.longGap <= longLimit && floorMet)) {
       best = perm.slice();
       bestGap = now.rankGap;
+      bestLong = now.longGap;
       bestLow = now.regionLow;
       bestClump = declumping ? crowding : null;
       accepted = true;
       break;
     }
     // Keep the fairest layout seen, in case every attempt is spent. Ranked by the region floor
-    // first, then the rank gap: a board dealt too few DLC squares can never satisfy the floor, so
-    // the fallback should at least hand each fleet as many as exist, and only then argue about
-    // which of two equally DLC-poor layouts pairs the ships up better.
+    // first, then by how far the layout misses the two tests COMBINED.
+    //
+    // The floor leads because a board dealt too few DLC squares can never satisfy it by any
+    // permutation, so the fallback should at least hand each fleet as many as exist before arguing
+    // about anything else.
+    //
+    // The two fairness measures are then summed as fractions of their own limits, rather than one
+    // being consulted before the other. Ordering them lexicographically was the first thing tried
+    // and it is wrong at exactly the moment this code runs: with the long-square count leading, a
+    // four-team board fell back to a layout that was one square better on a test it had already
+    // failed and eighteen minutes worse on the other. Neither measure outranks the other once both
+    // are already blown - what matters is total distance from playable, and a fraction of the limit
+    // is the only unit the two share.
     const low = now.regionLow ?? 0;
+    // Both terms fall back to the raw measure when their limit is zero, which is only reachable
+    // through a hand-built profile but would otherwise divide by it and rank every candidate equally
+    // infinite - leaving the fallback as whichever layout happened to be drawn first.
+    const missOf = (rank: number, long: number) =>
+      (rankLimit > 0 ? rank / rankLimit : rank) + (longLimit > 0 ? long / longLimit : long);
     const better =
-      floor && low !== (bestLow ?? 0) ? low > (bestLow ?? 0) : now.rankGap < bestGap;
+      floor && low !== (bestLow ?? 0)
+        ? low > (bestLow ?? 0)
+        : missOf(now.rankGap, now.longGap) < missOf(bestGap, bestLong);
     if (better) {
       best = perm.slice();
       bestGap = now.rankGap;
+      bestLong = now.longGap;
       bestLow = now.regionLow;
       bestClump = declumping ? crowding : null;
     }
@@ -744,6 +859,9 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     rankGapBefore: before.rankGap,
     rankGapAfter: bestGap,
     rankLimit,
+    longGapBefore: before.longGap,
+    longGapAfter: bestLong,
+    longLimit,
     regionLow: bestLow === -1 ? null : bestLow,
     attempts,
     accepted,
