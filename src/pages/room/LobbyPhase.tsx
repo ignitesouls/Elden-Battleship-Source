@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed, updateRoomSettings } from "../../lib/rooms";
-import { retargetBossSet } from "../../lib/challenges";
+import { retargetBossSet, clampBoardSize } from "../../lib/challenges";
+import { fleetFor, presetNameOf, DEFAULT_FLEET_PRESET } from "../../types/battleship";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { CommunityLinks } from "../../components/CommunityLinks";
@@ -63,8 +64,21 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
     if (!myPlayer.is_host) return;
     const want = retargetBossSet(room.square_set, players);
     if (want === null || syncing.current) return;
+    // The small-crew cut is 164 squares against the full board's 206, so it stops two sizes lower.
+    // A room that was set to 13x13 or 14x14 as a 3v3 and then emptied to a 2v2 has to come down
+    // with the set or it deals the same boss in two cells - and it comes down in this write rather
+    // than a second one, because the board between the two writes is exactly that broken board.
+    const size = clampBoardSize(room.board_size, want);
     syncing.current = true;
-    void updateRoomSettings(room.id, { square_set: want })
+    void updateRoomSettings(room.id, {
+      square_set: want,
+      ...(size === room.board_size
+        ? {}
+        : {
+            board_size: size,
+            ship_defs: fleetFor(size, presetNameOf(room.ship_defs, room.board_size) ?? DEFAULT_FLEET_PRESET),
+          }),
+    })
       // Deliberately silent. This is a correction nobody asked for, so a failed one is not an error
       // to put in front of the host - the room stays on the set it had, which is a playable board,
       // and the next roster change tries again.
@@ -72,7 +86,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
       .finally(() => {
         syncing.current = false;
       });
-  }, [myPlayer.is_host, room.id, room.square_set, players]);
+  }, [myPlayer.is_host, room.id, room.square_set, room.board_size, room.ship_defs, players]);
 
   // Still needed for the live/away dot beside each name. The takeover's own copy of this moved into
   // HostTakeover, which needs it on the match screens too.

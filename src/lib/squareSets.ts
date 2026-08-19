@@ -10,7 +10,8 @@ import scaduLeagueData from "../data/scaduLeagueSquares.json";
 import scaduLeagueColors from "../data/scaduLeagueColors.json";
 import scaduLeagueColorNames from "../data/scaduLeagueColorNames.json";
 import ringusData from "../data/ringusSquares.json";
-import { colorLegend, type BingoSquareSet, type Challenge, type ColorLegendEntry, type KeywordColor } from "./squareSetFormat";
+import { colorLegend, largestBoardFor, type BingoSquareSet, type Challenge, type ColorLegendEntry, type KeywordColor } from "./squareSetFormat";
+import { BOARD_SIZES } from "../types/battleship";
 
 export type { Challenge, BingoSquare, BingoSquareSet, Region, KeywordColor, ColorLegendEntry } from "./squareSetFormat";
 export { REGION_ORDER, REGION_LABELS } from "./squareSetFormat";
@@ -269,6 +270,39 @@ export const DEFAULT_SQUARE_SET = "bosses";
 /** Falls back to the default for anything unrecognized, so an unknown id can never blank a board. */
 export function squareSet(id: string | null | undefined): SquareSetDef {
   return SQUARE_SETS[id ?? ""] ?? SQUARE_SETS[DEFAULT_SQUARE_SET];
+}
+
+/** How many distinct squares a set holds - the flat list's length, or the bingo file's `squares`. */
+export function squarePool(set: SquareSetDef): number {
+  return set.format === "flat" ? set.data.length : set.data.squares.length;
+}
+
+/**
+ * The biggest board this set can fill without dealing a square twice.
+ *
+ * A per-set ceiling rather than one number for everything, because the sets are nowhere near the
+ * same size: 206 bosses reach a 14x14, the Scadu League's 101 squares stop at 10x10, and offering
+ * every host every size meant the small sets quietly doubled up squares to fill the big boards.
+ *
+ * Answered for the set a room is ACTUALLY on, which matters most for the boss board, since that is
+ * two sets wearing one button - the full 206 and the 164-square small-crew cut, whose ceilings are
+ * 14 and 12. So a room's ceiling moves when its roster moves it between them, and the lobby brings
+ * the board size down with it; see clampBoardSize and the sync in LobbyPhase.
+ */
+export function maxBoardSize(set: SquareSetDef): number {
+  return largestBoardFor(squarePool(set), BOARD_SIZES);
+}
+
+/**
+ * A board size held to what a set can carry: itself, or the set's ceiling when it is over.
+ *
+ * The single place both directions of the problem are settled, since a room goes out of range two
+ * ways - the host picks a smaller set while sitting on a big board, or the roster shrinks and takes
+ * the boss board's small-crew cut with it. Never raises a size. A host who chose 8x8 means 8x8, and
+ * a bigger set is not a reason to redecide that for them.
+ */
+export function clampBoardSize(boardSize: number, setId: string | null | undefined): number {
+  return Math.min(boardSize, maxBoardSize(squareSet(setId)));
 }
 
 /**

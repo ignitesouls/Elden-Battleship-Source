@@ -127,9 +127,11 @@ function boardIndex(
     const tooltip = square?.tooltip
     if (!tooltip) return
     // A square can legitimately occupy more than one cell when a set is smaller than the board.
-    // The smaller boss set is 164 squares against at most 144 cells, so it cannot happen for either
-    // of them, but assuming a
-    // single index here would be a silent wrong answer rather than a loud one if that ever changed.
+    // The lobby no longer lets that happen - each set is held to the biggest board it can fill from
+    // its own squares, 14x14 for the full boss set and 12x12 for the 164-square cut (see
+    // maxBoardSize) - but rooms are not re-validated on load and this function reads rooms it did
+    // not create, so a list is still the honest answer. Assuming a single index would turn a board
+    // that got past the lobby into a silent wrong answer instead of a loud one.
     if (!byTooltip.has(tooltip)) byTooltip.set(tooltip, [])
     byTooltip.get(tooltip)!.push(cell)
   })

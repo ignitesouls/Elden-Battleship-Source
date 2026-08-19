@@ -1,7 +1,7 @@
 /**
  * Exercises board generation against the real squaresets, at the board sizes rooms actually use.
  *
- * These sets are authored for a 25-square bingo card and we deal them onto boards of 64 to 144, so
+ * These sets are authored for a 25-square bingo card and we deal them onto boards of 25 to 196, so
  * the interesting questions aren't "does it run" but: does every cell get filled, does the same
  * room id always produce the same board on every client, are duplicates avoided, and how far do the
  * set author's "only one of these" rules have to bend to fill the biggest boards.
@@ -12,7 +12,7 @@
  *   node --experimental-strip-types scripts/check-boards.ts
  */
 import { readFileSync, readdirSync } from 'node:fs'
-import { buildBingoBoard, buildFlatBoard, boardColor, colorLegend, strictFill, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
+import { buildBingoBoard, buildFlatBoard, boardColor, colorLegend, strictFill, relaxedFill, largestBoardFor, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
 import { BOARD_SIZES, FLEET_PRESETS, fleetFor, type Attack, type ShipDefinition } from '../src/types/battleship.ts'
 import {
   eliminatedTeamsFromAttacks,
@@ -59,6 +59,7 @@ const scadu = JSON.parse(readFileSync(new URL('../src/data/scaduLeagueSquares.js
 const scaduColors = JSON.parse(readFileSync(new URL('../src/data/scaduLeagueColors.json', import.meta.url), 'utf8')) as KeywordColor[]
 const scaduColorNames = JSON.parse(readFileSync(new URL('../src/data/scaduLeagueColorNames.json', import.meta.url), 'utf8')) as Record<string, string>
 const ringus = JSON.parse(readFileSync(new URL('../src/data/ringusSquares.json', import.meta.url), 'utf8')) as Challenge[]
+const bosses2v2 = JSON.parse(readFileSync(new URL('../src/data/battleshipChallenges2v2.json', import.meta.url), 'utf8')) as Challenge[]
 
 let passed = 0
 let failed = 0
@@ -918,6 +919,56 @@ check(
   'An unknown preset falls back rather than dealing an empty fleet',
   fleetFor(10, 'Nonsense').length > 0
 )
+
+/**
+ * The per-set board-size ceiling: no size a lobby offers may deal a square twice, and the size just
+ * past the ceiling must actually be the reason it doesn't.
+ *
+ * The second half is the part worth having. A cap that is merely SAFE is easy - cap everything at
+ * 5x5 - and the failure this guards against is the quiet one where a set grows a few squares and
+ * its ceiling stops moving, so hosts keep being denied a board the set could now fill.
+ *
+ * Counted in distinct SQUARES rather than distinct rendered names, which is not the same thing and
+ * is how the first version of this check managed to fail on a set that was fine: a bingo square
+ * whose whole name is a %variable% - the Scadu League has six - reads differently in every cell it
+ * lands in, so no comparison of names can tell one square dealt three times from three squares. The
+ * set's own picker answers it instead: relaxedFill for the bingo sets, the list length for the flat
+ * ones, so the number is what the deal actually had to work with.
+ */
+console.log('\n=== Board sizes each set can carry ===\n')
+const SET_POOLS: Array<[string, number, (cells: number) => number]> = [
+  ['bosses', bosses.length, (cells) => Math.min(bosses.length, cells)],
+  ['bosses-2v2', bosses2v2.length, (cells) => Math.min(bosses2v2.length, cells)],
+  ['ringus', ringus.length, (cells) => Math.min(ringus.length, cells)],
+  ['objectives', objectives.squares.length, (cells) => relaxedFill(objectives, cells)],
+  ['objectives-base', rookie.squares.length, (cells) => relaxedFill(rookie, cells)],
+  ['objectives-dlc', scadu.squares.length, (cells) => relaxedFill(scadu, cells)],
+]
+
+for (const [id, pool, distinct] of SET_POOLS) {
+  const cap = largestBoardFor(pool, BOARD_SIZES)
+  const biggest = BOARD_SIZES[BOARD_SIZES.length - 1]
+
+  // Every size the lobby offers fills entirely out of the pool, so no cell has to reuse a square.
+  const dirty = BOARD_SIZES.filter((n) => n <= cap && distinct(n * n) < n * n)
+  check(
+    `${id} (${pool} squares): distinct squares throughout, every size up to ${cap}x${cap}`,
+    dirty.length === 0,
+    dirty.map((n) => `${n}x${n} fills only ${distinct(n * n)} of ${n * n}`).join(', ')
+  )
+
+  if (cap < biggest) {
+    const next = BOARD_SIZES[BOARD_SIZES.indexOf(cap) + 1]
+    const tooLow = distinct(next * next) === next * next
+    check(
+      `${id} is capped at ${cap}x${cap} because ${next}x${next} would repeat squares`,
+      !tooLow,
+      tooLow ? `${next}x${next} fills cleanly from ${pool} squares - the cap is a size too low` : ''
+    )
+  } else {
+    check(`${id} reaches the biggest board offered (${cap}x${cap})`, distinct(cap * cap) === cap * cap)
+  }
+}
 
 // The sprite is looked up by name, so a hull the art folder doesn't have renders as nothing at
 // all - which is how a 5x5 board came to show two ships instead of three.

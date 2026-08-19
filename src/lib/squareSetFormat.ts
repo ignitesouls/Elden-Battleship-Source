@@ -499,7 +499,7 @@ function colorFor(name: string, rules: KeywordColor[]): string | undefined {
   return undefined;
 }
 
-/** Squaresets are authored for a 5x5 bingo card; battleship boards are 64 to 144 squares. */
+/** Squaresets are authored for a 5x5 bingo card; battleship boards are 25 to 196 squares. */
 const CARD_SIZE = 25;
 
 /**
@@ -714,6 +714,51 @@ function pickSquares(
  */
 export function strictFill(set: BingoSquareSet, count: number): number {
   return pickSquares(set, count, mulberry32(0x5eed), false).length;
+}
+
+/**
+ * How many of `count` cells this set can fill with DISTINCT squares, rules bent as far as they go.
+ *
+ * The sibling of strictFill and a different question: strictFill asks how much of the board the set
+ * covers while every "only one of these" rule holds, this asks how much of it the set can cover at
+ * all before buildBingoBoard has to put one square in two cells. The first is a warning in the
+ * lobby; the second is a board size the lobby refuses to offer.
+ *
+ * Seed-independent in practice - the relaxed pass walks the whole pool taking everything it hasn't
+ * got - so this answers `min(count, distinct squares)` and the fixed seed is only for determinism's
+ * sake. It's a function rather than that arithmetic written out because "distinct squares" is
+ * pickSquares' business, and a set that ever grew two entries with one name should shrink this
+ * rather than quietly deal a repeat.
+ */
+export function relaxedFill(set: BingoSquareSet, count: number): number {
+  return pickSquares(set, count, mulberry32(0x5eed), true).length;
+}
+
+/**
+ * The biggest of `sizes` whose board a pool of `pool` squares can fill without using one twice.
+ *
+ * Both deal paths cycle their pool when the board outruns it - buildFlatBoard by `i % pool.length`,
+ * buildBingoBoard by the same fallback - so an oversized board has never been an error, just a
+ * board with the same square on it in two places. That is a real thing to avoid rather than a
+ * cosmetic one: a repeated boss is fired once and marks both cells, so it hands whoever owns the
+ * second cell a free hit, and auto-fire has to treat one kill as landing on two squares.
+ *
+ * Deliberately measured in DISTINCT SQUARES and nothing else. A bingo set's exclusivity rules bind
+ * far earlier than its pool does - see strictFill, which is the separate and much lower figure the
+ * lobby warns about - but bending those rules produces a board of different squares that lean on
+ * the same goals, which is a fair board that reads oddly. Reusing a square produces an unfair one.
+ * Only the second is worth taking a size away over.
+ *
+ * Returns the smallest size offered when even that doesn't fit, because a set too small for any
+ * board is a data problem to see on a board rather than a lobby with no sizes to click.
+ */
+export function largestBoardFor(pool: number, sizes: readonly number[]): number {
+  const ordered = [...sizes].sort((a, b) => a - b);
+  let best = ordered[0];
+  for (const n of ordered) {
+    if (n * n <= pool) best = n;
+  }
+  return best;
 }
 
 /** Standalone copy of the app's PRNG, so this module keeps its no-imports property. */

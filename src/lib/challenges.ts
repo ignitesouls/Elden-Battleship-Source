@@ -16,6 +16,7 @@ export type { Challenge, SquareSetId, Region };
 export { SQUARE_SETS, SQUARE_SET_LIST, DEFAULT_SQUARE_SET, squareSet } from "./squareSets";
 export { rowSquareSet, busiestSquareSet } from "./squareSets";
 export { displaySquareSet, squareSetVariants, bossSetForRoster, retargetBossSet } from "./squareSets";
+export { squarePool, maxBoardSize, clampBoardSize } from "./squareSets";
 export { REGION_ORDER, REGION_LABELS, colorKeyFor } from "./squareSets";
 export type { SquareSetDef, ColorLegendEntry } from "./squareSets";
 

@@ -2,16 +2,17 @@ import { useState } from "react";
 import { updateRoomSettings } from "../lib/rooms";
 import { formatDuration } from "../lib/matchTime";
 import { SQUARE_SET_LIST, squareSet, displaySquareSet, bossSetForRoster, DEFAULT_SQUARE_SET } from "../lib/challenges";
+import { squarePool, maxBoardSize, clampBoardSize } from "../lib/challenges";
 import { strictFill } from "../lib/squareSetFormat";
-import { BOARD_SIZES, FLEET_PRESETS, DEFAULT_FLEET_PRESET, fleetFor } from "../types/battleship";
-import type { Room, Player, ShipDefinition } from "../types/battleship";
+import { BOARD_SIZES, FLEET_PRESETS, DEFAULT_FLEET_PRESET, fleetFor, presetNameOf } from "../types/battleship";
+import type { Room, Player } from "../types/battleship";
 
 /**
  * Preparation lengths the host can pick, every minute from none up to ten.
  *
  * A dropdown rather than the four buttons this used to be: the buttons offered 0, 1, 4 and 10 and
  * nothing between, so a room that wanted three minutes had to take four. Eleven buttons would be a
- * second wrapping row in a panel that already has eight board sizes in one.
+ * second wrapping row in a panel that already has ten board sizes in one.
  */
 const PREP_MAX_MINUTES = 10;
 const PREP_CHOICES = Array.from({ length: PREP_MAX_MINUTES + 1 }, (_, m) => m * 60);
@@ -24,18 +25,6 @@ const PREP_CHOICES = Array.from({ length: PREP_MAX_MINUTES + 1 }, (_, m) => m * 
  */
 function prepLabel(seconds: number): string {
   return seconds % 60 === 0 ? String(seconds / 60) : formatDuration(seconds);
-}
-
-/**
- * Which preset a room's fleet matches, or null for one from before fleets scaled with the board.
- *
- * Has to be answered against THIS board size: "Classic" is 5-4-3-3-2 on a 10x10 and 4-3-2 on a
- * 7x7, so the same stored fleet is Classic on one board and nothing recognizable on another.
- */
-function presetNameOf(shipDefs: ShipDefinition[], boardSize: number): string | null {
-  const shape = (defs: ShipDefinition[]) => defs.map((d) => d.size).join(",");
-  const mine = shape(shipDefs);
-  return Object.keys(FLEET_PRESETS).find((k) => shape(fleetFor(boardSize, k)) === mine) ?? null;
 }
 
 interface Props {
@@ -77,6 +66,12 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
   const shownSet = squareSet(displaySquareSet(set.id));
 
   const shipCells = shipDefs.reduce((n, s) => n + s.size, 0);
+
+  // The biggest board this set can deal without repeating a square. Read off `set` and not the set
+  // the room DISPLAYS, because the two differ exactly where the cap does: a 2v2 lobby shows
+  // "Bosses" while sitting on the 164-square cut, whose ceiling is two sizes lower than the full
+  // board's.
+  const sizeCap = maxBoardSize(set);
 
   // How much of the board this set can cover before it has to reuse an objective family. Only
   // meaningful for the authored sets - a flat list of bosses has no such rules.
@@ -127,6 +122,14 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
                 key={n}
                 active={boardSize === n}
                 busy={busy}
+                unavailable={n > sizeCap}
+                title={
+                  n > sizeCap
+                    ? `${shownSet.label} has ${squarePool(set)} squares - a ${n}x${n} board would deal ${
+                        n * n - squarePool(set)
+                      } of them twice. Its biggest board is ${sizeCap}x${sizeCap}.`
+                    : undefined
+                }
                 onClick={() =>
                   void apply({ board_size: n, ship_defs: fleetFor(n, preset ?? DEFAULT_FLEET_PRESET) })
                 }
@@ -135,6 +138,15 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
               </Choice>
             ))}
           </Field>
+          {/* Only worth a line when the cap actually costs the host something. On a set that reaches
+              the top of the list there is nothing to explain, and on the boss board this is also
+              where a 2v2 lobby finds out why the two biggest sizes went away. */}
+          {sizeCap < BOARD_SIZES[BOARD_SIZES.length - 1] && (
+            <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
+              {shownSet.label} has {squarePool(set)} squares, so it fills a {sizeCap}x{sizeCap} board at
+              most - bigger boards would put the same square in two places.
+            </span>
+          )}
 
           <Field label={`Fleet - ${shipDefs.length} ships, ${shipCells} squares (${Math.round((shipCells / cells) * 100)}% of the board)`}>
             {Object.keys(FLEET_PRESETS).map((k) => (
@@ -163,11 +175,21 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
                 key={s.id}
                 active={displaySquareSet(set.id) === s.id}
                 busy={busy}
-                onClick={() =>
+                onClick={() => {
+                  const target = s.id === DEFAULT_SQUARE_SET ? bossSetForRoster(players) : s.id;
+                  // A set with a lower ceiling drags the board down to it in the SAME write, fleet
+                  // and all. Two writes would deal one board that repeats squares in between, and
+                  // leaving the size alone would deal that board for the whole match - which is
+                  // what happened before this, invisibly, whenever a host on a big board tried the
+                  // smallest set.
+                  const size = clampBoardSize(boardSize, target);
                   void apply({
-                    square_set: s.id === DEFAULT_SQUARE_SET ? bossSetForRoster(players) : s.id,
-                  })
-                }
+                    square_set: target,
+                    ...(size === boardSize
+                      ? {}
+                      : { board_size: size, ship_defs: fleetFor(size, preset ?? DEFAULT_FLEET_PRESET) }),
+                  });
+                }}
               >
                 {s.label}
               </Choice>
@@ -221,7 +243,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <label className="stack" style={{ gap: "0.25rem" }}>
       <span className="muted" style={{ fontSize: "0.78rem" }}>{label}</span>
-      {/* Wraps: eight board sizes don't fit one row on a narrow window. */}
+      {/* Wraps: ten board sizes don't fit one row on a narrow window. */}
       <div className="row" style={{ gap: "0.35rem", flexWrap: "wrap" }}>{children}</div>
     </label>
   );
@@ -230,22 +252,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Choice({
   active,
   busy,
+  /** Out of reach on this set rather than momentarily unclickable - carries `title` and dims. */
+  unavailable,
+  title,
   onClick,
   children,
 }: {
   active: boolean;
   busy: boolean;
+  unavailable?: boolean;
+  title?: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
     <button
-      disabled={busy}
+      disabled={busy || unavailable}
+      title={title}
       onClick={onClick}
       aria-pressed={active}
       // minWidth keeps a wrapped row of board sizes from stretching three buttons across the panel
-      // while five sit underneath.
-      style={{ flex: "1 0 4rem", minWidth: "4rem", borderColor: active ? "var(--accent)" : undefined }}
+      // while five sit underneath. An unavailable size stays in the row at half opacity rather than
+      // vanishing: a list that silently loses its last two entries when the roster drops to a 2v2
+      // reads as a bug, where a greyed button with a reason on hover reads as the rule it is.
+      style={{
+        flex: "1 0 4rem",
+        minWidth: "4rem",
+        borderColor: active ? "var(--accent)" : undefined,
+        opacity: unavailable ? 0.4 : undefined,
+      }}
     >
       {children}
     </button>

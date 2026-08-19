@@ -68,8 +68,18 @@ export interface Room {
   balance_report?: unknown;
 }
 
-/** Every board size a room can be set to. 5x5 is a bingo card; 12x12 is a long evening. */
-export const BOARD_SIZES = [5, 6, 7, 8, 9, 10, 11, 12];
+/**
+ * Every board size a room can be set to. 5x5 is a bingo card; 14x14 is an entire evening.
+ *
+ * The top of the range is what the square sets can actually carry rather than a round number: the
+ * full boss set is 206 squares, so 196 of them fit a 14x14 board and a 15x15 would have to deal 19
+ * of them twice. Not every set reaches the top - a room is held to what the set it is ON can fill,
+ * which is maxBoardSize, and the lobby greys out the rest.
+ *
+ * Coordinates run out first after this: cellLabel's letters stop at R, so 18 is the ceiling this
+ * list could ever grow to without boards that name their own columns by number.
+ */
+export const BOARD_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 /**
  * How much of the board each fleet preset covers.
@@ -165,6 +175,22 @@ export function fleetFor(boardSize: number, preset: string = DEFAULT_FLEET_PRESE
     usedNames[s] = n + 1;
     return { name: pool[n % pool.length], size: s };
   });
+}
+
+/**
+ * Which preset a room's fleet matches, or null for one from before fleets scaled with the board.
+ *
+ * Has to be answered against THIS board size: "Classic" is 5-4-3-3-2 on a 10x10 and 4-3-2 on a
+ * 7x7, so the same stored fleet is Classic on one board and nothing recognizable on another.
+ *
+ * Lives here beside fleetFor rather than in the settings panel, because resizing a board is no
+ * longer only something a host does on purpose - the lobby's roster sync can pull a board down to
+ * what its square set can carry, and it has to refit the fleet the same way the buttons do.
+ */
+export function presetNameOf(shipDefs: ShipDefinition[], boardSize: number): string | null {
+  const shape = (defs: ShipDefinition[]) => defs.map((d) => d.size).join(",");
+  const mine = shape(shipDefs);
+  return Object.keys(FLEET_PRESETS).find((k) => shape(fleetFor(boardSize, k)) === mine) ?? null;
 }
 
 /**
