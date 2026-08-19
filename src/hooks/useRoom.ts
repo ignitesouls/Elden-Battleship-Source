@@ -7,6 +7,7 @@ import {
   activeTeams,
   eliminatedTeamsFromAttacks,
   initialHitsRemaining,
+  isCaptain,
 } from "../lib/battleshipLogic";
 import { normalizeRoomCode } from "../lib/roomCode";
 import { resetOwnTeamState } from "../lib/rooms";
@@ -617,7 +618,22 @@ export function useRoom(code: string | undefined) {
     const myFleet = state.myFleet;
     const team = state.myPlayer?.team;
     if (!room || !myFleet || team === null || team === undefined) return;
-    if (room.status !== "lobby") return;
+    if (room.status !== "lobby" && room.status !== "placement") return;
+
+    /**
+     * In placement, ONLY a misshapen row is worth touching, and only by the captain.
+     *
+     * beginPlacementPhase re-seeds every fleet in the room before it opens placement, so a row that
+     * is wrong for the board should no longer be able to get this far. This is what catches the ones
+     * that were already in placement when that shipped, and any room whose re-seed was rejected.
+     *
+     * The two narrowings are not caution, they are correctness. A confirmed layout and a
+     * half-finished draft are both legitimate state in this phase - the clean-row test below would
+     * read either as something to wipe - and guard_fleet_placement refuses a write to `placements`
+     * from anybody but the captain here, so a crewmate's attempt would only raise into the empty
+     * catch below and be retried for as long as the phase lasted.
+     */
+    const placing = room.status === "placement";
 
     // The host can now change board size and fleet from the lobby, which leaves every existing
     // fleet row sized for the old settings. submitPlacement() rewrites the grids but NOT
@@ -631,8 +647,8 @@ export function useRoom(code: string | undefined) {
     // the second hit - which is exactly what happened in RESTLESSCUTLASS. Same hole at 6x6, 7x7 and
     // 8x8; the 8x8 Skirmish-to-Classic swap gets two hulls wrong at once.
     //
-    // Safe to compare against the pristine array because this effect only runs in the lobby, where
-    // nothing has been shot at yet and the counters should always be untouched.
+    // Safe to compare against the pristine array because this effect only runs before a shot has
+    // been fired, in the lobby or in placement, where the counters should always be untouched.
     const cells = room.board_size * room.board_size;
     const pristineHits = initialHitsRemaining(room.ship_defs);
     const hits = myFleet.ship_hits_remaining;
@@ -641,6 +657,7 @@ export function useRoom(code: string | undefined) {
       hits?.length !== pristineHits.length ||
       pristineHits.some((n, i) => hits[i] !== n);
 
+    if (placing && (!misshapen || !isCaptain(state.players, team, state.myPlayer?.id ?? ""))) return;
     if (!misshapen && !myFleet.placements && !myFleet.placement_confirmed) return; // already clean
     if (resettingRef.current) return;
 
@@ -654,7 +671,7 @@ export function useRoom(code: string | undefined) {
         resettingRef.current = false;
       }
     })();
-  }, [state.room, state.myFleet, state.myPlayer?.team]);
+  }, [state.room, state.myFleet, state.myPlayer?.team, state.myPlayer?.id, state.players]);
 
   // Attack resolution. Preferred path is the resolve_attack() RPC: it locks the attack row then
   // the fleet row, so it's atomic, needs no compare-and-swap retry, and - crucially - ANY client

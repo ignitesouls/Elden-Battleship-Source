@@ -136,6 +136,10 @@ export function Room() {
     battleStartedRef.current = true;
     startBattle(room.id)
       .then((balance) => {
+        // Whatever last stopped the start - most likely a crew that hadn't placed - is over with,
+        // or we would not be here. Left standing, that sentence sat under a match already in
+        // progress, still naming a fleet that had since put its ships down.
+        setHostError(null);
         // Said out loud, to the one person who can do anything about it. An unbalanced board is not
         // an error - the match starts and plays - but it is the match's fairness quietly not
         // happening, and it used to go only to a console line nobody reads. `already_balanced` is

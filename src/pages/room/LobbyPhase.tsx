@@ -104,7 +104,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
     setBusy(true);
     setError(null);
     try {
-      await beginPlacementPhase(room.id);
+      await beginPlacementPhase(room);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

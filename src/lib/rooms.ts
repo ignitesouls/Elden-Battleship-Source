@@ -1,6 +1,7 @@
 import { supabase, ensureSignedIn } from "./supabase";
 import { MATCH_START_MARKER } from "./matchTime";
 import { initialHitsRemaining, emptyGrid } from "./battleshipLogic";
+import { teamName } from "./teamColors";
 import { generateRoomCode, normalizeRoomCode, formatRoomCode, generateRejoinCode, generateSeed } from "./roomCode";
 import { storePlayerId } from "./playerSession";
 import type { CLASSIC_SHIPS } from "../types/battleship";
@@ -375,7 +376,7 @@ export async function submitPlacement(
   placements: ShipPlacement[],
   shipDefs: ShipDefinition[]
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("fleets")
     .update({
       ship_grid: shipGrid,
@@ -385,8 +386,20 @@ export async function submitPlacement(
       ship_sunk: emptyGrid(shipDefs.length, false),
     })
     .eq("room_id", roomId)
-    .eq("team", team);
+    .eq("team", team)
+    .select("team");
   if (error) throw error;
+
+  // A layout that didn't land must never be confirmed. An UPDATE matching no row - because the
+  // fleet row is missing, or because RLS rejected the write - returns neither an error nor a row,
+  // and confirmPlacement() would then go on to raise the public ready flag over a fleet that isn't
+  // there. That combination is the whole DEEPVOYAGE failure in miniature: ready, and empty.
+  if ((data ?? []).length === 0) {
+    throw new Error(
+      "Your fleet wasn't saved - the database didn't accept the layout. Try again; if it keeps " +
+        "happening, leave and rejoin the room so your player row is re-linked to this fleet."
+    );
+  }
 }
 
 export async function confirmPlacement(roomId: string, team: number, confirmed: boolean): Promise<void> {
@@ -472,6 +485,25 @@ async function balanceBoardFor(roomId: string): Promise<BalanceOutcome> {
 }
 
 export async function startBattle(roomId: string): Promise<BalanceOutcome> {
+  // Before the balancer, the water and the clock marker - all three of which write something - so a
+  // refused start leaves the room exactly as it found it. It is also the only order that makes the
+  // check worth having: the balancer deals the board AGAINST the fleets standing on it, and a fleet
+  // that isn't there is one the board was never balanced for.
+  //
+  // The database refuses this too (rooms_guard_battle_start), and that refusal is the one that
+  // actually holds - the host cannot see other crews' fleets, so this call is asking Postgres, not
+  // deciding. Doing it here as well is what turns a raised exception into a sentence naming who
+  // everyone is waiting for.
+  const unplaced = await unplacedFleets(roomId);
+  if (unplaced && unplaced.length > 0) {
+    const names = unplaced.map(teamName);
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+    throw new Error(
+      `${who} ${names.length === 1 ? "has" : "have"} not placed a fleet yet, so the match cannot start. ` +
+        "A fleet with no ships on it cannot be hit, cannot be sunk and cannot lose."
+    );
+  }
+
   // Before anything else, and before the status flip, so no client can enter 'battle' and render
   // the unbalanced board for a frame. Awaited rather than fired off for the same reason.
   //
@@ -515,12 +547,82 @@ export async function startBattle(roomId: string): Promise<BalanceOutcome> {
   return balance;
 }
 
-export async function beginPlacementPhase(roomId: string): Promise<void> {
-  const { error: roomErr } = await supabase.from("rooms").update({ status: "placement" }).eq("id", roomId);
-  if (roomErr) throw roomErr;
-
-  const { error: readyErr } = await supabase.from("team_ready").delete().eq("room_id", roomId);
+/**
+ * Opens placement, having first made every fleet row in the room a blank fleet for THIS board.
+ *
+ * The order is the whole point, and it used to be the other way round.
+ *
+ * The status flip is what every client is watching for. Doing it first meant the room announced
+ * "we are placing" while last round's `team_ready` rows were still standing - and the host's own
+ * start-the-battle effect (Room.tsx) reads exactly those rows to decide whether everyone is ready.
+ * Between the awaited flip and the awaited delete there is a realtime round trip and a React
+ * render, which is more than enough: the host could see 'placement' with two stale ready flags and
+ * open fire on a placement phase nobody had taken part in yet. Clearing first closes it - there is
+ * no window in which the room is in placement and anybody is falsely ready.
+ *
+ * The fleet re-seed is the other half, and fixes a different hole in the same accident. Fleet rows
+ * are stamped with the room's shape by ensureFleet() at the moment a player picks a colour, and the
+ * host may change the board size or the preset long after that. The only self-heal for a misshapen
+ * row lives in useRoom and only runs in 'lobby', so a crew that never re-placed carried a fleet
+ * sized for the old board into the match - 196 cells and 13 hulls on a 10x10 board, in DEEPVOYAGE.
+ * Re-seeding here means placement always begins from rows that match the room, for every team at
+ * once, whether or not their client is awake to notice.
+ *
+ * Both writes happen while the room is still in 'lobby' deliberately: guard_fleet_placement refuses
+ * a write to `placements` from anyone but that team's captain once the room says 'placement', and
+ * the host is not the captain of anybody else's fleet.
+ */
+export async function beginPlacementPhase(room: Room): Promise<void> {
+  const { error: readyErr } = await supabase.from("team_ready").delete().eq("room_id", room.id);
   if (readyErr) throw readyErr;
+
+  const totalCells = room.board_size * room.board_size;
+  // One statement for every fleet in the room rather than a loop over the team list, because the
+  // host is allowed to write all of them ("fleets reset by host") and has no business knowing how
+  // many there are or which is which.
+  //
+  // Deliberately NOT verified by rows returned, unlike the attack-log delete in resetRoomToLobby.
+  // RLS applies to an UPDATE's RETURNING as well as to the write, and `fleets select own team` lets
+  // the host read only their own - a host who is spectating holds no fleet at all and would read
+  // back nothing from a write that had just succeeded for every crew. There is genuinely no way to
+  // confirm this one from a browser, which is precisely why the same migration that ships the
+  // re-seed also refuses the start of a battle over a fleet that isn't shaped for the board: a
+  // silently rejected write here surfaces there as a sentence, instead of as an unhittable fleet.
+  const { error: fleetErr } = await supabase
+    .from("fleets")
+    .update({
+      ship_grid: emptyGrid(totalCells, false),
+      ship_index_grid: emptyGrid(totalCells, -1),
+      ship_hits_remaining: initialHitsRemaining(room.ship_defs),
+      ship_sunk: emptyGrid(room.ship_defs.length, false),
+      placements: null,
+      placement_confirmed: false,
+    })
+    .eq("room_id", room.id);
+  if (fleetErr) throw fleetErr;
+
+  const { error: roomErr } = await supabase.from("rooms").update({ status: "placement" }).eq("id", room.id);
+  if (roomErr) throw roomErr;
+}
+
+/**
+ * Fleets that cannot be fought yet - unplaced, unconfirmed, or shaped for a different board.
+ *
+ * Asks the database, because no client may read another team's fleet row: that is the point of the
+ * `fleets select own team` policy, and it is why a public `team_ready` mirror exists at all. See
+ * supabase/migrations/20260819010000_no_fleet_no_battle.sql.
+ *
+ * Returns null - meaning "no verdict", not "all clear" - when the function isn't installed, so a
+ * project on the previous schema still starts matches instead of being unable to play at all. The
+ * trigger in that same migration is the enforcement; this is the part that can name the fleet.
+ */
+export async function unplacedFleets(roomId: string): Promise<number[] | null> {
+  const { data, error } = await supabase.rpc("unplaced_fleets", { p_room_id: roomId });
+  if (error) {
+    if (error.code === "PGRST202" || /unplaced_fleets/.test(error.message)) return null;
+    throw error;
+  }
+  return Array.isArray(data) ? (data as number[]) : [];
 }
 
 /**
@@ -656,13 +758,18 @@ export async function resetRoomToLobby(roomId: string, activeTeamsList: number[]
         })
         .eq("room_id", roomId)
         .eq("team", team);
-      await supabase
-        .from("team_ready")
-        .update({ ready: false, eliminated: false })
-        .eq("room_id", roomId)
-        .eq("team", team);
     }
   }
+
+  // Readiness goes as a whole, in one delete, rather than as a per-team update inside the loop
+  // above. The update WAS the loop's last line and it never worked on anyone but the host's own
+  // team: `team_ready update own team` is scoped to the writer's team and there is no host update
+  // policy, so RLS quietly matched zero rows and reported success for every other crew. Their
+  // ready=true flags survived the reset, and a flag that outlives the match it belonged to is what
+  // a later start reads as "this crew is placed". Deleting is allowed room-wide for the host
+  // (`team_ready delete by host`), and a row that isn't there cannot be stale - every client
+  // re-creates its own the moment it confirms.
+  await supabase.from("team_ready").delete().eq("room_id", roomId);
 
   // A fresh seed for the next match, rolled in the same write as the status flip so there is no
   // moment where the lobby is open on the match everyone has just played. Both routes back to the
