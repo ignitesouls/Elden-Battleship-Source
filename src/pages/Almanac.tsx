@@ -182,7 +182,10 @@ export function Almanac() {
         <CaptainCards reports={reports} profiles={profiles} setId={shownSet} />
       ) : (
         <>
-        <MatchHistory matches={archived.filter((m) => (m.square_set ?? DEFAULT_SQUARE_SET) === shownSet)} />
+        {/* Folded, like every other reader that groups by board: a variant - the trimmed boss cut
+            dealt to small crews - has no tab of its own, so matching its stored id raw dropped
+            those matches out of the list and out of the count above every aggregate they feed. */}
+        <MatchHistory matches={archived.filter((m) => displaySquareSet(m.square_set) === shownSet)} />
 
         {!hasData ? (
           <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
