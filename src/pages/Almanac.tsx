@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMatchFleets, fetchMatchEvents, fetchParticipants, fetchProfiles, profileName, type Profile } from "../lib/profiles";
-import { fetchArchivedMatches, type ArchivedMatch } from "../lib/matchArchive";
+import { fetchArchivedMatches, ARCHIVE_LIST_LIMIT, type ArchivedMatch } from "../lib/matchArchive";
 import { buildScoutingReports } from "../lib/scouting";
 import { CaptainCards } from "../components/CaptainCards";
 import type { ParticipantRow } from "../lib/careerStats";
@@ -9,6 +9,7 @@ import { matchName } from "../lib/matchName";
 import { teamName, teamHex } from "../lib/teamColors";
 import { challengesForRoom, detectSquareSet, rowSquareSet, busiestSquareSet, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
 import { SquareSetTabs } from "../components/SquareSetTabs";
+import { SiteFooter } from "../components/SiteFooter";
 import {
   placementHeatmap,
   shotHeatmap,
@@ -185,12 +186,16 @@ export function Almanac() {
         {/* Folded, like every other reader that groups by board: a variant - the trimmed boss cut
             dealt to small crews - has no tab of its own, so matching its stored id raw dropped
             those matches out of the list and out of the count above every aggregate they feed. */}
-        <MatchHistory matches={archived.filter((m) => displaySquareSet(m.square_set) === shownSet)} />
+        <MatchHistory
+          matches={archived.filter((m) => displaySquareSet(m.square_set) === shownSet)}
+          // Against the ceiling, so the count is a window rather than a total - see ARCHIVE_LIST_LIMIT.
+          capped={archived.length >= ARCHIVE_LIST_LIMIT}
+        />
 
         {!hasData ? (
           <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
             <p className="muted" style={{ margin: 0 }}>
-              Nothing charted yet - finish a match and the almanac starts filling in.
+              Nothing charted yet. Finish a match and the almanac starts filling in.
             </p>
             <Link to="/">Back to the harbor</Link>
           </div>
@@ -204,23 +209,27 @@ export function Almanac() {
                   sub={`${shape.firstBloodSample} decided matches`}
                   hint="How often the side that lands the opening hit goes on to win"
                 />
-                <BigStat
-                  label="Back-and-forth"
-                  value={shape.avgBackAndForth.toFixed(1)}
-                  sub={shape.busiest ? `most in one match: ${shape.busiest.changes}` : ""}
-                  hint="Average times the shooting switched from one side to the other"
-                />
-                <BigStat
-                  label="Board coverage"
-                  value={`${Math.round(shape.boardCoverage * 100)}%`}
-                  sub="of squares ever fired at"
-                  hint="Share of the board that typically gets touched before a match ends"
-                />
+                {shape.bloodiest && (
+                  <BigStat
+                    label="Bloodiest square"
+                    value={shape.bloodiest.name}
+                    sub={`${shape.bloodiest.sinkings} ${shape.bloodiest.sinkings === 1 ? "ship" : "ships"} sunk on it`}
+                    hint="The square that has finished off the most ships"
+                  />
+                )}
+                {shape.medianMatchSeconds !== null && (
+                  <BigStat
+                    label="Typical match"
+                    value={fmt(shape.medianMatchSeconds)}
+                    sub={`median of ${shape.timedMatches} ${shape.timedMatches === 1 ? "match" : "matches"}`}
+                    hint="How long a match on this board usually runs"
+                  />
+                )}
                 <BigStat
                   label="Flawless wins"
                   value={shape.flawlessWins}
                   sub="won without losing a ship"
-                  hint="Victories where the winning fleet finished completely intact"
+                  hint="Victories where the winning fleet finished intact"
                 />
               </div>
             )}
@@ -273,8 +282,8 @@ export function Almanac() {
               <div className="panel stack" style={{ gap: "0.25rem" }}>
                 <h3 style={{ margin: 0 }}>Quickest squares on record</h3>
                 <span className="muted" style={{ fontSize: "0.7rem" }}>
-                  How long the fight took - timed from that captain's previous square, whether or not a ship was
-                  hiding under this one. Opening squares belong to first blood instead.
+                  How long the fight took, timed from that captain's previous square, hit or miss.
+                  Opening squares count towards first blood instead.
                 </span>
                 {records.map((r, i) => (
                   <div
@@ -301,6 +310,10 @@ export function Almanac() {
         )}
         </>
       )}
+      {/* Page level, and outside the tab switch: it used to live inside the pace table's panel, so
+          it drew halfway down the page above "Quickest squares", and vanished entirely on the
+          Captains tab or whenever no captain had a pace yet. */}
+      <SiteFooter />
     </div>
   );
 }
@@ -322,7 +335,7 @@ const HISTORY_PREVIEW = 12;
  * Costs no storage: match_reports has been written at the end of every match since the record
  * books existed, and this reads rows that were already sitting there.
  */
-function MatchHistory({ matches }: { matches: ArchivedMatch[] }) {
+function MatchHistory({ matches, capped }: { matches: ArchivedMatch[]; capped?: boolean }) {
   const [showAll, setShowAll] = useState(false);
   if (matches.length === 0) return null;
 
@@ -332,8 +345,10 @@ function MatchHistory({ matches }: { matches: ArchivedMatch[] }) {
     <div className="panel stack" style={{ gap: "0.3rem" }}>
       <h3 style={{ margin: 0 }}>Match history</h3>
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        {matches.length} finished {matches.length === 1 ? "match" : "matches"} - open one for its full recap, then scrub
-        the whole match back shot by shot.
+        {capped ? "The newest " : ""}
+        {matches.length} finished {matches.length === 1 ? "match" : "matches"}
+        {capped ? ` of the last ${ARCHIVE_LIST_LIMIT} played` : ""}. Open one for its full recap, then scrub
+        the match back shot by shot.
       </span>
       {shown.map((m) => {
         const when = new Date(m.finished_at);
@@ -393,13 +408,35 @@ function MatchHistory({ matches }: { matches: ArchivedMatch[] }) {
   );
 }
 
+/**
+ * One headline number, or one headline name.
+ *
+ * The size steps down for a value that is a name rather than a figure. "71%" and "Astel,
+ * Naturalborn of the Void" are both values here, and the boss names run to thirty characters
+ * against a tile nine rems wide - at the figure size a long one would either spill out of the
+ * panel or drag the whole row taller than the three beside it.
+ */
 function BigStat({ label, value, sub, hint }: { label: string; value: string | number; sub?: string; hint?: string }) {
+  const text = String(value);
+  const size = typeof value === "number" || text.length <= 12 ? "1.9rem" : text.length <= 20 ? "1.15rem" : "1rem";
+
   return (
     <div className="panel stack" style={{ flex: "1 1 10rem", minWidth: "9rem", gap: "0.1rem" }} title={hint}>
       <span className="muted" style={{ fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
         {label}
       </span>
-      <span style={{ fontSize: "1.9rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>{value}</span>
+      <span
+        style={{
+          fontSize: size,
+          fontWeight: 700,
+          lineHeight: 1.15,
+          color: "var(--accent)",
+          // A long name breaks across lines rather than out of the panel.
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </span>
       {sub && <span className="muted" style={{ fontSize: "0.7rem" }}>{sub}</span>}
     </div>
   );
@@ -430,9 +467,11 @@ function HeatGrid({ map }: { map: Heatmap }) {
             {COL_LETTERS[c] ?? c + 1}
           </div>
         ))}
+        {/* Fragment with a key, not `<>`: the rows are a list, and the shorthand cannot carry one -
+            keying the children inside it instead left React warning on every render. */}
         {Array.from({ length: boardSize }, (_, r) => (
-          <>
-            <div key={`r${r}`} className="muted" style={{ fontSize: "0.65rem", alignSelf: "center", paddingRight: 4 }}>
+          <Fragment key={`row${r}`}>
+            <div className="muted" style={{ fontSize: "0.65rem", alignSelf: "center", paddingRight: 4 }}>
               {r + 1}
             </div>
             {Array.from({ length: boardSize }, (_, c) => {
@@ -458,7 +497,7 @@ function HeatGrid({ map }: { map: Heatmap }) {
                 </div>
               );
             })}
-          </>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -496,7 +535,7 @@ const SQUARE_COLUMNS: SortColumn<SquareSortKey>[] = [
     label: "Hit %",
     align: "right",
     firstDirection: "desc",
-    title: "Share of those shots that landed on an enemy ship. That is where people HIDE ships, not how hard the square is - the fight is the same either way.",
+    title: "Share of those shots that landed on an enemy ship. Says where people hide ships, not how hard the square is.",
   },
   {
     key: "median",
@@ -504,21 +543,21 @@ const SQUARE_COLUMNS: SortColumn<SquareSortKey>[] = [
     sublabel: "on the clock",
     align: "right",
     firstDirection: "asc",
-    title: "Median time into the match at which this square falls - when it usually gets taken, not how long it takes. Every shot counts, hit or miss.",
+    title: "Median time into the match when this square falls. When people take it, not how long it takes to beat.",
   },
   {
     key: "appeared",
     label: "Seen",
     align: "right",
     firstDirection: "desc",
-    title: "Boards this square has appeared on, whether or not anybody shot at it. Rebuilt from each match's seed, which is the only way to see a square nobody touched.",
+    title: "Boards this square has appeared on, whether or not anybody shot at it.",
   },
   {
     key: "ignored",
     label: "Ignored",
     align: "right",
     firstDirection: "desc",
-    title: "Share of the boards it appeared on where nobody fired at it at all. 100% means it has never been taken.",
+    title: "Share of the boards it appeared on where nobody fired at it. 100% means it has never been taken.",
   },
   {
     key: "opened",
@@ -528,11 +567,17 @@ const SQUARE_COLUMNS: SortColumn<SquareSortKey>[] = [
     title: "Times this square was the very first shot of a match.",
   },
   {
+    // "Fastest" was a lie, and an expensive one: this is a position on the match clock, and the
+    // panel directly below it ranks squares by how long the FIGHT took, in the same m:ss format.
+    // Two numbers that look identical and mean opposite things. The heading now says which it is,
+    // the way the Median column's "on the clock" already did.
     key: "fastest",
-    label: "Fastest",
+    label: "Earliest",
+    sublabel: "on the clock",
     align: "left",
     firstDirection: "asc",
-    title: "The earliest this square has ever fallen, and who took it.",
+    title:
+      "The earliest point in a match this square has ever fallen, and who took it. When it was reached, not how long the fight lasted.",
   },
 ];
 
@@ -601,8 +646,7 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
         Every square this board has ever dealt, including the ones nobody has fired at. Times are
-        median seconds after firing opens, counted from every shot - hit or miss, the square took
-        just as long.
+        median seconds after firing opens, hit or miss.
       </span>
       <div style={{ overflowX: "auto", maxHeight: "30rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
@@ -643,8 +687,7 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
         </table>
       </div>
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        Click a heading to sort by it; click it again to flip the order. Hover any heading for what
-        the number means.
+        Click a heading to sort; click again to flip. Hover a heading for what the number means.
       </span>
     </div>
   );
@@ -680,7 +723,7 @@ const PACE_COLUMNS: SortColumn<PaceSortKey>[] = [
     sublabel: "median",
     align: "right",
     firstDirection: "asc",
-    title: `Square pace - the time from one square falling to the next, taken as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
+    title: `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
   },
   {
     key: "average",
@@ -688,7 +731,7 @@ const PACE_COLUMNS: SortColumn<PaceSortKey>[] = [
     sublabel: "average",
     align: "right",
     firstDirection: "asc",
-    title: "The same work as a mean: elapsed time over squares taken, worked out within each match and then averaged across matches, so the days between sessions never count as thinking time. It counts every gap, including the pair a duo boss fills at once - which is why it sits away from the median.",
+    title: "The same figure as a mean, worked out inside each match and then averaged across matches, so time between sessions never counts. Every gap counts, including the pair a duo boss fills at once.",
   },
   {
     key: "best",
@@ -767,8 +810,8 @@ function PaceTable({
         </span>
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        How long a captain takes over one square. Lower is faster - and under the fire-on-kill rule
-        that gap is one square's work, start to finish.
+        How long a captain takes over one square. Under the fire-on-kill rule, that gap is one
+        square's work from start to finish.
       </span>
       <div style={{ overflowX: "auto", maxHeight: "26rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>

@@ -47,7 +47,7 @@ export function CaptainCards({ reports, profiles, setId }: Props) {
         <span className="muted" style={{ fontSize: "0.72rem" }}>
           {reports.length} on record, {rated} with enough matches to be measured against the field.
           {rated < MIN_FIELD_SIZE &&
-            ` A captain needs ${MIN_MATCHES_FOR_TRAITS} matches, and ${MIN_FIELD_SIZE} of them need that many, before traits and ranks mean anything - until then these are plain totals.`}
+            ` Traits and ranks need ${MIN_MATCHES_FOR_TRAITS} matches from a captain, and ${MIN_FIELD_SIZE} captains at that mark to measure against. Until then these are plain totals.`}
         </span>
       </div>
 

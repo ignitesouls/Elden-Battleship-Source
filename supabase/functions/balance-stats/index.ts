@@ -8,8 +8,8 @@
  * GitHub Pages and anybody can fetch it without signing in - the admin check runs in the browser
  * AFTER the chunk has loaded, so it gates what is rendered and not what is downloaded. Importing
  * bossTimeCost.json there publishes the entire cost model, which is the one input a player could use
- * to work out which squares the balancer thinks are expensive, and therefore where hulls are least
- * likely to be. The previous balancer was metagamed inside a season; that is not a theoretical worry.
+ * to work out which squares the balancer thinks are expensive, and so where hulls are least likely
+ * to be. The previous balancer was metagamed inside a season; that is not a theoretical worry.
  *
  * So the cost table stays server-side. What crosses the wire is one row per match - gaps in seconds -
  * and it crosses to an authenticated admin over the API, which is a different thing from a static
@@ -190,6 +190,19 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
+    // Matches struck from the record books - see the client's lib/voidedMatches and the migration.
+    //
+    // Read here rather than trusted from the caller, and read once for both modes, because "counts
+    // for nothing" has to mean nothing: the index must not offer a voided key, and a score call
+    // must skip one however it was asked for. One indexed read over a column that is false nearly
+    // everywhere, so it costs a round trip and nothing else.
+    const { data: voidedRows, error: voidedErr } = await admin
+      .from('match_reports')
+      .select('match_key')
+      .eq('voided', true)
+    if (voidedErr) throw new Error('match_reports: ' + voidedErr.message)
+    const voided = new Set((voidedRows ?? []).map((r) => (r as { match_key: string }).match_key))
+
     const body = (await req.json().catch(() => ({}))) as {
       mode?: string
       matchKeys?: unknown
@@ -208,7 +221,10 @@ Deno.serve(async (req) => {
           .select('match_key')
           .range(page * 1000, page * 1000 + 999)
         if (error) throw new Error('match_fleets: ' + error.message)
-        for (const r of data ?? []) keys.add((r as { match_key: string }).match_key)
+        for (const r of data ?? []) {
+          const key = (r as { match_key: string }).match_key
+          if (!voided.has(key)) keys.add(key)
+        }
         if (!data || data.length < 1000) break
       }
       return jsonResponse({
@@ -263,6 +279,12 @@ Deno.serve(async (req) => {
     const scored: ScoredMatch[] = []
 
     for (const key of matchKeys) {
+      // Struck from the record books, so it is not evidence about how fair a board was either.
+      if (voided.has(key)) {
+        reject('voided')
+        continue
+      }
+
       const evs = byMatch.get(key) ?? []
       if (evs.length === 0) {
         reject('no_events')

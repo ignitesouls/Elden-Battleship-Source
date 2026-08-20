@@ -59,8 +59,8 @@ export function AutoFireStatus({ squareSet }: { squareSet: string | null | undef
           <strong>Auto-marking</strong> fires a square the moment you kill its boss.
         </span>
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Needs a Twitch sign-in, because the game mod carries a token that has to outlive your
-          browser cache. No permissions requested - not even your email.
+          Needs a Twitch sign-in: the game mod carries a token that has to outlive your browser
+          cache. It asks for no permissions, not even your email.
         </span>
         <button
           onClick={() => void signInWithTwitch()}

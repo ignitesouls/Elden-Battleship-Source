@@ -163,7 +163,7 @@ export function eliminatedTeamsFromAttacks(attacks: Attack[], shipCount: number)
    *
    * Ship names are not unique within a fleet and were never meant to be - fleetFor() draws from the
    * five hulls that have artwork, so anything longer than that pool repeats, and a preset thin
-   * enough to need padding repeats too. Ten of the twenty-four board/preset combinations field a
+   * enough to need padding repeats too. Fifteen of the thirty board/preset combinations field a
    * duplicate name: a 5x5 Classic is Cruiser + Destroyer + Destroyer, a 12x12 Armada is ten hulls
    * drawn from five names. Counting distinct names in those rooms tops out below the fleet size, so
    * this function could never reach `>= shipCount` and the fallback silently never fired.
@@ -200,6 +200,67 @@ export function eliminatedTeamsFromAttacks(attacks: Attack[], shipCount: number)
     if (counted >= shipCount) eliminated.add(team);
   }
   return eliminated;
+}
+
+/**
+ * Which hull of `team`'s fleet is on the bottom, as one flag per entry in `shipDefs`.
+ *
+ * The single answer to "what has this fleet lost", for every screen that draws a roster: the
+ * players' own team boxes, the spectator and caster rosters, and both overlays' silhouettes. They
+ * used to derive it four different ways and each way was wrong somewhere:
+ *
+ *   - a Set of sunk NAMES collapsed duplicate hulls. Half of every board/preset combination fields
+ *     a repeated name (see fleetFor), so sinking one Destroyer struck through both and dropped the
+ *     counter by two. On a seven-hull fleet, five sinkings - one per name - read as "0/7 afloat"
+ *     while two ships were still alive. That is the bug this function exists to end.
+ *   - a LIST of sunk names, consumed one per hull, survived duplicates but not duplicate reports:
+ *     a hull sunk once can be reported sunk twice (see below), and the second report blacked out a
+ *     hull nobody had touched.
+ *
+ * Hulls are identified by WHERE THEY WERE, for the reasons eliminatedTeamsFromAttacks sets out at
+ * length: a start cell names a hull exactly, because validatePlacements() forbids two ships sharing
+ * a square, and it de-duplicates repeat reports for free. A second shot at a settled square copies
+ * the first verdict wholesale, geometry included (see the 20260803 migration), so the same hull can
+ * and does produce two 'sunk' rows.
+ *
+ * Reports are matched to hulls on name AND size, each claiming one unclaimed slot. A report that
+ * matches nothing left is dropped rather than forced onto some other hull: it can only arise from a
+ * fleet whose ship_defs changed underneath it, and reporting one ship too FEW as sunk understates a
+ * loss, where guessing would strike through a ship that is still afloat. That is the error worth
+ * having.
+ */
+export function sunkHullFlags(attacks: Attack[], team: number, shipDefs: ShipDefinition[]): boolean[] {
+  const flags = shipDefs.map(() => false);
+
+  /**
+   * One entry per hull confirmed down, de-duplicated by start cell where the geometry is there.
+   *
+   * Rows without it get a key of their own rather than being de-duplicated: resolve_attack() only
+   * records geometry when the fleet had placements to read, and a row predating that column has
+   * nothing to key on. Mixing the two within one team would risk counting a hull once each way, but
+   * it cannot arise - whether the geometry is written turns on that fleet's own placements, so a
+   * team's rows either all carry it or none do.
+   */
+  const hulls = new Map<string, { name: string | null; size: number | null }>();
+  let loose = 0;
+
+  for (const a of attacks) {
+    if (a.result !== "sunk" || a.defender_team !== team) continue;
+    const key =
+      a.sunk_start_row !== null && a.sunk_start_col !== null
+        ? `${a.sunk_start_row},${a.sunk_start_col}`
+        : `loose:${loose++}`;
+    hulls.set(key, { name: a.sunk_ship_name, size: a.sunk_ship_size });
+  }
+
+  for (const hull of hulls.values()) {
+    const i = shipDefs.findIndex(
+      (d, n) => !flags[n] && d.name === hull.name && (hull.size === null || d.size === hull.size)
+    );
+    if (i >= 0) flags[i] = true;
+  }
+
+  return flags;
 }
 
 /**

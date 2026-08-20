@@ -134,7 +134,7 @@ export function TopBar() {
             onClick={() => void signInWithTwitch()}
             disabled={!isTwitchLoginConfigured}
             className="tb-twitch"
-            title="Sign in with Twitch to keep your fleet and track career stats. No permissions requested - not even your email."
+            title="Sign in with Twitch to keep your fleet and track career stats. It asks for no permissions, not even your email."
           >
             Twitch login
           </button>
@@ -180,7 +180,7 @@ export function TopBar() {
           onClick={toggleColorblind}
           aria-pressed={colorblind}
           className={`tb-item${colorblind ? " tb-colorblind-on" : ""}`}
-          title="Colorblind mode - swaps the default red/blue fleets for a colorblind-safe blue/orange pair. Affects boards, rosters and the leaderboard."
+          title="Colorblind mode - blue and orange fleets instead of red and blue, on boards, rosters and the leaderboard."
         >
           <span className="tb-emoji">🎨</span>
           <span className="tb-label">Colorblind {colorblind ? "on" : "off"}</span>
@@ -194,7 +194,7 @@ export function TopBar() {
           onClick={toggleMute}
           aria-pressed={muted}
           className={`tb-item${muted ? "" : " tb-on"}`}
-          title={muted ? "Sound is off - click to turn it on" : "Sound is on - click to turn it off"}
+          title={muted ? "Turn sound on" : "Turn sound off"}
         >
           <span className="tb-emoji">{muted ? "🔇" : "🔊"}</span>
           <span className="tb-label">Sound {muted ? "off" : "on"}</span>

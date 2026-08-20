@@ -134,9 +134,9 @@ grant execute on function public.unplaced_fleets(uuid) to anon, authenticated;
 -- caller alive - the exemption would swallow the rule.
 --
 -- There is no is_admin() exemption here, which is a departure from the guards next to it. An admin
--- forcing a match to start over an empty fleet is not a power anybody needs - the fix for a crew
--- that hasn't placed is for them to place - and it is precisely the outcome this file exists to make
--- impossible. The SQL editor (postgres) is still exempt, so a room that genuinely has to be shoved
+-- forcing a match to start over an empty fleet is not a power anybody needs. The fix for a crew
+-- that hasn't placed is for them to place, and forcing the start is exactly the outcome this file
+-- exists to prevent. The SQL editor (postgres) is still exempt, so a room that genuinely has to be shoved
 -- forward by hand still can be, deliberately and with a record of it.
 create or replace function public.guard_battle_start()
 returns trigger

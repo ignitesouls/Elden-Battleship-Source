@@ -15,13 +15,15 @@ import {
   participantKey,
   type ParticipantRow,
 } from "../lib/careerStats";
+import { SiteFooter } from "../components/SiteFooter";
+import { squarePace, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 
 export function PlayerStats() {
   const { key: rawKey } = useParams<{ key: string }>();
   const playerKey = decodeURIComponent(rawKey ?? "");
   // Careers are keyed on user id for signed-in captains and on nickname for guests, so this only
   // ever matches on the former - which is correct: a guest has no durable identity to hang a
-  // permanent token on, and that is the whole reason auto-marking needs a sign-in.
+  // permanent token on, which is why auto-marking needs a sign-in.
   const viewer = useAuthProfile();
   const isMe = Boolean(viewer?.isTwitch && viewer.userId === playerKey);
   const [rows, setRows] = useState<ParticipantRow[] | null>(null);
@@ -56,10 +58,25 @@ export function PlayerStats() {
     setRows(allRows.filter((r) => rowSquareSet(r) === shownSet));
   }, [allRows, shownSet]);
 
+  /**
+   * The shot log for THIS board, which is what everything below reads.
+   *
+   * `rows` was filtered to one set and `events` was not, so the three panels fed from the shot log -
+   * pace, personal bests and the square log - were quietly pooling every board this captain has
+   * played while the header above them named one. An objectives pace and a boss pace are not the
+   * same measurement, for exactly the reason the accuracy above them is not.
+   */
+  const boardEvents = useMemo(() => events.filter((e) => rowSquareSet(e) === shownSet), [events, shownSet]);
+
   // Per-square attribution: which bosses this player took, and how quickly.
-  const myPace = useMemo(() => playerPace(events).find((p) => p.key === playerKey) ?? null, [events, playerKey]);
-  const bestKills = useMemo(() => playerBestKills(events, playerKey, 5), [events, playerKey]);
-  const killLog = useMemo(() => playerKills(events, playerKey).slice(0, 15), [events, playerKey]);
+  const myPace = useMemo(
+    () => playerPace(boardEvents).find((p) => p.key === playerKey) ?? null,
+    [boardEvents, playerKey]
+  );
+  /** The leaderboard's measure of the same thing - see the two pace stats below. */
+  const myMedianPace = useMemo(() => squarePace(boardEvents).get(playerKey) ?? null, [boardEvents, playerKey]);
+  const bestKills = useMemo(() => playerBestKills(boardEvents, playerKey, 5), [boardEvents, playerKey]);
+  const killLog = useMemo(() => playerKills(boardEvents, playerKey).slice(0, 15), [boardEvents, playerKey]);
 
   const view = useMemo(() => {
     if (!rows) return null;
@@ -83,6 +100,16 @@ export function PlayerStats() {
       </div>
     );
   }
+
+  /**
+   * A link to another captain, carrying the board being read.
+   *
+   * The leaderboard and the almanac's pace table both do this deliberately; these three links did
+   * not, so following a nemesis off a boss-board page landed on whichever set THEY had played most
+   * - a different board, silently, with no indication the ground had moved.
+   */
+  const captainLink = (key: string) =>
+    `/player/${encodeURIComponent(key)}?set=${encodeURIComponent(shownSet)}`;
 
   const { career, h2h, nemesis, bestMate, recent } = view;
   const profile = career.userId ? profiles.get(career.userId) : undefined;
@@ -134,8 +161,35 @@ export function PlayerStats() {
           <Stat label="Ships sunk" value={career.sunk} color="var(--sunk)" />
           <Stat label="Accuracy" value={`${Math.round(career.accuracy * 100)}%`} />
           <Stat label="Ships lost" value={career.shipsLost} />
-          {myPace && <Stat label="Square pace" value={fmtTime(myPace.secondsPerShot)} />}
-          {myPace?.bestMatch && <Stat label="Best pace" value={fmtTime(myPace.bestMatch.seconds)} color="var(--accent)" />}
+          {/*
+            Both measures, labelled as such, the way the almanac's pace table shows them.
+            "Square pace" used to sit here alone on the MEAN, which is the leaderboard's name for
+            the MEDIAN - so a captain's row and their own page showed different numbers under one
+            name and neither said which it was. The gap between the two is worth reading: one long
+            boss moves the average and leaves the median alone.
+          */}
+          {myMedianPace !== null && (
+            <Stat
+              label="Square pace (median)"
+              value={fmtTime(myMedianPace)}
+              title={`The time from one square falling to the next, as a median. The same number the leaderboard ranks on. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`}
+            />
+          )}
+          {myPace && (
+            <Stat
+              label="Square pace (average)"
+              value={fmtTime(myPace.secondsPerShot)}
+              title="The same figure as a mean, worked out inside each match and then averaged across matches. It counts every gap, including the pair a duo boss fills at once."
+            />
+          )}
+          {myPace?.bestMatch && (
+            <Stat
+              label="Best match"
+              value={fmtTime(myPace.bestMatch.seconds)}
+              color="var(--accent)"
+              title="Their fastest single match, by that average."
+            />
+          )}
         </div>
       </div>
 
@@ -143,7 +197,7 @@ export function PlayerStats() {
         <div className="panel stack" style={{ gap: "0.25rem" }}>
           <h3 style={{ margin: 0 }}>Personal bests</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Quickest squares this captain has taken, each timed from their previous one - hits and misses alike.
+            Quickest squares this captain has taken, each timed from their previous one, hit or miss.
           </span>
           {bestKills.map((k, i) => (
             <div
@@ -167,8 +221,14 @@ export function PlayerStats() {
       {killLog.length > 0 && (
         <div className="panel stack" style={{ gap: "0.25rem" }}>
           <h3 style={{ margin: 0 }}>Square log</h3>
+          {/*
+            Says which clock it is reading. These times are POSITIONS in a match - when each square
+            fell - while the personal bests directly above are DURATIONS, how long each fight took.
+            Identical m:ss either way, opposite meanings, and nothing on screen used to separate them.
+          */}
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Every square taken, most recent match first.
+            Every square taken, most recent match first. The time is how far into that match the
+            square fell, not how long the fight took.
           </span>
           <div style={{ maxHeight: "18rem", overflowY: "auto" }} className="stack">
             {killLog.map((k, i) => (
@@ -204,7 +264,7 @@ export function PlayerStats() {
               <span className="muted" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 ☠ Nemesis
               </span>
-              <Link to={`/player/${encodeURIComponent(nemesis.key)}`} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+              <Link to={captainLink(nemesis.key)} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                 {nemesis.nickname}
               </Link>
               <span className="muted" style={{ fontSize: "0.78rem" }}>
@@ -217,7 +277,7 @@ export function PlayerStats() {
               <span className="muted" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 ⚓ Best shipmate
               </span>
-              <Link to={`/player/${encodeURIComponent(bestMate.key)}`} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+              <Link to={captainLink(bestMate.key)} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                 {bestMate.nickname}
               </Link>
               <span className="muted" style={{ fontSize: "0.78rem" }}>
@@ -257,7 +317,7 @@ export function PlayerStats() {
                 {h2h.map((h) => (
                   <tr key={h.key} style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)" }}>
                     <td style={{ textAlign: "left", padding: "0.25rem 0.4rem" }}>
-                      <Link to={`/player/${encodeURIComponent(h.key)}`}>{h.nickname}</Link>
+                      <Link to={captainLink(h.key)}>{h.nickname}</Link>
                     </td>
                     <td style={num}>{h.played}</td>
                     <td style={num}>
@@ -297,6 +357,7 @@ export function PlayerStats() {
           ))}
         </div>
       )}
+      <SiteFooter />
     </div>
   );
 }
@@ -307,9 +368,20 @@ function fmtTime(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function Stat({ label, value, color }: { label: string; value: number | string; color?: string }) {
+function Stat({
+  label,
+  value,
+  color,
+  title,
+}: {
+  label: string;
+  value: number | string;
+  color?: string;
+  /** Hover text, for the stats whose heading can't say what they measure in three words. */
+  title?: string;
+}) {
   return (
-    <div className="stack" style={{ gap: 0, minWidth: "5.5rem" }}>
+    <div className="stack" style={{ gap: 0, minWidth: "5.5rem" }} title={title}>
       <span style={{ fontSize: "1.3rem", fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{value}</span>
       <span className="muted" style={{ fontSize: "0.7rem" }}>{label}</span>
     </div>

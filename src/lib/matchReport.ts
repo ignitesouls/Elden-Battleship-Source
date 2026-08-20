@@ -4,6 +4,7 @@ import { teamName } from "./teamColors";
 import { formatDuration, matchStartedAt, matchTimings } from "./matchTime";
 import { shipCellIndices } from "./shipCells";
 import { deepWater, bottleNote, type DeepHide, type DeepWater } from "./deepWater";
+import { seedFrom, rng } from "./seededRandom";
 import type { Attack, Player, Room } from "../types/battleship";
 
 export interface PlayerStats {
@@ -132,10 +133,13 @@ export function buildMatchReport(
     duration = formatDuration(secs - matchTimings(room).matchBeginsAt);
   }
 
+  // Stable across every client in the room, so concurrent saves dedupe on it (see the
+  // match_reports.match_key unique constraint) - which is exactly the property the honors draw
+  // needs from a seed, so it doubles as one.
+  const matchKey = `${room.code}:${startedAt ?? "unknown"}`;
+
   return {
-    // Stable across every client in the room, so concurrent saves dedupe on it (see the
-    // match_reports.match_key unique constraint).
-    matchKey: `${room.code}:${startedAt ?? "unknown"}`,
+    matchKey,
     roomCode: room.code,
     winnerTeam: room.winner_team,
     draw: room.winner_team === null,
@@ -145,8 +149,14 @@ export function buildMatchReport(
     // The note is read from the square rather than the find, because it is a property of the bottle
     // and exists whether or not anybody ever fished that one out. Four bottles, four notes - hence a
     // lookup rather than a string.
-    awards: buildAwards(stats, shots, room.board_size, room.ship_defs?.length ?? 0, deep, (cell) =>
-      bottleNote(room, cell)
+    awards: buildAwards(
+      stats,
+      shots,
+      room.board_size,
+      room.ship_defs?.length ?? 0,
+      deep,
+      (cell) => bottleNote(room, cell),
+      matchKey
     ),
     deep,
   };
@@ -279,6 +289,31 @@ interface Honor {
    * unawarded rather than being handed to someone who didn't do the thing.
    */
   earnedBy: (c: HonorContext) => Claim[];
+  /**
+   * Awarded ahead of the draw, in list order, to the strongest claim that is still free.
+   *
+   * For the handful of deeds that ARE the story of the match. Everything without this flag goes
+   * into the pool below and is drawn at random from what each player actually earned - see
+   * buildAwards for why that changed and what it fixed.
+   *
+   * Keep this list short. Every title marked here is one the draw can never reach, which is the
+   * problem the draw exists to solve; the bar is "if somebody did this and the recap said something
+   * else instead, the recap got it wrong".
+   */
+  guaranteed?: true;
+  /**
+   * Titles this one makes redundant FOR THE SAME PLAYER, by name.
+   *
+   * The ladders need it. `tentacleRung` is "at least n", so somebody who found three tentacles
+   * genuinely earns Acolyte, Dreamer AND Whispers, and Potfriend's owner necessarily found the jar
+   * they then shot loose. Under the old fixed order the strongest simply came first and the rest
+   * were unreachable behind it; a draw has no such luck built in, and would happily tell a player
+   * who found three tentacles that they found one.
+   *
+   * Only needed between POOLED titles. A guaranteed one takes its player out of the draw entirely,
+   * so everything lesser it might have outranked is already unreachable for them.
+   */
+  supersedes?: string[];
 }
 
 /**
@@ -303,6 +338,7 @@ const HONORS: Honor[] = [
   {
     title: "Shaker's Protégé",
     emoji: "🐐",
+    guaranteed: true,
     /**
      * Every ship in an enemy fleet, every killing blow theirs.
      *
@@ -359,6 +395,7 @@ const HONORS: Honor[] = [
   {
     title: "High Priest of R'lyeh",
     emoji: "🦑",
+    guaranteed: true,
     earnedBy: (c) =>
       [...c.tentacles.by]
         .filter(([, n]) => c.tentacles.needed > 0 && n >= c.tentacles.needed)
@@ -367,6 +404,7 @@ const HONORS: Honor[] = [
   {
     title: "Woke the Sleeper",
     emoji: "🌀",
+    guaranteed: true,
     // The last tentacle, whoever else did the digging - singular, so no cascade.
     earnedBy: (c) =>
       c.tentacles.awake && c.tentacles.lastFinder
@@ -376,6 +414,7 @@ const HONORS: Honor[] = [
   {
     title: "Thrice-Cursed",
     emoji: "👻",
+    guaranteed: true,
     /**
      * Three sightings of the Dutchman, by one person.
      *
@@ -392,11 +431,13 @@ const HONORS: Honor[] = [
   {
     title: "Acolyte of the Sleeper",
     emoji: "🔮",
+    supersedes: ["Dreamer of R'lyeh", "Whispers in the Deep"],
     earnedBy: (c) => tentacleRung(c, 3),
   },
   {
     title: "Potfriend",
     emoji: "💪",
+    supersedes: ["Found the Jar"],
     /**
      * Shot Alexander loose from the shallows.
      *
@@ -434,6 +475,7 @@ const HONORS: Honor[] = [
   {
     title: "Dreamer of R'lyeh",
     emoji: "💤",
+    supersedes: ["Whispers in the Deep"],
     earnedBy: (c) => tentacleRung(c, 2),
   },
   {
@@ -876,34 +918,160 @@ const HONORS: Honor[] = [
   },
 ];
 
+/**
+ * Everyone who EARNED each title, in claim order, whether or not the draw went their way.
+ *
+ * The honors have two questions in them and they used to have one answer. "Does sinking the most
+ * ships earn Admiral of the Fleet" is about the rule; "did Aljex end up holding it" is about the
+ * draw, and since the draw is now random the second no longer answers the first. Separating them is
+ * what lets the rules stay testable - see scripts/check-honors.ts, which asserts against this and
+ * leaves the draw to its own handful of cases.
+ *
+ * Titles nobody earned are absent rather than present-and-empty, so `has()` reads as "was this
+ * earned at all".
+ */
+export function honorClaims(
+  room: Room,
+  players: Player[],
+  attacks: Attack[],
+  deepHides: DeepHide[]
+): Map<string, Array<{ nickname: string; detail: string }>> {
+  const shots = groupIntoShots(attacks, players);
+  const stats = buildPlayerStats(players, shots);
+  const deep = deepWater(room, shots, deepHides);
+  const context = buildHonorContext(stats, shots, room.board_size, room.ship_defs?.length ?? 0, deep, (cell) =>
+    bottleNote(room, cell)
+  );
+
+  const out = new Map<string, Array<{ nickname: string; detail: string }>>();
+  for (const honor of HONORS) {
+    const claims = honor.earnedBy(context);
+    if (claims.length === 0) continue;
+    out.set(
+      honor.title,
+      claims.map((c) => ({ nickname: c.player.nickname, detail: c.detail }))
+    );
+  }
+  return out;
+}
+
+/**
+ * Who gets which title.
+ *
+ * -- Why this is a draw and not a ranking -----------------------------------------------------------
+ *
+ * A player takes at most one honor and an honor goes to at most one player, so a match hands out
+ * exactly as many titles as it has crew. This list is 37 long and a crew is about six, which used to
+ * mean the first six claimable titles won every single time. Measured over the archive: in 96 of 96
+ * matches the awards handed out equalled the player count exactly, and EIGHT titles had never once
+ * been awarded to anybody. Seven of those sat in a row near the bottom, and their conditions are not
+ * even demanding - "Water, Water, Everywhere" wants a four-shot miss streak, which happens in nearly
+ * every match. They were unreachable by position, not by difficulty.
+ *
+ * So the ordering no longer decides. Every player is offered a title drawn at random from the ones
+ * they actually earned, which means a fourth match in a row can finally say something new about the
+ * same crew doing the same thing. Nothing is invented: the pool for a player is exactly the set of
+ * titles whose `earnedBy` named them, so a title is still only ever given to someone who did the deed.
+ *
+ * -- Except the deeds that ARE the match -----------------------------------------------------------
+ *
+ * `guaranteed` honors are handed out first, in list order, exactly as everything used to be. Wiping
+ * an enemy fleet single-handed and then being told you fired the most shots is not variety, it is
+ * the recap getting it wrong - and that specific swap is called out in Shaker's Protégé's own note.
+ * Four titles carry the flag; everything else is drawn.
+ *
+ * -- Why the randomness is seeded ------------------------------------------------------------------
+ *
+ * This function runs on every client in the room to draw the recap, and again in lib/archiveMatch to
+ * write the permanent record. Math.random() would give every player a different set of awards on
+ * screen and archive whichever browser happened to save first. Seeded from the match key - the room
+ * code and the match's start timestamp, the same string the archive dedupes on - every client draws
+ * the identical result without anything being synced, which is the property lib/seededRandom exists
+ * for. Re-rendering a finished match is still stable forever.
+ */
 function buildAwards(
   stats: PlayerStats[],
   shots: FeedShot[],
   boardSize: number,
   fleetSize: number,
   deep: DeepWater,
-  bottleMessage: (cellIndex: number) => string
+  bottleMessage: (cellIndex: number) => string,
+  matchKey: string
 ): Award[] {
   const awards: Award[] = [];
   if (stats.length === 0) return awards;
 
   const context = buildHonorContext(stats, shots, boardSize, fleetSize, deep, bottleMessage);
 
+  // Every honor's claimants, resolved once. earnedBy can be expensive and is about to be read from
+  // two directions.
+  const claims = new Map<Honor, Claim[]>();
+  for (const honor of HONORS) claims.set(honor, honor.earnedBy(context));
+
   // Keyed on the stats object rather than the nickname, so two players who happen to share a
   // nickname are still two crew members here.
   const taken = new Set<PlayerStats>();
+  const used = new Set<Honor>();
+
+  const give = (honor: Honor, claim: Claim) => {
+    taken.add(claim.player);
+    used.add(honor);
+    awards.push({
+      title: honor.title,
+      emoji: honor.emoji,
+      nickname: claim.player.nickname,
+      detail: claim.detail,
+    });
+  };
+
+  // 1. The deeds that are the story of the match, in list order, strongest free claim first.
   for (const honor of HONORS) {
-    for (const claim of honor.earnedBy(context)) {
+    if (!honor.guaranteed) continue;
+    for (const claim of claims.get(honor) ?? []) {
       if (taken.has(claim.player)) continue;
-      taken.add(claim.player);
-      awards.push({
-        title: honor.title,
-        emoji: honor.emoji,
-        nickname: claim.player.nickname,
-        detail: claim.detail,
-      });
+      give(honor, claim);
       break;
     }
+  }
+
+  // 2. Everything else, drawn.
+  const random = rng(seedFrom(`honors:${matchKey}`));
+
+  /** What this player could still be handed, with their ladders collapsed to the top rung. */
+  const poolFor = (player: PlayerStats) => {
+    const mine: Array<{ honor: Honor; claim: Claim }> = [];
+    for (const honor of HONORS) {
+      if (honor.guaranteed || used.has(honor)) continue;
+      const claim = (claims.get(honor) ?? []).find((c) => c.player === player);
+      if (claim) mine.push({ honor, claim });
+    }
+    // Drop anything this player has out-earned - see Honor.supersedes.
+    const outranked = new Set(mine.flatMap(({ honor }) => honor.supersedes ?? []));
+    return mine.filter(({ honor }) => !outranked.has(honor.title));
+  };
+
+  /*
+   * Fewest options first, rather than scoreboard order.
+   *
+   * "One title each" is a promise the recap makes, and a greedy draw in a fixed order can break it:
+   * the top scorer takes the one title a quieter crewmate also qualified for, and the crewmate ends
+   * the match with nothing rather than with the only thing they earned. Serving the most constrained
+   * player first spends the contested titles on whoever has no alternative, which is the standard
+   * fix and costs nothing at a crew of six.
+   *
+   * Ties break on scoreboard order, so the draw stays deterministic.
+   */
+  for (;;) {
+    let next: { player: PlayerStats; pool: Array<{ honor: Honor; claim: Claim }> } | null = null;
+    for (const player of stats) {
+      if (taken.has(player)) continue;
+      const pool = poolFor(player);
+      if (pool.length === 0) continue; // earned nothing measurable - no participation ribbon
+      if (!next || pool.length < next.pool.length) next = { player, pool };
+    }
+    if (!next) break;
+    const pick = next.pool[Math.floor(random() * next.pool.length)];
+    give(pick.honor, pick.claim);
   }
 
   return awards;
@@ -1230,7 +1398,7 @@ export function formatReportText(report: MatchReport, attacks: Attack[], boardSi
   lines.push(`ELDEN BATTLESHIP - room ${report.roomCode}`);
   lines.push(
     report.draw
-      ? "Result: mutual destruction - every fleet went down."
+      ? "Result: mutual destruction"
       : `Winner: ${report.winnerTeam !== null ? teamName(report.winnerTeam) : "unknown"}`
   );
   lines.push(`Match time: ${report.duration}   Shots fired: ${report.totalShots}`);

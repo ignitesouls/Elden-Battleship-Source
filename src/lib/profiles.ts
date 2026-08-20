@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { canonicalSquareName } from "./squareSetFormat";
 import type { ParticipantRow } from "./careerStats";
+import { withoutVoided } from "./voidedMatches";
 
 export interface Profile {
   id: string;
@@ -146,15 +147,25 @@ async function fetchAllRows<T>(table: string, limit: number): Promise<T[]> {
   return out;
 }
 
+/**
+ * The three stats feeds, and the one thing they all do before returning.
+ *
+ * Everything the site counts is built from these: careers and the leaderboard from participants,
+ * pace and the record book and the boss stats from events, the hiding-place heatmap from fleets.
+ * That makes them the one place a voided match has to be dropped - see lib/voidedMatches. The
+ * archive's own readers (fetchArchivedMatches, fetchArchivedMatch in lib/matchArchive) deliberately
+ * do NOT filter: a voided match keeps its recap page and its line in the history list.
+ */
 export async function fetchMatchFleets(limit = 5000) {
-  return (await fetchAllRows("match_fleets", limit)) as never[];
+  const rows = await fetchAllRows<{ match_key: string }>("match_fleets", limit);
+  return (await withoutVoided(rows)) as never[];
 }
 
 export async function fetchMatchEvents(limit = 50000) {
-  const rows = await fetchAllRows<{ challenge_name?: string | null }>("match_events", limit);
+  const rows = await fetchAllRows<{ match_key: string; challenge_name?: string | null }>("match_events", limit);
   // Rows archived before a square was renamed still carry its old name. Folded here rather than in
   // each of the several things that group on it - see canonicalSquareName.
-  return rows.map((r) => ({
+  return (await withoutVoided(rows)).map((r) => ({
     ...r,
     challenge_name: canonicalSquareName(r.challenge_name),
   })) as never[];
@@ -162,6 +173,6 @@ export async function fetchMatchEvents(limit = 50000) {
 
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */
 export async function fetchParticipants(limit = 20000): Promise<ParticipantRow[]> {
-  const rows = await fetchAllRows<ParticipantRow>("match_participants", limit);
+  const rows = await withoutVoided(await fetchAllRows<ParticipantRow>("match_participants", limit));
   return rows.map((r) => ({ ...r, awards: Array.isArray(r.awards) ? r.awards : [] }));
 }

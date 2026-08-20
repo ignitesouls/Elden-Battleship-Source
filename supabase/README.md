@@ -20,7 +20,7 @@ migration turns out to be wrong, the fix is another migration. Editing history m
 database and this directory stop agreeing, and there is no way to tell which one is right.
 
 **`schema.sql` is for reading, not applying.** It is the whole schema in one place, which is
-far easier to answer a question from than thirty migrations. It can drift, and when the two
+far easier to answer a question from than forty separate migrations. It can drift, and when the two
 disagree the migrations are correct.
 
 **`maintenance/` is not migrations.** These are destructive operational scripts, such as
@@ -46,23 +46,16 @@ before being created), so re-running a file that half-worked is safe.
 
 ## Status
 
-Applied up to and including `20260803010000_host_can_rename_players`.
+Every migration in `migrations/` is applied to the live project, up to and including
+`20260820000000_support_reports`.
 
-Outstanding:
+That line goes stale the moment anyone writes another one, so check rather than trust it:
 
-- `20260803020000_players_replica_identity`, which makes a kicked player's removal arrive over
-  Realtime instead of on their next reload. One `alter table`, safe to run any time.
-- `20260806000000_deep_water_hides`, which moves the placing of everything hiding in the water
-  into the database, so it can be kept off squares the fleets are sitting on. Until it is run,
-  matches simply have nothing hidden in them - the app degrades rather than breaking.
-- `20260813000000_captain_handoff`, which adds `hand_over_captaincy()` behind the lobby's "Make
-  captain" button, and stops `team_joined_at` being backdated mid-match. Until it is run that
-  button fails with a message saying so; nothing else changes.
-- `20260814000000_board_balance`, which adds `rooms.board_perm` and `match_events.board_perm`,
-  guards the first against being written by anyone but the balancer, and restamps
-  `archive_match()` to record it. Pairs with the `balance-board` edge function: until both are
-  in place boards are dealt exactly as they are today, unbalanced, and nothing else changes.
-  Run the migration before deploying the function - the function's only write is that column.
+```bash
+supabase migration list --project-ref <ref>
+```
+
+Any row with a local timestamp and no remote one has not been run.
 
 ## Checking it
 

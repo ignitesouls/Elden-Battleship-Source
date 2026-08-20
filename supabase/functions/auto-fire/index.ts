@@ -100,10 +100,10 @@ interface KillReport {
  * has to match challengesForRoom line for line - a set id left out of the seed base deals a
  * different board from the one the players are looking at, and auto-fire would mark the wrong cell.
  *
- * The permutation has to be applied here too, and it is the one part of this that fails silently if
+ * The permutation has to be applied here too, and it is the part that fails silently when
  * forgotten: a balanced board deals the same squares to different cells, so a kill would resolve to
  * the cell that boss USED to be on and fire there. The shot would land, report a hit or a miss, and
- * be wrong - with no undo. Null means an unbalanced room, which is every room from before balancing
+ * be wrong, with no undo. Null means an unbalanced room, which is every room from before balancing
  * existed and any room whose balancer was unreachable.
  *
  * applyBoardPerm is imported rather than rewritten for exactly that reason: it is also what

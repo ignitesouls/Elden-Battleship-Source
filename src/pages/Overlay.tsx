@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
-import { activeTeams, sunkCellOrientations, cellLabel } from "../lib/battleshipLogic";
+import { activeTeams, sunkCellOrientations, cellLabel, sunkHullFlags } from "../lib/battleshipLogic";
 import { groupIntoShots, outcomeText } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
 import { challengesForRoom } from "../lib/challenges";
@@ -81,8 +81,9 @@ export function Overlay() {
   if (!room) return null;
 
   const teams = activeTeams(state.players);
-  // Counting is now OverlayFleetStatus's job - it needs to know which hulls went down, not how
-  // many, so it derives both from the sunk_ship_name on each attack.
+  // Which hulls went down, not how many: OverlayFleetStatus draws silhouettes, so it needs the
+  // fleet position of each loss rather than a count. See sunkHullFlags for why that can't be
+  // answered from sunk_ship_name, which is what this used to hand it.
   const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm);
 
   // ?team=N marks the streamer's own fleet so viewers can tell at a glance which side they're on.
@@ -159,10 +160,8 @@ export function Overlay() {
   }));
 
   /** Hulls of `team` confirmed sunk, from the public log - never from reading their fleet. */
-  function sunkNamesFor(team: number): string[] {
-    return state.attacks
-      .filter((a) => a.defender_team === team && a.result === "sunk" && a.sunk_ship_name)
-      .map((a) => a.sunk_ship_name as string);
+  function sunkHullsFor(team: number): boolean[] {
+    return sunkHullFlags(state.attacks, team, room!.ship_defs);
   }
 
   function gameTimeAt(iso: string): string {
@@ -205,7 +204,7 @@ export function Overlay() {
             teamLabel={teamName(t)}
             colorHex={teamHex(t)}
             shipDefs={room.ship_defs}
-            sunkNames={sunkNamesFor(t)}
+            sunkHulls={sunkHullsFor(t)}
             isMine={highlightTeam === t}
           />
         ))}

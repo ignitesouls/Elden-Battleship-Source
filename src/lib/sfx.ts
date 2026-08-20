@@ -35,7 +35,7 @@ const FILES = {
   /**
    * Breaking glass, for the message in a bottle.
    *
-   * Under a second, and that is the point of it. The sounds down here scale with what was found - ten
+   * Under a second, on purpose. The sounds down here scale with what was found - ten
    * seconds for the sleeper, three for the whale - and the bottle is a curio rather than an event. A
    * three-second find would be claiming to be a whale.
    */

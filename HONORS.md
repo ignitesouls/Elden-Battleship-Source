@@ -9,7 +9,7 @@ scripts/check-honors.ts`).
 
 - **Everything is earned.** Nothing is positional or random — a title is only ever offered to players
   whose log actually shows the deed, so the same match always produces the same honors on every
-  client, and a player who did nothing measurable gets nothing rather than a participation ribbon.
+  client, and a player who did nothing measurable simply gets nothing.
 - **One honor per player, one player per honor.** The list is walked top to bottom; the first player
   who qualifies and isn't already holding something takes the title.
 - **Ranked titles cascade.** They describe a role, so if the leader is already spoken for the
@@ -23,15 +23,15 @@ Ship-level honors need a hull's footprint, which is rebuilt from the sinking row
 Ships still afloat at the end can't be reconstructed at all, so every ship honor here is about a ship
 that sank.
 
-Six of these are new, and so are the four creatures they hang on — the Dutchman, the bottles,
+Six of these hang on four creatures — the Dutchman, the bottles,
 Alexander and Patches all live in [src/lib/deepWater.ts](src/lib/deepWater.ts) alongside the whale and
 the tentacles, hidden and found by exactly the same machinery.
 
 **Beachcomber is the one exception to the rarity ordering below, and it is deliberate.** There are
 four bottles in the water rather than one, so it is noticeably easier to earn than the three finds it
-sits beside at 9–12. It stays where it is because the note is the point of it — a title that is
-mostly a delivery mechanism for a message somebody left on the sea floor should not be ranked as
-though it were a trophy.
+sits beside at 9–12. It stays where it is because the note is the point of it: a title that mostly
+exists to carry a message somebody left on the sea floor should not be ranked as though it were a
+trophy.
 
 ## The list
 
@@ -76,8 +76,8 @@ rungs of each hunt still cascade, so two crewmates on three tentacles each take 
 Read off the scoreboard or the shape of somebody's shots.
 
 The first three describe a player's whole match rather than a moment in it, and lead the tier in that
-order. From #18 down the order is not a ranking — which of those a player is handed is a matter of
-what their log happened to show.
+order. From #18 down the order is not a ranking. Which of those a player is handed depends on what
+their log happened to show.
 
 | # | | Title | Earned by | Kind |
 |---|---|---|---|---|
@@ -109,17 +109,17 @@ what their log happened to show.
 ## Why the tiers, and not just a list
 
 One honor per player means a four-shooter match hands out four titles, whatever the rest of the list
-says. So placement isn't decoration — it decides which of the true things about a player is the one
-that gets said, and a title moved up is not an addition but a theft from whatever used to win them.
+says. So placement isn't decoration. It decides which of the true things about a player is the one
+that gets said, and moving a title up doesn't add anything: it takes whatever used to win them.
 
-That is the whole argument for the top two tiers. One title sits above the water — sweeping a fleet
-single-handed is rarer than most of what is down there and harder than all of it — and everything the
-shooting earns sits below, because a find can't be aimed for: someone who put a cannonball into
+That is the whole argument for the top two tiers. One title sits above the water, because sweeping a
+fleet single-handed is rarer than most of what is down there and harder than all of it. Everything
+the shooting earns sits below, because a find can't be aimed for: someone who put a cannonball into
 Laboon should hear about Laboon, not about having the third-best accuracy. Below #18 the ordering
 carries no claim at all.
 
 The Admiralty, Ishmael and Captain Nemo used to sit above the water too, and moving them down is a
-correction rather than a demotion — they still lead everything the shooting earns. The match that
+correction rather than a demotion: they still lead everything the shooting earns. The match that
 settled it turned up the Flying Dutchman and a message in a bottle, and read out four shooting titles
 over the top of them; the recap named a sail its own board wasn't drawing. The three best gunners in
 a six-player room are exactly the people most likely to be sitting on a find, so ranking anything

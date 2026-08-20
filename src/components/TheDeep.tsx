@@ -57,8 +57,8 @@ export interface DeepEntry {
  * anywhere: `deepWater` works them out from the shots that found them and never resolves a hiding
  * place in advance, so there is no unfound position in this data to leak into a rematch.
  *
- * Shared by the live recap and the archived one, which is the whole point of it: the two pages showed
- * different amounts of the same match for as long as this lived inside only one of them.
+ * Shared by the live recap and the archived one. While it lived inside only one of them, the two
+ * pages showed different amounts of the same match.
  */
 export function TheDeep({
   entries,
@@ -121,8 +121,8 @@ export function TheDeep({
       {cthulhu && cthulhu.needed > 0 && (
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {cthulhu.awake
-            ? `All ${cthulhu.needed} tentacles were found. Cthulhu woke.`
-            : `${cthulhu.found} of ${cthulhu.needed} tentacles found - the rest are still down there.`}
+            ? `All ${cthulhu.needed} tentacles found. Cthulhu woke.`
+            : `${cthulhu.found} of ${cthulhu.needed} tentacles found.`}
         </span>
       )}
     </div>

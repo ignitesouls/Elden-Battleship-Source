@@ -144,7 +144,7 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
           {sizeCap < BOARD_SIZES[BOARD_SIZES.length - 1] && (
             <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
               {shownSet.label} has {squarePool(set)} squares, so it fills a {sizeCap}x{sizeCap} board at
-              most - bigger boards would put the same square in two places.
+              most. A bigger board would put the same square in two places.
             </span>
           )}
 
@@ -219,14 +219,14 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
               than let it be discovered as two squares wanting the same boss. */}
           {shortfall > 0 && (
             <span className="muted" style={{ fontSize: "0.72rem", color: "var(--hit)" }}>
-              {shownSet.label} covers {cleanFill} of {cells} squares cleanly - the last {shortfall} will
-              overlap goals already on the board. A smaller board fits it better.
+              {shownSet.label} covers {cleanFill} of {cells} squares cleanly. The last {shortfall} will
+              repeat goals already on the board. A smaller board fits it better.
             </span>
           )}
 
           {shipCells > cells * 0.35 && (
             <span className="muted" style={{ fontSize: "0.72rem", color: "var(--hit)" }}>
-              That fleet fills a lot of a {boardSize}x{boardSize} board - placement may be cramped.
+              That fleet fills a lot of a {boardSize}x{boardSize} board, so placement may be cramped.
             </span>
           )}
 

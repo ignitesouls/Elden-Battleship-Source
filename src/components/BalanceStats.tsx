@@ -76,7 +76,7 @@ export function BalanceStats() {
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {progress
             ? `Scored ${progress.done} of ${progress.total} matches` +
-              // Only worth saying once it has had to narrow - see the 546 handling in the sweep.
+              // Only said once it has had to narrow - see the 546 handling in the sweep.
               (progress.slice < 3 ? ` - narrowed to ${progress.slice} per request` : "")
             : "Listing the archive..."}
         </span>
@@ -98,11 +98,11 @@ export function BalanceStats() {
 function reasonText(reason: string): string {
   if (reason.includes("not_admin")) return `The server refused - this account is not an administrator. (${reason})`;
   if (reason.includes("not_signed_in")) return `The server refused - no signed-in session on the request. (${reason})`;
-  if (reason === "timed out") return "The sweep ran past two minutes and was abandoned.";
+  if (reason === "timed out") return "The sweep ran past two minutes and gave up.";
   // 546 is the platform killing a worker that ran past its CPU budget, which is a different problem
-  // from anything this function decided, and worth naming rather than leaving as a bare number.
+  // from anything this function decided, so it is named rather than left as a bare number.
   if (reason.startsWith("HTTP 546") || reason.toLowerCase().includes("cpu")) {
-    return `The worker was killed for exceeding its CPU budget - the sweep is too big for one request. (${reason})`;
+    return `The worker ran out of CPU budget. The sweep is too big for one request. (${reason})`;
   }
   return `Could not score the archive: ${reason}`;
 }
@@ -125,7 +125,7 @@ function Report({ stats }: { stats: Stats }) {
       {/* The headline: same deal, three balancers. */}
       <Section
         title="Fairness gap"
-        note="The same boards under three treatments. `Dealt` is the raw seeded deal; `played` is what the match actually ran on; `rebalanced` is what today's balancer would have made of that same deal."
+        note="The same boards, three ways. Dealt is the raw seeded deal. Played is what the match ran on. Rebalanced is what today's balancer would make of that same deal."
       >
         <table style={tableStyle}>
           <thead>
@@ -149,7 +149,7 @@ function Report({ stats }: { stats: Stats }) {
       {/* The test the old model failed. */}
       <Section
         title="Did the balancer of the day do anything?"
-        note="Matches split by whether a permutation was archived, i.e. whether the balancer actually ran. If these two rows are the same, it was not doing its job - that is exactly what the old per-cell model looked like."
+        note="Matches split by whether the balancer actually ran. If these two rows look the same, it did nothing. That is what the old per-cell model looked like."
       >
         <table style={tableStyle}>
           <thead>
@@ -170,7 +170,7 @@ function Report({ stats }: { stats: Stats }) {
 
       <Section
         title="Stranded fleets"
-        note="A fleet is stranded when it holds a ship whose slowest square costs more than the whole match lasted - it could not have been sunk in the time available. One side stranded and the other not is the asymmetry that makes a match unwinnable rather than merely long."
+        note="A fleet is stranded when one of its ships sits on a square that takes longer to beat than the match lasted. One side stranded and the other not is what makes a match unwinnable rather than merely long."
       >
         <table style={tableStyle}>
           <tbody>

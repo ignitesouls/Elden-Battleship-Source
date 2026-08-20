@@ -15,9 +15,9 @@ It never changes **which** bosses are on the board — only where they sit.
 
 Not how hard the boss is. **How many minutes of a match it takes before that square is done.**
 
-Measured across every archived match, as the expected time before somebody fires at it — with
-matches that ended first counted as "took longer than this" rather than as "unreachable", which is a
-different claim and the one the data actually supports.
+Measured across every archived match, as the expected time before somebody fires at it. Matches
+that ended first count as "took longer than this" rather than as "unreachable". That is a different
+claim, and the one the data supports.
 
 | Square | Difficulty tier | Costs |
 |---|---|---|
@@ -30,7 +30,7 @@ Radahn is a wall of a fight and everyone takes him early. Caelid Duelist is an e
 the end of a ride nobody makes, and costs half an hour more than Malenia. The old system priced these
 backwards.
 
-The important thing about a time is that it can be compared to how long a game actually lasts. The
+A time can be compared with how long a game actually lasts. The
 median match runs about 82 minutes, so Bayle does not mean "unreachable" — it means "slightly more
 than a whole match", which is a sentence a caster can say and a player can argue with.
 
@@ -101,7 +101,7 @@ Step 4 is the whole design. It does not *fix* a bad board — it discards it and
 
 An earlier version searched: it shuffled squares around until the totals matched. That is learnable,
 and it got learned. A search stops the moment it crosses its target, so every board ends up sitting
-right on the line — and a pass that "corrects" boards leaves a bias you can read.
+right on the line. A pass that "corrects" boards leaves a bias you can read.
 
 Drawing and discarding can't do that. The board you play is a uniform sample from the layouts that
 pass, indistinguishable from one nothing ever looked at. There is no search to reverse-engineer and
@@ -113,9 +113,9 @@ redraws, not neutrality.
 
 What it does cost is inference about the *rule*. A player who knows the two fleets hold roughly equal
 numbers of 80-minute squares, and who can see the board and their own fleet, learns something about
-the enemy's. That is a real leak and it is worth stating — but it is symmetric, it names no cell, and
-it is far smaller than reading a lopsided board off the screen and knowing the match was decided
-before anyone fired.
+the enemy's. That is a real leak, and worth stating. But it is symmetric, it names no cell, and it is
+far smaller than the alternative: reading a lopsided board off the screen and knowing the match was
+decided before anyone fired.
 
 The measurable version of that: **long squares are no likelier under a hull than on open water**,
 14.2% against 13.5% over 200 boards. The earlier searching version leaked exactly here. This is
@@ -140,9 +140,9 @@ neither outranks the other once both are blown.
 Every candidate layout is declumped before it is ever scored, so you don't get eight DLC bosses in
 one corner of the grid. Worst 3×3 patch drops from about 5.0 same-region squares to about 3.4.
 
-This runs on every board, not just unfair ones, and it's exempt from all the secrecy reasoning above
-for a simple reason: crowding is a property of the board everyone is about to look at anyway. It
-doesn't know where a single ship is.
+This runs on every board, not just unfair ones, and the secrecy reasoning above doesn't apply to it:
+crowding is a property of the board everyone is about to look at anyway. It doesn't know where a
+single ship is.
 
 It also stops short of a perfect sprinkle on purpose. A board driven to its true minimum stops
 looking dealt and starts looking sorted.
@@ -160,8 +160,8 @@ Bayle is a fair match, and it's left alone.
 **It is not calibrated for three or four teams.** Both thresholds were swept on two-team boards. The
 gap is a spread across every fleet, so each extra fleet is another way to be the outlier: three-team
 boards exhaust the budget often and four-team boards nearly always, falling back to the fairest
-layout drawn. Playable, and better than the raw deal every time — but a weaker guarantee, and it
-should not be trusted until the limits are swept per team count.
+layout drawn. Playable, and better than the raw deal every time, but a weaker guarantee. Don't trust
+it until the limits have been swept per team count.
 
 **It's off for the objective square sets.** Those have no cost data, and it refuses rather than
 guessing.
@@ -188,10 +188,10 @@ So: the second test catches boards *like* that one at a rate of one in four or f
 catch that one. Both are true.
 
 There is a deeper limit under it. Across 777 archived sunk ships, a ship's slowest square predicts
-when it was actually sunk with a correlation of 0.40 and a residual of nearly eighteen minutes. A
-five-minute threshold is therefore being enforced well inside the model's own noise — which is why
-the second test counts whole squares rather than adding more seconds, and why tightening the first
-one further would buy nothing real.
+when it was actually sunk with a correlation of 0.40 and a residual of nearly eighteen minutes. So a
+five-minute threshold sits well inside the model's own noise. That is why the second test counts
+whole squares rather than adding more seconds, and why tightening the first one further would buy
+nothing real.
 
 ## A note on the numbers
 

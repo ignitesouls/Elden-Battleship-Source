@@ -325,7 +325,7 @@ export async function handOverCaptaincy(targetPlayerId: string): Promise<void> {
   const { error } = await supabase.rpc("hand_over_captaincy", { p_target: targetPlayerId });
   if (!error) return;
 
-  // PostgREST reports an unknown function as PGRST202. Worth naming, because the symptom before the
+  // PostgREST reports an unknown function as PGRST202. Named here, because the symptom before the
   // migration is run is a button that fails with "schema cache" and nothing that says why.
   if (error.code === "PGRST202" || /hand_over_captaincy/.test(error.message)) {
     throw new Error(
@@ -396,8 +396,8 @@ export async function submitPlacement(
   // there. That combination is the whole DEEPVOYAGE failure in miniature: ready, and empty.
   if ((data ?? []).length === 0) {
     throw new Error(
-      "Your fleet wasn't saved - the database didn't accept the layout. Try again; if it keeps " +
-        "happening, leave and rejoin the room so your player row is re-linked to this fleet."
+      "Your fleet wasn't saved: the database rejected the layout. Try again. If it keeps " +
+        "happening, leave and rejoin the room to re-link your player row to this fleet."
     );
   }
 }
@@ -550,7 +550,7 @@ export async function startBattle(roomId: string): Promise<BalanceOutcome> {
 /**
  * Opens placement, having first made every fleet row in the room a blank fleet for THIS board.
  *
- * The order is the whole point, and it used to be the other way round.
+ * The order matters, and it used to be the other way round.
  *
  * The status flip is what every client is watching for. Doing it first meant the room announced
  * "we are placing" while last round's `team_ready` rows were still standing - and the host's own

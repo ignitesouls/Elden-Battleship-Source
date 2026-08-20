@@ -225,3 +225,13 @@ for (const c of clients) {
     // Best effort; we are on our way out.
   }
 }
+
+/*
+ * The exit code, which this was the only check in the repo to be missing.
+ *
+ * It printed "2 FAILED" in red prose and then exited 0, so anything reading the status - a CI step,
+ * a `&&` chain, a person skimming a wall of scripts - was told this passed. That is how
+ * claim_room_host sat broken for five days with a check in the repo that had been catching it the
+ * whole time. Sign-out above is best-effort and must not change the verdict, so this comes last.
+ */
+process.exit(fails === 0 ? 0 : 1);

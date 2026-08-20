@@ -9,8 +9,8 @@ Battleship on an Elden Ring board, in a browser. Fleets hide ships on a grid of 
 and doing the thing written on it.
 
 Built for tournament play: any number of fleets, spectator and caster views, and OBS browser
-sources for streaming. No install, no desktop app, and no reading the game's memory. Players
-click the squares themselves.
+sources for streaming. Nothing to install to play — click your own squares, or run the Dionysus
+overlay and have each one fire itself the moment you kill the boss. See [autofire.md](autofire.md).
 
 **Live:** https://kcbrazos.github.io/Elden-Battleship/
 
@@ -21,13 +21,14 @@ as a static site to GitHub Pages.
 
 1. **Home.** Create a room, or join with the room's word-pair code.
 2. **Lobby.** Players pick a fleet (up to nine, by colour). The host chooses the board size
-   (5x5 up to 12x12), the fleet preset, and which square set the board is dealt from.
+   (5x5 up to 14x14, capped by how many squares the set holds), the fleet preset, and which
+   square set the board is dealt from.
 3. **Placement.** Place each ship, or hit Randomize, then confirm.
 4. **Battle.** A countdown, then fire. Real-time rather than turn-based.
 5. **Last fleet afloat wins.** The host can start another match in the same room.
 
-One shot hits every other fleet at the same coordinate. You are not choosing a target, you
-are calling a square, which is what makes a multi-fleet match a race rather than a duel.
+One shot hits every other fleet at the same coordinate. You call a square rather than pick a
+target, which is what makes a multi-fleet match a race rather than a duel.
 
 ## How it stays fair without a game server
 
@@ -37,7 +38,7 @@ There is no backend process refereeing the match. Instead:
   login screen. Signing in with Twitch is optional and only adds a name and career stats.
 - Ship positions live in a `fleets` table under row-level security, so only players seated on
   that fleet can read it. Opponents cannot find your ships by watching network traffic,
-  because Postgres refuses rather than client code.
+  because Postgres refuses the read, not the client code.
 - Attacks are resolved by `resolve_attack()`, a `SECURITY DEFINER` function. It locks the
   attack row and then the fleet row, reads the fleet server-side, and returns only
   hit, miss or sunk. Any client can drive it, so a fleet that closes its tab does not strand
@@ -47,7 +48,7 @@ There is no backend process refereeing the match. Instead:
   fleet that just lost is the least likely to still be connected to announce it.
 
 Spectators can be granted a read of every fleet, which is what the caster tools use. That
-policy is explicit and separate, so it is a choice rather than a leak.
+policy is separate and has to be applied by hand, so granting it is always a deliberate choice.
 
 ## Streaming
 
@@ -147,7 +148,7 @@ project's, added so a keyword-tinted set can print a readable key.
 **EldenBingo.** This project grew out of [EldenBingo](https://github.com/awsker/EldenBingo) by
 Asker, the desktop Bingo app the tournament scene was already using, and where the Battleship
 mode was first built as an addition to it. The web app carries none of its C#, but it is not
-independent of it either: the Battleship rules here were written by reading that implementation,
+independent of it: the Battleship rules here were written by reading that implementation,
 `teamColors.ts` is a port of its `BingoConstants.cs` colour table so a player's colour means the
 same thing in both, and `squareSetFormat.ts` reads its squareset format. EldenBingo is GPL-3, and
 so is this — see the licence note below.
@@ -168,7 +169,7 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
 It was MIT until August 2026. The change was made because this project grew out of EldenBingo,
 which is GPL-3: the game rules were written by reading its Battleship implementation, the fleet
 colours came from its constants, and the squareset file format is its format. How much of that
-counts as a derivative work is genuinely arguable — mechanics are ideas, a colour table is closer
+counts as a derivative work is genuinely arguable. Mechanics are ideas, a colour table is closer
 to data than to expression, and file formats generally aren't protected at all. Matching the
 upstream licence means nobody has to decide. It also puts this in line with every other Ignite
 project, all of which are GPL-3.
@@ -176,15 +177,13 @@ project, all of which are GPL-3.
 ### Using this?
 
 Please do. Fork it, run it for your own event, take pieces out of it. The only ask is that
-changes you distribute stay open under the same licence, which is what GPL means in practice —
-and if you do something interesting with it, say hello.
+changes you distribute stay open under the same licence, which is what GPL means in practice.
 
-Note that running a modified copy as a website is **not** distribution, so hosting your own
-version obliges you to publish nothing. That is deliberate; AGPL was the alternative and it
-seemed a heavier promise than this needs.
+Running a modified copy as a website is **not** distribution, so hosting your own version
+obliges you to publish nothing. That is deliberate; AGPL was the alternative and it seemed a
+heavier promise than this needs.
 
-I would like to hear about it, though. Open an issue, or find me as KCBrazos on GitHub.
-Knowing where this ends up is most of what makes it worth maintaining, and if you are running
-a tournament on it, I would rather hear what is broken from you than guess.
-
-If you are building on it rather than just running it, a link back is appreciated.
+Say hello anyway — open an issue, or find me as KCBrazos on GitHub. Knowing where this ends up
+is most of what makes it worth maintaining, and if you are running a tournament on it I would
+rather hear what is broken from you than guess. If you are building on it rather than running
+it, a link back is appreciated.

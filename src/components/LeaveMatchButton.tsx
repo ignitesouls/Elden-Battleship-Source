@@ -32,8 +32,8 @@ export function LeaveMatchButton({ playerId, roomCode, inMatch = true, label, sp
     const warning = spectating
       ? "Stop spectating and leave this room?"
       : inMatch
-        ? "Leave this match? You give up your seat, and the fight carries on without you. Rejoining puts " +
-          "you back in as a new player - your fleet stays where it is."
+        ? "Leave this match? You give up your seat and the fight carries on without you. Rejoining " +
+          "puts you back as a new player, and your fleet stays where it is."
         : "Leave this room?";
     if (!window.confirm(warning)) return;
 

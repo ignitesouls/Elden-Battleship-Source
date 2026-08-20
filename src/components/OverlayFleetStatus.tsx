@@ -5,8 +5,8 @@ interface Props {
   teamLabel: string;
   colorHex: string;
   shipDefs: ShipDefinition[];
-  /** Names of this team's hulls confirmed sunk, straight from the public attack log. */
-  sunkNames: string[];
+  /** One flag per entry in `shipDefs`, true where that hull is down. See lib/battleshipLogic. */
+  sunkHulls: boolean[];
   /** Marks the streamer's own fleet. */
   isMine?: boolean;
 }
@@ -18,8 +18,8 @@ interface Props {
  * viewer can see at a glance which classes are gone - "they've lost the Carrier" is a much more
  * useful thing to read off a stream than "3/5".
  */
-export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkNames, isMine }: Props) {
-  const sunk = sunkFlags(shipDefs, sunkNames);
+export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkHulls, isMine }: Props) {
+  const sunk = sunkHulls;
   const afloat = sunk.filter((s) => !s).length;
 
   return (
@@ -57,21 +57,12 @@ export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkNames, i
   );
 }
 
-/**
- * Which hull in the list each sunk report refers to.
+/*
+ * The name-matching this file used to do lives in lib/battleshipLogic.sunkHullFlags now, keyed on
+ * where each hull was rather than on how many reports carried its name.
  *
- * Consumes one entry per report rather than matching on name alone: the Armada preset fields two
- * Cruisers and two Destroyers, and a plain `sunkNames.includes(def.name)` would black out both the
- * moment either one went down.
+ * Consuming one entry per report already survived the Armada's two Cruisers, which was what it was
+ * written for. What it could not survive was the same hull being reported twice - a second shot at
+ * a settled square copies the first verdict, geometry and all - which spent the extra report on a
+ * hull nobody had touched. Every roster in the app now answers this question the same way.
  */
-function sunkFlags(shipDefs: ShipDefinition[], sunkNames: string[]): boolean[] {
-  const remaining = new Map<string, number>();
-  for (const name of sunkNames) remaining.set(name, (remaining.get(name) ?? 0) + 1);
-
-  return shipDefs.map((def) => {
-    const left = remaining.get(def.name) ?? 0;
-    if (left <= 0) return false;
-    remaining.set(def.name, left - 1);
-    return true;
-  });
-}

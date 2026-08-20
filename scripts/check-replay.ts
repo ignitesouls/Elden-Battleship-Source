@@ -36,24 +36,52 @@ if (!url || !key) {
   process.exit(1)
 }
 
+/** How many rows one PostgREST response can carry. Matches `max_rows` in supabase/config.toml. */
+const PAGE = 1000
+
+/**
+ * Every row of a table, fetched a page at a time.
+ *
+ * This used to ask for `limit=40000` in one request and take what came back. PostgREST caps a
+ * response at `max_rows` and says nothing about having done so - no error, no header this code
+ * read, just a short array - so the check was quietly running against the newest 1000 of the 9600+
+ * rows in match_events. Whole matches arrived with a handful of their shots, the fold concluded
+ * that nothing had sunk, and the script reported real matches as disagreeing with the archive.
+ *
+ * Every failure it has ever printed was that. See lib/profiles.fetchAllRows, which is the same
+ * paging loop and carries the longer version of this warning - the app fixed this some time ago and
+ * this script was never brought along.
+ */
 async function rows<T>(table: string, query: string): Promise<T[]> {
-  const res = await fetch(`${url}/rest/v1/${table}?${query}`, {
-    headers: { apikey: key!, Authorization: `Bearer ${key!}` },
-  })
-  if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`)
-  return (await res.json()) as T[]
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const res = await fetch(`${url}/rest/v1/${table}?${query}`, {
+      headers: {
+        apikey: key!,
+        Authorization: `Bearer ${key!}`,
+        // Range, not `limit`: the ceiling is the server's, so asking for more per request achieves
+        // nothing. This asks for a WINDOW, which is the part the server honours.
+        Range: `${from}-${from + PAGE - 1}`,
+      },
+    })
+    if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`)
+    const page = (await res.json()) as T[]
+    out.push(...page)
+    // A short page is the end of the table. A full one might be, so it costs one empty request.
+    if (page.length < PAGE) return out
+  }
 }
 
 type FleetRow = ReplayFleetInput & { match_key: string }
 type EventRow = ReplayEventInput & { match_key: string }
 type PartRow = { match_key: string; team: number; nickname: string; team_ships_lost: number; won: boolean; draw: boolean }
 
-const fleets = await rows<FleetRow>('match_fleets', 'select=match_key,team,board_size,placements,ship_defs&limit=4000')
+const fleets = await rows<FleetRow>('match_fleets', 'select=match_key,team,board_size,placements,ship_defs')
 const events = await rows<EventRow>(
   'match_events',
-  'select=match_key,nickname,team,cell_index,challenge_name,result,match_seconds,board_size&limit=40000'
+  'select=match_key,nickname,team,cell_index,challenge_name,result,match_seconds,board_size'
 )
-const parts = await rows<PartRow>('match_participants', 'select=match_key,team,nickname,team_ships_lost,won,draw&limit=8000')
+const parts = await rows<PartRow>('match_participants', 'select=match_key,team,nickname,team_ships_lost,won,draw')
 
 function group<T extends { match_key: string }>(list: T[]): Map<string, T[]> {
   const m = new Map<string, T[]>()

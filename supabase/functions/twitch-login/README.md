@@ -1,7 +1,7 @@
 # Twitch login without the email scope
 
 Supabase's built-in Twitch provider appends `user:read:email` to the authorize request server-side.
-No client option removes it. passing an explicit empty `scopes` to `signInWithOAuth()` leaves the
+No client option removes it: passing an explicit empty `scopes` to `signInWithOAuth()` leaves the
 resulting `scope` parameter unchanged. So players were required to grant email access to play a
 browser game. This function replaces that provider.
 
@@ -71,13 +71,13 @@ the column is `unique`, so it fails with `23505`.
 `players.user_id` is deliberately left alone. those rows are per-room and belong to the session
 actually sitting in the room, which is already the caller.
 
-`profiles.nickname`. the name a player chose for themselves. is read off the old row *before*
+`profiles.nickname` - the name a player chose for themselves - is read off the old row *before*
 `reclaim()` deletes it and written into the new one. Twitch cannot tell us what it was, so without
 that carry, signing in on a second device would silently revert them to their Twitch display name.
 On an ordinary re-login the column is omitted from the upsert entirely, which keeps it out of the
 `ON CONFLICT ... SET` list so the existing nickname survives.
 
-One consequence worth knowing: a player's uuid is no longer stable across devices, so an old
+One consequence: a player's uuid is no longer stable across devices, so an old
 `#/player/<uuid>` link stops resolving after they sign in somewhere new. The stats themselves follow
 them.
 

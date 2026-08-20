@@ -39,6 +39,15 @@ export function SiteFooter() {
         </a>
       </span>
 
+      {/* A plain anchor rather than a <Link>, and a new tab, so that this being at the bottom of a
+          lobby cannot cost somebody the room they are sitting in. The hash route works either way. */}
+      <span>
+        Something broken?{" "}
+        <a href="#/support" target="_blank" rel="noreferrer">
+          Report a bug
+        </a>
+      </span>
+
       <span style={{ opacity: 0.75 }}>
         Unofficial fan project. Not affiliated with FromSoftware or Bandai Namco.
       </span>

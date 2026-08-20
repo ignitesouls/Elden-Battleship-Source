@@ -11,7 +11,7 @@
 -- a live match: not just the hit/miss markers, but the cell_index = -1 start marker, which is the
 -- anchor the match clock is measured from. Both boards blank mid-battle and the timer dies.
 --
--- The policy existed because resetRoomToLobby() has to clear the log between matches - and that
+-- The policy existed because resetRoomToLobby() has to clear the log between matches, and that
 -- is only ever triggered by the host, from "End match" or "Play again".
 drop policy if exists "attacks delete" on attacks;
 create policy "attacks delete by host" on attacks for delete using (

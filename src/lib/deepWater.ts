@@ -163,7 +163,7 @@ export type DeepMark =
  * How many tentacles a board hides.
  *
  * Four on a standard 10x10 - about 4% of the squares, which lands "all four found" at genuinely rare
- * rather than merely uncommon, and that is the point of him. Nothing at all below 8x8: a 5x5 board is
+ * rather than merely uncommon. That is what he is for. Nothing at all below 8x8: a 5x5 board is
  * twenty-five squares already holding a whale, and a pond cannot hide a god.
  *
  * MIRRORED IN SQL, in roll_deep_water(). It has to be: the client cannot count the tentacle rows,
@@ -203,13 +203,13 @@ export function hidesExtras(boardSize: number): boolean {
  * about any fleet - so it is settled before a single ship is placed, and then simply sits there next
  * to whatever the board turns out to hold.
  *
- * Which means it is sometimes RIGHT, and that is the good outcome rather than a bug. Somewhere a crew
- * is going to read "Ship ahead", fire at the next square out of pure superstition, and hit something -
- * and they will never know whether the bottle told them or the sea did. That is the whole institution
+ * Which means it is sometimes RIGHT. That is the good outcome, not a bug. Somewhere a crew is going
+ * to read "Ship ahead", fire at the next square out of pure superstition, and hit something, and they
+ * will never know whether the bottle told them or the sea did. That is the institution
  * being quoted: the ground in these games is carpeted with strangers insisting there is an amazing
  * chest just up ahead, and the reason anybody still reads them is that once in a while there is.
  *
- * The safety property is unchanged by any of that, and is worth stating separately from the joke: the
+ * None of that changes the safety property, which is worth stating separately from the joke: the
  * note is independent of fleet placement, so no arrangement of hulls makes any message true more often
  * than chance and nothing can be worked backwards from it. It cannot be a reliable signal. It is
  * equally not guaranteed to be a false one.
@@ -324,8 +324,8 @@ export function deepWater(room: Room, shots: FeedShot[], hides: DeepHide[]): Dee
      * being fired at, and it can happen on the same shot that something else is being found on.
      *
      * Scoped to the shooting crew's own jar. Every crew that found him has one, they all sit on the
-     * same square, and no crew's shot touches another crew's - which is the whole point of him being
-     * met rather than caught. See JarEncounter.
+     * same square, and no crew's shot touches another crew's, which is why he is met rather than
+     * caught. See JarEncounter.
      */
     const jar = result.alexander.find((j) => j.found.attackerTeam === shot.attackerTeam);
     if (

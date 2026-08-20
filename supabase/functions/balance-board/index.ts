@@ -20,8 +20,8 @@
 // -- Why it has to be server-side at all ---------------------------------------------------------
 //
 // It reads every fleet. `fleets` RLS gives a client its own team and nothing else, deliberately, so
-// no client can compute this - and no client should be trusted to, since the whole point is to
-// decide something both teams care about. Postgres and this function are the only participants who
+// no client can compute this, and no client should be trusted to, because this decides something
+// both teams care about. Postgres and this function are the only participants who
 // can see both sides. Precedent: roll_deep_water, which picks hiding places the same way at the
 // same moment for the same reason.
 //
@@ -83,7 +83,7 @@ const DEFAULT_SET = 'bosses'
  * Every board gets the same threshold - see RANK_GAP_SECONDS for why it stopped being loose, and
  * why it is one number rather than a pair scaled by fleet size.
  *
- * The FLOOR is the one thing still particular to the small-crew cut. It is a requirement rather
+ * The FLOOR is the only rule still particular to the small-crew cut, and it is a requirement rather
  * than a price: requiring a full crew to split its attention across the DLC is a rule about how to
  * play, whereas a crew of two that never has to go there at all is a board its opponents did not
  * get. See squareSets.ts for how a room comes to be on that set.

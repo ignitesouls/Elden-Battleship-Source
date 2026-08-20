@@ -60,8 +60,16 @@ export interface ReplayShot {
   seconds: number | null;
   /** What this shot did to each defending fleet, resolved separately per defender. */
   outcomes: Array<{ team: number; result: Outcome }>;
-  /** Hulls this shot finished off. Drives the timeline markers and the log's SANK lines. */
-  sank: Array<{ team: number; ship: string }>;
+  /**
+   * Hulls this shot finished off. Drives the timeline markers and the log's SANK lines.
+   *
+   * `index` points into {@link Replay.ships} and is what the board reads; `ship` is the name, for
+   * the lines that print one. The index is not redundant: a fleet can field two hulls of the same
+   * name (see fleetFor), so looking the wreck back up by name found the FIRST Carrier however far
+   * down the list the one that actually sank was - and drew fire and smoke across a hull that was
+   * still afloat while leaving the sunk one clean.
+   */
+  sank: Array<{ team: number; ship: string; index: number }>;
 }
 
 export interface Replay {
@@ -227,7 +235,7 @@ export function buildReplay(fleets: ReplayFleetInput[], events: ReplayEventInput
       // cell (the unique constraint is per nickname), and the second shot must not re-sink it.
       if (!sunkShips.has(ship) && ship.cells.every((c) => hits.has(c))) {
         sunkShips.add(ship);
-        sank.push({ team, ship: ship.name });
+        sank.push({ team, ship: ship.name, index: ships.indexOf(ship) });
         outcomes.push({ team, result: "sunk" });
       } else {
         outcomes.push({ team, result: "hit" });
@@ -314,8 +322,8 @@ export function replayStateAt(replay: Replay, cursor: number): ReplayState {
       if (!state) continue;
       state.shipsSunk++;
       // Mark the whole hull sunk, not just the cell that finished it, and record its orientation
-      // for the marker art.
-      const ship = replay.ships.find((x) => x.team === s.team && x.name === s.ship);
+      // for the marker art. By index, never by name - see ReplayShot.sank.
+      const ship = replay.ships[s.index];
       if (ship) {
         for (const c of ship.cells) {
           state.cells.set(c, "sunk");

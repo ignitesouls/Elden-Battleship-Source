@@ -11,8 +11,8 @@ interface Props {
 
 /** The rejoin code's warning, which the bar form has no room to print. Kept here so both say it. */
 const REJOIN_HINT =
-  "Copy the rejoin code now, not later - it's what gets your fleet back on another device or " +
-  "after clearing your cache. Signing in with Twitch does the same automatically.";
+  "Copy the rejoin code now. It's what gets your fleet back on another device, or after you " +
+  "clear your cache. Signing in with Twitch does the same for you.";
 
 /**
  * Room code, randomizer seed and rejoin code, parked at the bottom of the match screen.

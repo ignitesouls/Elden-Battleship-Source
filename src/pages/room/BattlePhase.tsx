@@ -29,7 +29,7 @@ import { buildRecordBook, type RecordEntry } from "../../lib/recordBook";
 import { recordChases, liveTallies } from "../../lib/recordChase";
 import { RecordChases } from "../../components/RecordChases";
 import { fetchParticipants } from "../../lib/profiles";
-import { cellLabel, sunkCellOrientations, eliminatedTeamsFromAttacks } from "../../lib/battleshipLogic";
+import { cellLabel, sunkCellOrientations, eliminatedTeamsFromAttacks, sunkHullFlags } from "../../lib/battleshipLogic";
 import { cellVisuals } from "../../lib/cellVisuals";
 import { useBattlePhaseName } from "../../hooks/useBattlePhase";
 import { usePencilMarks, NOTE_HINT } from "../../hooks/usePencilMarks";
@@ -122,8 +122,8 @@ export function BattlePhase({
   /**
    * What the board is allowed to say yet.
    *
-   * The squares are still being dealt through the RANDOMIZATION window - that is the whole point of
-   * it - so until it ends this component has no board to show, and everything downstream of here
+   * The squares are still being dealt through the RANDOMIZATION window, which is what it is for, so
+   * until it ends this component has no board to show, and everything downstream of here
    * reads an empty list: no names on the fire board, no region tint under your own hulls, no colour
    * key, nothing in the dock. Gated once, here, rather than at each of the six places that draw
    * some part of a square, because those are easy to add a seventh to and never notice.
@@ -603,7 +603,9 @@ export function BattlePhase({
         team={myTeam}
         players={players}
         shipDefs={shipDefs}
-        sunkShipNames={new Set(shipDefs.filter((_, i) => myFleet.ship_sunk[i]).map((s) => s.name))}
+        // Straight off our own fleet row, which is already one flag per hull - the authoritative
+        // answer for the one fleet this browser is allowed to read in full.
+        sunkHulls={myFleet.ship_sunk}
         eliminated={mySunkCount === shipDefs.length}
         isMine
         myPlayerId={myPlayerId}
@@ -614,11 +616,17 @@ export function BattlePhase({
           team={team}
           players={players}
           shipDefs={shipDefs}
-          sunkShipNames={
-            new Set(
-              outgoing.filter((a) => a.defender_team === team && a.result === "sunk").map((a) => a.sunk_ship_name)
-            )
-          }
+          /*
+           * The whole log, not just this crew's `outgoing`.
+           *
+           * Reading our own shots alone made this the only roster in the app that disagreed with
+           * the others: the spectator screen, the caster's crew view and both overlays have always
+           * counted every fleet's losses from the full log. In a three-cornered match that meant a
+           * rival we had never fired on showed at full strength here while a stream watching the
+           * same room showed them half sunk. Two fleets make no difference - every shot at this
+           * team is ours - so nothing about a normal match changes.
+           */
+          sunkHulls={sunkHullFlags(attacks, team, shipDefs)}
           eliminated={eliminated.has(team)}
           myPlayerId={myPlayerId}
         />
@@ -697,7 +705,7 @@ export function BattlePhase({
           write a row against), so say so rather than leaving someone clicking an inert board. */}
       {opponentTeams.length === 0 && (
         <div className="panel" style={{ borderColor: "var(--accent)", fontSize: "0.85rem" }}>
-          Every other fleet has left the room. Nothing to fire at - the host can end the match.
+          Every other fleet has left the room. There's nothing to fire at, so the host can end the match.
         </div>
       )}
 
@@ -731,7 +739,7 @@ export function BattlePhase({
               title={
                 locked
                   ? "Panels are frozen. Unlock to move, resize or restack them."
-                  : "Freeze every panel where it is, so nothing moves by accident."
+                  : "Freeze every panel where it is."
               }
               aria-pressed={locked}
             >

@@ -24,15 +24,14 @@ interface Props {
  *
  * It built one all-in-one HUD column and offered seven controls to shape it: which edge to hug,
  * whether to draw boards, one board or two, three cell sizes, boss names on or off, ships on or
- * off. Every one of those existed to make a 200px-wide strip carry a whole match, and most of them
- * were really the same question asked sideways - "is this readable?" - which the strip could only
- * ever answer no to.
+ * off. Every one of those existed to make a 200px-wide strip carry a whole match, and most were the
+ * same question in another form: is this readable? The strip could only ever answer no.
  *
  * The three separate sources answer it properly: a full-size board that can be zoomed, a clock, and
  * a colour key, each placed where the streamer wants it. What survives of that form is only what a
  * streamer cannot settle by dragging a source around in OBS: whether their own ships go on stream,
- * and the two scene-wide settings below - how solid it all is, and how large the text is. The rest
- * of those seven controls were layout, and layout belongs in OBS.
+ * and the two scene-wide settings below, how solid it all is and how large the text is. The rest of
+ * those seven controls were layout, and layout belongs in OBS.
  *
  * (The old column still exists at /overlay/:code with all its query parameters, for anyone running
  * one. It just isn't something anyone has to configure here to get started.)
@@ -41,9 +40,9 @@ interface Props {
  *
  * A stream scene gets built before the match, not during it, so the fleet chooser has to work in a
  * lobby: one fleet in the room, or none picked yet, and it still has to let you say which board is
- * yours. It used to hide itself until two fleets had players, which meant the first person into the
- * room - usually the one streaming, who arrived early precisely to set up - was the one person who
- * couldn't. What they got instead was the all-fleets fallback, pointed at nobody in particular.
+ * yours. It used to hide itself until two fleets had players. That meant the first person into the
+ * room, usually the one streaming and there early to set up, was the one person who couldn't. They
+ * got the all-fleets fallback instead, pointed at nobody in particular.
  *
  * And because the box is opened before you join a fleet as often as after, the board follows your
  * fleet until you overrule it. Opening this, then picking Blue, then finding your source still
@@ -154,12 +153,12 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         <span style={{ fontSize: "0.78rem" }}>Which fleet's board goes on stream?</span>
         {myTeam === null ? (
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            You're not on a fleet yet. Pick one in the lobby and the board follows it - or leave
+            You're not on a fleet yet. Pick one in the lobby and the board follows it. Or leave
             this on <em>All fleets</em> to show every fleet's shots on one board.
           </span>
         ) : (
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Your fleet's board shows what's been done <em>to</em> you; an opponent's shows your own
+            Your own board shows the shots fired <em>at</em> you. An opponent's board shows your
             shots landing.
           </span>
         )}
@@ -214,15 +213,15 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         {shipsApply && (
           <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
             <strong>
-              The board URL now shows your ship positions and contains your rejoin code. Put it on
-              stream only if you're happy for viewers to see your fleet, and don't share the URL.
+              This URL draws your ships and carries your rejoin code. Put it on stream only if you
+              want viewers to see your fleet, and share it with nobody.
             </strong>
           </span>
         )}
         {showShips && canShowShips && boardTeam !== myTeam && (
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Showing {teamName(boardTeam!)}'s board, so no ships are drawn - only your own fleet can
-            ever be revealed. Switch the board to {teamName(myTeam!)} to see yours.
+            Ships only ever draw on your own board, so none appear on {teamName(boardTeam!)}'s.
+            Switch the board to {teamName(myTeam!)} to see yours.
           </span>
         )}
       </div>
@@ -264,9 +263,8 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           ))}
         </div>
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Square names, coordinates, the clock and the key, all together. Nothing here can overflow a
-          square or push the key off the edge - a size a source has no room for simply draws as large
-          as it fits, so the clock and key need a taller browser source before the biggest steps show.
+          Sets the size of square names, coordinates, the clock and the key together. Text never
+          overflows: a size that doesn't fit draws as large as it can.
         </span>
       </div>
 
@@ -295,8 +293,8 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           style={{ width: "100%" }}
         />
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Fades all three sources so your gameplay reads through them. {Math.round(MIN_OPACITY * 100)}% is the
-          floor - below that "hidden" is the honest word, and OBS can already do that.
+          Fades all three sources so your gameplay shows through. {Math.round(MIN_OPACITY * 100)}% is as faint
+          as it goes. To hide a source outright, use OBS.
         </span>
       </div>
 
@@ -319,8 +317,8 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
       {/* Said here because the alternative is a streamer discovering it live and assuming their
           source is broken. See lib/overlayReveal.ts. */}
       <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        Square names and the colour key stay blank until the match starts, so nobody - including you
-        - can read the board while fleets are still being placed.
+        Square names and the colour key stay blank until the match starts, so nobody can read the
+        board during placement. That includes you.
       </span>
     </div>
   );

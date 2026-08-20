@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 /**
  * Reading a finished match's fairness record back.
  *
- * Nothing here computes fairness, and that is the point. The cost model that prices squares stays on
+ * Nothing here computes fairness, on purpose. The cost model that prices squares stays on
  * the server - see the header of the balance-stats function for why a Vite chunk is not a safe place
  * for it - so every number below was worked out by the balancer at deal time, stored on the room, and
  * copied onto the match by archive_match. This module reads jsonb and does arithmetic on it.

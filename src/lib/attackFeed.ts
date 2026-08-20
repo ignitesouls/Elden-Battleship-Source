@@ -116,19 +116,10 @@ export function outcomeText(
   return { text: "miss", color: "var(--text-dim)" };
 }
 
-/** Ships each team has lost, derived from the public attack log (no fleet access needed). */
-export function sunkCountByTeam(attacks: Attack[]): Map<number, number> {
-  const names = new Map<number, Set<string>>();
-  for (const a of attacks) {
-    if (a.result !== "sunk" || !a.sunk_ship_name) continue;
-    let s = names.get(a.defender_team);
-    if (!s) {
-      s = new Set();
-      names.set(a.defender_team, s);
-    }
-    s.add(a.sunk_ship_name);
-  }
-  const counts = new Map<number, number>();
-  for (const [team, set] of names) counts.set(team, set.size);
-  return counts;
-}
+/*
+ * sunkCountByTeam() used to live here. It counted a team's losses as the number of DISTINCT sunk
+ * ship names, which undercounts every fleet carrying a repeated name - half of them - and it had no
+ * callers left. Removed rather than fixed: lib/battleshipLogic.sunkHullFlags is the one answer to
+ * this question now, and a second implementation sitting unused is how the wrong one gets picked up
+ * again by whoever needs it next.
+ */

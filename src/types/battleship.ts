@@ -210,6 +210,8 @@ export interface MatchReportRow {
   summary: unknown;
   report_text: string;
   finished_at: string;
+  /** Struck from every stat and record but still archived - see lib/voidedMatches. */
+  voided?: boolean;
 }
 
 export interface TeamReady {

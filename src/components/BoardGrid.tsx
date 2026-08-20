@@ -441,8 +441,8 @@ export function BoardGrid({
    * In hold mode the cell's onClick refuses outright and this gesture owns firing completely.
    * Sharing them doesn't work: a completed hold is still followed by a real `click` on release, and
    * an abandoned one - a tap too short to count - produces exactly the same click. One handler would
-   * have to tell those apart from a flag, and getting it wrong in either direction is a shot fired
-   * by accident, which is the whole thing this exists to prevent.
+   * have to tell those apart from a flag, and getting it wrong in either direction fires a shot by
+   * accident, which is what this exists to prevent.
    *
    * -- Why it isn't captured -----------------------------------------------------------------------
    *

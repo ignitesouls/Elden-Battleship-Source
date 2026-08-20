@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase";
+import { clearVoidedCache } from "./voidedMatches";
 
 export interface AdminRow {
   user_id: string;
@@ -125,6 +126,38 @@ export async function deleteMatchRecord(matchKey: string): Promise<void> {
   }
   const { error } = await supabase.from("match_reports").delete().eq("match_key", matchKey);
   if (error) throw error;
+}
+
+/**
+ * Strikes a whole match from the record books without deleting a thing.
+ *
+ * The third and gentlest of the three tools here, and the only one that is reversible. "Delete"
+ * destroys four tables' worth of rows; "Crew" strikes one name from a match everybody else keeps;
+ * this leaves every row where it is and makes the site read past all of them. For a match whose
+ * shots were real but whose clock is not - a held backlog dumped in one burst - it is the only one
+ * of the three that does not throw away true results to fix false ones.
+ *
+ * Verified by re-reading, for the reason removeParticipantFromMatch spells out: RLS makes a blocked
+ * write affect zero rows and report no error, so an admin who had quietly lost the role would
+ * otherwise see a success and a list that never changed.
+ */
+export async function setMatchVoided(matchKey: string, voided: boolean): Promise<void> {
+  const { error } = await supabase.from("match_reports").update({ voided }).eq("match_key", matchKey);
+  if (error) throw error;
+
+  const { data } = await supabase
+    .from("match_reports")
+    .select("voided")
+    .eq("match_key", matchKey)
+    .maybeSingle();
+  if ((data as { voided?: boolean } | null)?.voided !== voided) {
+    const state = voided ? "counting" : "voided";
+    throw new Error("That match is still " + state + " - check you're still an admin.");
+  }
+
+  // The stats fetchers hold the voided list for the life of the page, so the next read would
+  // otherwise still be working from the list as it was before this click.
+  clearVoidedCache();
 }
 
 export interface MatchParticipant {

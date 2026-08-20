@@ -21,6 +21,7 @@ import { buildReplay } from "../lib/replay";
 import { MatchReplay } from "../components/MatchReplay";
 import { BalanceReadout } from "../components/BalanceReadout";
 import { BrandMark, LoadingScreen } from "../components/BrandMark";
+import { SiteFooter } from "../components/SiteFooter";
 
 /**
  * The recap of a match that finished long ago.
@@ -128,7 +129,7 @@ export function ArchivedMatch() {
   if (!report && fleets.length === 0 && events.length === 0) {
     return (
       <div className="stack" style={{ alignItems: "center", gap: "0.8rem" }}>
-        <p className="muted">No match found under that key.</p>
+        <p className="muted">Nothing on record under that key.</p>
         <Link to="/almanac">Back to the Almanac</Link>
       </div>
     );
@@ -249,6 +250,19 @@ export function ArchivedMatch() {
             Match time {report.duration ?? "unknown"} · {report.total_shots} shots fired
           </span>
         )}
+        {/* Why a voided match still has a page at all, said on the page itself.
+
+            The match is not hidden and not deleted - it is here, complete, and it counts for
+            nothing. Without this line a captain who opens it and then cannot find a single one of
+            its squares anywhere in their own record has no way to find out why, and the natural
+            reading of that is that the site lost them. Six words do that job. The line used to
+            spend two more sentences telling the reader not to hoard shots, which is a rule the
+            room already enforces and a scolding nobody opened a recap to read. */}
+        {report?.voided && (
+          <span style={{ color: "var(--danger)", fontSize: "0.82rem", maxWidth: "34rem" }}>
+            <strong>Voided</strong> - archived in full, counted in nothing.
+          </span>
+        )}
       </div>
 
       {awards.length > 0 && (
@@ -324,14 +338,14 @@ export function ArchivedMatch() {
           <TheDeep entries={deep.finds} boardSize={boardSize} cthulhu={deep.cthulhu} />
           {deep.salvaged && deep.finds.length > 0 && (
             <span className="muted" style={{ fontSize: "0.78rem" }}>
-              This match predates the record keeping the sea got - these are the finds its honors
-              named, and there may have been others.
+              Older than the Deep Water records. These are the finds its honors named; there may
+              have been more.
             </span>
           )}
         </div>
       )}
 
-      <BalanceReadout balance={balance} duration={detail.report?.duration ?? null} />
+      <BalanceReadout balance={balance} />
 
       <div className="stack" style={{ alignItems: "center", gap: "0.4rem", width: "100%" }}>
         {/* The replay opens on the final board, so this is still the same recap it always was -
@@ -343,7 +357,7 @@ export function ArchivedMatch() {
           <>
             <h3 style={{ margin: 0 }}>Final fleets</h3>
             <span className="muted" style={{ fontSize: "0.8rem" }}>
-              No board data was archived for this match.
+              No boards on record for this match.
             </span>
           </>
         ) : (
@@ -368,7 +382,7 @@ export function ArchivedMatch() {
         )}
         {!challenges && (
           <span className="muted" style={{ fontSize: "0.78rem" }}>
-            This match predates board reconstruction - only the squares somebody fired at are named.
+            Older than the board records. Only the squares somebody fired at are named.
           </span>
         )}
       </div>
@@ -383,6 +397,7 @@ export function ArchivedMatch() {
       )}
 
       <Link to="/almanac">Back to the Almanac</Link>
+      <SiteFooter />
     </div>
   );
 }

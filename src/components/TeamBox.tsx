@@ -5,16 +5,23 @@ interface Props {
   team: number;
   players: Player[];
   shipDefs: ShipDefinition[];
-  /** Which of this team's ships are sunk, by name. Omit to hide the fleet section. */
-  sunkShipNames?: Set<string | null>;
+  /**
+   * One flag per entry in `shipDefs`, true where that hull is down. Omit to hide the fleet section.
+   *
+   * By POSITION, never by name. This was a Set of sunk ship names, which cannot tell one Destroyer
+   * from the other - and half of every board/preset combination fields a repeated name, so sinking
+   * one of a pair struck through both and dropped the counter by two. See sunkHullFlags, which is
+   * where every caller but the player's own fleet gets this from.
+   */
+  sunkHulls?: boolean[];
   eliminated?: boolean;
   isMine?: boolean;
   myPlayerId?: string;
 }
 
-export function TeamBox({ team, players, shipDefs, sunkShipNames, eliminated, isMine, myPlayerId }: Props) {
+export function TeamBox({ team, players, shipDefs, sunkHulls, eliminated, isMine, myPlayerId }: Props) {
   const members = players.filter((p) => p.team === team);
-  const afloat = sunkShipNames ? shipDefs.filter((s) => !sunkShipNames.has(s.name)).length : null;
+  const afloat = sunkHulls ? shipDefs.filter((_, i) => !sunkHulls[i]).length : null;
 
   return (
     <div
@@ -48,10 +55,10 @@ export function TeamBox({ team, players, shipDefs, sunkShipNames, eliminated, is
         ))}
       </div>
 
-      {sunkShipNames && (
+      {sunkHulls && (
         <div className="row" style={{ gap: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
           {shipDefs.map((s, i) => {
-            const sunk = sunkShipNames.has(s.name);
+            const sunk = sunkHulls[i];
             return (
               <span
                 key={i}

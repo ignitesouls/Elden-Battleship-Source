@@ -13,6 +13,7 @@ import { activeTeams, captainOf } from "../../lib/battleshipLogic";
 import { formatRoomCode } from "../../lib/roomCode";
 import { TEAM_COLORS, teamName, customTeamName, defaultTeamName } from "../../lib/teamColors";
 import type { Room, Player } from "../../types/battleship";
+import { SiteFooter } from "../../components/SiteFooter";
 
 interface Props {
   room: Room;
@@ -362,7 +363,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                             style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}
                             title={
                               away
-                                ? `${p.nickname} is away - command would be stuck with them`
+                                ? `${p.nickname} is away, so command would be stuck with them`
                                 : `Hand command of this fleet to ${p.nickname}, who then places its ships`
                             }
                           >
@@ -425,6 +426,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
       {/* Bottom of the lobby only. Players idle here waiting for the room to fill, which is the
           one point in a session where an off-site link is welcome rather than a distraction. */}
       <CommunityLinks />
+      <SiteFooter />
     </div>
   );
 }

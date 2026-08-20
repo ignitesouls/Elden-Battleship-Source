@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { DEFAULT_SQUARE_SET, displaySquareSet } from "./squareSets";
+import { overlayConfigFile } from "./overlayConfig";
 
 /**
  * The player's side of auto-marking: the token the game mod carries, and who may have one.
@@ -90,19 +91,18 @@ export function ingestUrl(): string {
 }
 
 /**
- * The block a player pastes into the mod's config file.
+ * The whole config file a player pastes into the mod, with their token in it.
  *
- * Handed over whole rather than as a bare token because the endpoint URL is the other half of the
- * setup and nobody should have to be told it separately - the two arrive together or somebody ends
- * up with a token and no idea where it goes. The mod's own config ships with both values blank, so
- * this replaces that section rather than joining it; see the duplicate-table warning in the guide.
+ * Handed over as an entire file rather than as the three lines that matter, because "find the
+ * [ingest] section and replace exactly that, without leaving the old one behind" is several
+ * instructions and every one of them ends in a config TOML will not parse. Select all, paste, save
+ * cannot be got half right.
  *
- * When auto-marking ships bundled in Dionysus Arcade the URL will arrive pre-filled and this should
- * become a bare-token copy instead, or players will paste a second `[ingest]` table and TOML will
- * reject the config outright.
+ * The template lives in ./overlayConfig, which knows nothing about this app; the endpoint URL is
+ * passed into it so there is still one definition of where kills go.
  */
-export function configBlock(token: string): string {
-  return `[ingest]\nurl   = "${ingestUrl()}"\ntoken = "${token}"\n`;
+export function configFile(token: string): string {
+  return overlayConfigFile(token, ingestUrl());
 }
 
 /** Enough of the token to recognise it, without putting the whole secret on screen. */

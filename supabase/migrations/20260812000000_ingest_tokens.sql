@@ -36,7 +36,7 @@
 --
 -- -- Blast radius of a leaked token ---------------------------------------------------------------
 --
--- Bounded, and worth stating: it lets someone fire shots as you, in whatever room you happen to be
+-- Bounded: it lets someone fire shots as you, in whatever room you happen to be
 -- playing in. It grants no reads, reaches no other table, and does nothing at all when you are not
 -- mid-match. Regenerating is an update of the token column, which invalidates the old string
 -- immediately.

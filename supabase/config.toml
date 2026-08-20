@@ -415,6 +415,16 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 [functions.auto-fire]
 verify_jwt = false
 
+# The support form must be reachable without a session, because the reports most worth receiving
+# include "I can't sign in" and "the site won't load for me" - and a gateway that demands a valid
+# JWT rejects exactly those before they reach anyone.
+#
+# The function still reads the Authorization header when one is offered, to name the reporter and
+# attach their user id. It just never requires it. What stops the open endpoint being a spam relay
+# is a honeypot field and a per-IP hourly limit counted in support_reports, not the gateway.
+[functions.support]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

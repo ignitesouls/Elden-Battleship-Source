@@ -6,6 +6,7 @@ import {
   grantAdmin,
   revokeAdmin,
   deleteMatchRecord,
+  setMatchVoided,
   deleteAllMatchRecords,
   exportRecords,
   countOrphans,
@@ -108,6 +109,10 @@ export function AdminPanel({ matches, onChanged }: Props) {
                   · {formatRoomCode(m.room_code)} · {m.duration ?? "--:--"} · {m.total_shots} shots ·{" "}
                   {new Date(m.finished_at).toLocaleString()}
                 </span>
+                {/* The list is otherwise unchanged by voiding, so without this the button below is
+                    the only thing on the page that knows, and it reads as an offer rather than a
+                    state. */}
+                {m.voided && <strong style={{ color: "var(--danger)" }}> · VOIDED</strong>}
               </span>
               {/* Opens the crew list for this match. Deleting a whole game because one name on it
                   shouldn't be there wipes everybody else's record of it too, so the finer tool sits
@@ -128,6 +133,26 @@ export function AdminPanel({ matches, onChanged }: Props) {
                 onClick={() => setOpenShots((k) => (k === m.match_key ? null : m.match_key))}
               >
                 {openShots === m.match_key ? "Hide shots" : "Shots"}
+              </button>
+              {/* Sits between "Crew" and "Delete" in force, and is the only one of the three that
+                  can be taken back. Every row stays exactly where it is; the site stops counting
+                  them. That is the right tool for a match whose shots were real but whose clock is
+                  not - deleting it would throw away true results to be rid of false ones. */}
+              <button
+                disabled={busy}
+                style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none" }}
+                onClick={() =>
+                  void run(async () => {
+                    await setMatchVoided(m.match_key, !m.voided);
+                    onChanged();
+                    const where = formatRoomCode(m.room_code);
+                    return m.voided
+                      ? `${where} counts again.`
+                      : `Voided ${where} - it stays in the archive and counts for nothing.`;
+                  })
+                }
+              >
+                {m.voided ? "Restore" : "Void"}
               </button>
               <button
                 className="danger"
@@ -372,8 +397,8 @@ export function AdminPanel({ matches, onChanged }: Props) {
           </button>
         </form>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          They must have signed in with Twitch here at least once, so the grant can be pinned to
-          their account rather than to a name.
+          They must have signed in with Twitch here at least once, so the grant attaches to their
+          account rather than to a name.
         </span>
       </div>
     </div>
@@ -671,7 +696,7 @@ function MatchShots({
               // ship went down, so the defending fleet's loss count can't be walked back with it.
               const caveat =
                 s.result === "sunk"
-                  ? "\n\nThis shot sank a ship. The defending fleet's loss count can't be adjusted automatically - the archive doesn't record whose ship it was."
+                  ? "\n\nThis shot sank a ship. The defending fleet's loss count can't be adjusted automatically, because the archive doesn't record whose ship it was."
                   : "";
               if (!window.confirm(`Delete ${s.nickname}'s shot on ${square}? Their shot, hit and sink totals come down with it.${caveat}`)) return;
               onDelete(s);
@@ -683,10 +708,10 @@ function MatchShots({
         </div>
       ))}
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        One row is one square somebody marked. Deleting it removes it from the timing and streak
-        records and from the Almanac, and walks back that player's shot, hit and sink totals. Click a
-        time to correct a mark that landed at the wrong moment - that keeps the kill and only moves
-        it, which is usually the fix you want.
+        One row is one square somebody marked. Deleting it takes the square out of the timing and
+        streak records and out of the Almanac, and walks back that player's shot, hit and sink
+        totals. To fix a mistimed mark, click its time instead: that keeps the kill and only moves
+        it.
       </span>
     </div>
   );

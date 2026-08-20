@@ -40,8 +40,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           <BrandMark width="8rem" dim decorative />
           <h2 style={{ margin: 0 }}>Something came loose</h2>
           <p className="muted" style={{ margin: 0 }}>
-            This screen hit an error and stopped. Your fleet and the match itself are unaffected -
-            they live on the server, not in this tab.
+            This screen hit an error and stopped. Your fleet and the match are fine: they live on
+            the server, not in this tab.
           </p>
           <code style={{ fontSize: "0.72rem", color: "var(--text-dim)", overflowWrap: "anywhere" }}>
             {this.state.error.message}

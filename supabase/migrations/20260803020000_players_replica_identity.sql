@@ -1,11 +1,11 @@
 -- Make a kick land immediately for everyone, instead of on their next reload.
 --
--- NOT YET APPLIED to the live database as of 3 Aug 2026. Everything else in this directory has
--- been; this is the one outstanding migration.
+-- Written while it was still the one outstanding migration in this directory. It has since been
+-- applied, along with everything after it.
 --
--- The client already handles it: useRoom subscribes to `players` and, on DELETE, drops the row and
--- clears myPlayer so the kicked player gets the "you're no longer in this room" screen. That branch
--- simply never runs, because the message never arrives.
+-- The client already handled it before this ran: useRoom subscribes to `players` and, on DELETE,
+-- drops the row and clears myPlayer so the kicked player gets the "you're no longer in this room"
+-- screen. That branch never ran, because the message never arrived.
 --
 -- Why: on DELETE, Postgres replicates only the columns in the table's REPLICA IDENTITY, which
 -- defaults to the primary key. `players` is keyed on `id` alone, so the deleted record is *just an

@@ -7,8 +7,8 @@
 -- A shot writes ONE ROW PER OPPONENT. The shooter's own fleet is never a defender of their own
 -- shot, so a "miss" only ever proved the OTHER fleets were empty there - the shooter's own hull
 -- could be sitting on the square, and regularly was. That is how a tentacle came to be found on a
--- square the finding crew had a ship on, which is the one thing the whole mechanic promised could
--- not happen.
+-- square the finding crew had a ship on, which is the one thing the mechanic promised could not
+-- happen.
 --
 -- No client can fix it, because no client is allowed the information: `fleets` RLS means a player
 -- reads their own layout and nobody else's. Postgres can see all of them, so Postgres picks the

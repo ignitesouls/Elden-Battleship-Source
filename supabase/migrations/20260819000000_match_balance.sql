@@ -6,7 +6,7 @@
 -- balance-board has been returning both to the caller since it shipped - where lib/rooms.ts read
 -- `balanced` and dropped the rest on the floor.
 --
--- That is the whole reason the balance-stats function exists in the shape it does: to answer "how
+-- That is why the balance-stats function has the shape it does: to answer "how
 -- fair was that match" for an archived match, it re-derives the board from the seed, re-prices every
 -- square and runs a fresh rejection sample - the most expensive thing in the codebase, about 400ms a
 -- match, which is why it is paged three at a time and admin-gated. All to recompute a number that
@@ -25,7 +25,7 @@
 -- on it - the recap draws them. Recovering per-square costs from them would mean inverting one
 -- non-linear scalar per match across a 206-square table.
 --
--- It is not nothing, though, and it is a deliberate choice rather than an oversight: this is the
+-- It is not nothing, though, and the choice is deliberate: this is the
 -- first balancer number the site shows a player, and it shows it only once the match is over.
 --
 -- -- Why one column and not a table ---------------------------------------------------------------

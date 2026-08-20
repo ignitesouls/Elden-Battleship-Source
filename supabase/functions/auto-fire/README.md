@@ -54,9 +54,9 @@ column and an unclamped client timestamp would be a backdating tool.
 
 `tally` is the player's running score for the current match, in the website's own terms: one shot
 counts once however many boards it landed on, and counts as a hit if it connected with any of them.
-It is computed here rather than tallied by the client so that manually-clicked squares are included,
-so there is no match boundary for the client to detect, and so the overlay can never disagree with
-the scoreboard. `accuracy` is null before the first shot.
+It is computed here rather than tallied by the client for three reasons: manually-clicked squares
+are counted, the client has no match boundary to detect, and the overlay can never disagree with the
+scoreboard. `accuracy` is null before the first shot.
 
 Skip reasons: `not_a_square` (the mod watches every boss; only some are squares), `not_on_this_board`,
 `already_fired`, `no_opponents`, `insert_failed`.

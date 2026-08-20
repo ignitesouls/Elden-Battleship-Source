@@ -43,6 +43,14 @@ export interface ArchivedMatch {
    * set with no cost data. The admin sweep backfills what it can.
    */
   balance?: MatchBalance | null;
+  /**
+   * Struck from every stat and record, while staying right here - see lib/voidedMatches.
+   *
+   * Read on this page and nowhere else in the archive readers, because voiding changes nothing
+   * about how the match is DRAWN. It only means the recap says so, so that a captain who opens a
+   * match and cannot find its squares anywhere in their record learns why on the page itself.
+   */
+  voided?: boolean;
 }
 
 export interface ArchivedFleet {
@@ -78,6 +86,17 @@ export interface ArchivedMatchDetail {
 }
 
 /**
+ * How many matches the history list reads, newest first.
+ *
+ * A deliberate ceiling rather than an oversight, which is why this pages through nothing: every row
+ * carries the match's whole `summary` blob, and pulling the entire archive to render a list of
+ * twelve would be the heaviest read on the site by some margin. Exported so the list can SAY it is
+ * showing the newest 200 once it is against the ceiling - a count that silently stops rising is the
+ * part that would mislead, not the cap itself.
+ */
+export const ARCHIVE_LIST_LIMIT = 200;
+
+/**
  * A match's headline row, for lists.
  *
  * Deliberately reads `match_reports` rather than aggregating `match_events`: the recap header was
@@ -85,7 +104,7 @@ export interface ArchivedMatchDetail {
  * 5000-row event sample the Almanac happens to hold would quietly disagree with the recap page
  * itself on older matches.
  */
-export async function fetchArchivedMatches(limit = 200): Promise<ArchivedMatch[]> {
+export async function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<ArchivedMatch[]> {
   const { data, error } = await supabase
     .from("match_reports")
     .select()

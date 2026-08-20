@@ -46,7 +46,7 @@ export function Admin() {
     return (
       <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
         <p className="muted" style={{ margin: 0 }}>
-          Nothing here for you - these controls are for administrators.
+          Nothing here for you. These controls are for administrators.
         </p>
         <Link to="/">Back to the harbor</Link>
       </div>

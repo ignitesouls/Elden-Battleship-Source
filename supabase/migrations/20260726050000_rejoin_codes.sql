@@ -6,9 +6,9 @@
 -- there still holding the fleet you placed. There's currently no way back into it.
 --
 -- A rejoin code is a per-player bearer token that re-points an existing player row at whoever
--- redeems it. Deliberately NOT an account: no email, no password, nothing to reset. It is worth
--- being clear-eyed that anyone holding the code can take that slot - it's a bearer token by
--- design, scoped to a single room, and that is the whole security model.
+-- redeems it. Deliberately NOT an account: no email, no password, nothing to reset. Anyone holding
+-- the code can take that slot. It is a bearer token by design, scoped to a single room, and there
+-- is nothing more to the security model than that.
 alter table players add column if not exists rejoin_code text;
 
 create index if not exists players_rejoin_code_idx on players (room_id, rejoin_code);

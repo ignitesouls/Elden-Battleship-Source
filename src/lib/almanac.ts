@@ -446,21 +446,30 @@ export function bossFrequency(
 
 export interface MatchShape {
   matches: number;
-  /** Mean number of times the next shot came from a different team than the one before it. */
-  avgBackAndForth: number;
   /** Share of matches won by whoever landed the first hit. */
   firstBloodWinRate: number;
   firstBloodSample: number;
   /** Wins without losing a single ship. */
   flawlessWins: number;
-  /** Share of all board squares that ever got fired at. */
-  boardCoverage: number;
-  busiest: { matchKey: string; changes: number } | null;
+  /** The square that has landed the most killing blows, and how many. Null before any sinking. */
+  bloodiest: { name: string; sinkings: number } | null;
+  /** Median match length in seconds. Null when no match carries a clock. */
+  medianMatchSeconds: number | null;
+  /** How many matches that median was taken over, which is not always `matches`. */
+  timedMatches: number;
 }
 
 /**
- * Whole-match character: how much the initiative traded hands, whether drawing first blood
- * actually predicts winning, and how much of the board typically gets touched.
+ * Whole-match character: whether drawing first blood predicts winning, which square does the most
+ * killing, and how long an evening on this board actually runs.
+ *
+ * -- Two stats that used to live here ---------------------------------------------------------------
+ *
+ * "Back-and-forth" counted how often one shot came from a different team than the one before it.
+ * Two crews trading shots at similar rates drive that to about half the shots in the match, so it
+ * reported match length in a disguise and said nothing about how the match went. "Board coverage"
+ * was squares-fired-at over squares-dealt, pooled: a number that sat near 70% whatever anybody did.
+ * Both described the format rather than the players, so both are gone.
  */
 export function matchShape(events: MatchEventRow[], participants: ParticipantLite[]): MatchShape {
   const byKey = groupByMatch(events);
@@ -471,22 +480,25 @@ export function matchShape(events: MatchEventRow[], participants: ParticipantLit
     else partsByMatch.set(p.match_key, [p]);
   }
 
-  let changesTotal = 0;
   let firstBloodWins = 0;
   let firstBloodSample = 0;
-  let coverageHit = 0;
-  let coverageTotal = 0;
-  let busiest: { matchKey: string; changes: number } | null = null;
+  /** Killing blows per square name. Keyed by name rather than cell, since the cell moves per deal. */
+  const sinkingsBySquare = new Map<string, number>();
+  const lengths: number[] = [];
 
   for (const [key, evs] of byKey) {
     const ordered = shotsInOrder(evs);
 
-    let changes = 0;
-    for (let i = 1; i < ordered.length; i++) {
-      if (ordered[i].team !== ordered[i - 1].team) changes++;
+    for (const e of evs) {
+      // The row records the square the killing shot landed on, which is the one that gets credit.
+      if (e.result !== "sunk" || !e.challenge_name) continue;
+      sinkingsBySquare.set(e.challenge_name, (sinkingsBySquare.get(e.challenge_name) ?? 0) + 1);
     }
-    changesTotal += changes;
-    if (!busiest || changes > busiest.changes) busiest = { matchKey: key, changes };
+
+    // The last shot on the clock is how long the match ran. Matches archived before match_seconds
+    // existed carry no clock at all and are left out rather than counted as zero-length.
+    const timed = evs.map((e) => e.match_seconds).filter((s): s is number => s !== null && s > 0);
+    if (timed.length > 0) lengths.push(Math.max(...timed));
 
     const firstHit = ordered.find((e) => e.result === "hit" || e.result === "sunk");
     const parts = partsByMatch.get(key);
@@ -498,20 +510,27 @@ export function matchShape(events: MatchEventRow[], participants: ParticipantLit
       }
     }
 
-    coverageHit += new Set(evs.map((e) => e.cell_index)).size;
-    coverageTotal += evs[0].board_size * evs[0].board_size;
   }
 
   const flawlessWins = participants.filter((p) => p.won && p.team_ships_lost === 0).length;
 
+  // Ties break on the name, so the same board always names the same square rather than whichever
+  // one the Map happened to see first.
+  let bloodiest: { name: string; sinkings: number } | null = null;
+  for (const [name, sinkings] of sinkingsBySquare) {
+    if (!bloodiest || sinkings > bloodiest.sinkings || (sinkings === bloodiest.sinkings && name < bloodiest.name)) {
+      bloodiest = { name, sinkings };
+    }
+  }
+
   return {
     matches: byKey.size,
-    avgBackAndForth: byKey.size > 0 ? changesTotal / byKey.size : 0,
     firstBloodWinRate: firstBloodSample > 0 ? firstBloodWins / firstBloodSample : 0,
     firstBloodSample,
     flawlessWins,
-    boardCoverage: coverageTotal > 0 ? coverageHit / coverageTotal : 0,
-    busiest,
+    bloodiest,
+    medianMatchSeconds: median(lengths),
+    timedMatches: lengths.length,
   };
 }
 

@@ -307,7 +307,7 @@ function LiveRow({ battle }: { battle: LiveBattle }) {
         to={`/room/${battle.code}?spectate=1`}
         className="link-button"
         style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", whiteSpace: "nowrap" }}
-        title="Watch this match. Fleets are already placed, so there's no seat to take - you'll join as a spectator."
+        title="Fleets are already placed, so you'll join as a spectator."
       >
         Watch
       </Link>

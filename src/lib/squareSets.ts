@@ -229,7 +229,7 @@ export function bossSetForRoster(players: Array<{ team: number | null }>): Squar
  * already there.
  *
  * Only ever moves a room BETWEEN the boss sets. A room on an objectives set has been deliberately
- * put there and must stay, and that is the whole guard - without it a full lobby switching to
+ * put there and must stay. That is the whole guard: without it, a full lobby switching to
  * Objectives would be dragged back to the boss board by its own roster.
  *
  * A lobby with nobody on a team yet is left alone rather than sent to the default. Everyone being

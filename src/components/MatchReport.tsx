@@ -288,7 +288,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
             </div>
           </div>
         ))}
-        {report.stats.length === 0 && <span className="muted">No shots were fired.</span>}
+        {report.stats.length === 0 && <span className="muted">Nobody fired a shot.</span>}
       </div>
 
       {/* Text, not a glyph - matching the toolbar. */}
@@ -300,7 +300,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
           scoreboard says who won, the boards are about to show what they were shooting at, and this
           is whether the two sides were shooting at comparable work. Read straight off the room -
           balance-board wrote it there before the first shot, so it needs no archive round trip. */}
-      <BalanceReadout balance={asMatchBalance(room.balance_report)} duration={report.duration} />
+      <BalanceReadout balance={asMatchBalance(room.balance_report)} />
 
       <TheDeep
         entries={deepEntries}
@@ -316,7 +316,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
         <h3 style={{ margin: 0 }}>Final fleets</h3>
         {fleetsHidden ? (
           <span className="muted" style={{ fontSize: "0.8rem" }}>
-            Ship positions unavailable - this match may not have been archived.
+            No ship positions on record for this match.
           </span>
         ) : (
           <div className="row" style={{ gap: "1.5rem", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start" }}>
@@ -349,7 +349,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
         )}
         {fleetsPartial && (
           <span className="muted" style={{ fontSize: "0.78rem" }}>
-            Some fleets couldn't be read back - those boards show shot results only.
+            Some fleets couldn't be read back. Those boards show shots only.
           </span>
         )}
       </div>

@@ -82,7 +82,7 @@ export const METRICS: MetricDef[] = [
     label: "Sinkings per hit",
     better: "higher",
     format: (v) => v.toFixed(2),
-    blurb: "How often a hit is the one that finishes a hull - following damage up rather than leaving it",
+    blurb: "How often a hit is the one that finishes a hull",
   },
   {
     id: "firstBloodRate",
@@ -96,7 +96,7 @@ export const METRICS: MetricDef[] = [
     label: "Square pace",
     better: "lower",
     format: (v) => `${Math.floor(v / 60)}:${String(Math.round(v % 60)).padStart(2, "0")}/shot`,
-    blurb: "Mean time between their own shots - lower is faster",
+    blurb: "Mean time between their own shots",
   },
 ];
 
@@ -445,13 +445,13 @@ export function buildScoutingReports(
 function summaryFor(t: Tally, traits: Trait[], rated: boolean, fieldReady: boolean): string {
   const games = `${t.matches} ${t.matches === 1 ? "match" : "matches"}`;
   if (!fieldReady) {
-    return `${games} on record. Too few captains have played enough for anyone to be measured against the field yet.`;
+    return `${games} on record. Too few captains have played enough matches to compare anyone against the field yet.`;
   }
   if (!rated) {
-    return `${games} on record - ${MIN_MATCHES_FOR_TRAITS} are needed before a read on this captain means anything.`;
+    return `${games} on record. It takes ${MIN_MATCHES_FOR_TRAITS} before a read on this captain means anything.`;
   }
   if (traits.length === 0) {
-    return `A captain with no pronounced lean: close to the field on everything measured, across ${games}.`;
+    return `A captain with no strong lean: close to the field on everything measured, across ${games}.`;
   }
   if (traits.length === 1) {
     return `${traits[0].name} - ${traits[0].blurb.toLowerCase()}. Read from ${games}.`;

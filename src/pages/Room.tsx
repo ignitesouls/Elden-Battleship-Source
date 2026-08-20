@@ -19,7 +19,7 @@ import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfi
 import { NICKNAME_MAX } from "../lib/profiles";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import { MatchReport } from "../components/MatchReport";
-import { sunkCellOrientations, eliminatedTeamsFromAttacks } from "../lib/battleshipLogic";
+import { sunkCellOrientations, eliminatedTeamsFromAttacks, sunkHullFlags } from "../lib/battleshipLogic";
 import { AttackFeed } from "../components/AttackFeed";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks, type DeepHide } from "../lib/deepWater";
@@ -147,7 +147,7 @@ export function Room() {
         if (balance.balanced || balance.reason === "already_balanced") return;
         setHostError(
           `This board was NOT balanced against the fleets (${balance.reason ?? "unknown"}). It is ` +
-            `playing as the raw seeded deal, which may be lopsided. Consider restarting the match.`
+            `playing as the raw seeded deal, which may be lopsided. Restart the match if you'd rather not risk it.`
         );
       })
       .catch((e) => {
@@ -702,11 +702,7 @@ function SpectatorView({
       // Read off the resolved attack log, exactly as a player's own roster is - never from the
       // fleet rows, so the roster says the same thing in "Attacks only" mode as it does with
       // every ship revealed.
-      sunkShipNames={
-        new Set(
-          attacks.filter((a) => a.defender_team === t && a.result === "sunk").map((a) => a.sunk_ship_name)
-        )
-      }
+      sunkHulls={sunkHullFlags(attacks, t, shipDefs)}
       eliminated={eliminatedTeams.has(t)}
     />
   ));
@@ -774,7 +770,7 @@ function SpectatorView({
               borderColor: overShoulder && ridingWith === t ? teamHex(t) : undefined,
               color: teamHex(t),
             }}
-            title={`See exactly what ${teamName(t)} sees - their fleet and their shots - without being able to fire`}
+            title={`See what ${teamName(t)} sees: their fleet and their shots. You still can't fire`}
           >
             With {teamName(t)}
           </button>
@@ -785,13 +781,13 @@ function SpectatorView({
         {!overShoulder && status === "placement" && (
           <span className="spectate-note">
             {showShips && canSeeShips
-              ? "Fleets are being placed - each hull appears as its captain puts it down, and can still move until they confirm."
+              ? "Fleets are being placed. Each hull appears as its captain puts it down, and can still move until they confirm."
               : "Every fleet is placing their ships..."}
           </span>
         )}
         {!overShoulder && showShips && !canSeeShips && status !== "placement" && (
           <span className="spectate-note">
-            Ship positions hidden - apply the <code>fleets select by spectator</code> policy.
+            Ship positions are hidden. Apply the <code>fleets select by spectator</code> policy to show them.
           </span>
         )}
 
@@ -825,7 +821,7 @@ function SpectatorView({
         <button
           onClick={() => setRailOpen(!railOpen)}
           style={{ borderColor: railOpen ? "var(--accent)" : undefined }}
-          title="Show the battle log and fleet rosters beside the boards. Hiding them gives the boards the width back."
+          title="Show the battle log and fleet rosters beside the boards."
           aria-pressed={railOpen}
         >
           {railOpen ? "Hide log" : "Log & rosters"}
@@ -858,7 +854,7 @@ function SpectatorView({
               title={
                 locked
                   ? "Panels are frozen. Unlock to move, resize or restack them."
-                  : "Freeze every panel where it is, so nothing moves by accident."
+                  : "Freeze every panel where it is."
               }
               aria-pressed={locked}
             >

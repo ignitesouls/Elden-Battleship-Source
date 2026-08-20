@@ -29,7 +29,7 @@ create policy "profiles update own" on profiles for update using (id = auth.uid(
 -- One row per player per finished match. Deliberately denormalised and free of foreign keys:
 --
 --  * No FK to rooms/players - those are deleted by the pruner, and career history must outlive
---    them. That is the whole point of this table.
+--    them. Outliving them is what this table is for.
 --  * No FK to profiles either. Rows are written for anonymous players too, and a profile may
 --    not exist yet at write time; a hard reference would make the insert fail rather than
 --    degrade. `user_id` is stored raw and joined to profiles only when displaying.

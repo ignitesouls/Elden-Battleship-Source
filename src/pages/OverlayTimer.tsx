@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { useBoxSize } from "../hooks/useBoxSize";
 import { useBattleClock } from "../hooks/useBattlePhase";
-import { activeTeams } from "../lib/battleshipLogic";
+import { activeTeams, sunkHullFlags } from "../lib/battleshipLogic";
 import { formatDuration } from "../lib/matchTime";
 import { teamName, teamHex } from "../lib/teamColors";
 import { OverlayFleetStatus } from "../components/OverlayFleetStatus";
@@ -66,10 +66,7 @@ export function OverlayTimer() {
   const textSize = readTextSize(params);
 
   /** Hulls of `team` confirmed sunk, from the public log - never from reading their fleet. */
-  const sunkNamesFor = (team: number) =>
-    state.attacks
-      .filter((a) => a.defender_team === team && a.result === "sunk" && a.sunk_ship_name)
-      .map((a) => a.sunk_ship_name as string);
+  const sunkHullsFor = (team: number) => sunkHullFlags(state.attacks, team, room.ship_defs);
 
   // Split around the clock: with two fleets that is one each, which is the case this is shaped for.
   const half = Math.ceil(teams.length / 2);
@@ -89,7 +86,7 @@ export function OverlayTimer() {
         teamLabel={teamName(t)}
         colorHex={teamHex(t)}
         shipDefs={room.ship_defs}
-        sunkNames={sunkNamesFor(t)}
+        sunkHulls={sunkHullsFor(t)}
         isMine={highlightTeam === t}
       />
     ));

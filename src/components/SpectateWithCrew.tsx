@@ -232,8 +232,8 @@ export function SpectateWithCrew({
   return (
     <div className="spectate-crew">
       <span className="spectate-note">
-        Riding with <strong style={{ color: teamHex(team) }}>{teamName(team)}</strong> - you see
-        only what they see, and can't fire.
+        Riding with <strong style={{ color: teamHex(team) }}>{teamName(team)}</strong>. You see only
+        what they see, and you can't fire.
       </span>
 
       <div className="spectate-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
@@ -243,8 +243,8 @@ export function SpectateWithCrew({
 
       {!ownFleet && (
         <span className="spectate-note">
-          Their ship positions aren't readable - apply the <code>fleets select by spectator</code>{" "}
-          policy to see them. Shot results are shown either way.
+          Their ship positions can't be read. Apply the <code>fleets select by spectator</code>{" "}
+          policy to see them. Shot results show either way.
         </span>
       )}
     </div>

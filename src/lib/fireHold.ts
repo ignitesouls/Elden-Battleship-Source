@@ -57,4 +57,4 @@ export const FIRE_HOLD_DEFAULT = 400;
 export const FIRE_HOLD_KEY = "eb_fire_hold_ms";
 
 export const FIRE_HOLD_HINT =
-  "How long to hold a square before it fires. Every shot needs a hold - a shot can never be taken back, and if you do hit the wrong square, you must go and kill that boss to win.";
+  "How long to hold a square before it fires. No shot can be taken back: hit the wrong square and you must go and kill that boss to win.";

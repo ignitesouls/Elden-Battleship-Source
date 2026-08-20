@@ -30,6 +30,7 @@ const PlayerStats = lazy(() => import("./pages/PlayerStats").then((m) => ({ defa
 const Almanac = lazy(() => import("./pages/Almanac").then((m) => ({ default: m.Almanac })));
 const ArchivedMatch = lazy(() => import("./pages/ArchivedMatch").then((m) => ({ default: m.ArchivedMatch })));
 const Admin = lazy(() => import("./pages/Admin").then((m) => ({ default: m.Admin })));
+const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.Support })));
 
 /**
  * Every route that is composited into OBS must show nothing but the match state, so they opt out
@@ -81,6 +82,9 @@ function App() {
           {/* Guarded inside the page, not here - the route has to exist for everyone so that an
               admin following a link into a fresh tab lands on it before the session is checked. */}
           <Route path="/admin" element={<Admin />} />
+          {/* Reached from the footer on every page that has one, always in a new tab, so that
+              reporting a bug never costs somebody the match they were reporting it about. */}
+          <Route path="/support" element={<Support />} />
         </Routes>
         </Suspense>
       </ErrorBoundary>

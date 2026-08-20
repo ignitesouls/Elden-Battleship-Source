@@ -385,9 +385,8 @@ export function CasterControl() {
 
       {shipsMissing && (
         <div className="panel" style={{ borderColor: "var(--accent)", fontSize: "0.85rem" }}>
-          No ship positions are readable for this view, so the board is showing shots only. Fleets
-          become visible once they're placed, and only to a session that's in the room - the ships
-          come from your own login, not from the overlay.
+          This view can't read any ship positions, so the board shows shots only. Ships appear once
+          fleets are placed, and only for someone signed in to the room.
         </div>
       )}
 
@@ -536,7 +535,7 @@ export function CasterControl() {
             </div>
             {view.mode !== "results" && room.status === "battle" && (
               <p className="cast-warn">
-                Ships are on stream during a live match. Your call - just don't leave it up over a
+                Ships are on stream during a live match. Your call, but don't leave it up over a
                 break.
               </p>
             )}
@@ -643,16 +642,16 @@ export function CasterControl() {
               </button>
             </div>
             <p className="cast-note muted">
-              The monitor above shows the same fade. It sits on this page's background rather than
-              on gameplay, so judge it generously - footage underneath is busier than this is.
+              The monitor above shows the same fade, over this page's background rather than
+              gameplay. Real footage is busier than this.
             </p>
           </section>
 
           <section>
             <h3>Browser sources</h3>
             <p className="muted cast-note">
-              Add each as a Browser Source in OBS. The board follows this page; the timer and the
-              colour key run on their own and need nothing.
+              Add each as a Browser Source in OBS. The board follows this page. The timer and the
+              colour key run on their own.
             </p>
             <SourceRow label="Board" url={boardUrl} size="1000 x 1000" note="square - the board fits the shorter side" />
             <SourceRow label="Clock" url={timerUrl} size="1200 x 200" note="the match clock and every fleet's hulls" />

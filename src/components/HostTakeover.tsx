@@ -14,7 +14,7 @@ interface Props {
 /**
  * Offers to take over hosting when the current host has gone dark.
  *
- * Lives outside the lobby as well as inside it, which is the whole point of it being its own
+ * Lives outside the lobby as well as inside it, which is why it is its own
  * component. The takeover used to be a block inside LobbyPhase, and LobbyPhase only renders at
  * status 'lobby' - so a host who closed their tab MID-MATCH stranded the room completely. Their
  * player row keeps is_host = true, so ensure_room_host (which only fires when nobody at all is
@@ -72,8 +72,8 @@ export function HostTakeover({ players, onlinePlayerIds, myPlayerId, inline }: P
       style={{ justifyContent: "space-between", gap: "0.5rem", borderColor: "var(--accent)" }}
     >
       <span className="muted" style={{ fontSize: "0.85rem" }}>
-        The host (<strong>{host?.nickname}</strong>) looks offline. Nobody can end the match or start
-        the next one without one.
+        The host (<strong>{host?.nickname}</strong>) looks offline. Without a host, nobody can end
+        the match or start the next one.
       </span>
       <div className="stack" style={{ gap: "0.25rem", alignItems: "flex-end" }}>
         {button}

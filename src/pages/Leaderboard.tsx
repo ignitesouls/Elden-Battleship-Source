@@ -10,6 +10,7 @@ import { RecordBook } from "../components/RecordBook";
 import { LoadingScreen } from "../components/BrandMark";
 import { SortHeader, useSortColumns, type SortColumn } from "../components/SortHeader";
 import type { MatchEventRow } from "../lib/almanac";
+import { SiteFooter } from "../components/SiteFooter";
 
 type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
 
@@ -43,21 +44,21 @@ const COLUMNS: SortColumn<SortKey>[] = [
     label: "W-L",
     align: "right",
     firstDirection: "desc",
-    title: "Wins and losses across every finished match on this board. Draws are archived but not shown - no match has ever ended without a winner.",
+    title: "Wins and losses across every finished match on this board. Draws are recorded but not shown.",
   },
   {
     key: "winRate",
     label: "Win %",
     align: "right",
     firstDirection: "desc",
-    title: "Share of finished matches won. Sorting by this falls back to total wins, so a single lucky match doesn't top the table.",
+    title: "Share of finished matches won. Sorting by this falls back to total wins.",
   },
   {
     key: "shots",
     label: "Shots",
     align: "right",
     firstDirection: "desc",
-    title: "Squares taken. One shot per square earned, whether it landed or not - a shot at three enemy fleets still counts once.",
+    title: "Squares taken. Each square counts once, hit or miss, however many fleets it went out at.",
   },
   {
     key: "hits",
@@ -86,7 +87,7 @@ const COLUMNS: SortColumn<SortKey>[] = [
     sublabel: "median",
     align: "right",
     firstDirection: "asc",
-    title: `Square pace - the time from one square falling to the next, taken as a median across every square they have fired on this board. The median rather than the average, so one long boss doesn't stand in for the whole evening. Needs ${MIN_GAPS_FOR_PACE} squares before it shows.`,
+    title: `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. Needs ${MIN_GAPS_FOR_PACE} squares before it shows.`,
   },
 ];
 
@@ -308,17 +309,15 @@ export function Leaderboard() {
           </div>
 
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Click a heading to sort by it; click it again to flip the order. Hover any heading for
-            what the number means - pace is the median time from one square falling to the next, and
-            needs {MIN_GAPS_FOR_PACE} squares before it shows.
+            Click a heading to sort; click again to flip. Hover a heading for what the number means.
           </span>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Guests are grouped by nickname, so two people using the same name share a row. Signing
-            in with Twitch gives you a record only you can add to.
+            Sign in with Twitch for a record only you can add to.
           </span>
         </div>
         </>
       )}
+      <SiteFooter />
     </div>
   );
 }

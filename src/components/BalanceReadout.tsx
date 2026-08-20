@@ -3,8 +3,6 @@ import {
   fetchFairnessGaps,
   fairnessOf,
   fairnessBand,
-  strandedFleets,
-  durationSeconds,
   gapLabel,
   ordinal,
   type MatchBalance,
@@ -19,21 +17,20 @@ import {
  * out as. It reads the number the balancer recorded at the moment it dealt the board; nothing is
  * computed here and no square is ever priced in a browser.
  *
- * -- On not naming a fleet -------------------------------------------------------------------------
+ * -- Three numbers, no prose ------------------------------------------------------------------------
  *
- * The stored gap is a magnitude and not a direction: it is the widest same-rank distance between two
- * fleets' ship profiles, which says how far apart they were and cannot say which of them was ahead.
- * So the copy says "the deal was 6:20 apart" and never "favoured Red". Inventing the direction would
- * be the easiest sentence on the page to write and the only one that would be a guess.
+ * The percentile and the two gaps. That is the whole panel - not even the sample size the percentile
+ * came off. It carried paragraphs explaining what a square's cost is, how the ranks are matched up,
+ * and what the shuffle bought, and read like a lecture nobody asked for. A caster can say any of it
+ * on air in a sentence; the recap does not need to say it every time. The stored gap is also a
+ * magnitude and not a direction - it cannot say which fleet was ahead - so there was never a fleet
+ * to name here anyway.
  */
 export function BalanceReadout({
   balance,
-  duration,
   width = "min(560px, 100%)",
 }: {
   balance: MatchBalance | null;
-  /** The archived duration string, for the stranded-fleet check. `mm:ss` or `h:mm:ss`. */
-  duration: string | null;
   width?: string;
 }) {
   /**
@@ -65,11 +62,9 @@ export function BalanceReadout({
 
   const fairness = gaps ? fairnessOf(balance.played, gaps) : null;
   const band = fairnessBand(balance.played, balance.limit);
-  const stranded = strandedFleets(balance, durationSeconds(duration));
   // False only on a swept record for a room the balancer never touched. A deal-time record exists
   // BECAUSE the balancer ran, so an absent flag means it ran.
   const unbalanced = balance.hadPerm === false;
-  const improved = balance.dealt - balance.played;
 
   // Both bars scale against the wider of the two, so the shorter one reads as a fraction of the
   // longer at a glance. Against a fixed ceiling every ordinary board would be two short stubs.
@@ -84,32 +79,15 @@ export function BalanceReadout({
         </span>
       </div>
 
-      {/* The headline, and the sample right under it. A percentile off eleven matches is a real
-          number and a shaky one, and the reader is owed both facts in the same breath. */}
       {fairness ? (
-        <div className="stack" style={{ gap: 0 }}>
-          <span style={{ fontSize: "1.7rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>
-            {ordinal(fairness.percentile)} percentile
-          </span>
-          <span className="muted" style={{ fontSize: "0.72rem" }}>
-            Fairer than {fairness.percentile}% of the {fairness.sample}{" "}
-            {fairness.sample === 1 ? "match" : "matches"} on record
-          </span>
-        </div>
+        <span style={{ fontSize: "1.7rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>
+          {ordinal(fairness.percentile)} percentile
+        </span>
       ) : (
         <span className="muted" style={{ fontSize: "0.72rem" }}>
           {gaps === null ? "Ranking this board..." : "Nothing to rank this against yet."}
         </span>
       )}
-
-      {/* The one sentence that has to land before any number does.
-          Everything below it - the bars, the improvement, the stranded line - is meaningless to a
-          reader who does not already know that squares differ in difficulty and that the board gets
-          shuffled after the ships go down. The panel used to assume both. It says them instead. */}
-      <span className="muted" style={{ fontSize: "0.72rem" }}>
-        Some squares take far longer to beat than others, so a fleet sitting on slow ones is harder
-        to sink. Before the first shot, the squares are shuffled to even that out.
-      </span>
 
       <div className="stack" style={{ gap: "0.3rem", marginTop: "0.1rem" }}>
         <GapBar label="Before shuffling" seconds={balance.dealt} scale={scale} tone="var(--text-dim)" />
@@ -119,43 +97,6 @@ export function BalanceReadout({
           scale={scale}
           tone={band.color}
         />
-      </div>
-
-      <span className="muted" style={{ fontSize: "0.7rem" }}>
-        How much longer one side's ships took to sink than the other's - each fleet's toughest ship
-        against the other's toughest, then the next, and so on down. Lower is fairer.
-      </span>
-
-      <div className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-        {unbalanced ? (
-          <span className="muted">
-            This board was never shuffled - the squares fell where they fell, which is how every
-            match worked until recently.
-          </span>
-        ) : improved > 0 ? (
-          <span className="muted">Shuffling the squares made this board {gapLabel(improved)} fairer.</span>
-        ) : (
-          <span className="muted">The squares were already even enough to leave alone.</span>
-        )}
-
-        {/* The one number here that decides matches rather than describing them. Two fleets who both
-            had time to finish can be far apart and it is only a gap; a fleet with a ship that could
-            not have been sunk in the time available was never going to win, whatever it did. */}
-        {stranded !== null && (
-          <span style={{ color: stranded > 0 ? "var(--sunk)" : "var(--text-dim)" }}>
-            {stranded === 0
-              ? "Both sides' ships sat on squares that usually do get finished in a match this long."
-              : stranded === 1
-              ? "One side had a ship on squares that usually aren't finished in a match this long."
-              : `${stranded} sides had ships on squares that usually aren't finished in a match this long.`}
-          </span>
-        )}
-
-        {balance.accepted === false && (
-          <span style={{ color: "var(--sunk)" }}>
-            No even layout could be found for this board. This was the best of the ones tried.
-          </span>
-        )}
       </div>
     </div>
   );

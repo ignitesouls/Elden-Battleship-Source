@@ -156,6 +156,11 @@ try {
         placements,
         ship_hits_remaining: SHIPS.map((s) => s.size),
         ship_sunk: SHIPS.map(() => false),
+        // Required since 20260819010000_no_fleet_no_battle: the room refuses to enter 'battle'
+        // while any crewed team's fleet is unconfirmed. This setup always did place both fleets
+        // fully, so it was only ever missing the flag a real placement screen sets on confirm -
+        // but without it the whole script threw on the status flip and never reached auto-fire.
+        placement_confirmed: true,
       },
       { onConflict: 'room_id,team' }
     )

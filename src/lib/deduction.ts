@@ -2,7 +2,7 @@ import type { Attack, ShipDefinition } from "../types/battleship";
 
 /** What the "cross out dead water" toggle promises, wherever it's offered. */
 export const AUTO_RULE_HINT =
-  "Cross out squares where no ship still afloat could possibly fit - the gaps between your misses that are shorter than the shortest hull left. Your own marks are unaffected.";
+  "Cross out squares where no surviving ship could fit: gaps between your misses shorter than the shortest hull left. Your own marks stay as they are.";
 
 /**
  * Squares that cannot hold a ship any more, worked out from your own shots.

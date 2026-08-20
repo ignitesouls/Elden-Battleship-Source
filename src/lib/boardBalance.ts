@@ -2,37 +2,37 @@
  * Evening up a board against the fleets that are about to be shot at on it.
  *
  * Every team fires at the SAME named grid, so a match's whole competitive asymmetry is which bosses
- * happen to sit on which fleet's cells. Nobody chooses that - the board is dealt from a seed struck
- * before a single ship was placed - and it decides matches.
+ * happen to sit on which fleet's cells. Nobody chooses that: the board is dealt from a seed struck
+ * before a single ship was placed. And it decides matches.
  *
  * So the deal is finished after placement instead of before it. The squares stay exactly the squares
  * the seed chose; only their positions move.
  *
- * -- Reachability, not difficulty ----------------------------------------------------------------
+ * -- What a square costs -------------------------------------------------------------------------
  *
- * The cost of a square is how often it actually gets fired at, measured over the archive - not how
- * hard the boss is to kill. Those turned out to be different questions, and only the first one
- * decides matches. Starscourge Radahn is a wall of a fight and is taken on every board he appears
- * on; Caelid Duelist is a tier-7 pushover reached on 18% of boards, because it sits at the end of a
- * ride nobody makes. A fleet parked on squares like that is close to untouchable however easy its
- * bosses are. See scripts/build-reachability.mjs for where the numbers come from and why they are
- * frozen between seasons.
+ * Minutes of a match, not boss difficulty: the expected time before somebody fires at that square,
+ * measured over the archive. Those turned out to be different questions, and only the first decides
+ * matches. Starscourge Radahn is a wall of a fight and everyone takes him early; Caelid Duelist is a
+ * tier-7 pushover at the end of a ride nobody makes, and costs half an hour more than Malenia. A
+ * fleet parked on squares like that is close to untouchable however easy its bosses are. See
+ * scripts/build-time-cost.mjs for where the numbers come from and why they are frozen between
+ * seasons.
  *
- * A fleet's burden is therefore the sum of (1 - reach) over its cells: the expected number of its
- * cells the enemy never gets to. Plain linearity of expectation, no independence assumed, and it
- * reads in units anyone can argue with - "they have three more untakeable squares than we do".
+ * A time can be compared against how long a match actually lasts, which is what both tests below
+ * rest on. It also reads in units anyone can argue with: "their cheapest ship is gated 26 minutes
+ * later than ours".
  *
  * -- Why it rejects rather than optimises --------------------------------------------------------
  *
  * The first version of this searched: it swapped squares around until the fleets' totals were inside
  * a tolerance band. That was metagameable, and inevitably so. A search that pushes toward a target
- * leaves the answer sitting against that target, and any pass that "corrects" a board is a pass
- * whose corrections can be learned and played around. Players found it within a season.
+ * leaves the answer sitting against that target, and corrections a player can learn are corrections
+ * a player can play around. Players found it within a season.
  *
  * This draws instead. Take a fresh random layout, test it, and if it fails throw it away and draw
- * another. The board that gets played is then a uniform sample from the set of layouts that pass -
- * there is no search dynamic to reverse-engineer, no edge of a band to sit against, and nothing
- * about the accepted layout that a rejected one would not equally have had.
+ * another. The board that gets played is a uniform sample from the layouts that pass. There is no
+ * search to reverse-engineer, no edge of a band to sit against, and nothing about the accepted
+ * layout that a rejected one would not equally have had.
  *
  * -- Why the tests are tight, having once been loose ---------------------------------------------
  *
@@ -40,55 +40,53 @@
  * a player almost nothing. Nine boards in ten passed on the first draw and were therefore layouts
  * nothing had looked at.
  *
- * The price of that was a board nobody could defend. A 24-cell fleet was permitted a burden gap of
- * 3.5 and a difference of SIX untakeable squares, and a real match shipped with one fleet holding
- * four squares the enemy reaches under 35% of the time against the other fleet's one. It passed
- * with room to spare, because it was built to.
+ * The price was a board nobody could defend: a real match shipped with one fleet holding four
+ * squares the enemy hardly ever reaches against the other fleet's one. It passed with room to
+ * spare, because it was built to.
  *
- * So the tests are tight now, and the reason that is safe is the paragraph above rather than the
- * looseness: rejection sampling is unbiased at ANY threshold. Tightening does not bring back the
- * exploit that killed the searching version, because there is still no search - no gradient to
- * follow, no band edge for a layout to come to rest against, and no way to tell an accepted layout
- * from one that got there on the first draw.
+ * The tests are tight now, and that is safe for the reason above: rejection sampling is unbiased at
+ * ANY threshold. Tightening does not bring back the exploit that killed the searching version,
+ * because there is still no search - no gradient to follow, and no band edge for a layout to come to
+ * rest against.
  *
  * What tightening does cost is inference about the CONSTRAINT. A player who knows the two fleets
- * hold equal numbers of untakeable squares, and who can see the board and their own fleet, learns
- * something about the distribution of the enemy's. That is a real leak and it is worth naming - but
- * it is symmetric, it names no cell, and it is a far smaller edge than reading a lopsided board off
- * the screen and knowing the match was decided before anyone fired.
+ * hold equal numbers of long squares, and who can see the board and their own fleet, learns
+ * something about the enemy's. That is a real leak, and worth naming. But it is symmetric, it names
+ * no cell, and it is far smaller than reading a lopsided board off the screen and knowing the match
+ * was decided before anyone fired.
  *
  * -- Why there are two tests and not one ---------------------------------------------------------
  *
  * The rank gap prices a ship at its slowest square, which is right about when a ship SINKS and blind
  * to everything else about it. Seven ships on a 24-cell fleet is seven numbers out of twenty-four,
  * and the rank comparison then collapses those seven into one. Two fleets can match on it exactly
- * and still be nothing alike - one with four cells the enemy clears inside half an hour, the other
+ * and still be nothing alike: one with four cells the enemy clears inside half an hour, the other
  * with no cell under forty minutes anywhere.
  *
  * So a second test counts whole squares instead of measuring seconds: neither fleet may hold more
- * than one more square past the long-square line than the other. It asks the coarser question, and
- * the coarser question is the one this cost model can answer honestly - see LONG_GAP for the board
- * that made the case and for what the model's resolution actually is.
+ * than one more square past the long-square line than the other. It asks a coarser question, and the
+ * coarser question is the one this cost model can answer honestly. See LONG_GAP for the board that
+ * made the case and for what the model's resolution actually is.
  *
  * Measured over 250 boards per configuration: two-team boards accept at every size, at a median of
  * 16 draws on a 10x10 and 20 on a 12x12 with both tests applied. The long-square test is what most
- * of that budget now goes on - it binds on about a fifth of the layouts the rank gap alone accepts.
+ * of that budget goes on, and it binds on about a fifth of the layouts the rank gap alone accepts.
  *
  * -- Why declumping is exempt from all that ------------------------------------------------------
  *
  * Region declumping is not a rejection test; every candidate layout is spread out before it is ever
- * scored. That is safe for a reason worth stating: crowding is a function of the visible board
- * alone. It does not know where any ship is, so conditioning on it publishes nothing that was not
- * already going to be on screen. Only the fairness tests touch hidden fleet positions.
+ * scored. That is safe because crowding is a function of the visible board alone. It does not know
+ * where any ship is, so conditioning on it publishes nothing that was not already going on screen.
+ * Only the fairness tests touch hidden fleet positions.
  *
  * -- Why it only ever permutes -------------------------------------------------------------------
  *
  * The output is an index per cell into the seeded board, never a board. Which squares are in play
- * therefore remains a pure function of (room id, square set, seed), which is what auto-fire's flag
+ * therefore stays a pure function of (room id, square set, seed), which is what auto-fire's flag
  * coverage, the Almanac's census of squares nobody fired at, and archived-match replay all rest on.
  * A balanced board is the same pack of cards in a different order.
  *
- * Deliberately import-free, like squareSetFormat.ts and for the same reason: the Deno edge function
+ * Import-free on purpose, like squareSetFormat.ts and for the same reason: the Deno edge function
  * that runs this in production and the check script that tests it both read this exact file, so
  * there is no second implementation to drift.
  */
@@ -221,7 +219,7 @@ export const LONG_GAP = 1;
  * limit is ever actually reached the fallback is the fairest layout of the three hundred, which is
  * strictly better than the deal.
  *
- * Worth knowing where the ceiling is: 300 spent draws is 413ms on a 10x10, and startBattle awaits
+ * For scale: 300 spent draws is 413ms on a 10x10, and startBattle awaits
  * this. See BALANCE_TIMEOUT_MS in lib/rooms.ts, which has to be comfortably above that plus the
  * function's own cold start and its half-dozen queries.
  */
@@ -417,7 +415,7 @@ export interface BalanceResult {
 /**
  * The threshold a board is held to.
  *
- * Takes no fleet size any more, and that is the point: the old thresholds scaled with the number of
+ * Takes no fleet size any more, on purpose: the old thresholds scaled with the number of
  * CELLS a fleet covered, which quietly said that a bigger fleet deserved a bigger unfairness. A rank
  * gap is a comparison between two individual ships, so the same number is right on every board.
  *
@@ -486,8 +484,8 @@ export function shipCostProfile(ships: number[][], costAt: (cell: number) => num
 /**
  * How many of a fleet's CELLS cost more than the long-square line. See LONG_SQUARE_SECONDS.
  *
- * Cells rather than ships, and that is the point of it: the rank profile already speaks in ships and
- * cannot see a hull that is expensive all the way along. A cell a fleet shares with the enemy counts
+ * Cells rather than ships, because the rank profile already speaks in ships and cannot see a hull
+ * that is expensive all the way along. A cell a fleet shares with the enemy counts
  * for both, the same way it does everywhere else here - both sides still have to shoot it off.
  *
  * `costAt` is a lookup for the same reason shipCostProfile's is: this is read through a permutation

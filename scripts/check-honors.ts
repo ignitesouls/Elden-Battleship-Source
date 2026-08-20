@@ -28,7 +28,7 @@ registerHooks({
   },
 })
 
-const { buildMatchReport: buildReport } = await import('../src/lib/matchReport.ts')
+const { buildMatchReport: buildReport, honorClaims } = await import('../src/lib/matchReport.ts')
 const { tentacleCount, bottleNote } = await import('../src/lib/deepWater.ts')
 const { cellLabel } = await import('../src/lib/battleshipLogic.ts')
 const { deepFromAwards } = await import('../src/lib/deepArchive.ts')
@@ -41,8 +41,19 @@ const { deepFromAwards } = await import('../src/lib/deepArchive.ts')
  * stumble onto a tentacle. It used to have to go seed-hunting for a room whose secret squares dodged
  * its own shots (see 4a), which was a lot of machinery to buy a guarantee that is now free.
  */
+type EarnedMap = Map<string, Array<{ nickname: string; detail: string }>>
+
+/**
+ * The report, with the earned-title set carried alongside it.
+ *
+ * Both come from the same inputs, so nothing here can drift: `awards` is what the draw handed out,
+ * `earned` is everything it had to choose from. See the note on `holder` below for which one each
+ * case wants.
+ */
 const buildMatchReport = (r: Room, ps: Player[], attacks: Attack[], hides: DeepHide[] = []) =>
-  buildReport(r, ps, attacks, hides)
+  Object.assign(buildReport(r, ps, attacks, hides), {
+    earned: honorClaims(r, ps, attacks, hides) as EarnedMap,
+  })
 
 const hide = (cellIndex: number, creature: DeepCreature, decoy = false): DeepHide => ({
   cellIndex,
@@ -153,8 +164,33 @@ class Log {
   }
 }
 
-const titles = (report: { awards: Array<{ title: string }> }) => report.awards.map((a) => a.title)
-const holder = (report: { awards: Array<{ title: string; nickname: string }> }, title: string) =>
+/*
+ * Almost everything in this file asks a question about the RULES - "does sinking the most ships
+ * earn Admiral of the Fleet" - and the answer used to be readable straight off report.awards,
+ * because the awards were the rules applied in a fixed order.
+ *
+ * They aren't any more. A player is offered one title drawn at random from everything they earned
+ * (see buildAwards), so "did Aljex end up holding Admiral" is a question about the draw and no
+ * longer about the rule. These two therefore read the EARNED set - honorClaims - which is the rule
+ * with the draw taken back out. Every assertion below kept its original wording because that is
+ * what it was always really asserting.
+ *
+ * The draw has its own cases at the bottom of the file, and they use `awarded` instead.
+ */
+const titles = (report: { earned: EarnedMap }) => [...report.earned.keys()]
+/** Who earns this title - the strongest claim on it, drawn or not. */
+const holder = (report: { earned: EarnedMap }, title: string) =>
+  report.earned.get(title)?.[0]?.nickname ?? null
+/** The detail line on the strongest claim - the wording the RULE produces, draw or no draw. */
+const detailOf = (report: { earned: EarnedMap }, title: string) =>
+  report.earned.get(title)?.[0]?.detail ?? null
+/** Everyone who earned a title, in claim order. */
+const earners = (report: { earned: EarnedMap }, title: string) =>
+  (report.earned.get(title) ?? []).map((c) => c.nickname)
+/** The titles the draw actually handed out. For cases about what a player is TOLD. */
+const given = (report: { awards: Array<{ title: string }> }) => report.awards.map((a) => a.title)
+/** Who actually WALKED AWAY with it, after the draw. For the award-mechanism cases only. */
+const awarded = (report: { awards: Array<{ title: string; nickname: string }> }, title: string) =>
   report.awards.find((a) => a.title === title)?.nickname ?? null
 
 // -- 1. a full 3v3, every ship-level honor in play --------------------------
@@ -224,7 +260,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   check("Davy Jones' Pen Pal goes to the all-miss gunner", holder(report, "Davy Jones' Pen Pal") === 'JAFF', holder(report, "Davy Jones' Pen Pal") ?? '-')
 
   // The Carrier's only slayer is already the Admiral, and no runner-up sank a hull that big.
-  check('a singular honor with no other claimant goes unawarded', !list.includes('Slayer of the Leviathan'))
+  check('a singular honor with no other claimant goes unawarded', !given(report).includes('Slayer of the Leviathan'))
 
   check('nobody holds two honors', new Set(report.awards.map((a) => a.nickname)).size === report.awards.length)
   check('no title is handed out twice', new Set(list).size === list.length)
@@ -237,10 +273,10 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
     JSON.stringify(again.awards) === JSON.stringify(report.awards)
   )
 
-  const detail = report.awards.find((a) => a.title === 'The Old Man and the Sea')?.detail
+  const detail = detailOf(report, 'The Old Man and the Sea')
   check('the Old Man names the hull he hounded', detail === '3 hits into one Battleship and never landed the kill', detail ?? '-')
 
-  const nemo = report.awards.find((a) => a.title === 'Captain Nemo')?.detail
+  const nemo = detailOf(report, 'Captain Nemo')
   check('Nemo names the hull and says it was done alone', nemo === 'ran the Submarine down single-handed - all 3 squares', nemo ?? '-')
 }
 
@@ -268,8 +304,8 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   check('a Destroyer taken alone is Nemo too', holder(report, 'Captain Nemo') === 'Ada', holder(report, 'Captain Nemo') ?? '-')
   check(
     'and the Carrier the crew shared is nobody Nemo',
-    report.awards.find((a) => a.title === 'Captain Nemo')?.detail === 'ran the Destroyer down single-handed - all 2 squares',
-    report.awards.find((a) => a.title === 'Captain Nemo')?.detail ?? '-'
+    detailOf(report, 'Captain Nemo') === 'ran the Destroyer down single-handed - all 2 squares',
+    detailOf(report, 'Captain Nemo') ?? '-'
   )
 }
 
@@ -322,10 +358,10 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   check("Shaker's Protégé goes to the gunner who took every hull", holder(swept, "Shaker's Protégé") === 'Ada', holder(swept, "Shaker's Protégé") ?? '-')
   check(
     'and its detail names the fleet and the count',
-    swept.awards.find((a) => a.title === "Shaker's Protégé")?.detail === "sank all 3 of Blue Fleet's ships - every killing blow theirs",
-    swept.awards.find((a) => a.title === "Shaker's Protégé")?.detail ?? '-'
+    detailOf(swept, "Shaker's Protégé") === "sank all 3 of Blue Fleet's ships - every killing blow theirs",
+    detailOf(swept, "Shaker's Protégé") ?? '-'
   )
-  check('it outranks the Admiralty, which cascades on', holder(swept, 'Admiral of the Fleet') !== 'Ada', holder(swept, 'Admiral of the Fleet') ?? '-')
+  check('it outranks the Admiralty, which cascades on', awarded(swept, 'Admiral of the Fleet') !== 'Ada', awarded(swept, 'Admiral of the Fleet') ?? '-')
 
   // One crewmate closing out one hull is the whole difficulty of it.
   const stolen = sweep(cid)
@@ -372,7 +408,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
     l.shot(bo, 0, cell(5, 6), 'hit')
   })
   check('Ishmael goes to the best gun on the fleet that was wiped out', holder(fought.report, 'Ishmael') === 'Bo', holder(fought.report, 'Ishmael') ?? '-')
-  const escaped = fought.report.awards.find((a) => a.title === 'Ishmael')?.detail
+  const escaped = detailOf(fought.report, 'Ishmael')
   check(
     'and the detail says they lost anyway',
     escaped === '2 hits landed, and their own fleet still went down with all hands',
@@ -417,7 +453,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
 
   const report = buildMatchReport(room(), [ada, cid, bo], log.attacks)
   check('The Hunt for Red October goes to whoever sank the Submarine', holder(report, 'The Hunt for Red October') === 'Ada', holder(report, 'The Hunt for Red October') ?? '-')
-  const detail = report.awards.find((a) => a.title === 'The Hunt for Red October')?.detail
+  const detail = detailOf(report, 'The Hunt for Red October')
   check('and it says what was run down', detail === 'ran the Submarine to ground', detail ?? '-')
   // Two of the three hits were Cid's. The honor is for the kill, not the damage.
   check('the gunner who softened it up does not get it', holder(report, 'The Hunt for Red October') !== 'Cid')
@@ -460,9 +496,10 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   }
 
   const onTarget = opener('hit')
-  check('X Marks the Spot goes to whoever opened on a hull', holder(onTarget, 'X Marks the Spot') === 'Bo', holder(onTarget, 'X Marks the Spot') ?? '-')
+  // Ada opened on a hull too, so both are on the claim list. Bo is the one this case varies.
+  check('X Marks the Spot goes to whoever opened on a hull', earners(onTarget, 'X Marks the Spot').includes('Bo'), earners(onTarget, 'X Marks the Spot').join(', '))
   // Same two shots, same accuracy, the other way round - the honor is the opening, not the tally.
-  check('a hit that came second does not count', !titles(opener('miss')).includes('X Marks the Spot'), titles(opener('miss')).join(', '))
+  check('a hit that came second does not count', !earners(opener('miss'), 'X Marks the Spot').includes('Bo'), earners(opener('miss'), 'X Marks the Spot').join(', '))
 }
 
 // -- 2. ranked honors cascade to the next player who qualifies --------------
@@ -482,10 +519,14 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   check('the Admiral is the sinker', holder(report, 'Admiral of the Fleet') === 'Ada', holder(report, 'Admiral of the Fleet') ?? '-')
   check(
     'Master Gunner cascades past the Admiral to the runner-up',
-    holder(report, 'Master Gunner') === 'Bo',
-    holder(report, 'Master Gunner') ?? '-'
+    earners(report, 'Master Gunner').join(', ') === 'Ada, Bo',
+    earners(report, 'Master Gunner').join(', ') || '-'
   )
-  check('Master Gunner reports the runner-up own hit count', report.awards.find((x) => x.title === 'Master Gunner')?.detail === '2 hits landed')
+  check(
+    'Master Gunner reports the runner-up own hit count',
+    report.earned.get('Master Gunner')?.[1]?.detail === '2 hits landed',
+    report.earned.get('Master Gunner')?.[1]?.detail ?? '-'
+  )
 }
 
 // -- 3. a match where nothing sank still has an Admiral --------------------
@@ -546,9 +587,12 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
     'Hugger of the Shoals',
     'Quickest Powder',
     'Das Boot',
+    // Earned, though only one player can be handed it. It was invisible while this list read the
+    // awards, because seven crew had already taken everything above it.
+    'Powder Monkey',
   ]
   check(
-    'a hitless match still earns seven pattern honors',
+    'a hitless match still earns eight pattern honors',
     expected.every((t) => list.includes(t)) && list.length === expected.length,
     list.join(', ')
   )
@@ -572,7 +616,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   const report = buildMatchReport(r, [ada, bo], log.attacks, [hide(home, 'whale')])
   check('the Admiralty goes to the gunner, not the whaler', holder(report, 'Admiral of the Fleet') === 'Bo')
   check('Captain Ahab goes to whoever found the whale', holder(report, 'Captain Ahab') === 'Ada', holder(report, 'Captain Ahab') ?? '-')
-  const detail = report.awards.find((a) => a.title === 'Captain Ahab')?.detail
+  const detail = detailOf(report, 'Captain Ahab')
   check('and it says where', detail === `found the white whale at ${cellLabel(home, BOARD)}`, detail ?? '-')
 
   // The shot was still a miss. Finding the whale costs you accuracy, which is exactly right.
@@ -712,7 +756,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
     check('three sightings is Thrice-Cursed', holder(thrice, 'Thrice-Cursed') === 'Ada', holder(thrice, 'Thrice-Cursed') ?? '-')
     check('and it counts them', detailOf(thrice, 'Thrice-Cursed').includes('3'), detailOf(thrice, 'Thrice-Cursed'))
     // Singular, and its owner already holds the rarer title - so it goes unawarded rather than down.
-    check('the lesser sighting does not also go out', !titles(thrice).includes('Sighted the Dutchman'), titles(thrice).join(', '))
+    check('the lesser sighting does not also go out', !given(thrice).includes('Sighted the Dutchman'), given(thrice).join(', '))
   }
 
   // Alexander: two titles, and a player who does both takes only the better one.
@@ -743,7 +787,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
      * title and the lesser one is not awarded at all. Getting him out is the whole deed - being also
      * told you found him is the participation ribbon this list doesn't hand out.
      */
-    check('and doing both does not also hand out the lesser title', !titles(freed).includes('Found the Jar'), titles(freed).join(', '))
+    check('and doing both does not also hand out the lesser title', !given(freed).includes('Found the Jar'), given(freed).join(', '))
   }
 
   // Patches, who is "sorry".
@@ -786,8 +830,18 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   log.shot(ada, 1, cell(9, 8), 'hit')
   log.shot(ada, 1, home, 'miss')
   const report = buildMatchReport(r, [ada, bo], log.attacks, [hide(home, 'whale')])
-  check('a find outranks the shooting for the player who did both', holder(report, 'Captain Ahab') === 'Ada', titles(report).join(', '))
-  check('and the shooting title it beat goes unheld', holder(report, 'Admiral of the Fleet') === null, holder(report, 'Admiral of the Fleet') ?? '-')
+  check('the whale is hers to be told about', holder(report, 'Captain Ahab') === 'Ada', titles(report).join(', '))
+  /*
+   * She is the only claimant to BOTH titles, so whichever the draw gives her, the other has nobody
+   * left to go to. Which one she gets is no longer fixed - that was the old ordering, and replacing
+   * it is the point of the draw - but "one title each, and a title with no free claimant goes
+   * unawarded" still holds, and that is what this case is really about.
+   */
+  check(
+    'and she is handed exactly one of them',
+    given(report).length === 1,
+    given(report).join(', ')
+  )
 
   // The exception, and the only one: a fleet swept single-handed still comes first.
   {
@@ -826,7 +880,7 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
   check('Raking Fire goes to the shot that struck two fleets', holder(report, 'Raking Fire') === 'Rake', holder(report, 'Raking Fire') ?? '-')
   check(
     'and its detail counts the fleets',
-    report.awards.find((a) => a.title === 'Raking Fire')?.detail === 'one shot struck 2 fleets at once'
+    detailOf(report, 'Raking Fire') === 'one shot struck 2 fleets at once'
   )
 }
 
@@ -918,6 +972,115 @@ const holder = (report: { awards: Array<{ title: string; nickname: string }> }, 
     log.shot(bo, 0, cell(5, 5), 'hit')
     log.shot(ada, 1, cell(1, 1), 'miss')
     check('a match that found nothing salvages nothing', salvage(buildMatchReport(r, [ada, bo], log.attacks)).length === 0)
+  }
+}
+
+// -- the draw itself --------------------------------------------------------
+//
+// Everything above is about which titles a log EARNS. This is about which of them a player is
+// actually told, which is now a seeded draw rather than a fixed order - see buildAwards. The
+// properties that have to survive being random are the ones a player would notice breaking.
+{
+  const ada = player('p1', 'Ada', 0)
+  const bo = player('p2', 'Bo', 1)
+  const cid = player('p3', 'Cid', 1)
+  const crew = [ada, bo, cid]
+
+  /** A busy, unremarkable match: plenty earned, nothing guaranteed, so the draw does all the work. */
+  const busy = () => {
+    const log = new Log()
+    const carrier: Hull = { name: 'Carrier', size: 2, row: 0, col: 0, horizontal: true }
+    log.shot(ada, 1, cell(0, 0), 'hit')
+    log.shot(bo, 0, cell(4, 4), 'miss')
+    log.shot(ada, 1, cell(0, 1), 'sunk', carrier)
+    log.shot(cid, 0, cell(6, 6), 'miss')
+    log.shot(bo, 0, cell(5, 5), 'miss')
+    log.shot(ada, 1, cell(8, 8), 'miss')
+    log.shot(cid, 0, cell(7, 7), 'miss')
+    log.shot(bo, 0, cell(3, 3), 'miss')
+    log.shot(cid, 0, cell(9, 9), 'miss')
+    return buildMatchReport(room(), crew, log.attacks)
+  }
+
+  const first = busy()
+  check(
+    'the same match always draws the same titles',
+    JSON.stringify(busy().awards) === JSON.stringify(first.awards)
+  )
+
+  // The whole reason the draw is seeded from the match key rather than Math.random(): every client
+  // in the room builds this independently, and the archive writes whichever one saves first.
+  const elsewhere = (() => {
+    const r = { ...room(), code: 'OTHER' }
+    const log = new Log()
+    const carrier: Hull = { name: 'Carrier', size: 2, row: 0, col: 0, horizontal: true }
+    log.shot(ada, 1, cell(0, 0), 'hit')
+    log.shot(bo, 0, cell(4, 4), 'miss')
+    log.shot(ada, 1, cell(0, 1), 'sunk', carrier)
+    log.shot(cid, 0, cell(6, 6), 'miss')
+    log.shot(bo, 0, cell(5, 5), 'miss')
+    log.shot(ada, 1, cell(8, 8), 'miss')
+    log.shot(cid, 0, cell(7, 7), 'miss')
+    log.shot(bo, 0, cell(3, 3), 'miss')
+    log.shot(cid, 0, cell(9, 9), 'miss')
+    return buildMatchReport(r, crew, log.attacks)
+  })()
+  check(
+    'a different room draws differently from the same shooting',
+    JSON.stringify(elsewhere.awards) !== JSON.stringify(first.awards),
+    given(first).join(', ') + '  vs  ' + given(elsewhere).join(', ')
+  )
+
+  // Nothing invented: a drawn title is always one its holder actually earned.
+  check(
+    'every title handed out was earned by the player holding it',
+    first.awards.every((a) => (first.earned.get(a.title) ?? []).some((c) => c.nickname === a.nickname)),
+    first.awards.map((a) => `${a.nickname}:${a.title}`).join(', ')
+  )
+  check('and no title is handed out twice', new Set(given(first)).size === given(first).length)
+  check(
+    'and no player is handed two',
+    new Set(first.awards.map((a) => a.nickname)).size === first.awards.length
+  )
+
+  // A guaranteed title is never left to chance - see Honor.guaranteed.
+  {
+    const sweep: Hull[] = [
+      { name: 'A', size: 1, row: 0, col: 0, horizontal: true },
+      { name: 'B', size: 1, row: 1, col: 1, horizontal: true },
+    ]
+    const r = { ...room(), ship_defs: [{ name: 'A', size: 1 }, { name: 'B', size: 1 }] }
+    const log = new Log()
+    log.shot(ada, 1, cell(0, 0), 'sunk', sweep[0])
+    log.shot(ada, 1, cell(1, 1), 'sunk', sweep[1])
+    log.shot(bo, 0, cell(9, 9), 'miss')
+    const report = buildMatchReport(r, [ada, bo], log.attacks)
+    check(
+      "a wiped fleet always earns its taker Shaker's Protégé, draw or no draw",
+      awarded(report, "Shaker's Protégé") === 'Ada',
+      given(report).join(', ')
+    )
+  }
+
+  // The ladders collapse: three tentacles is never reported as one - see Honor.supersedes.
+  {
+    const r = { ...room(), id: 'tentacle-room' }
+    const needed = tentacleCount(BOARD * BOARD)
+    if (needed >= 3) {
+      const cells = Array.from({ length: needed }, (_, i) => cell(0, i))
+      const hides = cells.map((c) => hide(c, 'tentacle'))
+      const log = new Log()
+      // Ada finds three, which is Acolyte - and also Dreamer, and also Whispers.
+      for (const c of cells.slice(0, 3)) log.shot(ada, 1, c, 'miss')
+      log.shot(bo, 0, cell(9, 9), 'miss')
+      const report = buildMatchReport(r, [ada, bo], log.attacks, hides)
+      const hers = report.awards.find((a) => a.nickname === 'Ada')?.title ?? '-'
+      check(
+        'three tentacles is never reported as the one-tentacle title',
+        hers !== 'Whispers in the Deep' && hers !== "Dreamer of R'lyeh",
+        hers
+      )
+    }
   }
 }
 
