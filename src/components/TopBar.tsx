@@ -7,6 +7,7 @@ import { isColorblindMode, setColorblindMode } from "../lib/teamColors";
 import { isTwitchLoginConfigured, signInWithTwitch, signOut } from "../lib/supabase";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import { useAdminStatus } from "../lib/admin";
+import { OutreachLinks } from "./OutreachLinks";
 import "./TopBar.css";
 
 /**
@@ -45,6 +46,17 @@ export function TopBar() {
   // was never evidence that there was anything on the other end of it.
   const activeRoom = useActiveRoom();
   const inThatRoom = activeRoom ? pathname.toUpperCase().startsWith(`/ROOM/${activeRoom.code}`) : false;
+  // Playing in a live match, as opposed to watching one. Both halves matter: `inThatRoom` is what
+  // separates a player from a spectator - an active room is only ever stored for somebody who has a
+  // player in it (see Room.tsx) - and the status is what separates a match from a lobby, where an
+  // off-site link is welcome and always has been.
+  //
+  // A null status means the check is still out or a read failed, and that resolves to `false` here
+  // on purpose: it is the same call useActiveRoom makes for the return link just above, where the
+  // reasoning is spelled out. Not knowing is not evidence, and the cost of being wrong for one round
+  // trip is a link that was on screen a moment longer than it should have been.
+  const playingLiveMatch =
+    inThatRoom && (activeRoom?.status === "placement" || activeRoom?.status === "battle");
   const [volume, setVolumeState] = useState(getVolume);
   // Remembers the level you were at so unmuting restores it instead of guessing a default.
   const [premuteVolume, setPremuteVolume] = useState(() => (getVolume() > 0 ? getVolume() : 0.7));
@@ -107,6 +119,13 @@ export function TopBar() {
           )}
         </Link>
       )}
+
+      <span className="tb-spacer" />
+
+      {/* Between the two spacers, so it sits in the middle of the bar rather than crowding either
+          the wordmark or the account controls. It is the one group here that is about the project
+          rather than about the app, and the gap on both sides is what says so. */}
+      <OutreachLinks inLiveMatch={playingLiveMatch} />
 
       <span className="tb-spacer" />
 

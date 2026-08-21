@@ -1,0 +1,164 @@
+/**
+ * The outreach group in the top bar: report a bug, say hello, Discord.
+ *
+ * These were pill buttons in a footer. In the bar they are bar items - no border, no fill, a picture
+ * and a label - because the alternative is three coloured pills sitting in the middle of a toolbar
+ * out-shouting every control around them. Each one keeps its own colour for the hover, which is the
+ * same bargain the footer made: colour arrives on the thing you are about to click, not at rest.
+ *
+ * Geometry, label-hiding and the narrow-screen behaviour all come from TopBar.css via .tb-item and
+ * .tb-label. Only what is particular to these three lives here.
+ */
+
+/* Its own flex group so the three stay together when the spacers on either side push them around,
+   and so nothing here can grow the bar past the single row TopBar.css guarantees. */
+.tb-outreach {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.tb-out {
+  gap: 0.32rem;
+}
+
+/* The picture stands in for the emoji every other bar item uses, so it is sized to the same optical
+   weight rather than to the 1.5rem the footer chips could afford. */
+.tb-out-icon {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.tb-out-icon img,
+.tb-out-icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Each chip's own colour, saved for the hover. :not() is not needed here the way it is on .tb-item -
+   these are their own classes - but the hover has to beat the shared .tb-item hover rule, which it
+   does on specificity. */
+.tb-out-bug:hover,
+.tb-out-bug:focus-visible {
+  color: var(--danger);
+}
+
+.tb-out-hello:hover,
+.tb-out-hello:focus-visible {
+  color: var(--accent-bright);
+}
+
+/* Discord's own blurple, so the link is recognisable as a Discord link before the label is read. */
+.tb-out-discord:hover,
+.tb-out-discord:focus-visible {
+  color: #5865f2;
+}
+
+/* Patches is a board marker, and board markers are drawn to be read against blue water - see the
+   same trick in .deep-find-icon, which exists for exactly this reason. Off the grid he needs
+   something to be a square for him or the pale dome sits on a dark panel as a smudge. */
+.tb-out-water {
+  background: var(--miss-fill);
+}
+
+/* He arrives already waving rather than playing his entrance every time a page mounts - this bar is
+   on every screen in the app, and chrome that animates on every navigation is a tic. The wave is
+   held at the top of its arc at rest, and only actually moves under the cursor. */
+.tb-out-water .patches-mark,
+.tb-out-water .patches-body {
+  animation: none;
+}
+
+.tb-out-water .patches-wave {
+  animation: none;
+  transform: rotate(-7deg);
+}
+
+.tb-out-hello:hover .patches-wave,
+.tb-out-hello:focus-visible .patches-wave {
+  animation: patches-wave 1.1s ease-in-out infinite;
+}
+
+/* The bug, at rest and then caught out. Legs and antennae only: the body staying put while the
+   limbs scrabble is what makes it read as alive rather than as a logo being scaled. */
+.tb-out-legs {
+  transform-box: view-box;
+  transform-origin: 50% 58%;
+}
+
+.tb-out-bug:hover .tb-out-legs,
+.tb-out-bug:focus-visible .tb-out-legs {
+  animation: tb-out-scuttle 0.35s ease-in-out infinite;
+}
+
+@keyframes tb-out-scuttle {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+/* Warm shell against the cold bar it sits on, so the link has a spot of colour at rest without the
+   link itself being coloured. Strokes are the same near-black the board markers use. */
+.tb-out-shell {
+  fill: #c25a3f;
+  stroke: #2a1610;
+  stroke-width: 4;
+}
+
+.tb-out-head {
+  fill: #46403a;
+  stroke: #2a1610;
+  stroke-width: 4;
+}
+
+.tb-out-limb {
+  fill: none;
+  stroke: #2a1610;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.tb-out-seam {
+  fill: none;
+  stroke: #2a1610;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.tb-out-spot {
+  fill: #2a1610;
+}
+
+.tb-out-eye {
+  fill: #e3c7a4;
+}
+
+/* --- narrow screens ------------------------------------------------------
+   .tb-label already goes at 900px with every other label in the bar, leaving three pictures with
+   their tooltips. Below 620px the bar is carrying the wordmark, the way back to a room, an account
+   and four controls, and three more items is what finally breaks the single row - so the social two
+   drop and the bug report, the one that is worth most when something has gone wrong, stays. */
+@media (max-width: 620px) {
+  .tb-out-hello,
+  .tb-out-discord {
+    display: none;
+  }
+}
+
+/* Nothing here is load-bearing - every link says what it is in a tooltip - so anyone who has asked
+   for less motion gets all three sitting perfectly still. */
+@media (prefers-reduced-motion: reduce) {
+  .tb-out-hello:hover .patches-wave,
+  .tb-out-hello:focus-visible .patches-wave,
+  .tb-out-bug:hover .tb-out-legs,
+  .tb-out-bug:focus-visible .tb-out-legs {
+    animation: none;
+  }
+}
