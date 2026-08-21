@@ -39,6 +39,27 @@ export interface MatchBalance {
   /** The threshold this board was held to, in seconds. */
   limit?: number;
   /**
+   * Which team the gap was in favour of, and which paid for it.
+   *
+   * The gap itself is a magnitude - it says how wide the edge was and nothing about whose it was -
+   * so for as long as this record existed there was no side to name. These are that side: the team
+   * holding the cheapest ship at the rank the gap was worst at, and the team holding the dearest.
+   *
+   * Absent on every record written before the balancer started keeping it, and null on a board with
+   * no gap at all. Those two are different: absent means unmeasured, null means measured and even.
+   */
+  aheadTeam?: number | null;
+  behindTeam?: number | null;
+  /**
+   * Where the direction came from, when it did not come from the same run as the gap.
+   *
+   * 'sweep' means the sweep worked it out later from the archived placements and today's cost
+   * model, and wrote it beside a gap some earlier balancer measured. Ordinarily the two agree,
+   * because it is the same board and the same rule; they can disagree if the cost table moved
+   * underneath. Absent means the direction was recorded by whatever produced the gap.
+   */
+  aheadFrom?: "sweep";
+  /**
    * The same board on the second fairness test, in WHOLE SQUARES rather than seconds.
    *
    * How many more squares past the long-square line the worst-off fleet held - the measure the rank

@@ -26,6 +26,8 @@ import {
   regionFloorFor,
   longSquareCount,
   shipCostProfile,
+  rankGapDetail,
+  scoreLayout,
   RANK_GAP_SECONDS,
   LONG_GAP,
   LONG_SQUARE_SECONDS,
@@ -827,6 +829,59 @@ console.log('long-square counting')
     'the long-square count can'
   )
   console.log('  cells not ships, shared cells count for both fleets, and the line is strict\n')
+}
+
+
+// -- 13. which side the gap was on ----------------------------------------------------------------
+//
+// The gap is a spread and a spread has no side, so naming one is a claim the old measurement could
+// not make. Two things have to hold for the claim to be worth printing on a recap:
+//
+//   - the side is read at the rank the gap is WORST at, not the first rank or the average of them.
+//     A fleet can be behind at rank 0 and ahead at rank 1; only the rank the number came from has
+//     any business naming a fleet.
+//   - the team travels with the profile. normalizeFleets drops a fleet with no scorable ships, so
+//     position in the profile list is not the position handed in - which is exactly the bug that
+//     would print the wrong fleet's name, silently, on a board nobody could check by eye.
+console.log('which fleet the gap favoured')
+{
+  // Rank 0 differs by 10, rank 1 by 100. The worst rank is 1, where fleet B is the cheap one.
+  const profiles = [
+    [200, 300],
+    [190, 200],
+  ]
+  const detail = rankGapDetail(profiles)
+  check(detail.gap === 100, 'the gap is still the widest same-rank spread', String(detail.gap))
+  check(detail.rank === 1, 'the side is read at the rank the gap was worst at', String(detail.rank))
+  check(detail.ahead === 1, 'the fleet with the cheapest ship at that rank is the one ahead')
+  check(detail.behind === 0, 'and the dearest is the one behind')
+
+  const even = rankGapDetail([
+    [100, 50],
+    [100, 50],
+  ])
+  check(even.gap === 0, 'two identical fleets have no gap')
+  check(even.ahead === null && even.behind === null, 'and no side to name, rather than fleet 0')
+  check(rankGapDetail([[100]]).ahead === null, 'one fleet is nobody ahead of anybody')
+
+  // Team 0 holds nothing scorable, so it is dropped and the profiles are teams 1 and 2. Reading the
+  // side positionally here would name team 1 as behind when team 2 is.
+  const cost = [10, 10, 900, 900]
+  const score = scoreLayout(cost, [
+    { team: 0, ships: [] },
+    { team: 1, ships: [[2, 3]] },
+    { team: 2, ships: [[0, 1]] },
+  ])
+  check(score.teams.join() === '1,2', 'a fleet with no ships is dropped and the labels follow')
+  check(score.aheadTeam === 2, 'the cheap fleet is named by TEAM, not by position', String(score.aheadTeam))
+  check(score.behindTeam === 1, 'and so is the expensive one', String(score.behindTeam))
+  check(
+    score.rankGap === 890,
+    'naming the side changed nothing about the number beside it',
+    String(score.rankGap)
+  )
+  console.log('  read at the worst rank, labelled by team, and no side on an even board')
+  console.log('')
 }
 
 

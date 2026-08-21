@@ -163,6 +163,17 @@ interface ScoredMatch {
   longRebalanced: number
   /** How many fleets held at least one ship gated longer than the match actually lasted. */
   strandedFleets: number
+  /**
+   * Which team the played gap was in favour of, and which paid for it.
+   *
+   * Measured with today's cost model, like everything else in a sweep. That matters more here than
+   * it does for the gaps: a deal-time record already carries its own `played`, and this direction is
+   * being written alongside a number that was measured by a different balancer on a possibly
+   * different cost table. Stored with its own provenance for exactly that reason - see the merge
+   * pass at the bottom.
+   */
+  aheadTeam: number | null
+  behindTeam: number | null
 }
 
 Deno.serve(async (req) => {
@@ -399,6 +410,7 @@ Deno.serve(async (req) => {
       })
 
       const played = scoreLayout(playedCosts.cost, fleets)
+      // Team labels survive scoreLayout now, so the side of the gap comes back with it.
       // The raw deal on the second test. `redraw` reports its own before/after, but the deal's
       // long-square gap is measured here for the same reason `played` is: it is the board as it
       // existed, not the board the redraw would have produced.
@@ -426,6 +438,8 @@ Deno.serve(async (req) => {
         longPlayed: played.longGap,
         longRebalanced: redraw.longGapAfter,
         strandedFleets,
+        aheadTeam: played.aheadTeam,
+        behindTeam: played.behindTeam,
       })
     }
 
@@ -441,6 +455,8 @@ Deno.serve(async (req) => {
     // a reconstruction. So the sweep fills gaps and never overwrites - re-running it after the cost
     // table changes cannot quietly restate the history of matches that recorded their own.
     let persisted = 0
+    /** Records that already existed and gained only a direction. Counted apart from `persisted`. */
+    let directed = 0
     if (body.persist === true) {
       for (const m of scored) {
         const { data } = await admin
@@ -461,6 +477,9 @@ Deno.serve(async (req) => {
               stranded: m.strandedFleets,
               teams: m.teams,
               hadPerm: m.hadPerm,
+              aheadTeam: m.aheadTeam,
+              behindTeam: m.behindTeam,
+              aheadFrom: 'sweep',
               at: new Date().toISOString(),
             },
           })
@@ -469,9 +488,54 @@ Deno.serve(async (req) => {
           .select('match_key')
         persisted += data?.length ?? 0
       }
+
+      // -- direction, onto records that already exist ----------------------------------------
+      //
+      // The guard above is deliberate and stays: a sweep must never restate a gap that a deal-time
+      // balancer measured for itself. But every record written before the balancer kept a direction
+      // has no side to name, and that includes every match already on the archive - so gap-filling
+      // alone would leave the direction permanently blank on all of them.
+      //
+      // So this adds ONE field and touches nothing else. The stored gaps, limits and long-square
+      // counts are left exactly as their own source wrote them; what goes in is the side, tagged
+      // `aheadFrom: 'sweep'` so a reader can tell a direction reconstructed today from one the
+      // balancer of the day recorded beside its own number. Records that already carry a direction
+      // are skipped whatever its provenance, so re-running this is idempotent and cannot flip a
+      // side already shown to players.
+      const withDirection = scored.filter((m) => m.aheadTeam !== null)
+      if (withDirection.length > 0) {
+        const { data: existing } = await admin
+          .from('match_reports')
+          .select('match_key, balance')
+          .in(
+            'match_key',
+            withDirection.map((m) => m.matchKey)
+          )
+          .not('balance', 'is', null)
+        for (const row of (existing ?? []) as Array<{ match_key: string; balance: Record<string, unknown> }>) {
+          const current = row.balance
+          if (!current || typeof current !== 'object') continue
+          if (current.aheadTeam !== undefined && current.aheadTeam !== null) continue
+          const m = withDirection.find((s) => s.matchKey === row.match_key)
+          if (!m) continue
+          const { data } = await admin
+            .from('match_reports')
+            .update({
+              balance: {
+                ...current,
+                aheadTeam: m.aheadTeam,
+                behindTeam: m.behindTeam,
+                aheadFrom: 'sweep',
+              },
+            })
+            .eq('match_key', row.match_key)
+            .select('match_key')
+          directed += data?.length ?? 0
+        }
+      }
     }
 
-    return jsonResponse({ scored, rejected, persisted, rankLimitSeconds: RANK_GAP_SECONDS })
+    return jsonResponse({ scored, rejected, persisted, directed, rankLimitSeconds: RANK_GAP_SECONDS })
   } catch (e) {
     return jsonResponse({ error: 'failed', detail: (e as Error).message }, 500)
   }

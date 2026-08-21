@@ -451,7 +451,24 @@ export function normalizeFleets(
   fleets: Array<{ team: number; ships: number[][] }>,
   cells: number
 ): number[][][] {
-  const active: number[][][] = [];
+  return normalizeFleetsWithTeams(fleets, cells).map((f) => f.ships);
+}
+
+/**
+ * The same normalisation, with each surviving fleet's team still attached.
+ *
+ * Everything downstream works in profile arrays indexed by position, and position was all there was
+ * - a fleet that lost every ship to the bounds check is dropped, so index 2 of a profile list is not
+ * reliably the third fleet handed in, let alone team 2. That was fine while every measure here was a
+ * spread and had no side to name. Naming the fleet that came out ahead needs the labels carried
+ * through the same drop, so they are carried here rather than reconstructed by a caller guessing at
+ * the drop rule.
+ */
+export function normalizeFleetsWithTeams(
+  fleets: Array<{ team: number; ships: number[][] }>,
+  cells: number
+): Array<{ team: number; ships: number[][] }> {
+  const active: Array<{ team: number; ships: number[][] }> = [];
   for (const fleet of fleets) {
     const ships: number[][] = [];
     for (const ship of fleet.ships ?? []) {
@@ -461,7 +478,7 @@ export function normalizeFleets(
       }
       if (own.size > 0) ships.push([...own]);
     }
-    if (ships.length > 0) active.push(ships);
+    if (ships.length > 0) active.push({ team: fleet.team, ships });
   }
   return active;
 }
@@ -513,13 +530,51 @@ export function longSquareCount(
  * has nothing to put opposite them.
  */
 export function rankGapOf(profiles: number[][]): number {
-  if (profiles.length < 2) return 0;
+  return rankGapDetail(profiles).gap;
+}
+
+/**
+ * The same measurement, keeping the fleet each end of the gap belongs to.
+ *
+ * The gap is a spread and a spread has no direction, which is why the stored fairness record was a
+ * bare magnitude for as long as it existed. But the rank the spread is worst at has two named ends:
+ * the fleet holding the cheapest ship there got the head start, and the fleet holding the dearest
+ * paid for it. That is a fact about the board, not an inference, and the only reason it was never
+ * reported is that it was computed and thrown away one line later.
+ *
+ * `ahead` and `behind` are indexes into `profiles`, so a caller that wants a team out of them has to
+ * have kept the team labels - see normalizeFleetsWithTeams. Both are null when there is no gap to
+ * take a side on: fewer than two fleets, or no rank they both reach.
+ */
+export function rankGapDetail(profiles: number[][]): {
+  gap: number;
+  /** Which rank the worst gap was found at, longest ship first. Null when there is no gap. */
+  rank: number | null;
+  ahead: number | null;
+  behind: number | null;
+} {
+  if (profiles.length < 2) return { gap: 0, rank: null, ahead: null, behind: null };
   const ranks = Math.min(...profiles.map((p) => p.length));
-  let worst = 0;
+  let gap = 0;
+  let rank: number | null = null;
+  let ahead: number | null = null;
+  let behind: number | null = null;
   for (let i = 0; i < ranks; i++) {
-    worst = Math.max(worst, spread(profiles.map((p) => p[i])));
+    const at = profiles.map((p) => p[i]);
+    const worst = spread(at);
+    // Strictly wider, so the FIRST rank to reach the worst gap is the one reported. Ties on the
+    // gap are ties on the whole measurement, and picking a later one would only shuffle which of
+    // two identical answers gets printed.
+    if (rank !== null && worst <= gap) continue;
+    gap = worst;
+    rank = i;
+    ahead = at.indexOf(Math.min(...at));
+    behind = at.indexOf(Math.max(...at));
   }
-  return worst;
+  // A board where every fleet matches at every rank: measured, perfectly even, and there is no side
+  // to name. Reported as no side rather than as fleet 0, which would read as an edge nobody had.
+  if (gap === 0) return { gap: 0, rank, ahead: null, behind: null };
+  return { gap, rank, ahead, behind };
 }
 
 /**
@@ -533,11 +588,31 @@ export function scoreLayout(
   cost: number[],
   fleets: Array<{ team: number; ships: number[][] }>,
   longSquareSeconds: number = LONG_SQUARE_SECONDS
-): { rankGap: number; profiles: number[][]; longCounts: number[]; longGap: number } {
-  const active = normalizeFleets(fleets, cost.length);
-  const profiles = active.map((ships) => shipCostProfile(ships, (c) => cost[c]));
-  const longCounts = active.map((ships) => longSquareCount(ships, (c) => cost[c], longSquareSeconds));
-  return { rankGap: rankGapOf(profiles), profiles, longCounts, longGap: spread(longCounts) };
+): {
+  rankGap: number;
+  profiles: number[][];
+  /** The team behind each profile, same order. See normalizeFleetsWithTeams. */
+  teams: number[];
+  /** The team that held the cheapest ship at the worst rank, or null on a board with no gap. */
+  aheadTeam: number | null;
+  /** Its opposite number: the team that held the dearest ship there. */
+  behindTeam: number | null;
+  longCounts: number[];
+  longGap: number;
+} {
+  const active = normalizeFleetsWithTeams(fleets, cost.length);
+  const profiles = active.map((f) => shipCostProfile(f.ships, (c) => cost[c]));
+  const longCounts = active.map((f) => longSquareCount(f.ships, (c) => cost[c], longSquareSeconds));
+  const detail = rankGapDetail(profiles);
+  return {
+    rankGap: detail.gap,
+    profiles,
+    teams: active.map((f) => f.team),
+    aheadTeam: detail.ahead === null ? null : active[detail.ahead].team,
+    behindTeam: detail.behind === null ? null : active[detail.behind].team,
+    longCounts,
+    longGap: spread(longCounts),
+  };
 }
 
 /**

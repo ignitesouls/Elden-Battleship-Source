@@ -230,10 +230,15 @@ Deno.serve(async (req) => {
     const teams = activeTeams(roster ?? [])
     if (teams.length < 2) return jsonResponse({ balanced: false, reason: 'not_enough_teams' })
 
+    // Ordered by team, which costs nothing and makes every array derived from these rows - the cost
+    // profiles, topCost - line up with the team numbers rather than with whatever order the table
+    // happened to return. The direction below no longer depends on that order, but anything reading
+    // topCost positionally still does.
     const { data: fleetRows } = await admin
       .from('fleets')
       .select('team, ship_grid, ship_index_grid, placement_confirmed')
       .eq('room_id', roomId)
+      .order('team')
     const fleets = (fleetRows ?? []).filter((f) => teams.includes(f.team))
 
     // Every hull still has to be final. Balancing against a fleet that can still move is balancing
@@ -309,7 +314,8 @@ Deno.serve(async (req) => {
     // the match actually ran. That comparison needs a duration, which does not exist yet at deal
     // time, so the number is stored and the recap makes the comparison once the match has ended.
     const playedCost = result.perm.map((from) => deal.cost[from])
-    const topCost = scoreLayout(playedCost, occupied).profiles.map((profile) => profile[0] ?? 0)
+    const playedScore = scoreLayout(playedCost, occupied)
+    const topCost = playedScore.profiles.map((profile) => profile[0] ?? 0)
 
     const balanceReport = {
       v: 1,
@@ -318,6 +324,16 @@ Deno.serve(async (req) => {
       dealt: Math.round(result.rankGapBefore),
       played: Math.round(result.rankGapAfter),
       limit: result.rankLimit,
+      // Which fleet the gap above was in favour of, on the board as played.
+      //
+      // The gap itself is a spread and says only how wide the edge was; this is the fleet that held
+      // the cheapest ship at the rank the spread was worst at, and its opposite number. Taken from
+      // the same scoreLayout pass that produced topCost, so it is a fact about the same board the
+      // `played` number measures - not a second opinion from a different measurement.
+      //
+      // Null on a board with no gap at all, which is a real outcome and not a missing value.
+      aheadTeam: playedScore.aheadTeam,
+      behindTeam: playedScore.behindTeam,
       // Whole squares. The second test, on the cells the rank gap throws away - how many more
       // squares past the long-square line the worst-off fleet held, dealt and as played. Stored
       // beside the rank gap rather than folded into it because a board can pass one and fail the

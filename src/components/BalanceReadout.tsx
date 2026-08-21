@@ -7,6 +7,7 @@ import {
   ordinal,
   type MatchBalance,
 } from "../lib/matchBalance";
+import { teamHex, teamName } from "../lib/teamColors";
 
 /**
  * How fair the board was, on the recap.
@@ -17,14 +18,25 @@ import {
  * out as. It reads the number the balancer recorded at the moment it dealt the board; nothing is
  * computed here and no square is ever priced in a browser.
  *
- * -- Three numbers, no prose ------------------------------------------------------------------------
+ * -- Three numbers and two lines ------------------------------------------------------------------
  *
- * The percentile and the two gaps. That is the whole panel - not even the sample size the percentile
- * came off. It carried paragraphs explaining what a square's cost is, how the ranks are matched up,
- * and what the shuffle bought, and read like a lecture nobody asked for. A caster can say any of it
- * on air in a sentence; the recap does not need to say it every time. The stored gap is also a
- * magnitude and not a direction - it cannot say which fleet was ahead - so there was never a fleet
- * to name here anyway.
+ * The percentile and the two gaps, under a single line naming what the percentile is a rank against:
+ * a bare ordinal reads as a score on this match rather than a place among every board ever dealt.
+ * Not the size of that field, though. One more line sits under the bars saying what a gap IS,
+ * which direction is good, and - once the record carries it - which fleet the gap was in favour of,
+ * because two durations with no unit named read as match times. It once
+ * carried paragraphs explaining what a square's cost is, how the ranks are matched up, and what the
+ * shuffle bought, and read like a lecture nobody asked for. A caster can say any of that on air in
+ * a sentence; the recap does not need to say it every time.
+ *
+ * -- Naming the fleet that was ahead ---------------------------------------------------------------
+ *
+ * The gap is a spread, so for a long time this panel could not say whose edge it was: the number
+ * measured how wide, never which side. The balancer knew - it finds the worst rank and takes the
+ * difference between the cheapest and dearest ship there - and dropped the answer a line later.
+ * It records `aheadTeam` now, and the sweep writes it onto older records that have a gap and no
+ * side. Anything older still than THAT falls back to the unnamed sentence rather than guessing, and
+ * `topCost` remains no help: its order comes from a fleet query, not from the team numbers.
  */
 export function BalanceReadout({
   balance,
@@ -66,6 +78,16 @@ export function BalanceReadout({
   // BECAUSE the balancer ran, so an absent flag means it ran.
   const unbalanced = balance.hadPerm === false;
 
+  /**
+   * The fleet the gap was in favour of, when the record knows.
+   *
+   * Three states, and they are not the same: a number is a named side, null is a board measured
+   * dead even, and absent is a record written before any of this was kept. Only the first names a
+   * fleet - the other two fall back to the sentence that describes the gap without taking a side,
+   * because "nobody was ahead" and "nobody wrote down who was ahead" both come out as no name.
+   */
+  const ahead = typeof balance.aheadTeam === "number" ? balance.aheadTeam : null;
+
   // Both bars scale against the wider of the two, so the shorter one reads as a fraction of the
   // longer at a glance. Against a fixed ceiling every ordinary board would be two short stubs.
   const scale = Math.max(balance.dealt, balance.played, 1);
@@ -80,9 +102,14 @@ export function BalanceReadout({
       </div>
 
       {fairness ? (
-        <span style={{ fontSize: "1.7rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>
-          {ordinal(fairness.percentile)} percentile
-        </span>
+        <div className="stack" style={{ gap: "0.1rem" }}>
+          <span style={{ fontSize: "1.7rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>
+            {ordinal(fairness.percentile)} percentile
+          </span>
+          <span className="muted" style={{ fontSize: "0.72rem" }}>
+            in terms of fairness, compared to every match played
+          </span>
+        </div>
       ) : (
         <span className="muted" style={{ fontSize: "0.72rem" }}>
           {gaps === null ? "Ranking this board..." : "Nothing to rank this against yet."}
@@ -97,6 +124,17 @@ export function BalanceReadout({
           scale={scale}
           tone={band.color}
         />
+        <span className="muted" style={{ fontSize: "0.7rem", marginTop: "0.1rem" }}>
+          {ahead === null ? (
+            "The head start the luckiest fleet held. Lower is fairer."
+          ) : (
+            <>
+              The head start{" "}
+              <strong style={{ color: teamHex(ahead) }}>{teamName(ahead)}</strong> held. Lower is
+              fairer.
+            </>
+          )}
+        </span>
       </div>
     </div>
   );
