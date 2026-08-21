@@ -318,10 +318,9 @@ export function PlacementPhase({
           <div className="panel stack" style={{ gap: "0.4rem" }}>
             <h3 style={{ margin: 0 }}>Standing by</h3>
             <span className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.4 }}>
-              <strong>{captain?.nickname ?? "Your captain"}</strong> is laying out the fleet. The
-              first crewmate to pick a fleet captains it, unless they handed command on in the
-              lobby. Every hull appears here as they put it down, and nothing is settled until they
-              confirm, so speak up while it can still move.
+              <strong>{captain?.nickname ?? "Your captain"}</strong> is laying out the fleet. Every
+              hull appears here as they put it down, and nothing is settled until they confirm, so
+              speak up while it can still move.
             </span>
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {myFleet.placement_confirmed

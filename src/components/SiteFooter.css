@@ -1,0 +1,186 @@
+/**
+ * The footer's three ways out of the site, as buttons rather than as a paragraph with links in it.
+ *
+ * These were three sentences of prose, and prose is the wrong shape for them: nobody reads a footer,
+ * they scan it for a thing to click, and a link buried mid-sentence is the hardest possible version
+ * of that. So each one is now a chip with a picture on it - the picture is what gets found, and the
+ * label is what confirms it once found.
+ *
+ * Deliberately the quiet panel treatment rather than three brand colours competing at the bottom of
+ * the page. This sits under the actual content on every menu screen, and a footer that outshouts the
+ * thing above it is a footer in the wrong place. The colour arrives on hover instead, per chip.
+ */
+.site-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--panel-border);
+  text-align: center;
+}
+
+/* Wraps rather than scrolls or squashes: on a phone these stack into a narrow column, which is a
+   perfectly good footer, whereas three chips crushed to fit would lose their labels. */
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.foot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.35rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel-raised);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.foot-btn:hover,
+.foot-btn:focus-visible {
+  color: var(--text);
+  background: #1b3e59;
+  border-color: #2c5c78;
+}
+
+/* Each chip's own colour, saved for the hover. Three tinted borders sitting there at rest would read
+   as three warnings; arriving on hover they read as the thing you're about to click. */
+.foot-btn-bug:hover,
+.foot-btn-bug:focus-visible {
+  border-color: var(--danger);
+}
+
+.foot-btn-hello:hover,
+.foot-btn-hello:focus-visible {
+  border-color: var(--accent);
+}
+
+/* Discord's own blurple, so the chip is recognisable as a Discord link before the label is read. */
+.foot-btn-discord:hover,
+.foot-btn-discord:focus-visible {
+  background: #5865f2;
+  border-color: #5865f2;
+  color: #fff;
+}
+
+.foot-icon {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.foot-icon img,
+.foot-icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Patches is a board marker, and board markers are drawn to be read against blue water - see the
+   same trick in .deep-find-icon, which exists for exactly this reason. Off the grid he needs
+   something to be a square for him or the pale dome sits on a dark panel as a smudge. */
+.foot-icon-water {
+  background: var(--miss-fill);
+}
+
+/* He arrives already waving rather than playing his entrance every time a menu screen mounts - the
+   footer is on six pages and a footer that animates on every navigation is a tic. The wave is held
+   at the top of its arc at rest, and only actually moves while the chip is under the cursor. */
+.foot-icon-water .patches-mark,
+.foot-icon-water .patches-body {
+  animation: none;
+}
+
+.foot-icon-water .patches-wave {
+  animation: none;
+  transform: rotate(-7deg);
+}
+
+.foot-btn-hello:hover .patches-wave,
+.foot-btn-hello:focus-visible .patches-wave {
+  animation: patches-wave 1.1s ease-in-out infinite;
+}
+
+/* The bug, at rest and then caught out. Legs and antennae only: the body staying put while the
+   limbs scrabble is what makes it read as alive rather than as a logo being scaled. */
+.foot-bug-legs {
+  transform-box: view-box;
+  transform-origin: 50% 58%;
+}
+
+.foot-btn-bug:hover .foot-bug-legs,
+.foot-btn-bug:focus-visible .foot-bug-legs {
+  animation: foot-bug-scuttle 0.35s ease-in-out infinite;
+}
+
+@keyframes foot-bug-scuttle {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+/* Warm shell against the cold panel it sits on, so the chip has a spot of colour at rest without
+   the chip itself being coloured. Strokes are the same near-black the board markers use. */
+.foot-bug-shell {
+  fill: #c25a3f;
+  stroke: #2a1610;
+  stroke-width: 4;
+}
+
+.foot-bug-head {
+  fill: #46403a;
+  stroke: #2a1610;
+  stroke-width: 4;
+}
+
+.foot-bug-limb {
+  fill: none;
+  stroke: #2a1610;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.foot-bug-seam {
+  fill: none;
+  stroke: #2a1610;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.foot-bug-spot {
+  fill: #2a1610;
+}
+
+.foot-bug-eye {
+  fill: #e3c7a4;
+}
+
+.foot-fine {
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+/* Nothing here is load-bearing - every chip says what it is in words - so anyone who has asked for
+   less motion gets all three sitting perfectly still. */
+@media (prefers-reduced-motion: reduce) {
+  .foot-btn-hello:hover .patches-wave,
+  .foot-btn-hello:focus-visible .patches-wave,
+  .foot-btn-bug:hover .foot-bug-legs,
+  .foot-btn-bug:focus-visible .foot-bug-legs {
+    animation: none;
+  }
+}

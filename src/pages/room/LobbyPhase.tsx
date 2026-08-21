@@ -4,7 +4,6 @@ import { retargetBossSet, clampBoardSize } from "../../lib/challenges";
 import { fleetFor, presetNameOf, DEFAULT_FLEET_PRESET } from "../../types/battleship";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
-import { CommunityLinks } from "../../components/CommunityLinks";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { MatchSettings } from "../../components/MatchSettings";
 import { TeamPicker } from "../../components/TeamPicker";
@@ -423,9 +422,6 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} inMatch={false} label="Leave room" />
 
-      {/* Bottom of the lobby only. Players idle here waiting for the room to fill, which is the
-          one point in a session where an off-site link is welcome rather than a distraction. */}
-      <CommunityLinks />
       <SiteFooter />
     </div>
   );

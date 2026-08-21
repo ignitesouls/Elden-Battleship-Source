@@ -45,9 +45,9 @@ export function CaptainCards({ reports, profiles, setId }: Props) {
       <div className="panel stack" style={{ gap: "0.2rem" }}>
         <h3 style={{ margin: 0 }}>Captains</h3>
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          {reports.length} on record, {rated} with enough matches to be measured against the field.
+          {reports.length} on record, {rated} with enough matches to rank.
           {rated < MIN_FIELD_SIZE &&
-            ` Traits and ranks need ${MIN_MATCHES_FOR_TRAITS} matches from a captain, and ${MIN_FIELD_SIZE} captains at that mark to measure against. Until then these are plain totals.`}
+            ` Ranking needs ${MIN_MATCHES_FOR_TRAITS} matches each, from ${MIN_FIELD_SIZE} captains. These are plain totals until then.`}
         </span>
       </div>
 

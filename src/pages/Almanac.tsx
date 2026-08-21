@@ -282,8 +282,7 @@ export function Almanac() {
               <div className="panel stack" style={{ gap: "0.25rem" }}>
                 <h3 style={{ margin: 0 }}>Quickest squares on record</h3>
                 <span className="muted" style={{ fontSize: "0.7rem" }}>
-                  How long the fight took, timed from that captain's previous square, hit or miss.
-                  Opening squares count towards first blood instead.
+                  Timed from the captain's previous square. Misses count.
                 </span>
                 {records.map((r, i) => (
                   <div
@@ -347,8 +346,7 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatch[]; capped?: 
       <span className="muted" style={{ fontSize: "0.7rem" }}>
         {capped ? "The newest " : ""}
         {matches.length} finished {matches.length === 1 ? "match" : "matches"}
-        {capped ? ` of the last ${ARCHIVE_LIST_LIMIT} played` : ""}. Open one for its full recap, then scrub
-        the match back shot by shot.
+        {capped ? ` of the last ${ARCHIVE_LIST_LIMIT} played` : ""}. Open one for its recap and replay.
       </span>
       {shown.map((m) => {
         const when = new Date(m.finished_at);
@@ -645,8 +643,7 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
         </span>
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        Every square this board has ever dealt, including the ones nobody has fired at. Times are
-        median seconds after firing opens, hit or miss.
+        Every square the board deals, shot at or not. Times are medians from when firing opens.
       </span>
       <div style={{ overflowX: "auto", maxHeight: "30rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
@@ -810,8 +807,7 @@ function PaceTable({
         </span>
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        How long a captain takes over one square. Under the fire-on-kill rule, that gap is one
-        square's work from start to finish.
+        Time from one square falling to the next.
       </span>
       <div style={{ overflowX: "auto", maxHeight: "26rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>

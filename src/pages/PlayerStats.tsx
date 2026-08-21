@@ -197,7 +197,7 @@ export function PlayerStats() {
         <div className="panel stack" style={{ gap: "0.25rem" }}>
           <h3 style={{ margin: 0 }}>Personal bests</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Quickest squares this captain has taken, each timed from their previous one, hit or miss.
+            Each timed from their previous square. Misses count.
           </span>
           {bestKills.map((k, i) => (
             <div
@@ -268,7 +268,8 @@ export function PlayerStats() {
                 {nemesis.nickname}
               </Link>
               <span className="muted" style={{ fontSize: "0.78rem" }}>
-                Beaten you {nemesis.losses} of {nemesis.played} - you win {Math.round(nemesis.winRate * 100)}%
+                You've lost {nemesis.losses} of {nemesis.played} with them in the game, with you or against you - you win{" "}
+                {Math.round(nemesis.winRate * 100)}%
               </span>
             </div>
           )}

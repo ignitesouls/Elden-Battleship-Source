@@ -5,7 +5,6 @@ import { serverNow } from "../lib/serverTime";
 import { getLastNickname, storeLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
-import { CommunityLinks } from "../components/CommunityLinks";
 import { SiteFooter } from "../components/SiteFooter";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
@@ -273,9 +272,6 @@ export function Home() {
         </div>
       )}
 
-      {/* Last thing on the page - below the recent-battles list so a growing match history
-          never pushes the create/join controls down. */}
-      <CommunityLinks />
       <SiteFooter />
     </div>
   );
