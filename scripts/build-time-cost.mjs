@@ -1,7 +1,12 @@
 /**
  * Regenerates src/data/bossTimeCost.json - how many minutes of a match each boss square costs.
  *
- *   node scripts/build-time-cost.mjs
+ *   node scripts/build-time-cost.mjs             regenerate the table
+ *   node scripts/build-time-cost.mjs --dry-run   score the archive and report, write nothing
+ *
+ * The dry run exists because of the freeze below: the useful question between seasons is "has enough
+ * post-Dionysus data arrived to change the prices yet", and that should be answerable without
+ * actually restating the cost model in the middle of a season to find out.
  *
  * Replaces bossReachability.json as the balancer's cost model. Same provenance rules: read out of
  * the archive, committed, and regenerated deliberately between seasons rather than computed live.
@@ -41,11 +46,31 @@
  * - is indistinguishable here from one skipped because it was far. Worth knowing, though it appears
  * not to matter much in practice: no square in the archive is quick when it IS done and also
  * frequently skipped, which is the signature that behaviour would leave.
+ *
+ * -- Why recent matches count for more ------------------------------------------------------------
+ *
+ * Dionysus shipped alongside the changes that made boards faster, and a square's cost is measured
+ * BEHAVIOUR rather than a property of the boss - so a match played before it is evidence about a game
+ * that no longer exists. Throwing that evidence out is not an option either: the whole archive
+ * predates the cutoff, so a filter would leave nothing to price 206 squares with.
+ *
+ * So the estimator is weighted rather than filtered. Every observation carries a weight instead of
+ * counting as one head, and old ones are discounted - per square, by how much new evidence THAT
+ * square has of its own. A square that has come up on thirty post-Dionysus boards barely listens to
+ * the old archive; one that has come up on two still leans on it, because two boards is not a
+ * measurement. See RECENT_TARGET.
+ *
+ * The useful property of weighting is that uniform weights change nothing: with no post-cutoff
+ * matches yet, every observation is discounted by the same factor, the ratios inside the estimator
+ * are untouched, and this writes the table it would have written anyway. The bias switches itself on
+ * as the new data arrives, not on the day the constant was added.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 const OUT = new URL("../src/data/bossTimeCost.json", import.meta.url);
+
+const DRY_RUN = process.argv.includes("--dry-run");
 
 /**
  * How far the estimator is allowed to look, and therefore what a square nobody finishes costs.
@@ -58,6 +83,52 @@ const HORIZON = 90 * 60;
 
 /** Squares seen on fewer boards than this are too thin to price and fall back to the board mean. */
 const MIN_BOARDS = 8;
+
+/**
+ * When Dionysus went out, and with it the changes that made boards faster.
+ *
+ * 10:00 on 21 Aug 2026, Taipei - written in UTC because that is what `finished_at` is stored in, and
+ * a local-time string here would quietly move the line the next time it was read from anywhere else.
+ * Matches finished at or after this count in full; everything before is discounted by the fade below.
+ */
+const RECENT_FROM = Date.parse("2026-08-21T02:00:00Z");
+
+/**
+ * How many post-cutoff boards a square needs before an old observation is worth half a new one.
+ *
+ * The weight on a pre-cutoff observation is RECENT_TARGET / (RECENT_TARGET + n), where n is how many
+ * post-cutoff boards THIS square has appeared on:
+ *
+ *     n = 0  ->  1.00     n = 12  ->  0.50     n = 40  ->  0.23     n >= 68  ->  0.15
+ *
+ * Twelve because that is about where a square's own new evidence stops being an anecdote - a little
+ * above MIN_BOARDS, which is already the line this script draws between "measured" and "too thin to
+ * price". Per square rather than per archive because squares do not arrive at the same rate: on a
+ * 10x10 any given square lands on about half of boards, and the rare ones would sit on three
+ * observations for weeks if one global counter decided when to stop listening to the old data.
+ */
+const RECENT_TARGET = 12;
+
+/**
+ * The least an old observation can ever be worth.
+ *
+ * Not zero. A square that has gone quiet - unlucky, or simply not dealt lately - would otherwise have
+ * its entire history erased the moment a dozen new boards turned up somewhere else, and the floor
+ * keeps the shape of the old curve visible underneath. It also means this can never quietly become
+ * "new data only" without somebody deciding that on purpose.
+ */
+const OLD_FLOOR = 0.15;
+
+/** What one pre-cutoff observation is worth, for a square with `nRecent` post-cutoff boards. */
+function oldWeight(nRecent) {
+  return Math.max(OLD_FLOOR, RECENT_TARGET / (RECENT_TARGET + nRecent));
+}
+
+/** One square's observations with the era fade applied. A post-cutoff board always weighs 1. */
+function weigh(obs) {
+  const w = oldWeight(obs.filter((o) => o.recent).length);
+  return obs.map((o) => ({ ...o, w: o.recent ? 1 : w }));
+}
 
 function loadEnv(path) {
   const env = {};
@@ -114,15 +185,21 @@ function bossBoard(roomId, setId, cells, seed, perm) {
 }
 
 /**
- * Kaplan-Meier restricted mean over one square's observations.
+ * Weighted Kaplan-Meier restricted mean over one square's observations.
  *
  * Each observation is either a completion at time t, or a censoring at time t - the match ended with
  * the square still undone. The survival curve steps down only at completions, and censored entries
  * leave the risk set without ever counting against the square, which is the whole point.
+ *
+ * Weighted only in the sense that the risk set is a sum of `w` rather than a count of rows: an
+ * observation worth 0.15 takes 0.15 out of the risk set and 0.15 of a step out of the survival curve.
+ * Weights of 1 therefore reproduce the unweighted estimator exactly, and - the reason this is safe to
+ * switch on over an archive that is entirely pre-cutoff - so does any set of weights that are all
+ * equal, since nothing here reads a weight except as a ratio against the others.
  */
 function restrictedMean(obs) {
   const pts = [...obs].sort((a, b) => a.t - b.t);
-  let atRisk = pts.length;
+  let atRisk = pts.reduce((sum, p) => sum + p.w, 0);
   let survival = 1;
   let prev = 0;
   let area = 0;
@@ -131,8 +208,8 @@ function restrictedMean(obs) {
     let done = 0;
     let censored = 0;
     while (i < pts.length && pts[i].t === t) {
-      if (pts[i].done) done++;
-      else censored++;
+      if (pts[i].done) done += pts[i].w;
+      else censored += pts[i].w;
       i++;
     }
     if (t > HORIZON) break;
@@ -140,7 +217,8 @@ function restrictedMean(obs) {
     prev = t;
     if (done > 0 && atRisk > 0) survival *= 1 - done / atRisk;
     atRisk -= done + censored;
-    if (atRisk <= 0) break;
+    // Weights are fractional, so the risk set empties at 1e-16 where counting heads landed on 0.
+    if (atRisk <= 1e-9) break;
   }
   return area + survival * Math.max(0, HORIZON - prev);
 }
@@ -166,8 +244,11 @@ for (const r of rows) {
 
 const observations = new Map();
 const durations = [];
+const recentDurations = [];
 let used = 0;
+let recentUsed = 0;
 const rejected = [];
+let undated = 0;
 
 for (const [key, evs] of byMatch) {
   const first = evs.find((e) => e.room_id) ?? evs[0];
@@ -199,6 +280,17 @@ for (const [key, evs] of byMatch) {
   durations.push(end);
   used++;
 
+  // Which side of the cutoff this match sits on. A match with no finished_at is treated as old:
+  // every dated row in the archive predates the cutoff, so an undated one is far likelier to be an
+  // early record than a new one, and guessing "new" would hand it full weight on no evidence.
+  const finishedAt = evs.find((e) => e.finished_at)?.finished_at ?? null;
+  if (!finishedAt) undated++;
+  const recent = finishedAt != null && Date.parse(finishedAt) >= RECENT_FROM;
+  if (recent) {
+    recentUsed++;
+    recentDurations.push(end);
+  }
+
   // Earliest shot at each square. A square fired at by two teams was still first done once.
   const doneAt = new Map();
   for (const e of fired) {
@@ -214,15 +306,24 @@ for (const [key, evs] of byMatch) {
     if (!observations.has(tip)) observations.set(tip, []);
     observations
       .get(tip)
-      .push(doneAt.has(tip) ? { t: doneAt.get(tip), done: true } : { t: end, done: false });
+      .push(
+        doneAt.has(tip)
+          ? { t: doneAt.get(tip), done: true, recent }
+          : { t: end, done: false, recent }
+      );
   }
 }
 
 if (used === 0) throw new Error("no archived boss matches could be reconstructed - refusing to write");
 
 // -- the table -------------------------------------------------------------------------------
+// MIN_BOARDS still counts raw boards, not weight. It asks whether a square has been SEEN enough to
+// say anything about it, which discounting old evidence does not change - and thresholding on weight
+// instead would drop squares onto the fallback prior for no reason other than that the archive aged.
 const measured = [];
-for (const [, obs] of observations) if (obs.length >= MIN_BOARDS) measured.push(restrictedMean(obs));
+for (const [, obs] of observations) {
+  if (obs.length >= MIN_BOARDS) measured.push(restrictedMean(weigh(obs)));
+}
 const prior = measured.reduce((s, x) => s + x, 0) / measured.length;
 
 const table = {};
@@ -234,8 +335,34 @@ for (const square of BOSS_SETS[DEFAULT_SET]) {
     table[square.tooltip] = Math.round(prior);
     continue;
   }
-  table[square.tooltip] = Math.round(restrictedMean(obs));
+  table[square.tooltip] = Math.round(restrictedMean(weigh(obs)));
 }
+
+// -- how far along the changeover is -------------------------------------------------------------
+//
+// The fade is per square, so "is there enough new data yet" is not one number - it is 206 of them.
+// This is the answer for the squares that have crossed MIN_BOARDS on post-Dionysus boards alone: how
+// far today's blended price sits from the price their new evidence would give on its own. While the
+// two agree there is nothing to decide; when they part company and the gap stops moving between
+// runs, the old archive is holding the table back and RECENT_TARGET or OLD_FLOOR should come down.
+const changeover = [];
+let mostFresh = 0;
+for (const square of BOSS_SETS[DEFAULT_SET]) {
+  const obs = observations.get(square.tooltip) ?? [];
+  const fresh = obs.filter((o) => o.recent);
+  mostFresh = Math.max(mostFresh, fresh.length);
+  if (fresh.length < MIN_BOARDS) continue;
+  const newOnly = restrictedMean(fresh.map((o) => ({ ...o, w: 1 })));
+  changeover.push({
+    name: square.name,
+    boards: fresh.length,
+    weight: oldWeight(fresh.length),
+    blended: table[square.tooltip],
+    newOnly,
+    drift: newOnly - table[square.tooltip],
+  });
+}
+changeover.sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
 
 const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -247,19 +374,57 @@ const output = {
     "Kaplan-Meier restricted mean: matches that ended with the square undone are censored, not failures.",
     `Measured over ${used} archived matches (median length ${mmss(median(durations))}), capped at a ${HORIZON / 60}-minute horizon.`,
     `Squares seen on fewer than ${MIN_BOARDS} boards fall back to the board mean (${mmss(prior)}).`,
+    `Recency-weighted: ${recentUsed} of those matches were played since Dionysus (${new Date(RECENT_FROM).toISOString()}) and count in full;`,
+    `earlier ones are discounted per square to ${RECENT_TARGET}/(${RECENT_TARGET}+new boards), floored at ${OLD_FLOOR}.`,
     "Frozen on purpose: it is measured behaviour, so regenerate it BETWEEN seasons and never during one.",
   ],
   ...table,
 };
 
-writeFileSync(OUT, JSON.stringify(output, null, 2) + "\n");
+if (!DRY_RUN) writeFileSync(OUT, JSON.stringify(output, null, 2) + "\n");
 
 const sorted = Object.entries(table).sort((a, b) => b[1] - a[1]);
 const nameOf = (tip) => BOSS_SETS[DEFAULT_SET].find((c) => c.tooltip === tip)?.name ?? tip;
 console.log(`\n${used} matches used, ${rejected.length} rejected. Median match ${mmss(median(durations))}.`);
-console.log(`${Object.keys(table).length} squares priced, ${thin.length} on the ${mmss(prior)} fallback.\n`);
+console.log(`${Object.keys(table).length} squares priced, ${thin.length} on the ${mmss(prior)} fallback.`);
+
+const sinceDionysus = new Date(RECENT_FROM).toISOString().replace("T", " ").slice(0, 16);
+console.log(
+  `\nera: ${recentUsed} matches since Dionysus (${sinceDionysus}Z), ${used - recentUsed} before` +
+    (undated > 0 ? `, ${undated} undated and counted as before` : "")
+);
+if (recentUsed > 0) {
+  console.log(`     median match ${mmss(median(recentDurations))} since, ${mmss(median(durations))} across all.`);
+}
+if (changeover.length === 0) {
+  console.log(
+    `     no square has ${MIN_BOARDS} post-Dionysus boards yet - the best has ${mostFresh}, which puts the` +
+      ` fade at ${oldWeight(mostFresh).toFixed(2)} on old data at its lightest.`
+  );
+} else {
+  const drifts = changeover.map((c) => Math.abs(c.drift));
+  console.log(
+    `     ${changeover.length} squares now have >= ${MIN_BOARDS} post-Dionysus boards of their own;` +
+      ` old data weighs ${changeover[changeover.length - 1].weight.toFixed(2)}-${changeover[0].weight.toFixed(2)} on them.`
+  );
+  console.log(
+    `     new-data-only would move them by a median of ${mmss(median(drifts))}, at most ${mmss(Math.max(...drifts))}:`
+  );
+  for (const c of changeover.slice(0, 6)) {
+    const sign = c.drift >= 0 ? "+" : "-";
+    console.log(
+      `       ${mmss(c.blended).padStart(6)} -> ${mmss(c.newOnly).padStart(6)}  ${sign}${mmss(Math.abs(c.drift))}` +
+        `  ${c.name} (${c.boards} new boards)`
+    );
+  }
+}
+console.log("");
 console.log("most expensive:");
 for (const [tip, v] of sorted.slice(0, 6)) console.log(`  ${mmss(v).padStart(6)}  ${nameOf(tip)}`);
 console.log("cheapest:");
 for (const [tip, v] of sorted.slice(-6)) console.log(`  ${mmss(v).padStart(6)}  ${nameOf(tip)}`);
-console.log(`\nwrote ${OUT.pathname.split("/").pop()}`);
+console.log(
+  DRY_RUN
+    ? "dry run - nothing written."
+    : `wrote ${OUT.pathname.split("/").pop()}`
+);

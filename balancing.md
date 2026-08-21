@@ -201,7 +201,39 @@ between them, so every match in a tournament is dealt against the same standard.
 
 Current table: 206 squares over 74 archived matches (median length 81:45), Kaplan-Meier restricted
 mean capped at a 90-minute horizon, squares seen on fewer than 8 boards falling back to the board
-mean of 58:46. Regenerate with `node scripts/build-time-cost.mjs`.
+mean of 58:46. Regenerate with `node scripts/build-time-cost.mjs`, or run it with `--dry-run` to see
+what it *would* say without restating the table mid-season.
+
+### Matches since Dionysus count for more
+
+Dionysus went out at 10:00 on 21 Aug 2026 alongside the changes that made boards faster, and a cost
+is measured behaviour — so a match played before it describes a game that no longer exists.
+
+It cannot simply be discarded: the entire archive predates the cutoff, so a filter would leave nothing
+to price 206 squares with. Instead the estimator is **weighted**. A post-cutoff observation counts in
+full; an earlier one is discounted by how much new evidence *that square* has of its own:
+
+| Post-Dionysus boards for a square | What one older board is worth |
+|---|---|
+| 0 | 1.00 |
+| 12 | 0.50 |
+| 40 | 0.23 |
+| 68 or more | 0.15 (the floor) |
+
+Per square, because squares do not arrive at the same rate — on a 10×10 any one lands on about half
+of boards, and the rare ones would sit on three observations for weeks if one global counter decided
+when to stop listening to the old data. Floored rather than zeroed, so a square that goes quiet keeps
+its history instead of having it erased by a dozen new boards somewhere else.
+
+Uniform weights change nothing, which is what makes this safe to leave switched on: while no
+post-cutoff match exists, every observation is discounted equally and the table is exactly the one
+the unweighted estimator wrote. The bias arrives with the data rather than with the constant.
+
+Each run reports how far the changeover has got — how many squares have crossed 8 post-Dionysus
+boards, and how far their blended price sits from what their new evidence alone would say. While
+those agree there is nothing to decide. When they part company and the gap stops moving between runs,
+the old archive is holding the table back, and `RECENT_TARGET` or `OLD_FLOOR` in
+`scripts/build-time-cost.mjs` should come down.
 
 ### Renaming a square costs history
 
