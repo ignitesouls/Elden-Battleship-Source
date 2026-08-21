@@ -124,12 +124,11 @@ export function Support() {
         <div className="stack" style={{ gap: "0.25rem" }}>
           <strong style={{ fontSize: "1rem" }}>Report a bug</strong>
           <span className="muted" style={{ fontSize: "0.75rem", lineHeight: 1.45 }}>
-            Something broken, something wrong, or something you can't work out. This goes straight to
-            me.
+            Bugs, and anything you can't work out. This goes straight to me.
           </span>
         </div>
 
-        <Field label="What kind of thing">
+        <Field label="Category">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as CategoryId)}
@@ -145,7 +144,7 @@ export function Support() {
 
         <Field
           label="What happened"
-          hint="What you did, what you expected, what you got instead. Room code helps if you have it."
+          hint="What you did, and what happened instead. Include the room code if you have it."
         >
           <textarea
             value={message}
@@ -156,7 +155,7 @@ export function Support() {
           />
         </Field>
 
-        <Field label="Your Discord" hint="Optional, and the only way I can reply. Username or ID.">
+        <Field label="Your Discord" hint="Optional, but it's the only way I can reply. Username or ID.">
           <input
             value={discord}
             onChange={(e) => setDiscord(e.target.value)}
@@ -167,7 +166,7 @@ export function Support() {
           />
         </Field>
 
-        <Field label="Screenshot" hint="Optional. Paste one anywhere on this page, drop it below, or pick a file.">
+        <Field label="Screenshot" hint="Optional. Paste one anywhere on this page, drop it below, or choose a file.">
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -250,8 +249,8 @@ export function Support() {
         )}
 
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-          Also sent: your build number, browser, screen size and the room you're in, if any. No email
-          address is asked for or stored.
+          Also sent: your build number, browser, screen size, and the room you're in if you're in one.
+          No email address is asked for or stored.
         </span>
       </div>
 
