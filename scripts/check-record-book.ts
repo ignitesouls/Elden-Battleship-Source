@@ -28,9 +28,10 @@ registerHooks({
   },
 })
 
-const { buildRecordBook, archivedShots, MIN_SHOTS_FOR_ACCURACY, MIN_STREAK, MIN_GAP_SECONDS } = await import(
+const { buildRecordBook, archivedShots, MIN_SHOTS_FOR_ACCURACY, MIN_STREAK } = await import(
   '../src/lib/recordBook.ts'
 )
+const { HONOR_ORDER } = await import('../src/lib/matchReport.ts')
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -342,90 +343,57 @@ const holderOf = (book: ReturnType<typeof buildRecordBook>, id: string) => find(
   check('a match with only misses sets no timing record', !find(book, 'first-blood')?.chasers.some((c) => c.nickname === 'Cy'))
 }
 
-// -- 8. the gap record: two squares back to back --------------------------
+// -- 8. the rarest honor --------------------------------------------------
 {
-  // Ada takes four in m1 (gaps of 20, 20 and 100); Bo takes two in m2 eleven seconds apart.
-  const events = [
-    ...ev('m1', 'Ada', 1, 10, 'miss'),
-    ...ev('m1', 'Ada', 2, 30, 'hit'),
-    ...ev('m1', 'Ada', 3, 50, 'hit'),
-    ...ev('m1', 'Ada', 4, 150, 'sunk'),
-    ...ev('m2', 'Bo', 5, 5, 'miss'),
-    ...ev('m2', 'Bo', 6, 16, 'miss'),
-  ]
-  const rows = [part({ nickname: 'Ada', match_key: 'm1' }), part({ nickname: 'Bo', match_key: 'm2' })]
-  const book = buildRecordBook(rows, events)
+  // Positions rather than titles, so the cases survive the list being reordered - what is under test
+  // is that a title EARLIER in the walk order beats a later one, which is what makes the list an
+  // ordering by difficulty at all.
+  const rare = HONOR_ORDER[2]
+  const common = HONOR_ORDER[HONOR_ORDER.length - 1]
 
-  check('the quickest gap wins, not the longest', holderOf(book, 'gap')?.nickname === 'Bo', holderOf(book, 'gap')?.display)
-  check('and it reads as a clock', holderOf(book, 'gap')?.display === '0:11', holderOf(book, 'gap')?.display)
+  const rows = [
+    part({ nickname: 'Ada', match_key: 'm1', awards: [common] }),
+    part({ nickname: 'Bo', match_key: 'm2', awards: [rare] }),
+    part({ nickname: 'Cy', match_key: 'm3', awards: [] }),
+  ]
+  const book = buildRecordBook(rows)
+
+  check('the rarer title takes the record', holderOf(book, 'honor')?.nickname === 'Bo', holderOf(book, 'honor')?.display)
+  check('and it reads as the title itself', holderOf(book, 'honor')?.display === rare, holderOf(book, 'honor')?.display)
   check(
-    "a player's own best gap is the one that chases",
-    find(book, 'gap')?.chasers[0]?.nickname === 'Ada' && find(book, 'gap')?.chasers[0]?.value === 20,
-    find(book, 'gap')?.chasers[0]?.display
+    'the detail places it in the list',
+    holderOf(book, 'honor')?.detail === `#3 of ${HONOR_ORDER.length}`,
+    holderOf(book, 'honor')?.detail
   )
-  check('one gap per player per match, not one per pair', (find(book, 'gap')?.chasers.length ?? 0) === 1)
+  check('a player who was handed nothing is not in it', !find(book, 'honor')?.chasers.some((c) => c.nickname === 'Cy'))
+  check('and the commoner title is what chases', find(book, 'honor')?.chasers[0]?.nickname === 'Ada')
 
-  // Misses count throughout: the clock is timing the fight, not what was hiding under the square.
-  check('a gap between two misses still counts', holderOf(book, 'gap')?.nickname === 'Bo')
-
-  // A lone shot has nothing to be measured from, and a gap never spans two matches or two players.
-  const lone = buildRecordBook([part({ nickname: 'Ada', match_key: 'm1' })], [...ev('m1', 'Ada', 1, 30, 'hit')])
-  check('one shot sets no gap', holderOf(lone, 'gap') === null)
-
-  const split = [...ev('m1', 'Ada', 1, 100, 'hit'), ...ev('m2', 'Ada', 2, 130, 'hit')]
-  const across = buildRecordBook(
-    [part({ nickname: 'Ada', match_key: 'm1' }), part({ nickname: 'Ada', match_key: 'm2' })],
-    split
-  )
-  check('a gap never spans two matches', holderOf(across, 'gap') === null)
-
-  const shared = [...ev('m1', 'Ada', 1, 100, 'hit'), ...ev('m1', 'Bo', 2, 130, 'hit')]
-  const twoPlayers = buildRecordBook(
-    [part({ nickname: 'Ada', match_key: 'm1' }), part({ nickname: 'Bo', match_key: 'm1' })],
-    shared
-  )
-  check("a crewmate's shot doesn't close somebody else's gap", holderOf(twoPlayers, 'gap') === null)
-
-  // Two squares can finish at the same moment - a duo boss fills both at once, and a banked kill
-  // fired next to the following one looks identical. Neither is a fast pair, and either would hold
-  // this record forever, so the pair is skipped and the player's next-best gap stands instead.
-  const duo = [
-    ...ev('m1', 'Ada', 1, 60, 'hit'),
-    ...ev('m1', 'Ada', 2, 61, 'hit'),
-    ...ev('m1', 'Ada', 3, 90, 'hit'),
-  ]
-  const duoBook = buildRecordBook([part({ nickname: 'Ada', match_key: 'm1' })], duo)
-  check('one fight filling two squares is not a gap', holderOf(duoBook, 'gap')?.value === 29, holderOf(duoBook, 'gap')?.display)
-  check(`and the floor is ${MIN_GAP_SECONDS}s, which is inside the empty band in the archive`, MIN_GAP_SECONDS === 10)
-
-  // A player whose only pair is too close sets no record at all rather than a suspicious one.
-  const onlyDuo = buildRecordBook(
-    [part({ nickname: 'Ada', match_key: 'm1' })],
-    [...ev('m1', 'Ada', 1, 60, 'hit'), ...ev('m1', 'Ada', 2, 61, 'hit')]
-  )
-  check('and a player with nothing else sets no gap', holderOf(onlyDuo, 'gap') === null)
-
-  // The line names both squares, which is the only place in the book that can.
+  // Real titles, not positions: the join is by the string the archive stored, so a renamed or retired
+  // honor has to fall out rather than land somewhere in the middle of the order.
   const named = [
-    ...ev('m1', 'Ada', 1, 10, 'hit', 1, 'Margit'),
-    ...ev('m1', 'Ada', 2, 25, 'hit', 1, 'Godrick'),
+    part({ nickname: 'Dee', match_key: 'm4', awards: ['Powder Monkey'] }),
+    part({ nickname: 'Eli', match_key: 'm5', awards: ['Admiral of the Fleet'] }),
   ]
-  const namedBook = buildRecordBook([part({ nickname: 'Ada', match_key: 'm1' })], named)
   check(
-    'and it says which two they were',
-    holderOf(namedBook, 'gap')?.detail === 'Margit then Godrick',
-    holderOf(namedBook, 'gap')?.detail
+    'Admiral of the Fleet outranks Powder Monkey',
+    holderOf(buildRecordBook(named), 'honor')?.nickname === 'Eli',
+    holderOf(buildRecordBook(named), 'honor')?.display
   )
-  check('an unnamed pair simply says nothing', holderOf(book, 'gap')?.detail === undefined)
+  check(
+    'a retired title sets no record',
+    holderOf(buildRecordBook([part({ nickname: 'Ghost', match_key: 'm6', awards: ['Flying Dutchman'] })]), 'honor') === null
+  )
 
-  // Wording follows the board: the boss set kills bosses, every other set takes squares.
-  check('the boss board calls them bosses', find(buildRecordBook(rows, events, 'bosses'), 'gap')?.label === 'Quickest two bosses')
-  check(
-    'an objectives board calls them squares',
-    find(buildRecordBook(rows, events, 'objectives'), 'gap')?.label === 'Quickest two squares',
-    find(buildRecordBook(rows, events, 'objectives'), 'gap')?.label
-  )
-  check('and a match from before sets existed is a boss board', find(book, 'gap')?.label === 'Quickest two bosses')
+  // One honor per player is a rule about handing them out, not a promise about a row read back later.
+  const both = [part({ nickname: 'Fay', match_key: 'm7', awards: [common, rare] })]
+  check('a row carrying two titles is judged on the rarer', holderOf(buildRecordBook(both), 'honor')?.display === rare)
+
+  // Ties go to whoever got there first, exactly as they do everywhere else in the book.
+  const tied = [
+    part({ nickname: 'Gus', match_key: 'm8', awards: [rare], finished_at: '2026-08-02T12:00:00.000Z' }),
+    part({ nickname: 'Hal', match_key: 'm9', awards: [rare], finished_at: '2026-08-01T12:00:00.000Z' }),
+  ]
+  check('the same title twice belongs to the earlier night', holderOf(buildRecordBook(tied), 'honor')?.nickname === 'Hal')
 }
 
 // -- 9. events from matches outside the shown set are ignored -------------

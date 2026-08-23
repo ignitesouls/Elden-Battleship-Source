@@ -20,7 +20,7 @@ import { FIRE_HOLD_DEFAULT, FIRE_HOLD_KEY, FIRE_HOLD_VALUES } from "../../lib/fi
 import { HostTakeover } from "../../components/HostTakeover";
 import { useMatchLayout } from "../../hooks/useMatchLayout";
 import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout";
-import { challengesForRoom, rowSquareSet, type Challenge } from "../../lib/challenges";
+import { challengesForRoom, rowSquareSet, igonAnchor, type Challenge } from "../../lib/challenges";
 import { squaresRevealed } from "../../lib/overlayReveal";
 import { groupIntoShots } from "../../lib/attackFeed";
 import { deepWater, deepMarks, bottleNote, type DeepHide, type DeepMark } from "../../lib/deepWater";
@@ -196,7 +196,7 @@ export function BattlePhase({
    * and he is on every board in the room at once.
    */
   const deep = useMemo(
-    () => deepWater(room, groupIntoShots(attacks, players), deepHides),
+    () => deepWater(room, groupIntoShots(attacks, players), deepHides, igonAnchor(room)),
     [room, attacks, players, deepHides]
   );
   /**
@@ -247,6 +247,9 @@ export function BattlePhase({
       // public log - so this has to pick OUR crew's, or the toast would name a rival's crewmate for
       // a jar they turned up. deepMarks drew us ours; this names the same one.
       ...deep.alexander.filter((jar) => jar.found.attackerTeam === myTeam).map((jar) => jar.found),
+      // Ours, for the same reason as the jar above: every crew that fired at his square has an entry
+      // on it, and the toast has to name the crewmate who actually took OUR finger.
+      ...deep.igon.filter((ig) => ig.found.attackerTeam === myTeam).map((ig) => ig.found),
       ...deep.patches,
     ].find((f) => f?.cellIndex === cell);
     const mine = found?.playerId === myPlayerId;
@@ -302,6 +305,23 @@ export function BattlePhase({
         freer?.playerId === myPlayerId
           ? "You shot Alexander loose. He is delighted, and says you are a Potfriend."
           : `${freer?.who} shot Alexander loose. He is delighted.`
+      );
+    } else if (kind === "igon") {
+      playSfx("igonFinger");
+      setToast(
+        mine
+          ? `Igon is on the rocks at ${where}. He gives you his furled finger - go and kill Bayle with it.`
+          : `${found?.who} found Igon at ${where} and was handed his furled finger.`
+      );
+    } else if (kind === "igonAvenged") {
+      playSfx("igonHappy");
+      // Credited to whoever fired at BAYLE, not to whoever met him - different people often enough,
+      // and the kill is the part worth naming. Our crew's Igon, for the same reason as the jar.
+      const avenger = deep.igon.find((ig) => ig.found.attackerTeam === myTeam)?.avenged;
+      setToast(
+        avenger?.playerId === myPlayerId
+          ? "Bayle is dead and you did it with Igon's finger. He shall be tormented no longer."
+          : `${avenger?.who} killed Bayle. Igon shall be tormented no longer.`
       );
     } else if (kind === "patches") {
       playSfx("tentacle");
@@ -778,6 +798,7 @@ export function BattlePhase({
                 room={room}
                 maxHeight="100%"
                 deepCells={deepCells}
+                igon={deep.igon}
               />
             </CanvasPanel>
             <CanvasPanel {...panelProps("roster")}>
@@ -864,6 +885,7 @@ export function BattlePhase({
                 room={room}
                 maxHeight="100%"
                 deepCells={deepCells}
+                igon={deep.igon}
               />
             </div>
 

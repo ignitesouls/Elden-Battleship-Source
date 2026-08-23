@@ -1,5 +1,5 @@
 import { buildMatchReport, formatReportText } from "./matchReport";
-import { challengesForRoom } from "./challenges";
+import { challengesForRoom, igonAnchor } from "./challenges";
 import { supabase } from "./supabase";
 import { bottleNote, type DeepHide } from "./deepWater";
 import { deepForArchive } from "./deepArchive";
@@ -34,7 +34,7 @@ export async function archiveMatch(
   _fleets: Fleet[],
   deepHides: DeepHide[]
 ): Promise<void> {
-  const report = buildMatchReport(room, players, attacks, deepHides);
+  const report = buildMatchReport(room, players, attacks, deepHides, igonAnchor(room));
   if (report.totalShots === 0) return; // nothing happened; not worth a row
 
   // Award titles keyed by nickname, which is how the server joins them back onto participants.

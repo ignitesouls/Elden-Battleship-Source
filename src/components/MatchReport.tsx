@@ -3,7 +3,7 @@ import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/Boar
 import { TheDeep, type DeepEntry } from "./TheDeep";
 import { sunkCellOrientations } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
-import { challengesForRoom } from "../lib/challenges";
+import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import { finalFinds, finalMarks, bottleNote, type DeepHide, type DeepMark } from "../lib/deepWater";
 import { buildMatchReport, formatReportText } from "../lib/matchReport";
 import { archiveMatch } from "../lib/archiveMatch";
@@ -38,7 +38,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
   const [archivedPlacements, setArchivedPlacements] = useState<Map<number, ShipPlacement[]> | null>(null);
 
   const report = useMemo(
-    () => buildMatchReport(room, players, attacks, deepHides),
+    () => buildMatchReport(room, players, attacks, deepHides, igonAnchor(room)),
     [room, players, attacks, deepHides]
   );
   const boardSize = room.board_size;

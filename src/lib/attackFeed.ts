@@ -1,5 +1,5 @@
 import { teamName } from "./teamColors";
-import { bottleNote, type DeepMark } from "./deepWater";
+import { bottleNote, type DeepMark, type IgonEncounter } from "./deepWater";
 import type { Attack, Player, Room } from "../types/battleship";
 
 export interface FeedShot {
@@ -58,6 +58,12 @@ const DEEP_TEXT: Record<DeepMark, { text: string; color: string }> = {
   bottle: { text: "A BOTTLE, WITH SOMETHING IN IT", color: "#f3e6c8" },
   jar: { text: "SOMETHING CERAMIC, AND STUCK", color: "#cdb9cd" },
   jarFree: { text: "ALEXANDER, LOOSE AT LAST", color: "#e2d3e0" },
+  // The furled finger is a summon sign, so handing one over is the whole of what he wants from you
+  // on the rocks: a rust red for a man who has been down there a long time, and the gold of the
+  // storm off the peak for the moment he gets up. He is the one find drawn for everybody (see
+  // deepMarks), so both of these lines appear in every crew's log rather than only the finder's.
+  igon: { text: "IGON GIVES YOU HIS FURLED FINGER", color: "#c98a63" },
+  igonAvenged: { text: "IGON SHALL BE TORMENTED NO LONGER", color: "#f0c95a" },
   // The quotes are the joke and they are load-bearing. He is not sorry.
   patches: { text: 'PATCHES - he is "sorry"', color: "#e3c7a4" },
 };
@@ -85,15 +91,43 @@ export interface ShotOutcome {
  *
  * @param room only for the note in the bottle, which is seeded off the room and the square and stored
  * nowhere (see deepWater.bottleNote). Omit it and the line still reads, just without the message.
+ *
+ * @param igon every crew's dealings with him, so the shot that killed Bayle can say what it did
+ * for the man one square over.
+ *
+ * The only line here that belongs to a SHOT rather than to a square, and it has to be: Igon is never
+ * on Bayle's square, and Bayle's square is an ordinary boss that may well have had a hull sitting on
+ * it. So this is the one thing the log can say that no marker can.
+ *
+ * It rides along as the note instead of replacing the result, because the result is load-bearing -
+ * telling a crew IGON where they were expecting HIT would cost them the most important word in the
+ * line. The note field already exists for the message in a bottle and already renders in quotes,
+ * which is exactly the punctuation a shouted line wants.
  */
 export function outcomeText(
   shot: FeedShot,
   deepCells?: ReadonlyMap<number, DeepMark>,
-  room?: Room | null
+  room?: Room | null,
+  igon?: readonly IgonEncounter[] | null
 ): ShotOutcome {
   const sunk = shot.rows.filter((r) => r.result === "sunk");
   const hits = shot.rows.filter((r) => r.result === "hit");
   const resolved = shot.rows.filter((r) => r.result !== "pending");
+
+  /**
+   * Matched on the timestamp as well as the square, because Bayle's square is fired at by every
+   * fleet that gets there and each of them kills their own dragon - so the line belongs to the one
+   * shot that was somebody's vengeance, not to every shot at that cell.
+   *
+   * Applied over the top of everything below, so on the vanishingly rare board where Bayle's own
+   * square is also holding a bottle, the dragon wins the line. Both happened; only one can be quoted.
+   */
+  const cry = igon?.some(
+    (e) => e.avenged && shot.cellIndex === e.avenged.cellIndex && shot.at === e.avenged.at
+  )
+    ? "Igon shall be tormented no longer!"
+    : undefined;
+  const withCry = (o: ShotOutcome): ShotOutcome => (cry ? { ...o, note: cry } : o);
 
   const deep = deepCells?.get(shot.cellIndex);
   // Guarded on the shot having missed everything: the square a tentacle was found on can be the same
@@ -101,19 +135,19 @@ export function outcomeText(
   if (deep && sunk.length === 0 && hits.length === 0) {
     // Until now the note lived only in a toast, which had gone by the time anybody finished reading
     // it. The log is the one place in a live match it can sit still.
-    if (deep === "bottle" && room) return { ...DEEP_TEXT[deep], note: bottleNote(room, shot.cellIndex) };
-    return DEEP_TEXT[deep];
+    if (deep === "bottle" && room) return withCry({ ...DEEP_TEXT[deep], note: bottleNote(room, shot.cellIndex) });
+    return withCry(DEEP_TEXT[deep]);
   }
 
   if (sunk.length > 0) {
     const names = [...new Set(sunk.map((s) => s.sunk_ship_name).filter(Boolean))].join(", ");
-    return { text: `SANK ${names}`, color: "var(--sunk)" };
+    return withCry({ text: `SANK ${names}`, color: "var(--sunk)" });
   }
   if (hits.length > 0) {
-    return { text: hits.length > 1 ? `HIT x${hits.length}` : "HIT", color: "var(--hit)" };
+    return withCry({ text: hits.length > 1 ? `HIT x${hits.length}` : "HIT", color: "var(--hit)" });
   }
-  if (resolved.length === 0) return { text: "...", color: "var(--text-dim)" };
-  return { text: "miss", color: "var(--text-dim)" };
+  if (resolved.length === 0) return withCry({ text: "...", color: "var(--text-dim)" });
+  return withCry({ text: "miss", color: "var(--text-dim)" });
 }
 
 /*

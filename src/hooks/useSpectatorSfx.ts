@@ -78,7 +78,10 @@ export function useSpectatorSfx(
 
     // One at a time - a four-tentacle wake is not four sounds at once - and the waking wins.
     const fresh = [...deepCells].filter(([cell, kind]) => !heard.has(key(cell, kind)));
-    const next = fresh.find(([, kind]) => kind === "sleeper") ?? fresh[0];
+    // The two long ones win the tick. Both are the biggest thing that can happen in a match and both
+    // can land alongside an ordinary find - so without this, the sleeper waking or Igon getting to his
+    // feet can be silently dropped in favour of whichever square sorted first.
+    const next = fresh.find(([, kind]) => kind === "sleeper" || kind === "igonAvenged") ?? fresh[0];
     if (!next) return;
 
     /**
@@ -100,6 +103,9 @@ export function useSpectatorSfx(
       bottle: "bottle",
       jar: "jar",
       jarFree: "jar",
+      // The only two finds here with their own voice rather than a borrowed noise - see lib/sfx.
+      igon: "igonFinger",
+      igonAvenged: "igonHappy",
     } as const;
 
     playSfx(SOUND[next[1]]);

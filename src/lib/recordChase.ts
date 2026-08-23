@@ -131,7 +131,10 @@ interface Track {
  * Which records get chased live. Opt-in, and short on purpose.
  *
  * The timing records are absent because they are set the moment they happen and there is no closing
- * on them. "Worst accuracy" is absent for a different reason: it is a joke that lands in the record
+ * on them. "Rarest honor" is absent for a stronger version of the same reason: honors are not handed
+ * out until the match is over, so mid-match there is no number to compare against - and the one that
+ * arrives at the end arrives with the recap, which announces it far better than a chase panel could.
+ * "Worst accuracy" is absent for a different reason again: it is a joke that lands in the record
  * book, read after the fact, and would not land at all as a live callout telling somebody in front
  * of an audience that they are two points off the worst game ever played. Leave it out.
  */

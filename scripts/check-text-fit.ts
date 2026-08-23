@@ -364,5 +364,62 @@ console.log('')
   check('slashed labels are split for the renderer', split > 0, `${split} labels carry a break opportunity`)
 }
 
+/**
+ * Grow-to-fit: the stream sources let a name use its whole square.
+ *
+ * The default fit stops at the board's natural ratio, which is right at app sizes and wrong on a
+ * browser source - a 1000px board at 10x10 gave "Dane" about 13px in a 92px square, and the shorter
+ * the name the emptier the square. `grow` lifts that ceiling so the search finds the largest size
+ * that actually FITS.
+ *
+ * Three properties matter and none is obvious from reading the bisection:
+ *
+ *   - it must never make a name smaller than the old path (it only raises a ceiling),
+ *   - it must genuinely vary with the name, which is the whole request - a board where everything
+ *     grew by the same factor would look identical to a board that had simply been zoomed,
+ *   - and it must still never overflow, or the ellipsis this module exists to prevent comes back.
+ */
+{
+  // A browser-source cell: 1000px across a 10x10 board, less the coordinate gutters.
+  const W = 92
+  const H = 92
+  const short = 'Dane'
+  const long = 'Consecrated Death Rite Bird'
+
+  const shortOld = fitText(short, W, H, OVERLAY_MAX_FONT, 1, false).font
+  const shortNew = fitText(short, W, H, OVERLAY_MAX_FONT, 1, true).font
+  const longNew = fitText(long, W, H, OVERLAY_MAX_FONT, 1, true).font
+
+  check('a short name grows when allowed to fill', shortNew > shortOld * 2, `${shortOld.toFixed(1)} -> ${shortNew.toFixed(1)}`)
+  check('a long name stays small', longNew < shortNew / 2, `long ${longNew.toFixed(1)} vs short ${shortNew.toFixed(1)}`)
+
+  // Nothing may shrink. Asserted across the whole board, because a ceiling that was lifted for one
+  // name and lowered for another would be a regression hiding behind an improvement.
+  const shrank = allNames.filter((name) => {
+    const a = fitText(name, W, H, OVERLAY_MAX_FONT, 1, false).font
+    const b = fitText(name, W, H, OVERLAY_MAX_FONT, 1, true).font
+    return b < a - 0.01
+  })
+  check('grow-to-fit never shrinks a name', shrank.length === 0, shrank.slice(0, 3).join('; '))
+
+  // And it still has to fit. `layoutAt` runs the same greedy line breaking the browser will.
+  const overflowed = allNames.filter((name) => {
+    const { font, lines } = fitText(name, W, H, OVERLAY_MAX_FONT, 1, true)
+    const needed = layoutAt(name, font, W).lines
+    return needed === null || needed > lines
+  })
+  check('grow-to-fit never overflows its cell', overflowed.length === 0, overflowed.slice(0, 3).join('; '))
+
+  // The size really does depend on the name rather than being one number for the board.
+  const distinct = new Set(allNames.map((n) => Math.round(fitText(n, W, H, OVERLAY_MAX_FONT, 1, true).font)))
+  check('size varies with the name', distinct.size > 5, `${distinct.size} distinct sizes across ${allNames.length} labels`)
+
+  // The caster's slider only trims. Above 1 there is nothing left to give.
+  const trimmed = fitText(short, W, H, OVERLAY_MAX_FONT, 0.5, true).font
+  const overdriven = fitText(short, W, H, OVERLAY_MAX_FONT, 2, true).font
+  check('the slider trims below 1', Math.abs(trimmed - shortNew * 0.5) < 0.01, `${trimmed.toFixed(1)}`)
+  check('asking above 1 is capped at what fits', Math.abs(overdriven - shortNew) < 0.01, `${overdriven.toFixed(1)}`)
+}
+
 console.log(failures === 0 ? '\nall text fit checks passed' : `\n${failures} text fit check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

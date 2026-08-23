@@ -336,23 +336,55 @@ const FIT_CACHE_MAX = 4000;
  *   the square has no room for is spent back on the way down and the name lands wherever it does
  *   fit. That is what makes it safe to hand a streamer - the worst a large one can do is nothing.
  */
-export function fitText(label: string, cellW: number, cellH: number, largest: number, boost = 1): TextFit {
-  const key = `${label}|${Math.round(cellW)}|${Math.round(cellH)}|${largest}|${boost}`;
+export function fitText(
+  label: string,
+  cellW: number,
+  cellH: number,
+  largest: number,
+  boost = 1,
+  grow = false
+): TextFit {
+  const key = `${label}|${Math.round(cellW)}|${Math.round(cellH)}|${largest}|${boost}|${grow}`;
   const hit = fits.get(key);
   if (hit) return hit;
 
   const w = measure(label);
-  const upper = Math.max(SMALLEST, Math.min(largest, (cellW / NATURAL) * boost));
+  /**
+   * The size the search comes down from.
+   *
+   * Without `grow` this is the board's natural ratio, and the search only ever SHRINKS from it - so
+   * a short name in a large square is drawn at `cellW / 7.2` no matter how much room it has. That
+   * is right in the app, where a square is about a centimetre across and 7.2 is what makes "Rick"
+   * a label rather than a headline.
+   *
+   * On a stream it is the whole problem. A 1000px source at 6x6 gives a 160px square and a 22px
+   * name floating in the middle of it, and the shorter the name the worse it looks - "Dane" and
+   * "Bols" were mostly empty square. The name is the thing being read out; it should use the space.
+   *
+   * With `grow` the ceiling becomes the caller's cap instead, so the bisection below searches for
+   * the largest size that FITS rather than the largest that fits below an arbitrary ratio. The
+   * second term is the point past which a single line cannot fit the cell's height at all -
+   * without it the search would start somewhere geometrically impossible and waste its first few
+   * halvings getting back down to reality.
+   */
+  const ceiling = grow
+    ? Math.min(largest, cellH / (CELL_LINE_HEIGHT + CELL_PADDING_EM))
+    : // `* boost` stays on this branch. Without `grow` the ceiling is the ONLY thing a boost can
+      // move - that is what the named text sizes on a pinned source have always meant, and taking
+      // it off here quietly made Large, Huge, Giant and Colossal all render identically to Normal.
+      Math.min(largest, (cellW / NATURAL) * boost);
+  const upper = Math.max(SMALLEST, ceiling);
 
-  let font: number;
+  let fitted: number;
   if (fitsAt(w, upper, cellW, cellH)) {
-    // The common case by far: a short name in a square big enough for it, drawn at the size the
-    // board has always drawn it. No search, and nothing changes for the squares that were fine.
-    font = upper;
+    // Without `grow`, this is the common case by far: a short name in a square big enough for it,
+    // drawn at the size the board has always drawn it. No search, and nothing changes for the
+    // squares that were already fine.
+    fitted = upper;
   } else if (!fitsAt(w, SMALLEST, cellW, cellH)) {
     // A cell too small to hold this name however far it shrinks. The clamp ends it in an ellipsis,
     // which is the honest answer - and is why SMALLEST is a readability floor rather than a fit.
-    font = SMALLEST;
+    fitted = SMALLEST;
   } else {
     let lo = SMALLEST;
     let hi = upper;
@@ -361,8 +393,24 @@ export function fitText(label: string, cellW: number, cellH: number, largest: nu
       if (fitsAt(w, mid, cellW, cellH)) lo = mid;
       else hi = mid;
     }
-    font = lo;
+    fitted = lo;
   }
+
+  /**
+   * The streamer's multiplier - but only on the `grow` branch, where it applies to what FITS rather
+   * than to the ratio. Without `grow` it has already been spent on the ceiling above, and applying
+   * it twice would shrink every boosted name by its own factor.
+   *
+   * Above 1 it can do nothing here and that is correct: `fitted` is already the largest size this
+   * name fits at, so asking for more is asking for a name that overflows its square. It is capped
+   * rather than refused, exactly as the old ceiling spent an over-large boost on the way down - the
+   * worst a big number can do is nothing.
+   *
+   * Below 1 it trims, which is what the control is actually for once the default fills the square:
+   * a caster who finds a board of maximum-size names too shouty can bring the whole board down
+   * together, and long names and short names come down by the same proportion.
+   */
+  const font = grow ? Math.max(SMALLEST, Math.min(fitted, fitted * boost)) : fitted;
 
   const out: TextFit = { font, lines: Math.max(1, linesInHeight(font, cellH)) };
   if (fits.size >= FIT_CACHE_MAX) fits.clear();

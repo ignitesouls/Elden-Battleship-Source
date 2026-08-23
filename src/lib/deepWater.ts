@@ -6,7 +6,9 @@ import type { Room } from "../types/battleship";
  * What is hiding in the water.
  *
  * Seven things, all placed the same way: the white whale, Laboon, Cthulhu's tentacles, the Flying
- * Dutchman, four bottles, Alexander, and Patches. Their squares are rolled ONCE, by Postgres, at the
+ * Dutchman, four bottles, Alexander, and Patches. An eighth, Igon, is placed by nothing at all and
+ * is the exception to most of what follows - see IgonEncounter. Their squares are rolled ONCE, by
+ * Postgres, at the
  * moment every fleet is confirmed and before a single shot is fired - out of the cells that no fleet
  * occupies (see supabase/migrations/20260806000000_deep_water_hides.sql). They do not move. Nothing
  * else in the match can move them.
@@ -99,6 +101,56 @@ export interface JarEncounter {
   freed: DeepFind | null;
 }
 
+/**
+ * Igon, waiting beside the dragon, and one crew's dealings with him.
+ *
+ * The one thing down here that the roll never placed. He has no row in `deep_hides` and no hiding
+ * place to keep secret, because his square is not chosen - it is simply where he turns out to be:
+ * the first square orthogonally beside Bayle's that anybody's shot comes back a miss on.
+ *
+ * -- MET, not caught ------------------------------------------------------------------------------
+ *
+ * He is a man on a rock, not a prize, so nothing about him can be taken. The first miss on his
+ * square reveals him and every crew that fires there afterwards meets him too - and every one of
+ * them is handed a furled finger, because that is what he has and what he wants somebody to use. So
+ * this is one entry PER CREW, the shape the jar and the Dutchman already take.
+ *
+ * That is also why arriving second is worth something here, which is unusual: a whale, a tentacle
+ * and a bottle are all gone once the first crew reaches them.
+ *
+ * -- He needs no hiding place ----------------------------------------------------------------------
+ *
+ * Everything above this is placed by Postgres because a client cannot prove a square is open water,
+ * and the creatures rolled there have to sit on cells no fleet occupies. Igon has no such
+ * requirement to satisfy: he is not hidden IN the water, he is washed up beside the arena, and it
+ * costs nothing if a crew happens to have a hull on the same square. Nothing about him is inferred
+ * from emptiness, so nothing about him can be got wrong by inferring it.
+ *
+ * -- The second stage -----------------------------------------------------------------------------
+ *
+ * Alexander's shape, and Alexander's rule with it: meeting him and finishing his business are
+ * different deeds by different shots, and BOTH OF THEM ARE THE SAME CREW'S. The second is a shot at
+ * BAYLE'S OWN square - which under the fire-on-kill rule is Bayle dying, whether or not a hull
+ * happened to be sitting there, so it is deliberately not conditioned on the result.
+ *
+ * Same crew, and that is what a two-stage find IS. An egg whose halves can be collected by different
+ * people is not one egg with two stages, it is two eggs that happen to share a name: neither crew
+ * did the thing, and the honor at the end of it describes a deed nobody performed. So a crew
+ * carrying a finger has to go and kill the dragon themselves, and every crew holding one has their
+ * own shot at it - which is exactly how the jar works, and for once the flavour agrees too. He wants
+ * the dragon dead. He does not much mind how many people help.
+ *
+ * The two can still arrive in the wrong order, and that is allowed. A crew that killed Bayle earlier
+ * and only later fires beside the arena meets him already on his feet - it was still their kill, so
+ * the deed is done either way round.
+ */
+export interface IgonEncounter {
+  /** Where this crew met him, and the shot that did it. */
+  found: DeepFind;
+  /** This crew's own kill on Bayle. Null while their dragon is still alive. */
+  avenged: DeepFind | null;
+}
+
 export interface DeepFind {
   cellIndex: number;
   /** Null for a shot fired by someone who has since left the room. */
@@ -129,6 +181,11 @@ export interface DeepWater {
   alexander: JarEncounter[];
   /** Everyone who reached for a tentacle and got Patches. He is "sorry". */
   patches: DeepFind[];
+  /**
+   * One entry per crew that met him, in the order they got there. Empty unless the board dealt Bayle
+   * at all, which is most boards. See IgonEncounter.
+   */
+  igon: IgonEncounter[];
 }
 
 /** What the roll hid on a square. Rows arrive from `deep_hides`, one per occupied square. */
@@ -157,6 +214,10 @@ export type DeepMark =
   | "bottle"
   | "jar"
   | "jarFree"
+  // Same square, same man - standing up is what killing Bayle did, not a different thing to have
+  // found. The pair works exactly like jar/jarFree.
+  | "igon"
+  | "igonAvenged"
   | "patches";
 
 /**
@@ -284,8 +345,20 @@ function isAdjacent(a: number, b: number, boardSize: number): boolean {
  * @param hides the `deep_hides` rows this client can read, which is exactly the squares somebody has
  * already fired at. An empty list is the normal state of a match nobody has found anything in, and
  * also what a project that hasn't run the migration looks like.
+ * @param bayleCell where this room's board dealt Bayle, from lib/challenges.bayleCell, or null when
+ * it dealt him nowhere - which is most boards. Passed in rather than worked out here because
+ * reconstructing a board means importing the square-set registry, and that binds a dozen JSON files
+ * this module deliberately does not: scripts/check-deep-water.ts imports it under bare Node, where
+ * those imports are exactly what both edge functions and scripts/check-boards.ts avoid. Required
+ * rather than optional so a call site that forgets it fails to compile instead of quietly being the
+ * one page in the app where Igon never appears.
  */
-export function deepWater(room: Room, shots: FeedShot[], hides: DeepHide[]): DeepWater {
+export function deepWater(
+  room: Room,
+  shots: FeedShot[],
+  hides: DeepHide[],
+  bayleCell: number | null
+): DeepWater {
   const hidden = new Map(hides.map((h) => [h.cellIndex, h]));
 
   const result: DeepWater = {
@@ -296,12 +369,40 @@ export function deepWater(room: Room, shots: FeedShot[], hides: DeepHide[]): Dee
     bottle: [],
     alexander: [],
     patches: [],
+    igon: [],
   };
 
   /** Squares whose occupant has been taken, so a second crew firing there finds nothing. */
   const claimed = new Set<number>();
   /** Squares each crew has already met something on, so one crew meets it once. */
   const met = new Set<string>();
+
+  /**
+   * The squares Igon can turn up on: orthogonally beside Bayle, never on him. Four of them mid-board,
+   * three against an edge and two in a corner - so where the deal put the arena quietly decides how
+   * hard he is to find, and a cornered dragon makes him half as likely again.
+   */
+  const beside = new Set<number>();
+  if (bayleCell !== null) {
+    for (let c = 0; c < room.board_size * room.board_size; c++) {
+      if (isAdjacent(c, bayleCell, room.board_size)) beside.add(c);
+    }
+  }
+  /**
+   * Which of those squares he turned out to be on: the first one anybody's shot came back a miss on.
+   *
+   * Settled by observation rather than chosen, and settled once. Everything after it is people
+   * arriving at a square that already has a man on it.
+   */
+  let igonCell: number | null = null;
+  /**
+   * Each crew's own kill on Bayle, kept per crew and kept apart from the meeting.
+   *
+   * Per crew because only a crew's own kill avenges their own Igon (see IgonEncounter), and kept
+   * apart because it can land BEFORE they ever fire beside the arena - in which case they meet him
+   * already standing.
+   */
+  const bayleDeadBy = new Map<number, DeepFind>();
 
   for (const shot of [...shots].reverse()) {
     // Still in the air. Nothing is decided by an unresolved shot, and unlike the old log-walk this
@@ -335,6 +436,41 @@ export function deepWater(room: Room, shots: FeedShot[], hides: DeepHide[]): Dee
       !shot.rows.some((r) => r.result === "hit" || r.result === "sunk")
     ) {
       jar.freed = find();
+    }
+
+    /**
+     * Igon (see IgonEncounter). Everything below this point reads `hidden`; he is not in it, has no
+     * row in deep_hides and was never rolled, so his whole existence is decided here from the log.
+     *
+     * Checked before the square's own occupant because a Bayle-adjacent square can also be holding
+     * one of the rolled creatures, and both are true at once.
+     */
+    if (bayleCell !== null) {
+      if (shot.cellIndex === bayleCell) {
+        // Under the fire-on-kill rule, firing at Bayle's square IS killing Bayle - the shot is taken
+        // the instant the boss dies - so this is deliberately not conditioned on hitting a hull.
+        if (!bayleDeadBy.has(shot.attackerTeam)) bayleDeadBy.set(shot.attackerTeam, find());
+        // Their own Igon only. Another fleet's finger is not theirs to spend, and their kill is not
+        // that fleet's vengeance - see IgonEncounter.
+        const ours = result.igon.find((e) => e.found.attackerTeam === shot.attackerTeam);
+        if (ours && !ours.avenged) ours.avenged = bayleDeadBy.get(shot.attackerTeam) ?? null;
+      } else if (beside.has(shot.cellIndex)) {
+        // A shot that connects found a hull, not a man on a rock. He is revealed by a MISS, which is
+        // also the only outcome the square can have while he is the thing on it.
+        const missed = !shot.rows.some((r) => r.result === "hit" || r.result === "sunk");
+        if (missed) {
+          // The first miss beside the arena is where he turns out to have been all along.
+          if (igonCell === null) igonCell = shot.cellIndex;
+          if (
+            shot.cellIndex === igonCell &&
+            !result.igon.some((e) => e.found.attackerTeam === shot.attackerTeam)
+          ) {
+            // Met, so one per crew and every crew gets their own - and their own dragon with it. If
+            // they had already killed Bayle they meet him standing; see IgonEncounter.
+            result.igon.push({ found: find(), avenged: bayleDeadBy.get(shot.attackerTeam) ?? null });
+          }
+        }
+      }
     }
 
     const here = hidden.get(shot.cellIndex);
@@ -472,6 +608,26 @@ export function deepMarks(
   }
   if (deep.whale && mine(deep.whale)) marks.set(deep.whale.cellIndex, "whale");
 
+  /**
+   * Igon, on exactly the jar's terms, because he is now exactly the jar's shape.
+   *
+   * Every crew that fired at his square has their own meeting with him and their own dragon to go
+   * and kill, they all sit on the SAME square, and a map holds one mark per square - so a viewer who
+   * can see more than one of them needs a rule for two crews disagreeing. Risen wins, on the grounds
+   * the sleeper and the freed jar both win: it is the later state of one man, and a caster shown him
+   * face-down while somebody has already avenged him would simply be wrong. A player only ever
+   * passes `mine` on their own crew's entry, so for them there is nothing to resolve.
+   *
+   * Set last so he wins a shared square: a Bayle-adjacent cell can also be holding a rolled
+   * creature, and when they collide he takes the mark as the rarer event. The other find still
+   * happened and still carries its own honor; only the drawing has to pick one.
+   */
+  for (const e of deep.igon) {
+    if (!mine(e.found)) continue;
+    if (e.avenged) marks.set(e.found.cellIndex, "igonAvenged");
+    else if (marks.get(e.found.cellIndex) !== "igonAvenged") marks.set(e.found.cellIndex, "igon");
+  }
+
   return marks;
 }
 
@@ -528,6 +684,10 @@ export function finalFinds(deep: DeepWater): DeepFindRow[] {
     // The shot that freed anybody landed NEXT to it and has no mark of its own; rescues are credited
     // by the Potfriend honor instead.
     ...deep.alexander.map((jar) => jar.found),
+    // His square only, once per crew that met him - the same shape the jar and the Dutchman take.
+    // The shot that avenged anybody landed on BAYLE'S square, which carries no mark of its own, and
+    // is credited by an honor rather than by a drawing.
+    ...deep.igon.map((e) => e.found),
     ...deep.patches,
   ];
   return finds

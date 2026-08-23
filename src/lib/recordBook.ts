@@ -1,4 +1,5 @@
 import { participantKey, type ParticipantRow } from "./careerStats";
+import { HONOR_ORDER } from "./matchReport";
 import type { SquareSetId } from "./squareSets";
 import type { MatchEventRow } from "./almanac";
 
@@ -28,6 +29,26 @@ import type { MatchEventRow } from "./almanac";
  * one that is mostly pillory stops being fun to appear in at all.
  *
  * The negative records stay out of lib/recordChase - see the note on TRACKS there.
+ *
+ * -- What a record is not allowed to be ------------------------------------------------------------
+ *
+ * Squares are marked BY HAND. A player kills something and clicks it, and the clock on the resulting
+ * row is the moment they clicked rather than the moment it died - so a shot's timestamp is only as
+ * honest as somebody remembering to mark, and a mismark writes a time nobody earned.
+ *
+ * That is survivable for most of what is below, and fatal for one shape of record: anything won by a
+ * SMALL GAP between two marks. "Quickest two bosses" lived here until it was cut, and it could be
+ * taken outright by forgetting to mark for half an hour and then marking twice in a row, which is
+ * the opposite of the thing it claimed to measure. No amount of flooring the gap fixes that - the
+ * floor only moves the price of the fake.
+ *
+ * What survives, and what a new record should be made of:
+ *
+ *   - counts and outcomes - shots, hits, sunk, who won - which the server re-derives from the room's
+ *     own attack log rather than trusting a client, so no marking habit changes them;
+ *   - what a square WAS, and what a match handed out for it;
+ *   - and the two timings measured from a fixed start, first blood and first sinking, where a late
+ *     mark can only ever make somebody look slower.
  */
 
 export interface RecordHolder {
@@ -79,12 +100,17 @@ export const MIN_STREAK = 3;
  * The rule is that you fire the moment you kill, so a gap is normally a fight start to finish - but
  * two squares can finish at the SAME moment and legitimately produce a gap of nothing. The Haligtree
  * Tree Sentinels are one duo fight filling two squares; a player who banks one kill and fires it
- * next to the following one leaves the same trace. Neither is a fast pair, and either would hold
- * this record permanently, since a tie goes to whoever set it first.
+ * next to the following one leaves the same trace. Neither is a fast pair.
  *
  * Ten seconds is not a guess. In the archive at the time of writing, the gaps run 0:01, 0:04, 0:08,
  * then NOTHING until 0:33 - the double-fires and the real runs are separated by a clear empty band,
  * and ten sits inside it. Raise this only if that band moves.
+ *
+ * No record here rests on it any more; it lives on this side because it belongs with archivedShots,
+ * and it is read by lib/squarePace and lib/almanac, which describe a TYPICAL square rather than a
+ * best one. That is the difference that lets them keep using shot times at all: a median over a
+ * career is barely moved by one bad mark, where a record is decided by the single most extreme row
+ * in the archive and is therefore decided by the worst mark in it.
  */
 export const MIN_GAP_SECONDS = 10;
 
@@ -107,20 +133,6 @@ const BOSS_BOARDS = new Set(["bosses", "bosses-2v2"]);
 
 function isBossBoard(id: SquareSetId | null | undefined): boolean {
   return id === undefined || id === null || BOSS_BOARDS.has(id);
-}
-
-/**
- * What one square on this set's board IS, in words.
- *
- * The boss board's squares are bosses; every other set's are errands, collectables and multi-part
- * goals that no single noun covers, so they stay "squares". Only prose needs this and nothing
- * branches on it - but "quickest two bosses" on a board of "acquire 3 painting rewards" is simply a
- * lie, and the gap record reads that line out loud on every set.
- */
-function squareNoun(id: SquareSetId | null | undefined): { one: string; many: string } {
-  return isBossBoard(id)
-    ? { one: "boss", many: "bosses" }
-    : { one: "square", many: "squares" };
 }
 
 interface Candidate extends Omit<RecordHolder, "display" | "detail"> {
@@ -252,51 +264,6 @@ function hitStreaks(shots: ArchivedShot[]): Candidate[] {
   return out;
 }
 
-/**
- * Every player's quickest back-to-back pair, per match.
- *
- * The house rule is that you fire the moment you kill, so a shot's timestamp IS a kill time and the
- * gap between two of them is the fight in between, start to finish. Nothing else in the archive
- * measures that: every other record here is about aim, and this one is about pace. What it will not
- * count is a pair too close together to have been two fights - see MIN_GAP_SECONDS.
- *
- * Consecutive means consecutive for that player - it does not matter who else fired in between -
- * and hit or miss is irrelevant throughout, for the reason almanac.bossStats sets out: what was
- * hiding under the square is the opponent's doing, not a fact about the run.
- *
- * Relies on `shots` arriving in fired order, which archivedShots guarantees.
- */
-function quickestGaps(shots: ArchivedShot[]): Candidate[] {
-  const last = new Map<string, ArchivedShot>();
-  const best = new Map<string, { gap: number; from: ArchivedShot; to: ArchivedShot }>();
-
-  for (const shot of shots) {
-    const id = `${shot.matchKey}|${shot.key}`;
-    const previous = last.get(id);
-    last.set(id, shot);
-    // A player's opening shot has nothing to be measured from - it belongs to first blood instead.
-    if (!previous) continue;
-
-    const gap = shot.seconds - previous.seconds;
-    if (gap < MIN_GAP_SECONDS) continue;
-    const top = best.get(id);
-    if (!top || gap < top.gap) best.set(id, { gap, from: previous, to: shot });
-  }
-
-  return [...best.values()].map(({ gap, from, to }) => ({
-    key: to.key,
-    nickname: to.nickname,
-    userId: to.userId,
-    value: gap,
-    // Which two they were, when the archive kept the names - half the fun of this record is seeing
-    // what somebody strung together, and it is the only line in the book that can say so.
-    detail: from.challenge && to.challenge ? `${from.challenge} then ${to.challenge}` : undefined,
-    matchKey: to.matchKey,
-    roomCode: to.roomCode,
-    finishedAt: to.finishedAt,
-  }));
-}
-
 /** The earliest shot of a given kind in each match, per player. */
 function earliest(shots: ArchivedShot[], wanted: (s: ArchivedShot) => boolean): Candidate[] {
   const first = new Map<string, ArchivedShot>();
@@ -323,6 +290,33 @@ function clock(seconds: number): string {
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The rarest honor on an archived row, as a rank from the top of the list.
+ *
+ * `awards` holds titles, and HONOR_ORDER holds them in the order they are walked, which is the order
+ * of how hard they are to earn - so position 0 is the hardest thing on the list and the last position
+ * is whatever nobody above it took. Returned as a distance from the BOTTOM, purely so the number
+ * sorts the way every other record does, with bigger meaning better.
+ *
+ * A title the list no longer contains scores nothing rather than scoring worst. The archive holds
+ * retired ones - the old Flying Dutchman honor is gone, see HONORS.md - and a retired title is a
+ * deed whose difficulty this list can no longer speak to, which is not the same as an easy one.
+ *
+ * The rule is one honor per player per match, so in practice this reads a single-element array. It
+ * takes the best of them anyway, because that rule is enforced where awards are HANDED OUT and this
+ * is reading what was written down some months later.
+ */
+function rarestHonor(titles: readonly string[] | null | undefined): { rank: number; title: string } | null {
+  let best: { rank: number; title: string } | null = null;
+  for (const title of titles ?? []) {
+    const at = HONOR_ORDER.indexOf(title);
+    if (at < 0) continue;
+    const rank = HONOR_ORDER.length - at;
+    if (!best || rank > best.rank) best = { rank, title };
+  }
+  return best;
+}
 
 /**
  * Players held out of one particular record, by record id.
@@ -367,14 +361,14 @@ function eligibleFor(recordId: string, row: ParticipantRow): boolean {
  * board of boss kills and one set on "acquire 3 painting rewards" are not the same record.
  * @param events archived shots for those same matches. Optional: the counting records stand on the
  * participation rows alone, so the book still works on a page that hasn't loaded events.
- * @param squareSetId that same set's id, used only to name what a square is - see squareNoun.
+ * @param squareSetId that same set's id, which decides only whether the wooden spoon needs a hit to
+ * qualify - see the note on that entry.
  */
 export function buildRecordBook(
   rows: ParticipantRow[],
   events: MatchEventRow[] = [],
   squareSetId?: SquareSetId
 ): RecordEntry[] {
-  const noun = squareNoun(squareSetId);
   const keys = new Set(rows.map((r) => r.match_key));
   // Events are fetched newest-first up to a cap, so they cover fewer matches than the rows do. Held to
   // the same matches either way, so a streak record can never come from a match the rest of the book
@@ -382,6 +376,45 @@ export function buildRecordBook(
   const shots = archivedShots(events.filter((e) => keys.has(e.match_key)));
 
   const book: RecordEntry[] = [
+    /**
+     * The rarest thing anybody has been handed, and the only record here whose value is a deed
+     * rather than a number.
+     *
+     * It leads for that reason. Everything under it is a quantity of shooting, and a book that opens
+     * with "most hits" tells a reader what the numbers are before telling them what happened; this
+     * opens with the hardest single thing the archive has ever recorded somebody doing, which is the
+     * question a record book is for.
+     *
+     * Read as "the rarest title ever HANDED OUT", which is not quite the rarest deed ever done, and
+     * the difference is the draw: the five story honors are allocated in list order, and everything
+     * below them is drawn at random from what each player genuinely earned (see buildAwards). So a
+     * player who earned three pooled titles holds one of them and the other two are not in the
+     * archive at all. Nothing can be done about that from here - only what was awarded was ever
+     * written down - and it costs less than it looks like it does, because the rare end of the list
+     * is exactly the end that isn't drawn.
+     *
+     * Unlike every other record in the book this one has a ceiling: #1 is Shaker's Protégé, and the
+     * night somebody takes it the record is finished, because a tie goes to whoever got there first.
+     * That is deliberate and it is the point - the ceiling is a perfect game, not an artefact of how
+     * the number is worked out, and until it falls every rung below it is genuinely beatable.
+     */
+    {
+      id: "honor",
+      emoji: "🏅",
+      label: "Rarest honor",
+      note: "#1 is the hardest title on the honors list",
+      ...rank(
+        rows.flatMap((r) => {
+          const honor = rarestHonor(r.awards);
+          if (!honor) return [];
+          const c = fromRow(r, honor.rank);
+          c.display = honor.title;
+          c.detail = `#${HONOR_ORDER.length - honor.rank + 1} of ${HONOR_ORDER.length}`;
+          return [c];
+        }),
+        (c) => ({ display: c.display ?? "", detail: c.detail })
+      ),
+    },
     {
       id: "hits",
       emoji: "💥",
@@ -450,17 +483,6 @@ export function buildRecordBook(
       ...rank(
         earliest(shots, (s) => s.result === "sunk"),
         (c) => ({ display: clock(c.value) }),
-        false
-      ),
-    },
-    {
-      id: "gap",
-      emoji: "⚡",
-      label: `Quickest two ${noun.many}`,
-      note: `shortest gap between back-to-back ${noun.many}`,
-      ...rank(
-        quickestGaps(shots),
-        (c) => ({ display: clock(c.value), detail: c.detail }),
         false
       ),
     },

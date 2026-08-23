@@ -292,8 +292,13 @@ export async function listMatchShots(matchKey: string): Promise<MatchShot[]> {
  * The reason to reach for this over "Remove" on the crew list: a square marked by mistake is one
  * bad row, and striking the player from the match to be rid of it throws away every honest shot
  * they fired that night. It's also the only tool that fixes the derived records - the timing and
- * streak records are built from these rows directly (recordBook.archivedShots), so a mismarked
- * square can hold "quickest two bosses" forever and there is nothing else to point at.
+ * streak records are built from these rows directly (recordBook.archivedShots), so a square marked
+ * at the wrong moment can hold "quickest first blood" forever and there is nothing else to point at.
+ *
+ * The record that was WORST served by this - "quickest two bosses", won by whoever marked two
+ * squares closest together - has since been dropped rather than policed, on the grounds that a
+ * record needing an admin to keep it honest was never really a record. See the note at the top of
+ * lib/recordBook.
  *
  * The counters are stored, not derived, so they have to be walked back by hand. The deltas mirror
  * exactly how archive_match counted them in the first place:

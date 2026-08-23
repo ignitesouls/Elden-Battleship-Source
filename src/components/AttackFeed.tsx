@@ -3,7 +3,7 @@ import { teamHex } from "../lib/teamColors";
 import { groupIntoShots, outcomeText } from "../lib/attackFeed";
 import { matchStartedAt, formatDuration, matchTimings } from "../lib/matchTime";
 import type { Challenge } from "../lib/challenges";
-import type { DeepMark } from "../lib/deepWater";
+import type { DeepMark, IgonEncounter } from "../lib/deepWater";
 import type { Attack, Player, Room } from "../types/battleship";
 
 interface Props {
@@ -18,6 +18,12 @@ interface Props {
    * Build it with `deepMarks`, which decides what this viewer may see - see lib/deepWater.ts.
    */
   deepCells?: ReadonlyMap<number, DeepMark>;
+  /**
+   * Every crew's dealings with Igon, so the line for the shot that killed Bayle can say so. Separate
+   * from `deepCells` because it is the one find with something to say about a square it is not on -
+   * see outcomeText.
+   */
+  igon?: readonly IgonEncounter[] | null;
 }
 
 export function AttackFeed({
@@ -28,6 +34,7 @@ export function AttackFeed({
   room,
   maxHeight = "100%",
   deepCells,
+  igon,
 }: Props) {
   const shots = groupIntoShots(attacks, players);
   const startedAt = matchStartedAt(attacks);
@@ -55,7 +62,7 @@ export function AttackFeed({
           style={{ gap: "0.45rem", maxHeight, flex: 1, minHeight: 0, overflowY: "auto", fontSize: "0.82rem" }}
         >
           {shots.map((shot) => {
-            const outcome = outcomeText(shot, deepCells, room);
+            const outcome = outcomeText(shot, deepCells, room, igon);
             const challenge = challenges[shot.cellIndex];
             return (
               <div key={shot.key} className="stack" style={{ gap: "0.05rem" }}>

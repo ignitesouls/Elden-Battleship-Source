@@ -405,7 +405,14 @@ console.log('the long-square test (second test, on cells the rank gap discards)'
 console.log('edge-pinning (accepted gaps vs the natural distribution, truncated)')
 {
   const cells = 100
-  const TRIALS = 60
+  // 400 rather than the 60 this shipped with. Both checks below compare two proportions against an
+  // 8-point threshold, and at 60 trials the sampling error on a proportion near a half is about 6
+  // points - so this was a coin toss dressed as an assertion, passing only because the committed
+  // seed happened to land 7 points apart. Anything that shifted the shared Math.random stream
+  // re-rolled it, a fleet elsewhere in this file gaining a ship included, and the resulting failure
+  // said nothing about edge-pinning. At 400 the error is under 3 points, so a failure means the
+  // balancer really is bunching its answers against the limit.
+  const TRIALS = 400
   const accepted: number[] = []
   const naturalPassing: number[] = []
   for (let trial = 0; trial < TRIALS; trial++) {

@@ -116,14 +116,22 @@ export function buildMatchReport(
   room: Room,
   players: Player[],
   attacks: Attack[],
-  deepHides: DeepHide[]
+  deepHides: DeepHide[],
+  /**
+   * Where the board dealt Bayle, for Igon - see lib/challenges.bayleCell, which is the only thing
+   * that can answer it and cannot be imported here: it reconstructs a board, which means binding the
+   * square-set registry's JSON, which is exactly what scripts/check-honors.ts cannot load under bare
+   * Node. Defaulted rather than required because the honor tests pass boards they never deal squares
+   * onto, and null is the honest answer for those - no arena, no Igon.
+   */
+  bayleCell: number | null = null
 ): MatchReport {
   const shots = groupIntoShots(attacks, players);
   const stats = buildPlayerStats(players, shots);
   // Computed once and handed to both the honors and the recap's boards, which need the same answer:
   // an award naming a finder while the board it sits above marks a different square would be a bug
   // nobody could explain.
-  const deep = deepWater(room, shots, deepHides);
+  const deep = deepWater(room, shots, deepHides, bayleCell);
 
   const startedAt = matchStartedAt(attacks);
   const lastShot = shots.length > 0 ? shots[0].at : null; // groupIntoShots sorts newest-first
@@ -263,6 +271,21 @@ interface HonorContext {
     freedBy: PlayerStats | undefined;
     freedAt: number | null;
   }>;
+  /**
+   * Igon, in both halves, per crew that met him. Empty in the great majority of matches, since the
+   * board has to have dealt Bayle at all. See deepWater.IgonEncounter.
+   *
+   * A list for the same reason Alexander is one: he is met rather than caught, so every crew that
+   * fires at his square gets their own finger and their own dragon to go and kill with it. Two
+   * people per entry, because meeting him and finishing his business are different shots - often by
+   * different members of the same crew, and never by a different crew.
+   */
+  igon: Array<{
+    foundBy: PlayerStats | undefined;
+    foundAt: number;
+    avengedBy: PlayerStats | undefined;
+    avengedAt: number | null;
+  }>;
   /** Everyone Patches happened to, and how many times. */
   patches: Array<[PlayerStats, number]>;
   /**
@@ -333,6 +356,12 @@ interface Honor {
  * Floors matter as much as the ordering. "Sharpest eye" off one lucky shot, or a wooden spoon in a
  * three-shot match, is noise rather than a distinction - so each honor carries a minimum sample,
  * and the honors below it pick up whoever the floors exclude.
+ *
+ * ORDER IS NOW LOAD-BEARING OUTSIDE THIS FILE. The record book's "Rarest honor" reads a position in
+ * this list as how hard a title was to earn (see HONOR_ORDER below), so moving a title up or down
+ * restates a standing record on the leaderboard rather than only deciding who gets first claim
+ * tonight. Inserting a new one is free - the archive stores titles, not positions, so every held
+ * record keeps its title and simply reads a rung further down a longer list.
  */
 const HONORS: Honor[] = [
   {
@@ -410,6 +439,40 @@ const HONORS: Honor[] = [
       c.tentacles.awake && c.tentacles.lastFinder
         ? [{ player: c.tentacles.lastFinder, detail: `landed the ${c.tentacles.needed}th tentacle - it is awake` }]
         : [],
+  },
+  {
+    title: "Tormented No Longer",
+    emoji: "🐉",
+    guaranteed: true,
+    supersedes: ["Igon's Furled Finger"],
+    /**
+     * Bayle dead, killed by a crew carrying one of his fingers.
+     *
+     * The highest of the deep-water titles that isn't a clean sweep of the tentacles, and what earns
+     * it is the dragon rather than the man: meeting Igon is cheap now - one miss beside the arena -
+     * but Bayle is one of the most expensive squares in the set, with bossTimeCost at 5278 and
+     * bossReachability at 0.133, both near the far end. The board has to have dealt him at all, that
+     * crew has to have fired beside him, and then they have to go and do it.
+     *
+     * Both halves are the SAME crew's, exactly as Alexander's are. A crew carrying a finger kills
+     * their own dragon; another fleet doing it is not their vengeance. One per crew that managed it,
+     * for the same reason Potfriend is.
+     *
+     * That is also why this supersedes the finger rather than sitting beside it - a player who did
+     * both takes this one, and being told you also met him is a participation ribbon, exactly as it
+     * is for Potfriend and the jar.
+     */
+    earnedBy: (c) =>
+      c.igon.flatMap((ig) =>
+        ig.avengedBy
+          ? [
+              {
+                player: ig.avengedBy,
+                detail: `killed Bayle at ${cellLabel(ig.avengedAt ?? 0, c.boardSize)} with Igon's finger, from ${cellLabel(ig.foundAt, c.boardSize)}`,
+              },
+            ]
+          : []
+      ),
   },
   {
     title: "Thrice-Cursed",
@@ -539,6 +602,36 @@ const HONORS: Honor[] = [
               {
                 player: jar.foundBy,
                 detail: `turned up a warrior jar at ${cellLabel(jar.foundAt, c.boardSize)}, wedged fast`,
+              },
+            ]
+          : []
+      ),
+  },
+  {
+    title: "Igon's Furled Finger",
+    emoji: "🏹",
+    /**
+     * Meeting Igon (see deepWater.IgonEncounter), and walking off with the finger rather than the
+     * dragon.
+     *
+     * The consolation half, and it sits exactly where Found the Jar sits for exactly the same
+     * reason: it is what a crew is left holding when they turned something up and never finished it.
+     * Per crew, since he is met rather than caught - he hands one to everybody who comes past - and
+     * so it only ever appears for a crew that never got to Bayle, or one whose dragon-killer is
+     * already holding the title above.
+     *
+     * Cheap on its own. One miss on one of at most four squares, on a board that dealt the arena at
+     * all, which is why it ranks below the single finds rather than above them: the whale is one
+     * unmarked square in a hundred and this is a man who is hard to avoid once you are in the
+     * neighbourhood.
+     */
+    earnedBy: (c) =>
+      c.igon.flatMap((ig) =>
+        ig.foundBy
+          ? [
+              {
+                player: ig.foundBy,
+                detail: `met Igon on the rocks at ${cellLabel(ig.foundAt, c.boardSize)} and was handed his furled finger`,
               },
             ]
           : []
@@ -919,6 +1012,20 @@ const HONORS: Honor[] = [
 ];
 
 /**
+ * The titles in list order, which is the order of how hard they are to earn.
+ *
+ * Derived rather than written out, so it cannot drift from the list above - the walk order IS the
+ * rarity ordering, and HONORS.md documents it as such: #1 is the hardest thing on the list and #39
+ * is whatever nobody above it took.
+ *
+ * Exported for the record book's rarest honor, which is the only thing outside this file that needs
+ * to compare two titles. Deliberately not "how rare a title turned out to be" in the archive: that
+ * is a different question, answered by counting rows, and it would rank a title that is easy but
+ * seldom drawn above one that is genuinely hard.
+ */
+export const HONOR_ORDER: readonly string[] = HONORS.map((h) => h.title);
+
+/**
  * Everyone who EARNED each title, in claim order, whether or not the draw went their way.
  *
  * The honors have two questions in them and they used to have one answer. "Does sinking the most
@@ -934,11 +1041,13 @@ export function honorClaims(
   room: Room,
   players: Player[],
   attacks: Attack[],
-  deepHides: DeepHide[]
+  deepHides: DeepHide[],
+  /** See buildMatchReport - same argument, same reason. */
+  bayleCell: number | null = null
 ): Map<string, Array<{ nickname: string; detail: string }>> {
   const shots = groupIntoShots(attacks, players);
   const stats = buildPlayerStats(players, shots);
-  const deep = deepWater(room, shots, deepHides);
+  const deep = deepWater(room, shots, deepHides, bayleCell);
   const context = buildHonorContext(stats, shots, room.board_size, room.ship_defs?.length ?? 0, deep, (cell) =>
     bottleNote(room, cell)
   );
@@ -1221,6 +1330,13 @@ function buildHonorContext(
       foundAt: jar.found.cellIndex,
       freedBy: jar.freed ? finder(jar.freed) : undefined,
       freedAt: jar.freed?.cellIndex ?? null,
+    })),
+    // One per crew that met him, in the order they got there - the same shape alexander takes.
+    igon: deep.igon.map((e) => ({
+      foundBy: finder(e.found),
+      foundAt: e.found.cellIndex,
+      avengedBy: e.avenged ? finder(e.avenged) : undefined,
+      avengedAt: e.avenged?.cellIndex ?? null,
     })),
     patches: [...tally(deep.patches)],
   };

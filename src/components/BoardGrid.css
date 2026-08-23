@@ -572,6 +572,7 @@
 .dutchman-mark,
 .bottle-mark,
 .jar-mark,
+.igon-mark,
 .patches-mark {
   position: absolute;
   overflow: visible;
@@ -1599,6 +1600,12 @@
   .jar-mark-free .jar-body,
   .jar-flail,
   .jar-spark,
+  .igon-mark-down,
+  .igon-mark-risen,
+  .igon-mark-risen .igon-body,
+  .igon-bolt,
+  .igon-bolt-far,
+  .igon-bolt-low,
   .patches-mark,
   .patches-body,
   .patches-wave,
@@ -1616,5 +1623,381 @@
   .whale-bubble,
   .sunk-smoke {
     opacity: 0.4;
+  }
+}
+
+
+/**
+ * Igon (see lib/deepWater.ts and HitMarkers.IgonMark), in his two states.
+ *
+ * -- Where the contrast lives ------------------------------------------------------------------------
+ *
+ * Dark hat, dark face-wrap, one bright eye, pale coat and bare limbs. The eye is the only high-value
+ * mark in the head, and that is what makes a figure this small read as a face rather than a blob: a
+ * pale face under that brim turns into a cyclops, and a pale hat turns into a paper bag. Both were
+ * tried.
+ *
+ * The clothes do NOT change colour between the states. Warming them for the risen pose read as a
+ * costume change rather than a change of fortune; the bolt is the only new thing in the second
+ * drawing.
+ *
+ * -- Both states take the full cell -------------------------------------------------------------------
+ *
+ * Not the usual inset. A propped figure is wide and short and needs the whole width; a standing one
+ * holding a greatbow needs the whole height. Insetting either costs it the dimension it is read by.
+ *
+ * Nothing here loops - see the note above .whale-mark. Each arrival plays out and stops.
+ */
+.igon-mark {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.igon-mark-down {
+  animation: igon-settle 0.7s ease-out;
+}
+
+.igon-mark-risen {
+  animation: igon-rise 0.9s cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+/* transform-box so the origin resolves against the 0 0 100 100 viewBox rather than the group's own
+   bounding box - the same reason .jar-body needs it. Pivoted at the foot of the cell so the bow
+   swings from where he is standing rather than about his middle. */
+.igon-mark-risen .igon-body {
+  transform-box: view-box;
+  transform-origin: 50% 100%;
+  animation: igon-brandish 2.4s ease-in-out 3 forwards;
+}
+
+/* The rock, which only the down pose has. Dark and flat-topped so it reads as the thing he is lying
+   ON rather than as more water. */
+.igon-rock {
+  fill: #242a30;
+  stroke: #12161a;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.igon-ripple {
+  fill: none;
+  stroke: #dceaf2;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+/* The hat. A thin stroke rather than the heavy one most markers here use: the brim is two curves
+   meeting at a point, and a fat outline closes the sag that makes it a drooping brim at all. */
+.igon-hood {
+  fill: #3a3129;
+  stroke: #14100c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* The cape, a shade darker than the hat so it separates behind him without becoming a second figure. */
+.igon-cape {
+  fill: #2c251e;
+  stroke: #14100c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/**
+ * The cloth over his face, kept CLOSE to the hat in value.
+ *
+ * This is the rule the whole head hangs on. The eye needs shadow to sit in; give the face its own
+ * brightness and the eye stops being the feature and the head becomes one pale mass with a dot on it.
+ */
+.igon-face {
+  fill: #5c5347;
+  stroke: #241c12;
+  stroke-width: 1.6;
+}
+
+/* No outline: the open eye is about three units across, and a stroke at this size is most of the
+   shape rather than an edge on it. */
+.igon-eye {
+  fill: #ece4d4;
+}
+
+.igon-pupil {
+  fill: #141009;
+}
+
+/* The shut one, which is a crease rather than a feature. */
+.igon-shut {
+  fill: none;
+  stroke: #171208;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+/* Where the cloth drapes over the head. Thin and low-contrast: this is texture, and at board size it
+   has to disappear rather than turn into stripes. */
+.igon-weave {
+  fill: none;
+  stroke: #191510;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+/**
+ * The chin cord, and the only pale mark on the whole head.
+ *
+ * Small, but it is the detail that reads the hat as WORN rather than grown - a black ragged mass with
+ * nothing man-made on it goes back to looking like hair, which is where three earlier passes ended up.
+ */
+.igon-cord {
+  fill: none;
+  stroke: #cfc4ab;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.igon-knot {
+  fill: #cfc4ab;
+}
+
+/* The coat: strips of cloth, not armour and not a robe. */
+.igon-cloak {
+  fill: #8a7a5e;
+  stroke: #241c12;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+/* Bare legs and bare arms, in the same skin - he is not dressed for any of this. */
+.igon-leg {
+  fill: none;
+  stroke: #c9a888;
+  stroke-width: 4.6;
+  stroke-linecap: round;
+}
+
+.igon-limb {
+  fill: none;
+  stroke: #c9a888;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+/* The greatbow, pale against everything else - it is the shape that says archer, and the last thing
+   still legible as the cell shrinks. */
+.igon-bow {
+  fill: none;
+  stroke: #d9cdb2;
+  stroke-width: 4.4;
+  stroke-linecap: round;
+}
+
+.igon-string {
+  fill: none;
+  stroke: #efe7d2;
+  stroke-width: 1.5;
+  opacity: 0.8;
+}
+
+/**
+ * The storm off the Jagged Peak, and the only thing in the second drawing that is not in the first.
+ *
+ * Kept clear of the raised arm rather than crossing it: two bright shapes overlapping merge into one
+ * blob at board size.
+ */
+/**
+ * The storm, and the only thing in the second drawing that is not in the first.
+ *
+ * Neon red rather than the gold it started as. Red is the one hue nothing else in this water uses -
+ * the whole board is blues, bone and dirt - so it cannot be mistaken for a hit marker, a ship or a
+ * splash, and it is the single loudest thing a square can do.
+ *
+ * The glow is a drop-shadow, which is the one filter in this file and worth a word given the essay
+ * above about repaint cost. That warning is about two hundred elements animating forever on a late
+ * board; this is three shapes on one square, for seven seconds, once in a match that dealt Bayle at
+ * all. The neon reads as neon because of the halo, and there is no cheaper way to get it.
+ */
+.igon-bolt {
+  fill: #ff2b3d;
+  filter: drop-shadow(0 0 2.5px rgba(255, 43, 61, 0.67));
+  animation: igon-strike 2.4s ease-out 3 forwards;
+}
+
+/**
+ * The two behind: dimmer, and struck off the main one's beat so the sky flickers rather than blinks.
+ *
+ * Their own keyframes rather than igon-strike at a lower opacity, because igon-strike RESOLVES to
+ * opacity 1 and the forwards fill makes that stick - borrowing it would have them fade up to full
+ * strength and settle there, which is the one thing a bolt behind another must not do.
+ */
+.igon-bolt-far,
+.igon-bolt-low {
+  opacity: 0.75;
+}
+
+.igon-bolt-far {
+  animation: igon-strike-dim 1.9s ease-out 0.25s 3 forwards;
+}
+
+.igon-bolt-low {
+  animation: igon-strike-dim 2.7s ease-out 0.6s 3 forwards;
+}
+
+/* Settling onto the rock: a short fall that lands and stays. */
+@keyframes igon-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(-12%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes igon-rise {
+  0% {
+    opacity: 0.2;
+    transform: translateY(16%) scaleY(0.84);
+  }
+  60% {
+    transform: translateY(0) scaleY(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/* The bow shaken at the sky. Small, because the figure is already the loud part. */
+@keyframes igon-brandish {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(-3.5deg);
+  }
+  70% {
+    transform: rotate(2.5deg);
+  }
+}
+
+@keyframes igon-strike {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  12% {
+    opacity: 0.15;
+  }
+  20% {
+    opacity: 1;
+  }
+  34% {
+    opacity: 0.5;
+  }
+}
+
+/* The same flicker, resolving to the dim pair's resting opacity instead of to full. */
+@keyframes igon-strike-dim {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  12% {
+    opacity: 0.1;
+  }
+  20% {
+    opacity: 0.75;
+  }
+  34% {
+    opacity: 0.38;
+  }
+}
+
+/**
+ * The spotlight: the square, or the hull, the caster is pointing at.
+ *
+ * -- Why the ring is in the marker layer and not on the cell --
+ *
+ * It was a box-shadow on `.bg-cell` with a `z-index` lift, and that was wrong in the one case the
+ * feature is most for. The cell, the ship overlay and the marker layer are SIBLINGS painted in DOM
+ * order, so lifting the cell put its own opaque background above the hull sprite - spotlighting a
+ * ship hid the ship. Drawn here instead, the ring sits above the hull and paints nothing behind it,
+ * so the art, the result marker and the square's name all still read through.
+ *
+ * A ring and only a ring, for the same reason. Any fill - even a faint one - is a wash over
+ * whatever the square is carrying, and a square is only ever spotlit because of what it carries.
+ *
+ * -- The colour --
+ *
+ * `--bg-spot` is whose shot it was, or whose hull it is; white when the caster is simply pointing
+ * and no fleet is implied. The mask trick is the one .bg-shot-ring already uses: paint the padding
+ * box, then cut the middle out, which leaves a band of a known thickness that costs no extra
+ * element and cannot cover the square.
+ */
+.bg-spot-ring {
+  position: absolute;
+  inset: 0;
+  /* Above the attribution ring (2) and the result markers, below the tallies (4). The spotlight is
+     the loudest thing on the board for as long as it is up, and it has to survive being drawn over
+     a wreck. */
+  z-index: 3;
+  padding: max(3px, 9%);
+  background: var(--bg-spot, #ffffff);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  /* The glow. Outside the ring rather than inside it, so it never eats into the square's contents,
+     and driven by the same variable so a fleet's light looks like that fleet's. */
+  box-shadow:
+    0 0 10px 2px var(--bg-spot, #ffffff),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  animation: bg-spot-pulse 1.6s ease-in-out infinite;
+}
+
+/**
+ * The name, lit.
+ *
+ * The other half of "highlight the text and borders". A ring says WHICH square; on a board where
+ * every square already carries a name in a region colour, it does not make the name any easier to
+ * read - and the name is the thing the caster is about to say out loud.
+ *
+ * A halo rather than a colour change: the region tint is information (it says which group the
+ * square belongs to) and overwriting it to mean "selected" would trade one fact for another. The
+ * dark stack underneath is what keeps a pale name legible where the halo is bright.
+ */
+.bg-cell-spot .bg-cell-text {
+  text-shadow:
+    0 0 6px var(--bg-spot, #ffffff),
+    0 0 12px var(--bg-spot, #ffffff),
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+@keyframes bg-spot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Somebody who has asked their system not to animate things still needs to see WHICH square. The
+   ring stays at full strength; only the breathing stops. */
+@media (prefers-reduced-motion: reduce) {
+  .bg-spot-ring {
+    animation: none;
   }
 }

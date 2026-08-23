@@ -61,6 +61,70 @@ export interface CastView {
   opacity: number;
   /** Hide the board entirely without tearing the source out of the scene. */
   visible: boolean;
+  /**
+   * Draw hit/miss/sunk at all.
+   *
+   * Off, a square that has been fired at keeps only its attribution ring - the coloured outline
+   * saying whose shot landed there - and loses both the sprite and the cell fill underneath it.
+   * The two go together deliberately: dropping the sprite alone leaves a fully colour-coded board,
+   * which is not what "no icons" means to anyone who asks for it.
+   *
+   * What it buys is the square's NAME. On a stream the board is mostly text, and a hundred burst
+   * stars and splash rings sitting on top of that text is a lot of ink spent on information the
+   * caster is usually saying out loud anyway.
+   *
+   * Optional, and defaulted by every reader rather than trusted to be present - a frame sent by a
+   * controller that predates this field carries no opinion about it. Same rule as `opacity`.
+   */
+  markers?: boolean;
+  /**
+   * Whose shots get markers. Null or absent means every fleet's.
+   *
+   * ATTACKER teams, not defenders - which is a different question from the one `mode` asks. `mode`
+   * picks whose BOARD is on screen; this picks whose SHOTS are drawn on it. On a composited board
+   * they are genuinely independent: "Blue's board, showing only Red's hits" is a real thing a
+   * caster wants to say.
+   */
+  markerTeams?: number[] | null;
+  /**
+   * Squares ringed as a spotlight - what the caster is pointing at.
+   *
+   * A list rather than a single index because one square and one hull are the same gesture with a
+   * different footprint, and a protocol that knew the difference would have to be told about ships
+   * to no purpose. The board rings whatever cells it is given.
+   *
+   * A hull's cells reveal that hull's position and shape, so sending them IS sending a ship - see
+   * the guard on the control page, which refuses to spotlight one while the view says no ships are
+   * going to stream.
+   */
+  spot?: number[] | null;
+  /**
+   * The spotlight's colour, as a hex - whose shot, or whose ship, it is.
+   *
+   * White when absent, which is the right default for a caster pointing at a square with no fleet
+   * attached to the gesture. When there IS one - the fleet that fired the shot, or the fleet whose
+   * hull is being shown - the light takes their colour, and the board says whose moment it is
+   * without anybody having to narrate it.
+   *
+   * A hex rather than a team number because the palette is a preference (see teamColors) and the
+   * board should not have to know that, exactly as `firedBy` carries colours rather than teams.
+   */
+  spotColor?: string | null;
+  /**
+   * How large the square names are drawn, as a fraction of what the square will hold.
+   *
+   * 1 means fill it: every name is drawn at the largest size that fits its own cell, so a short
+   * name like "Dane" gets a big one and "Consecrated Death Rite Bird" gets a small one, and the
+   * board stops being mostly empty box. Below 1 trims the whole board by the same proportion.
+   *
+   * Above 1 is accepted and does nothing, because there is nothing above "as large as it fits" -
+   * see lib/textFit, which caps it rather than letting a name overflow.
+   *
+   * Optional and defaulted by every reader, like the fields above it. A source being driven by a
+   * controller that predates this draws at full fill, which is the new default rather than the old
+   * behaviour - the old behaviour is not something anyone was choosing.
+   */
+  text?: number;
 }
 
 /** How faint a source may be made before "hidden" is the honest word for it. */
@@ -105,6 +169,10 @@ export const DEFAULT_VIEW: CastView = {
   coords: true,
   opacity: 1,
   visible: true,
+  markers: true,
+  markerTeams: null,
+  spot: null,
+  text: 1,
 };
 
 /**

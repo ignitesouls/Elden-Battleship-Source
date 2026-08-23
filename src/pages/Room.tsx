@@ -33,7 +33,7 @@ import { SpectateWithCrew } from "../components/SpectateWithCrew";
 import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
-import { challengesForRoom } from "../lib/challenges";
+import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import type { Challenge } from "../lib/challenges";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { playSfx } from "../lib/sfx";
@@ -520,7 +520,7 @@ function SpectatorView({
    * aren't holding a fleet. Players still see only their own crew's finds.
    */
   const deep = useMemo(
-    () => deepWater(room, groupIntoShots(attacks, players), deepHides),
+    () => deepWater(room, groupIntoShots(attacks, players), deepHides, igonAnchor(room)),
     [room, attacks, players, deepHides]
   );
   const deepCells = useMemo(() => deepMarks(deep), [deep]);
@@ -921,6 +921,7 @@ function SpectatorView({
                   room={room}
                   maxHeight="100%"
                   deepCells={deepCells}
+                  igon={deep.igon}
                 />
               </CanvasPanel>
               <CanvasPanel {...panelProps("roster", "Fleets")}>
@@ -995,6 +996,7 @@ function SpectatorView({
               room={room}
               maxHeight="100%"
               deepCells={deepCells}
+              igon={deep.igon}
             />
             <div className="spectate-rail-rosters">{rosters}</div>
           </aside>

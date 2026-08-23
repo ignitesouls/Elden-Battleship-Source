@@ -1,24 +1,43 @@
 /**
  * The caster's desk. Operated on a second monitor, one-handed, while talking.
  *
- * Two columns that don't reflow under each other until they genuinely can't fit: the preview and
- * the controls have to be visible at the same time, because every control is aimed at something
- * the preview is showing.
+ * Three columns that don't stack until they genuinely can't fit - the board, the readout that
+ * describes it, and the controls - because every control here is aimed at something the board is
+ * showing, and a control you have to scroll to reach is one that doesn't get used mid-match. The
+ * board takes about two thirds and the controls about one third; see .cast-body for why that is
+ * written as a cap on the controls rather than as a ratio on the board.
  */
+
 /**
- * Capped, not full-bleed.
+ * The desk fills the window exactly once, and never scrolls.
  *
- * This is a desk, and a desk is a fixed set of controls you learn the position of. Stretched across
- * a 2560px monitor the zoom slider became a metre long - a pixel of travel per 0.002x - and the
- * URL fields ran off toward the horizon with a lake of empty blue underneath. Everything here has
- * a natural size; the page should be that size and no wider.
+ * This is worked one-handed while talking, on a second monitor, by somebody looking mostly at the
+ * stream. A control you have to scroll to reach is a control that doesn't get used mid-match - so
+ * the page is pinned to the viewport, and the only thing allowed to scroll is the control column's
+ * own overflow. See .cast-panel.
+ *
+ * -- Why this is no longer capped at 1100px --
+ *
+ * It was, for a good reason: stretched across a 2560px monitor the zoom slider became a metre long
+ * - a pixel of travel per 0.002x - and the URL fields ran off toward the horizon with a lake of
+ * empty blue underneath. But that is an argument about the CONTROLS having a natural size, not
+ * about the page, and capping the page to fix it capped the board along with them. The cap now
+ * sits on the column it was always about (see .cast-body), which lets the monitor have every pixel
+ * the window can spare - which is the entire point, because the board is what gets aimed.
+ *
+ * The height subtracts #root's own vertical padding - 2.8rem clearing the fixed top bar, 0.75rem
+ * beneath - rather than assuming it. `dvh` so a mobile browser's collapsing toolbar can't leave the
+ * bottom of the desk underneath it; the `vh` line before it is the fallback for anything that
+ * doesn't know the unit, and must stay first.
  */
 .cast {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
-  max-width: 1100px;
+  height: calc(100vh - 3.55rem);
+  height: calc(100dvh - 3.55rem);
+  overflow: hidden;
 }
 
 .cast-head {
@@ -39,22 +58,95 @@
   color: #6fd08c;
 }
 
+/**
+ * Board, readout, controls - in that order and in roughly that proportion.
+ *
+ * About two thirds to the board and one third to the controls, which is what these tracks resolve
+ * to on a 1080p desk: the panel caps at 40rem (640px, near enough a third of 1920) and everything
+ * left over goes to the board.
+ *
+ * -- Why a cap on the controls rather than a literal `2fr 1fr` --
+ *
+ * The board is SQUARE, so its size is bound by the window's HEIGHT, not its width - about 850px on
+ * a 1080p screen, and no amount of extra width changes that. A hard 2fr would hand the board column
+ * width it physically cannot spend, leaving it as empty space either side, while simultaneously
+ * stretching the sliders back out into the metre-long problem described above .cast. Capping the
+ * controls instead gives the same 2:1 where it matters and degrades properly in both directions:
+ * a bigger monitor puts the extra into the board, a smaller one shrinks the controls first.
+ *
+ * -- Why clamp() and not minmax(), which is the obvious way to write that --
+ *
+ * `minmax(20rem, 40rem)` for the controls beside `1fr` for the board looks like it says "the
+ * controls take what they need, the board takes the rest". It says the opposite. Grid sizes tracks
+ * in a fixed order, and its "maximize tracks" step grows every non-flexible track from its base
+ * toward its GROWTH LIMIT before flexible tracks are resolved at all - so the capped column claims
+ * its full maximum first and the `fr` column is left whatever survives. On a 1280x800 laptop that
+ * was 640px of controls and 256px of rail out of 1264, and 312px for the board: a monitor SMALLER
+ * than the fixed 420px one this layout replaced, and clipped by MIN_PREVIEW on top. The cap
+ * starved the thing it was added to protect.
+ *
+ * Percentages resolve against the container instead of racing for it, so clamp() gives each column
+ * a share that shrinks with the window and a ceiling it will not pass. The board keeps `1fr` and
+ * genuinely does get the remainder, because the other two can no longer take more than their share.
+ *
+ * `min-height: 0` because this is a flex child that has to be allowed to be SHORTER than its
+ * contents. The default `min-height: auto` lets the panel's natural height push the desk past the
+ * bottom of the window, which is precisely the scrolling this layout exists to prevent.
+ */
 .cast-body {
-  display: flex;
-  align-items: flex-start;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(10rem, 16%, 19rem) clamp(18rem, 30%, 40rem);
+  /* One row, filling the height, and explicitly ALLOWED to be shorter than its contents.
+     A single implicit `auto` row would in fact be stretched here anyway - but only because
+     `align-content` happens to default to stretch, and only while nothing inside asks to be
+     taller. The deck's whole measurement rests on this row being the window's height rather than
+     the panel's content height, which is far too load-bearing to leave to a default. The
+     `minmax(0, ...)` is the same guard as `min-height: 0` above, in the form a grid track takes. */
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.cast-preview-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  flex: none;
 }
 
 /**
- * The board as a map to aim with. Positioned so the frame rectangle can sit over it.
+ * The box the monitor is centred in - the one element here whose size is MEASURED.
+ *
+ * Every `min-*: 0` and the overflow on this rule is load-bearing. The monitor's pixel size is
+ * derived from a measurement of this box (see `previewPx` in CasterControl.tsx), so if the monitor
+ * could push the deck outward the measurement would feed itself: bigger board, bigger deck, bigger
+ * board. A grid item defaults to `min-width: auto`, which means exactly "never smaller than my
+ * contents" - the loop, switched on by default. Pinned to zero and clipped, the deck's size comes
+ * only from its grid track and the height settled above it, both of which are decided before
+ * anything inside it is drawn.
+ */
+.cast-deck {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * The readout column beside the board. See the note in CasterControl.tsx for why it lives here now.
+ *
+ * Top-aligned rather than centred: it sits beside a square board that is often much shorter than
+ * the column is tall, and text floating in the vertical middle of a tall empty strip reads as
+ * detached from the thing it is describing.
+ */
+.cast-rail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/**
+ * The board as a map to aim with. Positioned so the "hidden on stream" veil can sit over it.
  *
  * `touch-action: none` is load-bearing for the drag: without it a pointer drag on a touchscreen or
  * precision trackpad is claimed by the browser as a scroll gesture and the pointermove events stop
@@ -99,6 +191,19 @@
 .cast-preview {
   display: inline-block;
   line-height: 0;
+  /**
+   * Never shrunk to fit - clipped instead. This is a flex item now, and a flex item's default
+   * `flex-shrink: 1` squashes it on the MAIN axis only. On a window too narrow to honour
+   * MIN_PREVIEW that would take width off the monitor and leave its height alone, so the one thing
+   * this box must always be - square, exactly as the source is - would quietly stop being true,
+   * while `panTo` and the scale transform both went on using a single number for both axes. The
+   * board would then track the hand correctly in one direction and not the other.
+   *
+   * `flex: none` hands the overflow to .cast-deck's `overflow: hidden`, which is the behaviour
+   * MIN_PREVIEW is documented to want: past a certain smallness, a clipped board is more honest
+   * than a distorted one.
+   */
+  flex: none;
 }
 
 /* Same clamps the board source has to lift - see the long note in OverlayBoard.css. Without them
@@ -115,34 +220,6 @@
 .cast-preview .bg-cell {
   pointer-events: none;
   cursor: inherit;
-}
-
-.cast-inline-btn {
-  font-size: 0.72rem;
-  padding: 0.1rem 0.35rem;
-  margin-left: 0.25rem;
-}
-
-.cast-inline-btn {
-  font-size: 0.72rem;
-  padding: 0.1rem 0.35rem;
-  margin-left: 0.25rem;
-}
-
-/**
- * What the stream is currently framing.
- *
- * Drawn over the preview rather than by dimming everything outside it: a caster needs to read the
- * squares they are ABOUT to move to as much as the ones on screen now, and a mask would hide
- * exactly the part they are aiming at next.
- */
-.cast-frame {
-  position: absolute;
-  border: 2px solid var(--accent);
-  border-radius: 3px;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
-  transition: all 180ms ease-out;
 }
 
 /**
@@ -174,41 +251,47 @@
 }
 
 /**
- * The readout under the monitor. Wraps; never widens.
+ * The readout beside the monitor. Wraps; never widens.
  *
  * It ends in the full name of whatever square is under the crosshair, which changes constantly
  * while panning - and boss names run from "Rick" to "Lurnia Crystalian (Ringblade)". As a single
  * nowrap line that made the whole left column resize on every frame of a drag, which threw the
  * controls beside it left and right several times a second. Genuinely unpleasant to look at.
  *
- * The column's width is fixed to the monitor (see .cast-preview-wrap's inline width), so all this
- * has to do is wrap inside it. min-height reserves the tallest it gets, so changing from one line
- * to three doesn't make the box itself twitch either - the space is cheap and it is below
- * everything, so nothing moves to pay for it.
+ * It used to answer that with `min-height: 3.3em` - reserving the tallest it ever gets, so growing
+ * from one line to three moved nothing. That reservation is gone, and not because the problem went
+ * away: it is now solved by where this sits. .cast-rail is a column of its own with a bounded
+ * width and nothing beneath it, so the text can grow to five lines and push on nothing at all.
+ * Structure rather than arithmetic - and the ~47px the reservation was holding goes back to the
+ * board, which is the difference between 40px squares and 43px ones on a 20x20 room.
  */
 .cast-hint {
   font-size: 0.78rem;
   line-height: 1.35;
-  min-height: 3.3em;
   /* A single unbroken token longer than the column would still push it out; nothing in the square
      sets is that long today, but the guarantee should not depend on that. */
   overflow-wrap: anywhere;
 }
 
+/**
+ * The controls, and the only thing on this page allowed to scroll.
+ *
+ * Its WIDTH is already capped by its grid track (see .cast-body), so the sliders and URL fields
+ * keep the fixed, learnable size that cap exists to give them. What it is not capped on is
+ * CONTENT: the record chases come and go with the match and the browser-source block is long, so
+ * on a short window this column overflows. It takes that scroll onto itself rather than handing it
+ * to the page - a page-level scrollbar would push the board off screen, and the board is the thing
+ * being aimed.
+ */
 .cast-panel {
-  flex: 1 1 22rem;
-  min-width: 16rem;
-  max-width: 32rem;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-}
-
-/* The preview shows one board per fleet, matching the source exactly. */
-.cast-preview-boards {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
+  /* Reserved so sections don't reflow sideways at the moment the scrollbar appears. */
+  padding-right: 0.35rem;
 }
 
 .cast-panel section {
@@ -315,5 +398,178 @@
   top: 0;
   left: 0;
   transform-origin: top left;
+  overflow: hidden;
+}
+
+/**
+ * Too narrow for a desk: the page becomes an ordinary page again.
+ *
+ * Below this the three tracks can only be satisfied by starving all of them - a board too small to
+ * aim with, beside controls too cramped to read - and that is worse than scrolling. So the height
+ * pin comes off, the columns stack, and every internal scroller hands its overflow back to the
+ * page, which is now allowed to have it.
+ *
+ * .cast-deck must be given an explicit height here, and this is the one rule that is easy to get
+ * wrong. Stacked, there is no longer anything above it bounding its height, so `min-height: 0` on
+ * an auto-height box measures as nothing - and `previewPx` derives the whole board from that
+ * measurement. Without a stated height the board would collapse to its MIN_PREVIEW floor on every
+ * narrow window. The value is a proportion of the viewport rather than a fixed pixel count so the
+ * board still scales with the screen it landed on.
+ */
+@media (max-width: 60rem) {
+  .cast {
+    height: auto;
+    overflow: visible;
+  }
+
+  .cast-body {
+    grid-template-columns: minmax(0, 1fr);
+    /* Back to content-sized rows. The single full-height row above is what makes the desk fit the
+       window; stacked, each column needs its own natural height instead. */
+    grid-template-rows: none;
+  }
+
+  .cast-deck,
+  .cast-rail,
+  .cast-panel {
+    overflow: visible;
+  }
+
+  .cast-deck {
+    height: min(70vh, 42rem);
+  }
+
+  .cast-panel {
+    padding-right: 0;
+  }
+}
+
+/* While the monitor is armed for pointing, say so with the cursor - the same board is still
+   draggable, and the only thing that changed is what a CLICK does. */
+.cast-spotting {
+  cursor: crosshair;
+}
+
+.cast-spotting:active {
+  cursor: crosshair;
+}
+
+/**
+ * A checkbox that is a whole row, so the label is part of the target.
+ *
+ * These are read and pressed one-handed while talking - a 13px tick box on its own is a thing you
+ * have to aim at, and aiming at controls is what the aim pad is for.
+ */
+.cast-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cast-check input {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+}
+
+/* A second heading inside a section - the ship list under the spotlight controls, which belongs to
+   the same idea but is long enough to need its own label. */
+.cast-subhead {
+  margin-top: 0.35rem;
+}
+
+.cast-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.3rem;
+}
+
+.cast-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* The recall key stays big; the save/clear underneath is deliberately small and quiet. Overwriting
+   a framing set up before the match is the one destructive thing on this page, so it should never
+   be the button your hand lands on. */
+.cast-preset-set {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.2rem;
+  opacity: 0.75;
+}
+
+.cast-preset-zoom {
+  display: block;
+  font-size: 0.6rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.cast-spot-name {
+  font-size: 0.76rem;
+  align-self: center;
+}
+
+/**
+ * The hull list.
+ *
+ * Two columns where the panel is wide enough, because this is the tallest thing on the desk - five
+ * hulls a fleet, and every one of them carrying the names of the squares it covers. One column of
+ * twenty is a scroll; two columns of ten usually isn't.
+ */
+.cast-hulls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.3rem;
+}
+
+/* Left-aligned and stacked, unlike every other button here - this one is a line to be READ before
+   it is pressed, and centred text in two sizes is much harder to scan down. */
+.cast-hull {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  line-height: 1.3;
+}
+
+.cast-hull-head {
+  font-size: 0.76rem;
+  font-weight: 700;
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+/* How much of the hull is down. Tabular so a column of these lines up rather than shuffling. */
+.cast-hull-tally {
+  font-size: 0.68rem;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* The squares on the hull, in full. Clamped to two lines: a five-square hull of long boss names is
+   otherwise taller than the button next to it, and a list whose rows are all different heights is
+   much harder to run an eye down. The full set is in the tooltip and, more to the point, on the
+   board the caster is looking at. */
+.cast-hull-squares {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }

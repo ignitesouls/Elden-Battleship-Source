@@ -4,7 +4,7 @@ import { useRoom } from "../hooks/useRoom";
 import { activeTeams, sunkCellOrientations, cellLabel, sunkHullFlags } from "../lib/battleshipLogic";
 import { groupIntoShots, outcomeText } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
-import { challengesForRoom } from "../lib/challenges";
+import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import { formatDuration, matchTimings, matchStartedAt } from "../lib/matchTime";
 import { useBattleClock, useBattlePhaseName } from "../hooks/useBattlePhase";
 import { teamName, teamHex } from "../lib/teamColors";
@@ -115,8 +115,11 @@ export function Overlay() {
   const latestShot = allShots[0] ?? null;
   // Everything in the water, as soon as it happens - this is a caster's source, not a player's board
   // (see lib/deepWater.ts). No team passed, so nothing is held back.
-  const deepCells = room ? deepMarks(deepWater(room, allShots, state.deepHides)) : undefined;
-  const latestOutcome = latestShot ? outcomeText(latestShot, deepCells) : null;
+  // Kept rather than thrown away after deepMarks, because Igon has something to say about a square
+  // he is not on and the log line for it needs him - see outcomeText.
+  const deep = room ? deepWater(room, allShots, state.deepHides, igonAnchor(room)) : null;
+  const deepCells = deep ? deepMarks(deep) : undefined;
+  const latestOutcome = latestShot ? outcomeText(latestShot, deepCells, null, deep?.igon) : null;
 
   // Attacks AGAINST a team, expanded so every cell of a sunk hull reads as sunk rather than only
   // the square that landed the killing blow.
@@ -247,7 +250,7 @@ export function Overlay() {
       {showLog && shots.length > 0 && (
         <div className="ov-card ov-log">
           {shots.map((shot) => {
-            const outcome = outcomeText(shot, deepCells, room);
+            const outcome = outcomeText(shot, deepCells, room, deep?.igon);
             const challenge = challenges[shot.cellIndex];
             return (
               // Fragment rather than a wrapper, so the note becomes its own line in the log's

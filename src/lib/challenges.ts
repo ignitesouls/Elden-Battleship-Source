@@ -10,6 +10,7 @@ import {
   type Region,
 } from "./squareSets";
 import { rng, seedFrom } from "./seededRandom";
+import { BAYLE_SQUARES, igonUnveiled } from "./squareSetFormat";
 import { applyBoardPerm } from "./boardBalance";
 
 export type { Challenge, SquareSetId, Region };
@@ -108,4 +109,71 @@ export function detectSquareSet(
     if (sample.every(({ cell, name }) => board[cell]?.name === name)) return set.id;
   }
   return null;
+}
+
+
+/**
+ * Memo for bayleCell(), keyed on everything the deal depends on.
+ *
+ * Worth having because three of the callers - the two overlays and the caster's control page - work
+ * out the water inline on every render rather than inside a useMemo, and each of those renders on
+ * every realtime tick of a live match. Without this, each tick reshuffles 206 squares to answer a
+ * question whose answer was fixed when the board was dealt.
+ */
+const bayleCellMemo = new Map<string, number | null>();
+
+/**
+ * Which cell this room's board put Bayle on, or null if it didn't put him anywhere.
+ *
+ * Null is the ordinary answer and the reason Igon is rare without any tuning: Bayle is one square
+ * out of the 206 the boss set deals from, so a 10x10 lands him about half the time and a 5x5 about
+ * one time in eight. Also null for every set that has no arena square at all, `bosses-2v2` included.
+ *
+ * Lives here rather than in lib/deepWater.ts on purpose. Reconstructing a board means importing the
+ * square-set registry, and that registry binds a dozen JSON files - which is exactly why both edge
+ * functions and scripts/check-boards.ts mirror challengesForRoom()'s seeding instead of importing
+ * it. deepWater.ts is imported by scripts/check-deep-water.ts under bare Node, so it takes the cell
+ * as an argument and this is the one place that answers the question.
+ *
+ * The first arena wins when a board holds more than one. Only the objectives set can manage that -
+ * it deals "Kill Bayle the Dread" and the Placidusax pair from the same pool - and either is a
+ * square you go and kill Bayle on, so there is no better answer than the earlier cell.
+ */
+/**
+ * Where Igon is allowed to be waiting: Bayle's cell, or null because this room is from before he
+ * existed.
+ *
+ * The gate and the board question are kept apart on purpose. `bayleCell` answers "where did the deal
+ * put the dragon", which stays true regardless, and this composes the reveal on top of it - so the
+ * one place that decides whether the egg is live reads as a decision rather than as an oddity buried
+ * in a lookup. Every caller that feeds deepWater uses THIS one.
+ */
+export function igonAnchor(room: {
+  id: string;
+  board_size: number;
+  square_set?: string | null;
+  seed?: string | null;
+  seed_set_at?: string | null;
+  board_perm?: number[] | null;
+}): number | null {
+  return igonUnveiled(room.seed_set_at) ? bayleCell(room) : null;
+}
+
+export function bayleCell(room: {
+  id: string;
+  board_size: number;
+  square_set?: string | null;
+  seed?: string | null;
+  board_perm?: number[] | null;
+}): number | null {
+  const cells = room.board_size * room.board_size;
+  const key = `${room.id}:${room.square_set ?? ""}:${room.seed ?? ""}:${room.board_perm?.join(",") ?? ""}:${cells}`;
+  const cached = bayleCellMemo.get(key);
+  if (cached !== undefined) return cached;
+
+  const board = challengesForRoom(room.id, cells, room.square_set, room.seed, room.board_perm);
+  const found = board.findIndex((c) => BAYLE_SQUARES.has(c.name));
+  const cell = found === -1 ? null : found;
+  bayleCellMemo.set(key, cell);
+  return cell;
 }

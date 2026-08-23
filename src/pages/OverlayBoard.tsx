@@ -5,7 +5,7 @@ import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
 import { useBoxSize } from "../hooks/useBoxSize";
 import { activeTeams, sunkCellOrientations, attackerTeamsByCell } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
-import { challengesForRoom } from "../lib/challenges";
+import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
 import { teamHex } from "../lib/teamColors";
@@ -21,6 +21,7 @@ import {
 } from "../lib/overlayCast";
 import { readTextSize, OVERLAY_MAX_FONT } from "../lib/overlayText";
 import { squaresRevealed } from "../lib/overlayReveal";
+import { markedAttacks, spotSet } from "../lib/overlayMarkers";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import "./Overlay.css";
@@ -193,6 +194,19 @@ export function OverlayBoard() {
   // A URL that pins the view outranks the channel entirely - see pinnedView. Nothing is "stale"
   // in that case either: there is no controller to have gone quiet.
   const view: CastView = pinned ?? cast?.view ?? DEFAULT_VIEW;
+  /**
+   * How large the names are drawn, from whichever end is actually in charge.
+   *
+   * A URL that says `?text=` means it - that is a streamer who has set this source up by hand, and
+   * a controller must not override a value somebody typed. Everything else takes the caster's
+   * slider, falling back to full fill.
+   *
+   * `readTextSize` returns 1 for a URL that didn't ask, which is indistinguishable from a URL that
+   * asked for 1 - so the raw parameter is tested rather than its parsed value. Otherwise every
+   * unconfigured source would look like it was demanding full fill and would ignore the desk.
+   */
+  const askedText = params.get("text");
+  const drawnText = askedText !== null && askedText !== "" ? textSize : (view.text ?? 1);
   const stale = !pinned && cast !== null && Date.now() - cast.at > STALE_AFTER_MS;
   if (!view.visible) return null;
 
@@ -241,7 +255,13 @@ export function OverlayBoard() {
    * the other fleet happened to be empty there.
    */
   const relevant = state.attacks.filter((a) => shown.includes(a.defender_team));
-  const sunkCells = sunkCellOrientations(relevant, boardSize);
+  // Only the shots the controller is letting draw a result. Shared with the control page's monitor
+  // so the two cannot drift - see lib/overlayMarkers, which is also where the attacker/defender
+  // distinction is spelled out. A pinned source inherits DEFAULT_VIEW here, i.e. every marker.
+  const marked = markedAttacks(relevant, view);
+  // From `marked`: wreckage is a result like any other, and a hull sunk by a fleet whose markers
+  // are hidden must not leave its ship drawn across the board.
+  const sunkCells = sunkCellOrientations(marked, boardSize);
   /**
    * Whose shot each square was, in each fleet's colour - drawn as a ring around the square.
    *
@@ -256,12 +276,14 @@ export function OverlayBoard() {
   // Every fleet's shots, not `relevant`: what is hiding in the water belongs to the sea rather than to
   // any one board, and the shot that found it may well have been aimed at a fleet this source isn't
   // showing. No team passed to deepMarks - a caster's board holds nothing back.
-  const deepCells = deepMarks(deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides));
+  const deepCells = deepMarks(
+    deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides, igonAnchor(room))
+  );
 
   // One walk of the shown fleets' shots rather than one filter of the whole log per square - which
   // on a source re-rendering off the cast heartbeat was the most expensive thing this page did.
   // See lib/cellVisuals for the precedence, which is the same merge described above.
-  const visuals = cellVisuals(relevant, sunkCells);
+  const visuals = cellVisuals(marked, sunkCells);
   const cellVisual = (index: number): CellVisual => visuals.get(index) ?? "empty";
 
   // Square as big as the shorter side of the source, then multiplied by the zoom. A board is
@@ -278,7 +300,7 @@ export function OverlayBoard() {
       // board size - BoardGrid's own figure is capped at 1600px. See OverlayBoard.css.
       // --ovb-text carries the same multiplier the names get to the COORDINATE labels, which are
       // plain CSS rather than fitted per square and so can't take it as a prop.
-      style={{ ["--ovb-cells" as string]: boardSize, ["--ovb-text" as string]: textSize }}
+      style={{ ["--ovb-cells" as string]: boardSize, ["--ovb-text" as string]: drawnText }}
     >
       {/* Opacity lives on the STAGE, not the frame: the stale badge and the debug readout are
           diagnostics about the source itself, and fading them along with the board would make a
@@ -302,6 +324,12 @@ export function OverlayBoard() {
           // cannot say whose shot a square was is only half a board, and it is not a setting anybody
           // would want to reach for mid-match. See attackerTeamsByCell.
           firedBy={firedBy}
+          // What the caster is pointing at. Never set on a pinned source: it arrives on the cast
+          // frame only, so a player's own board can't be lit up by somebody else's desk.
+          spotCells={spotSet(view)}
+          // Whose shot, or whose hull. Undefined leaves the light white, which is what a caster
+          // simply pointing at a square should look like.
+          spotColor={view.spotColor ?? undefined}
           // Drawn the moment any of it is found - see lib/deepWater.ts. This source needs no frame
           // from the desk to know: the finds are in the public log, so it works them out for itself
           // and they appear on stream by themselves.
@@ -313,8 +341,11 @@ export function OverlayBoard() {
           maxVh={`${boardPx}px`}
           maxVw={`${boardPx}px`}
           // Legibility for a viewer, not for the person at the keyboard - see the two notes above.
-          textBoost={textSize}
+          textBoost={drawnText}
           maxCellFont={OVERLAY_MAX_FONT}
+          // Names grow to fill their square rather than stopping at the app's ratio - the whole
+          // reason this source exists is to be read from across a room. See lib/textFit.
+          growText
           cellText={
             view.names && revealed
               ? (i) => {

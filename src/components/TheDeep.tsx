@@ -6,6 +6,7 @@ import {
   BottleMark,
   JarMark,
   PatchesMark,
+  IgonMark,
 } from "./HitMarkers";
 import { cellLabel } from "../lib/battleshipLogic";
 import { teamName } from "../lib/teamColors";
@@ -23,6 +24,9 @@ const DEEP_LABEL: Record<DeepMark, string> = {
   jar: "Alexander, stuck fast",
   // Same square, same jar - being out is what the second shot did, not a different thing to have found.
   jarFree: "Alexander, out at last",
+  igon: "Igon, and his furled finger",
+  // Same square, same man - killing Bayle is what got him up, not a different thing to have found.
+  igonAvenged: "Igon, tormented no longer",
   patches: 'Patches, who is "sorry"',
 };
 
@@ -96,6 +100,9 @@ export function TheDeep({
             {entry.mark === "dutchman" && <DutchmanMark />}
             {entry.mark === "bottle" && <BottleMark />}
             {(entry.mark === "jar" || entry.mark === "jarFree") && <JarMark freed={entry.mark === "jarFree"} />}
+            {(entry.mark === "igon" || entry.mark === "igonAvenged") && (
+              <IgonMark avenged={entry.mark === "igonAvenged"} />
+            )}
             {entry.mark === "patches" && <PatchesMark />}
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>

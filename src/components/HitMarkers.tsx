@@ -449,6 +449,183 @@ export function PatchesMark() {
   );
 }
 
+/**
+ * Igon, in the only two states he has: down on the rocks, and up because the dragon is dead.
+ *
+ * -- The hat -----------------------------------------------------------------------------------------
+ *
+ * Tattered burlap, and getting to that took six wrong answers, each of which is a thing this drawing
+ * must not be:
+ *
+ *   - Not a smooth brim (a boater), and not a cone (a witch).
+ *   - Not a ROUND crown. A sack pulled over a head has corners and sits crooked; a smooth dome is
+ *     moulded, and reads as a helmet however ragged the hem below it gets. The top is squared off
+ *     and canted a few degrees for exactly this reason.
+ *   - Not FEATHERS. Tapered fronds radiating from a centre read as plumage or as hair, and the
+ *     giveaway is the quill lines - any radial detail turns the whole mass into a wing.
+ *   - Not a fringe. Strips of matched width read as something CUT.
+ *
+ * What it is: a sagging mass of coarse cloth whose lower edge has torn into tongues of no two widths
+ * or lengths, with blunt ends and sides a degree or two off vertical. Two soft bands cross it where
+ * the cloth drapes - horizontal, never radial. And one pale cord hangs off the side, which is the
+ * only light thing in all that black and the detail that says "worn" rather than "grown".
+ *
+ * -- The face ------------------------------------------------------------------------------------------
+ *
+ * Dark cloth, close in value to the hat, with one eye open and one shut - both tiny. The wrap has to
+ * stay near the hat's value so the eyes are set against shadow; a bright face under that hem reads as
+ * a cyclops. See the note beside them in IgonHat for why they are as small as they are.
+ *
+ * -- Dark hat, light clothes ---------------------------------------------------------------------------
+ *
+ * That way round matters. Reversed, the head becomes a paper bag and the figure is one lump at board
+ * size. It is also what keeps him apart from the other two people in this water: `PatchesMark` is a
+ * pale dome on a dark crouched mass and Alexander is deliberately its negative, while Igon is a dark
+ * ragged head over a pale body - and the only one of the three whose outline is torn.
+ *
+ * -- One hat, two poses ---------------------------------------------------------------------------------
+ *
+ * `IgonHat` is drawn once and placed twice, rotated and scaled for the prone pose rather than
+ * redrawn. That is what lets a viewer recognise the second picture as the same man.
+ *
+ * Found is a horizontal and holds NOTHING - not being able to lift the bow is the whole content of
+ * that state. Avenged is a vertical, bow upright in his right hand and his left thrown at the sky; no
+ * arrow, because he is not aiming at anything any more. The bow is deliberately the tallest thing in
+ * the square: at an overlay cell's twenty pixels the figure is mush and a bow is still a bow.
+ *
+ * The clothes are the same in both. An earlier pass warmed them for the risen state and it read as a
+ * costume change rather than a change of fortune; the lightning is the only thing in the second
+ * drawing that is not in the first.
+ */
+export function IgonMark({ avenged }: { avenged?: boolean }) {
+  return avenged ? <IgonRisen /> : <IgonDown />;
+}
+
+/**
+ * The hat, the face under it, and the cord - the only geometry shared between his two poses.
+ *
+ * Drawn upright about (50, 36) so the prone pose can place it with one transform. The hem is written
+ * out longhand rather than generated because the whole point of it is that no two tongues match; a
+ * loop would produce exactly the even fringe this is trying not to be.
+ */
+function IgonHat() {
+  return (
+    <>
+      <path
+        className="igon-hood"
+        d="M40,26 L41,17 L45,12 L57,10 L60,15 L60,26 C68,27 75,33 79,42
+           L72,44 L73,54 L68,55 L67,45 L63,45 L62,58 L58,57 L59,46
+           L55,46 L56,50 L51,51 L51,45 L47,45 L46,56 L42,55 L43,46
+           L38,46 L39,51 L34,52 L33,46 L30,45 L29,49 L25,47 L26,43
+           C24,33 32,27 40,26 Z"
+      />
+      {/* Where the cloth drapes. Horizontal on purpose - a radial line here reads as a quill and the
+          whole hat turns into a wing. */}
+      <path className="igon-weave" d="M27,38 C37,33 63,33 74,38" />
+      <path className="igon-weave" d="M42,18 C47,15 55,14 59,16" />
+      <path className="igon-face" d="M42,34 C46,32 55,32 58,35 C59,44 55,49 50,49 C44,49 41,41 42,34 Z" />
+      {/*
+        One open, one shut, and both tiny - about three units across on a hundred-unit square. Any
+        larger and he stops being a wrecked man peering out and becomes a cartoon: the white takes
+        over the face and reads as a googly eye stuck on. The open one carries no outline for the
+        same reason, since at this size a stroke would be most of the shape.
+
+        They are gone by the time a cell is forty pixels wide, which is correct rather than a
+        shortcoming. What has to survive is the dark head under the hem; the eyes are for whoever
+        leans in.
+      */}
+      <ellipse className="igon-eye" cx="53.2" cy="39.5" rx="1.5" ry="1.35" />
+      <circle className="igon-pupil" cx="53.2" cy="39.5" r="0.75" />
+      <path className="igon-shut" d="M45,39.6 C46.2,40.6 47.4,40.6 48.6,39.6" />
+      {/* The chin cord: the one pale mark on the whole head, and the thing that reads it as worn. */}
+      <path className="igon-cord" d="M67,48 C71,54 70,61 66,65" />
+      <circle className="igon-knot" cx="65.4" cy="66" r="1.9" />
+    </>
+  );
+}
+
+/**
+ * Propped on the rocks, and holding nothing.
+ *
+ * A horizontal: the back hunches away to the right, one arm is braced on the stone, and both legs
+ * trail clear of a hem that ends in tatters. The hat sits ON the shoulder rather than beside it -
+ * floated clear, the two halves read as two unrelated objects on one square.
+ *
+ * He gets a rock because he is the only thing down here that is neither swimming nor sunk.
+ */
+function IgonDown() {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMax meet"
+      className="igon-mark igon-mark-down"
+      aria-hidden="true"
+    >
+      <path className="igon-rock" d="M2,100 C6,86 24,78 50,79 C76,80 94,88 98,100 Z" />
+      <path className="igon-ripple" d="M2,94 C14,90 26,90 36,94" />
+      <path className="igon-leg" d="M78,80 L93,86" />
+      <path className="igon-leg" d="M77,85 L91,92" />
+      <path className="igon-cloak" d="M56,62 C70,56 83,64 87,78 L85,86 L62,88 C55,82 52,70 56,62 Z" />
+      <path className="igon-cloak" d="M62,88 L65,93 L69,86 L73,92 L77,86 L81,92 L85,86 Z" />
+      <path className="igon-cape" d="M56,62 C70,56 83,64 87,78 L81,79 C77,68 67,62 58,66 Z" />
+      <path className="igon-limb" d="M58,72 C51,80 45,87 36,92" />
+      <g transform="translate(-1,24) rotate(-20 50 36) scale(0.8) translate(11,10)">
+        <IgonHat />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * On his feet, with the storm behind him.
+ *
+ * The legs are their own darker value below a hem that ENDS. Drawn in the coat's colour they vanish
+ * and the whole lower half becomes a bell, which is what most made an earlier pass read as a robe.
+ *
+ * The lightning is kept clear of the raised arm. Crossed, the two bright shapes merge into one blob
+ * at board size.
+ */
+function IgonRisen() {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMax meet"
+      className="igon-mark igon-mark-risen"
+      aria-hidden="true"
+    >
+      {/*
+        Three strikes, thrown to the corners rather than clustered - a storm over the whole square
+        rather than a flash beside him.
+
+        They are drawn before the figure's group, so the top-left one crossing the greatbow is depth
+        rather than a collision. That is also the only reason it can go there at all: the bow owns
+        that side of the square from top to bottom, and a bolt sharing the space only works because
+        it passes behind.
+
+        The two behind are dimmer and struck on their own timing, so the sky flickers rather than
+        blinking as one shape.
+      */}
+      <path className="igon-bolt igon-bolt-far" d="M18,2 L8,18 L15,19 L4,38 L11,21 L3,20 Z" />
+      <path className="igon-bolt igon-bolt-low" d="M84,58 L76,70 L82,71 L73,88 L79,74 L71,73 Z" />
+      <path className="igon-bolt" d="M96,10 L83,31 L92,32 L80,57 L87,35 L77,34 Z" />
+      <path className="igon-ripple" d="M4,96 C16,92 28,92 38,96" />
+      <g className="igon-body">
+        <path className="igon-cape" d="M42,52 C31,66 29,80 33,93 L46,89 C42,74 43,62 47,52 Z" />
+        <path className="igon-leg" d="M46,74 L45,92" />
+        <path className="igon-leg" d="M56,74 L59,92" />
+        <path className="igon-cloak" d="M41,52 C45,47 56,47 60,52 L64,70 L37,70 Z" />
+        <path className="igon-cloak" d="M37,68 L64,68 L67,78 L34,78 Z" />
+        <path className="igon-cloak" d="M34,78 L38,84 L42,77 L47,83 L51,76 L56,83 L60,77 L64,84 L67,78 Z" />
+        <path className="igon-bow" d="M24,14 C11,36 11,64 24,88" />
+        <path className="igon-string" d="M24,14 L24,88" />
+        <path className="igon-limb" d="M43,55 C37,54 30,53 25,52" />
+        <path className="igon-limb" d="M59,55 C66,48 71,38 75,29" />
+        <IgonHat />
+      </g>
+    </svg>
+  );
+}
+
 interface SunkMarkProps {
   /** Matches the ship's own orientation (see the ship sprite rotation in BoardGrid) so the fire
    * rises from the hull's deck rather than always pointing toward the top of the cell. */

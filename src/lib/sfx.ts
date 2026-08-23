@@ -49,6 +49,26 @@ const FILES = {
    */
   jar: "sfx/battleship_jar.wav",
   /**
+   * Igon, handing over his furled finger. His own voice, from the game.
+   *
+   * Ten and a half seconds, which is the longest thing here bar the sleeper, and it plays for every
+   * crew that fires at his square rather than once a match - so on a busy board it can land several
+   * times. That is a real cost and it is taken deliberately: the line IS the find. A trimmed version
+   * would be a man saying half a sentence, which is worse than a long one.
+   *
+   * Kept at the name it arrived under rather than renamed into the battleship_ convention, because it
+   * is a recording of a specific line and the filename is the only place that is written down.
+   */
+  igonFinger: "sfx/Igon-Finger.wav",
+  /**
+   * Igon, avenged. Fifteen seconds, and longer than the sleeper on purpose.
+   *
+   * The one sound here allowed to outrun Cthulhu, because what it needs is length rather than volume:
+   * this only happens when a crew carrying his finger goes and kills one of the most expensive bosses
+   * on the board, which most matches never see at all.
+   */
+  igonHappy: "sfx/Igon-Happy.wav",
+  /**
    * The match is over and your fleet is the one still afloat.
    *
    * Plays once, on the moment the room flips to `finished`, and only for someone who watched it

@@ -14,6 +14,7 @@ import {
   DutchmanMark,
   BottleMark,
   JarMark,
+  IgonMark,
   PatchesMark,
 } from "./HitMarkers";
 import { fitText, useTextFit, breakSegments } from "../lib/textFit";
@@ -197,6 +198,33 @@ interface BoardGridProps {
    * own - see OverlayBoard.
    */
   maxCellFont?: number;
+  /**
+   * Squares the caster is pointing at, ringed and pulsing.
+   *
+   * A stream viewer cannot follow a finger on a monitor, so "the one at D7" is a sentence with no
+   * picture attached to it. This is the picture. One cell for a square, every cell of a hull for a
+   * ship - the board doesn't need to know which it was given.
+   *
+   * A class on the cell rather than a layer over the grid, because the grid's geometry lives in
+   * CSS and anything drawn on top of it would have to recompute cell positions that the browser
+   * has already worked out. Omit on any board nobody is casting.
+   */
+  spotCells?: ReadonlySet<number>;
+  /**
+   * What colour the spotlight burns. Defaults to white.
+   *
+   * Whose shot it was, or whose hull is being shown - see CastView.spotColor for why this arrives
+   * as a colour rather than as a team.
+   */
+  spotColor?: string;
+  /**
+   * Let a name grow to fill its square instead of stopping at the board's natural ratio.
+   *
+   * For the stream sources only. In the app a square is about a centimetre across and the ratio is
+   * what keeps a short name a label; on a browser source the squares are several times larger and
+   * the same ratio leaves "Dane" as four small characters in a mostly empty box. See lib/textFit.
+   */
+  growText?: boolean;
 }
 
 const COL_LETTERS = "ABCDEFGHIJKLMNOPQR";
@@ -295,6 +323,9 @@ export function BoardGrid({
   firedBy,
   textBoost = 1,
   maxCellFont,
+  spotCells,
+  spotColor,
+  growText = false,
 }: BoardGridProps) {
   // Numbers keep the original "percentage of the viewport" shorthand; strings pass through as raw
   // CSS so a caller can subtract fixed page chrome with calc().
@@ -401,7 +432,7 @@ export function BoardGrid({
   const fitCap = maxCellFont ?? (fill ? MAX_FONT_FILL : MAX_FONT_FIXED);
   const fitFor = (label: string) =>
     cellBox && cellBox.w > 0 && cellBox.h > 0
-      ? fitText(label, cellBox.w, cellBox.h, fitCap, textBoost)
+      ? fitText(label, cellBox.w, cellBox.h, fitCap, textBoost, growText)
       : null;
 
   /**
@@ -685,7 +716,11 @@ export function BoardGrid({
     // built from resolved shots - but it earns its own place in the test rather than leaning on that,
     // so the ring can never be the one thing on a square with no layer to draw it in.
     const fired = firedBy?.get(i);
+    // The spotlight's ring is drawn in the marker layer rather than on the cell, so it has to be
+    // able to bring that layer into existence on a square with nothing else on it.
+    const spot = spotCells?.has(i) ?? false;
     const annotated =
+      spot ||
       resolved ||
       Boolean(deep) ||
       Boolean(mark) ||
@@ -708,7 +743,7 @@ export function BoardGrid({
           interactive ? "" : " bg-cell-inert"
         }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}${
           tint ? ` bg-cell-tinted${tint.region ? ` bg-region-${tint.region}` : ""}` : ""
-        }`}
+        }${spot ? " bg-cell-spot" : ""}`}
         style={{
           gridRow: row,
           gridColumn: col,
@@ -806,6 +841,18 @@ export function BoardGrid({
               style={{ ["--bg-ring-paint" as string]: ringPaint(fired) }}
             />
           )}
+          {/* The spotlight's border, in the marker layer so it draws OVER a hull sprite rather than
+              under one. It began as a box-shadow on the cell itself with a z-index lift, which put
+              the cell's own background above the ship overlay and hid the very art the spotlight
+              exists to point at. Here it is a ring and nothing else: no fill, so the hull, the
+              result marker and the square's name all still read through it. */}
+          {spot && (
+            <span
+              className="bg-spot-ring"
+              aria-hidden
+              style={spotColor ? { ["--bg-spot" as string]: spotColor } : undefined}
+            />
+          )}
           {visual === "hit" && <HitMark />}
           {/* Anything found in the water stands in for the splash on its own square rather than
               floating over it - the shot that found it was a miss, so both would otherwise draw
@@ -818,6 +865,7 @@ export function BoardGrid({
           {deep === "dutchman" && <DutchmanMark />}
           {deep === "bottle" && <BottleMark />}
           {(deep === "jar" || deep === "jarFree") && <JarMark freed={deep === "jarFree"} />}
+          {(deep === "igon" || deep === "igonAvenged") && <IgonMark avenged={deep === "igonAvenged"} />}
           {deep === "patches" && <PatchesMark />}
           {mark === "guess" && <span className="bg-pencil-mark" aria-hidden />}
           {/* Dead water. Drawn across the whole square rather than in a corner like the guess pin,

@@ -41,6 +41,7 @@ const { groupIntoShots, outcomeText } = await import('../src/lib/attackFeed.ts')
 const { deepWater, deepMarks, finalMarks, finalFinds, tentacleCount, hidesExtras, bottleNote, BOTTLE_NOTE_COUNT } =
   await import('../src/lib/deepWater.ts')
 const { deepForArchive } = await import('../src/lib/deepArchive.ts')
+const { BAYLE_SQUARES, IGON_UNVEILED, igonUnveiled } = await import('../src/lib/squareSetFormat.ts')
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -128,8 +129,14 @@ const hide = (cellIndex: number, creature: DeepCreature, decoy = false): DeepHid
   decoy,
 })
 
-const deep = (r: Room, attacks: Attack[], hides: DeepHide[]) =>
-  deepWater(r, groupIntoShots(attacks, players), hides)
+/**
+ * @param bayle which cell the board dealt Bayle on, for Igon. Null - no arena, no Igon - is the
+ * normal case and so the default. deepWater takes this as an argument rather than working it out,
+ * because reconstructing a board means importing the square-set registry and the registry binds the
+ * JSON, which is exactly what this file cannot do under bare Node. See lib/challenges.bayleCell.
+ */
+const deep = (r: Room, attacks: Attack[], hides: DeepHide[], bayle: number | null = null) =>
+  deepWater(r, groupIntoShots(attacks, players), hides, bayle)
 
 console.log('\n-- what a client makes of the rows it can read --------------------------\n')
 
@@ -480,6 +487,339 @@ console.log('\n-- what a client makes of the rows it can read ------------------
 
   // Without a room there is no seed to draw the note from. The line must still read.
   check('a log with no room to reseed from still prints the find', outcomeText(shot, deepMarks(found, 0)).note === undefined)
+}
+
+console.log('\n-- Igon, beside the dragon ----------------------------------------------\n')
+
+/**
+ * Igon is the one thing in the water nothing rolls, so most of what the rest of this file checks is
+ * inapplicable to him and what replaces it is checked here.
+ *
+ * He is MET rather than caught: the first miss beside the arena is where he turns out to have been,
+ * and every crew that fires there afterwards meets him too and is handed their own furled finger.
+ * The second half is theirs alone - a crew spends their own finger on their own dragon, and another
+ * fleet killing Bayle is not their vengeance.
+ */
+
+// -- Bayle has to be on the board at all ----------------------------------
+{
+  const r = room()
+  check('no arena dealt, no Igon, however much water is drawn beside it', deep(r, openWater(34, 0), []).igon.length === 0)
+}
+
+// -- the first miss beside the arena is where he is -----------------------
+/**
+ * Bayle sits at 44, so his neighbours are 34, 54, 43 and 45. He is not on a rolled square and there
+ * is nothing to wait for: one miss is the whole condition.
+ */
+{
+  const r = room()
+  const BAYLE = 44
+
+  const one = openWater(34, 0)
+  const d = deep(r, one, [], BAYLE)
+  check('one crew missing beside him is the whole of it', d.igon.length === 1)
+  check('  -> on the square they fired at', d.igon[0].found.cellIndex === 34)
+  check('  -> credited to them', d.igon[0].found.attackerTeam === 0 && d.igon[0].found.who === 'Ada')
+  check('and he is still on the rocks, since their dragon lives', d.igon[0].avenged === null)
+}
+
+// -- and he settles there ---------------------------------------------------
+/**
+ * Once the first miss has said where he is, that is where he is. A later miss on a DIFFERENT square
+ * beside the arena is just water - otherwise a mid-board arena would be handing out four of him.
+ */
+{
+  const r = room()
+  const BAYLE = 44
+  const spread = [...openWater(34, 0), ...openWater(54, 1), ...openWater(43, 2)]
+  const d = deep(r, spread, [], BAYLE)
+  check('a second square beside the arena holds nothing', d.igon.length === 1)
+  check('  -> he stays where the first miss put him', d.igon[0].found.cellIndex === 34)
+}
+
+// -- everybody who comes past gets one --------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const all = [0, 1, 2].map((t) => openWater(34, t)).flat()
+  const d = deep(r, all, [], BAYLE)
+  check('every crew that fires at him meets him', d.igon.length === 3)
+  check('  -> in the order they got there', d.igon.map((e) => e.found.attackerTeam).join() === '0,1,2')
+
+  // Met, not caught - but one meeting per crew, not one per shot.
+  const twice = [...all, ...openWater(34, 1)]
+  check('and no crew meets him twice', deep(r, twice, [], BAYLE).igon.length === 3)
+}
+
+// -- a hull is not a man on a rock ------------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const hull = [...strike(34, 0), ...openWater(54, 1)]
+  const d = deep(r, hull, [], BAYLE)
+  check('a shot that connects beside the arena reveals nothing', d.igon.every((e) => e.found.cellIndex !== 34))
+  check('  -> so the next miss elsewhere is where he turns out to be', d.igon[0]?.found.cellIndex === 54)
+}
+
+// -- which squares count ----------------------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  check('diagonals are not beside him - four neighbours, not eight', deep(r, openWater(33, 0), [], BAYLE).igon.length === 0)
+  check('and he is never on the arena square itself', deep(r, openWater(BAYLE, 0), [], BAYLE).igon.length === 0)
+  check('a corner arena still has neighbours', deep(r, openWater(1, 0), [], 0).igon[0]?.found.cellIndex === 1)
+  check('  -> but not ones that wrapped around the row', deep(r, openWater(9, 0), [], 0).igon.length === 0)
+}
+
+// -- spending the finger -----------------------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const met = [0, 1].map((t) => openWater(34, t)).flat()
+
+  /**
+   * The house rule for every two-stage egg: both halves belong to one crew. Team 1 killing the
+   * dragon is team 1's vengeance and nobody else's, however many fingers are out.
+   */
+  const one = [...met, ...strike(BAYLE, 1)]
+  const d = deep(r, one, [], BAYLE)
+  check('a crew killing Bayle spends their own finger', d.igon.find((e) => e.found.attackerTeam === 1)?.avenged != null)
+  check('  -> even when the shot hit a hull on the way', d.igon.find((e) => e.found.attackerTeam === 1)?.avenged?.attackerTeam === 1)
+  check('  -> and nobody else\'s', d.igon.find((e) => e.found.attackerTeam === 0)?.avenged == null)
+
+  // Every crew holding one gets their own go, which is the whole point of him being met.
+  const both = [...one, ...openWater(BAYLE, 0)]
+  const two = deep(r, both, [], BAYLE)
+  check('every crew holding a finger has their own dragon', two.igon.every((e) => e.avenged != null))
+  check('  -> each credited to themselves', two.igon.every((e) => e.avenged?.attackerTeam === e.found.attackerTeam))
+}
+
+// -- a crew that killed Bayle first -------------------------------------------
+{
+  const BAYLE = 44
+  const mine = [...strike(BAYLE, 2), ...openWater(34, 2)]
+  const d = deep(room(), mine, [], BAYLE)
+  check('a crew that killed Bayle first meets him already risen', d.igon[0]?.avenged != null)
+  check('  -> on their own earlier kill', d.igon[0]?.avenged?.attackerTeam === 2)
+
+  const theirs = [...strike(BAYLE, 1), ...openWater(34, 2)]
+  check('somebody else having killed him first does not count', deep(room(), theirs, [], BAYLE).igon[0]?.avenged == null)
+}
+
+// -- who is shown what ---------------------------------------------------------
+/**
+ * Per crew now, so he takes the jar's rule: a player sees their own meeting and nobody else's, and a
+ * caster sees the lot. Every crew's entry sits on the SAME square, so a viewer who can see more than
+ * one needs a tie-break, and risen wins on the grounds the freed jar does - it is the later state of
+ * one man.
+ */
+{
+  const r = room()
+  const BAYLE = 44
+  const met = [0, 1].map((t) => openWater(34, t)).flat()
+  const d = deep(r, met, [], BAYLE)
+
+  check('a crew that met him sees him', deepMarks(d, 0).get(34) === 'igon')
+  check('and so does the other one', deepMarks(d, 1).get(34) === 'igon')
+  check('but a crew that never fired there does not', !deepMarks(d, 2).has(34))
+  check('a caster sees him', deepMarks(d).get(34) === 'igon')
+
+  const risen = deep(r, [...met, ...openWater(BAYLE, 1)], [], BAYLE)
+  check('the crew that avenged him sees him up', deepMarks(risen, 1).get(34) === 'igonAvenged')
+  check('  -> while the crew that has not still sees him down', deepMarks(risen, 0).get(34) === 'igon')
+  check('  -> and a caster sees him up if ANYBODY got him up', deepMarks(risen).get(34) === 'igonAvenged')
+  check('  -> the arena carries no mark of its own', !deepMarks(risen, 1).has(BAYLE))
+}
+
+// -- both of his sounds are per CREW, not per match --------------------------
+/**
+ * The two lines he speaks are the only voices in this water, and each of them belongs to one crew's
+ * copy of him.
+ *
+ * This is a test about audio, which is unusual, but the guarantee is entirely a property of the marks:
+ * the sfx effect in BattlePhase watches `deepMarks(deep, myTeam, ...)` and fires once per NEW
+ * cell:kind pair it sees. So "who hears it, and how often" is decided here and nowhere else, and the
+ * two things that would break it are both visible from this file - a crew seeing another crew's
+ * entry, or a crew's entry flipping to avenged off somebody else's kill.
+ *
+ * Per crew rather than per match is deliberate. He hands a finger to everyone who comes past, so
+ * everyone who comes past should hear him say so.
+ */
+{
+  const r = room()
+  const BAYLE = 44
+  const met = [0, 1].map((t) => openWater(34, t)).flat()
+  const d = deep(r, met, [], BAYLE)
+
+  // Each crew hears the finger line, off their own meeting.
+  check('each crew that met him gets their own finger mark', deepMarks(d, 0).get(34) === 'igon' && deepMarks(d, 1).get(34) === 'igon')
+  check('  -> and a crew that never fired there gets none', !deepMarks(d, 2).has(34))
+
+  // And each hears the second line only off their OWN kill.
+  const one = deep(r, [...met, ...openWater(BAYLE, 1)], [], BAYLE)
+  check('the crew that killed Bayle hears the second line', deepMarks(one, 1).get(34) === 'igonAvenged')
+  check('  -> and the other crew is still on the first', deepMarks(one, 0).get(34) === 'igon')
+
+  const both = deep(r, [...met, ...openWater(BAYLE, 1), ...openWater(BAYLE, 0)], [], BAYLE)
+  check('every crew that kills him hears it, in their own time', deepMarks(both, 0).get(34) === 'igonAvenged' && deepMarks(both, 1).get(34) === 'igonAvenged')
+
+  // A caster holds no fleet, so all the entries collapse onto one square and one mark: they hear him
+  // once when he turns up and once when the first crew avenges him, rather than once per fleet.
+  check('a caster hears him once, not once per crew', deepMarks(d).get(34) === 'igon')
+  check('  -> and once more when anybody gets him up', deepMarks(one).get(34) === 'igonAvenged')
+}
+
+
+// -- sharing a square with something that was rolled ---------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const d = deep(r, openWater(34, 0), [hide(34, 'tentacle')], BAYLE)
+  check('a tentacle on his square is still found', d.cthulhu.tentacles.length === 1)
+  check('  -> and Igon is still met on it', d.igon[0]?.found.cellIndex === 34)
+  check('but the square is drawn as Igon', deepMarks(d, 0).get(34) === 'igon')
+}
+
+// -- what the log says -----------------------------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const met = openWater(34, 0)
+  const kill = strike(BAYLE, 0)
+  const d = deep(r, [...met, ...kill], [], BAYLE)
+  const shots = groupIntoShots([...met, ...kill], players)
+  const marks = deepMarks(d)
+
+  const killShot = shots.find((sh) => sh.cellIndex === BAYLE)!
+  const line = outcomeText(killShot, marks, r, d.igon)
+  check('the shot that killed Bayle keeps its own result', line.text === 'HIT')
+  check('  -> and carries his cry alongside it', line.note === 'Igon shall be tormented no longer!')
+
+  const otherShot = shots.find((sh) => sh.cellIndex === 34)!
+  check('no other shot claims it', outcomeText(otherShot, marks, r, d.igon).note === undefined)
+  check('and without him passed, the line is just the shot', outcomeText(killShot, marks, r).note === undefined)
+}
+
+// -- and what the recap keeps ------------------------------------------------------
+{
+  const r = room()
+  const BAYLE = 44
+  const met = [0, 1].map((t) => openWater(34, t)).flat()
+  const d = deep(r, [...met, ...openWater(BAYLE, 1)], [], BAYLE)
+
+  const rows = finalFinds(d)
+  check('the recap lists one row per crew that met him', rows.filter((row) => row.find.cellIndex === 34).length === 2)
+  check('  -> wearing the mark the square ends on', rows.filter((row) => row.find.cellIndex === 34).every((row) => row.mark === 'igonAvenged'))
+
+  const stored = deepForArchive(d, () => 'unused')
+  check('and the archive keeps them', stored.finds.filter((f) => f.cellIndex === 34).length === 2)
+}
+
+// -- he is not in the water until he is ---------------------------------------
+/**
+ * The reveal, which is one timestamp and nothing else.
+ *
+ * Keyed on the ROOM's creation rather than on the clock, and that is the whole point of the test: a
+ * wall-clock check would let a match already in progress cross the reveal, and squares would acquire
+ * a marker nobody fired at while honors appeared for finds that had not happened. A room decides once
+ * and cannot change its mind, so a match plays the same way from its first shot to its last.
+ *
+ * The gate itself lives in lib/challenges.igonAnchor, which cannot be imported here - it reconstructs
+ * a board, which binds the JSON. This is the predicate underneath it.
+ */
+{
+  const before = new Date(Date.parse(IGON_UNVEILED) - 1000).toISOString()
+  const after = new Date(Date.parse(IGON_UNVEILED) + 1000).toISOString()
+
+  check('a board rolled before the reveal never turns him up', !igonUnveiled(before))
+  check('a board rolled after it does', igonUnveiled(after))
+  check('and the instant itself counts as after', igonUnveiled(IGON_UNVEILED))
+
+  /**
+   * The reveal is quoted to the user in Taipei time and stored in UTC, and those two agreeing is not
+   * something anybody would notice going wrong: an eight-hour error just looks like the egg being
+   * late. Taipei is UTC+8 with no daylight saving, so this is a fixed offset and can be asserted.
+   */
+  const taipei = new Date(Date.parse(IGON_UNVEILED) + 8 * 3600 * 1000).toISOString()
+  check('the reveal is 11pm in Taipei', taipei.startsWith('2026-08-23T23:00'), taipei)
+
+  /**
+   * Unparseable reads as too early on purpose. The failure that matters is leaking him before the
+   * reveal; a room that somehow has no creation time can go without.
+   */
+  check('a board with no stamp goes without', !igonUnveiled(null) && !igonUnveiled(undefined) && !igonUnveiled('whenever'))
+
+  // The reveal is a real instant rather than a placeholder nobody replaced.
+  check('the reveal is a parseable instant', Number.isFinite(Date.parse(IGON_UNVEILED)), IGON_UNVEILED)
+}
+
+
+// -- the arena square names ---------------------------------------------------------
+/**
+ * The anchor is a list of exact square names rather than a search for "Bayle", and this is the check
+ * that keeps it honest: rename the square in a set and Igon silently stops appearing there forever,
+ * which is a failure nobody would ever see on a board.
+ *
+ * The near-misses below are why it cannot be a substring match. Two sets carry squares that merely
+ * MENTION him - tallies he happens to count toward - and one carries a shopping errand with his own
+ * name on it, which is the tempting wrong answer: Igon is not there, his merchandise is.
+ */
+{
+  const names = (file: string): string[] => {
+    const raw = JSON.parse(readFileSync(new URL(`../src/data/${file}`, import.meta.url), 'utf8'))
+    const list = Array.isArray(raw) ? raw : Object.values(raw).flat()
+    return (list as Array<{ name?: string }>).map((sq) => sq?.name).filter((n): n is string => typeof n === 'string')
+  }
+
+  const bosses = names('battleshipChallenges.json')
+  const bosses2v2 = names('battleshipChallenges2v2.json')
+  const incursion = names('incursionSquares.json')
+  const ringus = names('ringusSquares.json')
+
+  check('the boss set still deals an arena', bosses.some((n) => BAYLE_SQUARES.has(n)))
+  check('and so does the objectives set', incursion.some((n) => BAYLE_SQUARES.has(n)))
+  check(
+    'every name in the list is a square some set actually deals',
+    [...BAYLE_SQUARES].every((n) => [bosses, incursion, ringus].some((set) => set.includes(n))),
+    [...BAYLE_SQUARES].filter((n) => ![bosses, incursion, ringus].some((set) => set.includes(n))).join(', ')
+  )
+
+  /**
+   * Deliberate, and permanent: Bayle is one of the 42 long squares the small-crew cut leaves out, so
+   * a 1v1 or 2v2 boss board has no arena and can never turn Igon up.
+   */
+  check('the small-crew boss board has no arena, and cannot', !bosses2v2.some((n) => BAYLE_SQUARES.has(n)))
+
+  const nearMisses = [
+    'Kill 4 Unique Remembrances (including Bayle)',
+    'Kill 5 Unique Remembrances (including Bayle)',
+    'Find and Kill a Remembrance DLC Boss (Bayle Included)',
+    'Acquire an item related to Igon / Bayle',
+  ]
+  check('squares that merely mention him are not the arena', nearMisses.every((n) => !BAYLE_SQUARES.has(n)))
+  check('  -> and they are real squares, so the trap is real', nearMisses.every((n) => [...incursion, ...ringus].includes(n)))
+}
+
+/**
+ * Every mark has to be DRAWN, and this is the check that says so.
+ *
+ * Worth a test rather than trusting a reviewer, because the way it fails is silent and wrong in both
+ * directions at once: BoardGrid suppresses the miss splash on any square carrying a deep mark, so a
+ * mark the grid has no branch for does not fall back to a plain miss - it renders the square EMPTY.
+ * A find would come out as a hole in the board, which is worse than not shipping it. That is exactly
+ * what Igon did until somebody asked to see one.
+ */
+{
+  const grid = readFileSync(new URL('../src/components/BoardGrid.tsx', import.meta.url), 'utf8')
+  const src = readFileSync(new URL('../src/lib/deepWater.ts', import.meta.url), 'utf8')
+  const from = src.indexOf('export type DeepMark')
+  const union = src.slice(from, src.indexOf(';', from))
+  const marks = [...union.matchAll(/"([a-zA-Z]+)"/g)].map((mk) => mk[1])
+
+  check('the mark union is readable', marks.length > 0, marks.join(' '))
+  const undrawn = marks.filter((k) => !grid.includes('"' + k + '"'))
+  check('every DeepMark is drawn by the board', undrawn.length === 0, undrawn.join(', '))
 }
 
 console.log('\n-- what outlives the match ----------------------------------------------\n')

@@ -40,6 +40,15 @@ export interface Room {
   team_names?: (string | null)[] | null;
   /** 9-digit seed every player feeds to the Elden Ring randomizer so they get matching runs. */
   seed?: string | null;
+  /**
+   * When that seed was last rolled - maintained by a trigger, so it is the SERVER's clock and it is
+   * kept wherever the seed is written rather than at each of the three call sites that write one.
+   *
+   * Dates the BOARD rather than the room, which is the distinction Igon's reveal turns on: a room
+   * made last week and re-randomized tonight is playing tonight's board. Optional because rooms from
+   * before the column existed have none, and those read as too early - see squareSetFormat.igonUnveiled.
+   */
+  seed_set_at?: string | null;
   /** Which pool the board's squares come from - see lib/squareSets. Null means the default. */
   square_set?: string | null;
   /**
@@ -88,13 +97,18 @@ export const BOARD_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
  * other two are that proportion loosened and tightened, so a preset means the same thing - the same
  * chance a shot lands - on every board size.
  *
+ * Armada is 0.24 rather than the 0.23 it launched at. At 0.23 an 8x8 Armada fielded no Destroyer at
+ * all and an 11x11 fielded one, which is a strange shape for the preset that is meant to be the
+ * busy one - the extra squares were going into another Cruiser rather than another hull to hunt.
+ * The point of Armada is that shots land more often, so it rounds up.
+ *
  * Declaration order IS the order the buttons render in (Object.keys preserves insertion order for
  * string keys).
  */
 export const FLEET_PRESETS: Record<string, number> = {
   Skirmish: 0.11,
   Classic: 0.17,
-  Armada: 0.23,
+  Armada: 0.24,
 };
 
 export const DEFAULT_FLEET_PRESET = "Classic";
@@ -127,6 +141,13 @@ const SHIP_NAMES: Record<number, string[]> = {
  * more or less given away by its length alone. From there the fleet repeats the classic
  * composition - one of each length, two of the 3s - until it covers the board.
  *
+ * The fleet is never allowed to come out UNDER the density its preset asks for - it rounds up.
+ * Where the next ship in the pattern would carry the fleet past the target, the shortest hull that
+ * still reaches the target stands in for it, so the last ship lands on the line rather than
+ * vaulting over it with squares to spare. That is what puts a second Destroyer on the busier
+ * boards: an 11x11 Armada three squares short used to close with a Cruiser, and now closes with a
+ * Destroyer and stops in the same place.
+ *
  * Two consequences worth knowing. A 10x10 Classic board still deals exactly the standard fleet,
  * 5-4-3-3-2, because that composition IS the pattern at its natural size. And small boards come out
  * denser than the headline percentage, because MIN_SHIPS wins: three little ships on a 5x5 is a
@@ -135,7 +156,8 @@ const SHIP_NAMES: Record<number, string[]> = {
 export function fleetFor(boardSize: number, preset: string = DEFAULT_FLEET_PRESET): ShipDefinition[] {
   const density = FLEET_PRESETS[preset] ?? FLEET_PRESETS[DEFAULT_FLEET_PRESET];
   const cells = boardSize * boardSize;
-  const target = Math.max(2, Math.round(cells * density));
+  // Rounded up, so a preset never deals a board thinner than it advertises.
+  const target = Math.max(2, Math.ceil(cells * density));
   const longest = Math.min(5, Math.max(2, Math.floor(boardSize / 2) + 1));
 
   // The classic fleet, capped to what this board can carry: 5-4-3-3-2 becomes 4-3-3-2 on a board
@@ -147,18 +169,23 @@ export function fleetFor(boardSize: number, preset: string = DEFAULT_FLEET_PRESE
   }
   if (pattern.length === 0) pattern.push(2);
 
-  // Terminates because the pattern always ends in a 2, and while `used < target` a 2 always fits
-  // inside the +1 tolerance - so every lap of the pattern takes at least one ship.
+  // The hulls this board can carry, shortest first - what a closing ship is chosen from.
+  const hulls = [...new Set(pattern)].sort((a, b) => a - b);
+
+  // Terminates because nothing is ever skipped: every lap of the pattern takes every ship in it, so
+  // `used` climbs by at least 2 a time and passes any target.
   const sizes: number[] = [];
   let used = 0;
   for (let i = 0; used < target; i++) {
-    const size = pattern[i % pattern.length];
-    // Overshooting by one square beats leaving two short - the alternative is padding every fleet
-    // with 2s, which reads as a swarm of Destroyers rather than a fleet.
-    if (used + size <= target + 1) {
-      sizes.push(size);
-      used += size;
-    }
+    const patterned = pattern[i % pattern.length];
+    // Closing the gap beats overshooting it. Where the patterned ship would carry the fleet past
+    // the target, the shortest hull that still reaches the target stands in for it - usually a
+    // Destroyer, which is why the busier boards now field two. A ship is only ever swapped DOWN, so
+    // the fleet keeps the classic silhouette and only its last hull shrinks.
+    const closing = hulls.find((h) => h >= target - used);
+    const size = closing !== undefined && closing < patterned ? closing : patterned;
+    sizes.push(size);
+    used += size;
   }
 
   // A board with one or two ships on it is decided by whoever stumbles on them first. Pad with the

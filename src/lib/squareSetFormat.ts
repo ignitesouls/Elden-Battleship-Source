@@ -149,7 +149,7 @@ export const RENAMED_SQUARES: Record<string, string> = {
   "CK Gaol": "LG Crucible Knight",
   "Carian Onyx": "Liurnia Onyx Lord",
   "Caelem Pumpkin Heads": "Pumpkin Head Duo",
-  "Splitting Avatar": "Mountaintops Avatar",
+  "Splitting Avatar": "MNTPS Avatar",
 
   // 13 Aug 2026 - boss set brought in line with the game's own names: full titles where the square
   // had a nickname, and Liurnia's duplicated bosses labelled by where they actually stand.
@@ -174,6 +174,16 @@ export const RENAMED_SQUARES: Record<string, string> = {
   "Omenkiller Miranda": "Omenkiller Miranda Duo",
   // Capitalisation only - the other three Deathbirds spell it with a small b.
   "Weeping DeathBird": "Weeping Deathbird",
+
+  // 23 Aug 2026 - "Mountaintops" shortened to MNTPS on the square. Every other candidate collided
+  // with a square already on the board: MT and MTG read as Mt. Gelmir, whose squares are "Gelmir X";
+  // "Giants" reads as Fire Giant; "Peaks" reads as Jagged Peak Drake. Zamor was singular and is
+  // folded in here too. Tooltips still spell the region out - the boss data files key on those, and
+  // "Splitting Avatar" above was re-pointed at the new name because the lookup is a single hop.
+  "Mountaintops Death Rite Bird": "MNTPS Death Rite Bird",
+  "Mountaintops Avatar": "MNTPS Avatar",
+  "Mountaintops Tree Spirit": "MNTPS Tree Spirit",
+  "Mountaintop Zamor": "MNTPS Zamor",
 };
 
 /** A recorded square name as it is spelled today. Anything not renamed passes straight through. */
@@ -759,6 +769,65 @@ export function largestBoardFor(pool: number, sizes: readonly number[]): number 
     if (n * n <= pool) best = n;
   }
   return best;
+}
+
+/**
+ * The squares that ARE Bayle's arena, by exact name, across every set that deals one.
+ *
+ * Igon waits beside this cell and nowhere else (see lib/deepWater.ts), so the list has to mean
+ * "the square you kill Bayle on" rather than "a square with Bayle in the text". Substring matching
+ * gets that wrong in both directions and the sets are full of the counterexamples:
+ *
+ *   - "Kill 4 Unique Remembrances (including Bayle)" and "Find and Kill a Remembrance DLC Boss
+ *     (Bayle Included)" are counting squares. Bayle is one way to fill them, not where they send
+ *     you, and anchoring Igon to a tally would put him next to a square nobody has to visit.
+ *   - "Acquire an item related to Igon / Bayle" is a shopping errand. It is the one square in any
+ *     set with Igon's name on it, which makes it the tempting wrong answer: he is not there, his
+ *     merchandise is.
+ *
+ * Two sets deal the real thing under two different names, hence a list rather than a constant. The
+ * boss board calls it "Bayle" because that set's names are board-sized handles; the objective sets
+ * spell the deed out.
+ *
+ * `bosses-2v2` is deliberately absent and cannot be added: Bayle is one of the 42 long squares that
+ * cut leaves out (see squareSets), so a small-crew boss board has no arena and never gets an Igon.
+ */
+export const BAYLE_SQUARES = new Set([
+  "Bayle",
+  "Kill Bayle the Dread",
+  "Kill Bayle the Dread and Dragonlord Placidusax (C)",
+]);
+
+/**
+ * When Igon goes into the water: 11pm Taipei on the 23rd of August 2026.
+ *
+ * Written in UTC because that is what `Date.parse` agrees about, and Taipei is UTC+8 all year - no
+ * daylight saving to get wrong - so 23:00 there is 15:00 here, same day.
+ *
+ * Everything about him hangs off this one line. No anchor means no meeting, no marks, no sounds, no
+ * honors, and nothing written into the archive.
+ */
+export const IGON_UNVEILED = "2026-08-23T15:00:00.000Z";
+
+/**
+ * Whether a board is new enough to have him in it.
+ *
+ * Takes the moment the board was RANDOMIZED - `rooms.seed_set_at` - rather than the moment the room
+ * was made. Rooms outlive matches, and a room created last week and re-rolled tonight is playing
+ * tonight's board, so it gets tonight's egg.
+ *
+ * Keyed on a stored instant rather than on the clock, and that is the load-bearing choice. A
+ * wall-clock test would let a match already being played cross the reveal: squares would acquire a
+ * marker nobody fired at, honors would appear for finds that had not happened, and the recap would
+ * disagree with what the players actually saw. A board is dated once, when it is dealt, and then
+ * cannot change its mind.
+ *
+ * A missing or unparseable stamp reads as "too early" on purpose, which covers every room from before
+ * the column existed. The failure that matters here is leaking him before the reveal.
+ */
+export function igonUnveiled(seedSetAt: string | null | undefined): boolean {
+  const rolled = Date.parse(seedSetAt ?? "");
+  return Number.isFinite(rolled) && rolled >= Date.parse(IGON_UNVEILED);
 }
 
 /** Standalone copy of the app's PRNG, so this module keeps its no-imports property. */

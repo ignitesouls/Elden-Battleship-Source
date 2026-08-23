@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { activeTeams, sunkCellOrientations, attackerTeamsByCell, cellLabel } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
-import { challengesForRoom, rowSquareSet } from "../lib/challenges";
+import { challengesForRoom, rowSquareSet, igonAnchor } from "../lib/challenges";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
 import { buildPlayerStats } from "../lib/matchReport";
@@ -18,6 +18,9 @@ import { useBoxSize } from "../hooks/useBoxSize";
 import { SourceRow } from "../components/SourceRow";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import { squaresRevealed } from "../lib/overlayReveal";
+import { OVERLAY_MAX_FONT, MIN_TEXT_SIZE } from "../lib/overlayText";
+import { markedAttacks, spotSet } from "../lib/overlayMarkers";
+import { castPresets, type Preset, PRESET_SLOTS } from "../lib/castPresets";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import {
   useCastPublisher,
@@ -32,8 +35,60 @@ import "./CasterControl.css";
 import "./OverlayBoard.css";
 import "../components/BoardGrid.css";
 
-/** On-screen size of the 1:1 monitor. The viewport inside it is always SOURCE_SIZE. */
-const PREVIEW_PX = 420;
+/**
+ * How large the 1:1 monitor is DRAWN. The viewport inside it is always SOURCE_SIZE.
+ *
+ * This was a flat 420, and that one number was the size of the whole desk. It made the monitor a
+ * picture to check rather than a board to work on: a 20x20 room arrived as 21px squares, which is
+ * too small to point at a single one of, let alone click it. The board is now sized from whatever
+ * the window actually leaves it - see `previewPx` in the component, which is the only place these
+ * two are read.
+ *
+ * FALLBACK is the one frame before the ResizeObserver reports, so the first paint is the size the
+ * desk used to be rather than a collapsed sliver. MIN is the floor on a window too small to give
+ * the board its share: below this it stops being something anyone can aim with, and letting it be
+ * clipped is more honest than shrinking it to a postage stamp.
+ */
+const FALLBACK_PREVIEW = 420;
+const MIN_PREVIEW = 320;
+
+/**
+ * How far the pointer may travel and still count as a click rather than a drag.
+ *
+ * The monitor is both a thing you drag and (while spotting) a thing you click, and a mouse never
+ * stays perfectly still between press and release. Generous enough to absorb a hand on a trackpad,
+ * small enough that a deliberate pan is never mistaken for a point.
+ */
+const CLICK_SLOP = 4;
+
+/**
+ * Which square is under a point on screen, asked of the DOM rather than computed.
+ *
+ * The arithmetic version of this is available and wrong: the rendered board is never exactly
+ * `cells x cellSize` once the coordinate gutters, the grid gaps and the borders are counted, and
+ * the monitor is additionally inside a `scale()` transform. Deriving a cell from all that means
+ * keeping a second copy of BoardGrid's layout in step with the first, which is the bug the whole
+ * file already warns about in `placeBoard`.
+ *
+ * `getBoundingClientRect` reports the post-transform box the user is actually looking at, so
+ * walking the cells and asking which one contains the point is exact by construction and stays
+ * exact if the grid's internals ever change. Linear in the number of squares - 400 on the largest
+ * board, once per click, which is nothing.
+ *
+ * Deliberately not `elementFromPoint`: the cells sit under a marker layer and are given
+ * `pointer-events: none` on this page so the drag belongs to the preview, and hit-testing would
+ * make this depend on both of those staying true.
+ */
+function cellAtPoint(root: HTMLElement, x: number, y: number): number | null {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-cell]")) {
+    const r = el.getBoundingClientRect();
+    if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
+      const n = Number(el.dataset.cell);
+      return Number.isInteger(n) ? n : null;
+    }
+  }
+  return null;
+}
 
 /**
  * The aim pad, in reading order: glyph, x, y, and the key that does the same thing.
@@ -72,6 +127,94 @@ export function CasterControl() {
 
   const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
+  /**
+   * The space the monitor is allowed to fill, measured rather than assumed.
+   *
+   * Measured on the DECK - the box the monitor is centred in - and not on the monitor itself, which
+   * would be a loop: the monitor's size would come from a measurement of the monitor. The deck's
+   * own size comes from the grid track and the viewport height above it, so it is settled before
+   * anything inside it is drawn, and .cast-deck carries the `min-*: 0` and `overflow: hidden` that
+   * stop its child ever growing it back. See the layout note at the top of CasterControl.css.
+   */
+  const [deckRef, deck] = useBoxSize<HTMLDivElement>();
+  /**
+   * Point-at-a-square mode: the monitor stops being only a thing you drag and starts being a thing
+   * you click.
+   *
+   * A mode rather than a modifier because a caster is doing this one-handed while talking, and
+   * "hold this key and click" is two things to remember under load. Armed, a CLICK spotlights and a
+   * DRAG still pans - see the pointer handlers, which tell them apart by distance travelled.
+   */
+  const [spotting, setSpotting] = useState(false);
+  /** Where the pointer went down, so a click can be told from a drag. Null between gestures. */
+  const downAt = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Follow the newest shot, off by default.
+   *
+   * It has to yield the moment the caster touches the aim themselves - see `manual` below. A view
+   * that keeps dragging itself back while somebody is trying to aim it is worse than no automation
+   * at all, and it fails at exactly the moment they most need control.
+   */
+  const [follow, setFollow] = useState(false);
+  /**
+   * Punch-in: a highlight doesn't just light up, it takes the camera.
+   *
+   * Zoom to the square, hold it there, then put the view back exactly where the caster had it. The
+   * hold is what makes it usable on air - a viewer needs a beat to find the square, read the name
+   * and hear the call, and a cut that snaps back before they have done all three is worse than no
+   * cut at all. Five seconds is about that beat; it is a setting because rooms and casters differ.
+   *
+   * On by default, because a highlight nobody can see is not a highlight. Off leaves the older
+   * behaviour: the square lights up and the framing is the caster's problem.
+   */
+  const [punchOn, setPunchOn] = useState(true);
+  const [punchZoom, setPunchZoom] = useState(1.6);
+  const [punchSecs, setPunchSecs] = useState(5);
+  /**
+   * The framing to go back to, and the timer that will do it. Null when no punch is in flight.
+   *
+   * A ref rather than state: nothing renders from it, and it is written from a timer callback where
+   * a stale closure over state would restore the wrong framing.
+   */
+  const punchRef = useRef<{ back: Preset; timer: ReturnType<typeof setTimeout> } | null>(null);
+  /**
+   * The latest view and punch settings, for the callbacks that must not be rebuilt when they change.
+   *
+   * `punchTo` is called from an effect that fires on every new shot. If it depended on the zoom
+   * slider, moving that slider would re-run the effect and punch the view onto the last shot again -
+   * so the settings are read through a ref and the callback stays stable.
+   */
+  const viewRef = useRef(view);
+  const punchCfg = useRef({ on: punchOn, zoom: punchZoom, secs: punchSecs });
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+  useEffect(() => {
+    punchCfg.current = { on: punchOn, zoom: punchZoom, secs: punchSecs };
+  }, [punchOn, punchZoom, punchSecs]);
+  // A page closed mid-hold must not leave a timer trying to setState afterwards.
+  useEffect(() => () => clearTimeout(punchRef.current?.timer), []);
+
+  /**
+   * Abandon the pending restore, leaving the view and the light exactly where they are.
+   *
+   * What a caster's own hand does to a punch. It deliberately does NOT put the framing back or put
+   * the light out: they have taken the camera, and a view that snapped somewhere else four seconds
+   * later would be the automation fighting them at the worst possible moment. The square stays lit
+   * because it is still the square being talked about.
+   *
+   * Declared up here with the rest of the punch machinery because `panBy` and `panTo` below both
+   * call it, and they are defined before anything that comes after this block.
+   */
+  const cancelPunch = useCallback(() => {
+    if (!punchRef.current) return;
+    clearTimeout(punchRef.current.timer);
+    punchRef.current = null;
+  }, []);
+
+  /** The four saved framings for this room - see lib/castPresets. */
+  const presetStore = useMemo(() => castPresets(code), [code]);
+  const [presets, setPresets] = useState<(Preset | null)[]>(() => presetStore.read());
   /** Where the gesture started, and the centre it started from. Null when nothing is being dragged. */
   const drag = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
   // Only to suppress the board's own glide while a drag is live - see .cast-dragging.
@@ -92,7 +235,7 @@ export function CasterControl() {
   const deepCells = useMemo(
     () =>
       room
-        ? deepMarks(deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides))
+        ? deepMarks(deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides, igonAnchor(room)))
         : undefined,
     [room, state.attacks, state.players, state.deepHides]
   );
@@ -158,6 +301,10 @@ export function CasterControl() {
    * the board it was a crawl at 1.2x and a lurch at 2x.
    */
   const panBy = useCallback((dx: number, dy: number, mode: "jump" | "nudge") => {
+    // The caster has taken the aim back. Every manual movement does this - see the note on `follow`
+    // and on `cancelPunch`, which drops the pending restore rather than fighting them for the view.
+    setFollow(false);
+    cancelPunch();
     setView((v) => {
       const step = mode === "jump" ? (1 - 1 / v.zoom) / 4 : 0.06 / v.zoom;
       return {
@@ -166,9 +313,148 @@ export function CasterControl() {
         cy: Math.min(1, Math.max(0, v.cy + dy * step)),
       };
     });
+  }, [cancelPunch]);
+
+  const recentre = useCallback(() => {
+    setFollow(false);
+    cancelPunch();
+    setView((v) => ({ ...v, cx: 0.5, cy: 0.5 }));
+  }, [cancelPunch]);
+
+  /**
+   * The four framing slots. Saving overwrites, recalling restores zoom and centre together.
+   *
+   * The write goes out beside the state update rather than inside the updater: React invokes an
+   * updater twice in development to catch impure ones, and a localStorage write in there would be
+   * exactly the impurity that check exists to find - harmless here, but the kind of thing that
+   * stops being harmless the moment somebody puts something less idempotent next to it.
+   */
+  const savePreset = useCallback(
+    (slot: number) => {
+      const next = presets.map((p, i) => (i === slot ? { zoom: view.zoom, cx: view.cx, cy: view.cy } : p));
+      setPresets(next);
+      presetStore.write(next);
+    },
+    [presets, presetStore, view.zoom, view.cx, view.cy]
+  );
+
+  const clearPreset = useCallback(
+    (slot: number) => {
+      const next = presets.map((p, i) => (i === slot ? null : p));
+      setPresets(next);
+      presetStore.write(next);
+    },
+    [presets, presetStore]
+  );
+
+  const recallPreset = useCallback(
+    (slot: number) => {
+      const p = presets[slot];
+      if (!p) return;
+      // Recalling is the caster aiming, so it takes the view off follow like any other manual move.
+      setFollow(false);
+      setView((v) => ({ ...v, zoom: p.zoom, cx: p.cx, cy: p.cy }));
+    },
+    [presets]
+  );
+
+  /**
+   * Take the camera to these squares, hold, then give it back.
+   *
+   * The centre is the MEAN of the cells, so a five-square hull frames as a whole object rather than
+   * on whichever end happened to be first. For a single square it is simply that square's centre.
+   *
+   * `back` is captured once per punch and carried across re-triggers: a second shot landing during
+   * the hold retargets and restarts the clock, but still returns to where the caster was, not to
+   * the previous punch's framing. Without that, a fast exchange would walk the "home" position
+   * across the board a shot at a time and never come back.
+   */
+  const punchTo = useCallback((cells: number[], color: string | null, boardCells: number) => {
+    if (cells.length === 0 || boardCells <= 0) return;
+    const mean = (of: (cell: number) => number) => cells.reduce((sum, c) => sum + of(c), 0) / cells.length;
+    const cx = (mean((c) => c % boardCells) + 0.5) / boardCells;
+    const cy = (mean((c) => Math.floor(c / boardCells)) + 0.5) / boardCells;
+
+    const live = punchRef.current;
+    const back = live ? live.back : { zoom: viewRef.current.zoom, cx: viewRef.current.cx, cy: viewRef.current.cy };
+    if (live) clearTimeout(live.timer);
+
+    const timer = setTimeout(
+      () => {
+        punchRef.current = null;
+        setView((v) => ({ ...v, zoom: back.zoom, cx: back.cx, cy: back.cy, spot: null, spotColor: null }));
+      },
+      Math.max(1, punchCfg.current.secs) * 1000
+    );
+    punchRef.current = { back, timer };
+
+    setView((v) => ({
+      ...v,
+      zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, punchCfg.current.zoom)),
+      cx,
+      cy,
+      spot: cells,
+      spotColor: color,
+    }));
   }, []);
 
-  const recentre = useCallback(() => setView((v) => ({ ...v, cx: 0.5, cy: 0.5 })), []);
+  /**
+   * The newest resolved shot, as a cell index - what "follow the action" follows.
+   *
+   * Ordered by `created_at` rather than by position in the array: the log arrives from two places -
+   * the initial fetch and the realtime stream - and only the timestamp is authoritative about which
+   * shot is actually the latest. Pending rows are skipped because a shot that has not resolved has
+   * no result to look at yet, and swinging the stream onto a blank square is worse than waiting a
+   * beat. Negative indices are the match-start bookkeeping row, not a shot anyone fired.
+   */
+  const newestShot = useMemo(() => {
+    let shot: { cell: number; team: number } | null = null;
+    let at = "";
+    for (const a of state.attacks) {
+      if (a.cell_index < 0 || a.result === "pending") continue;
+      if (a.created_at > at) {
+        at = a.created_at;
+        // The attacker, not the defender: the light is meant to say WHOSE moment this is, and on a
+        // composited board the fleet being shot at is the one that didn't do anything.
+        shot = { cell: a.cell_index, team: a.attacker_team };
+      }
+    }
+    return shot;
+  }, [state.attacks]);
+
+  /**
+   * Swing the frame onto that shot, while follow is on.
+   *
+   * Null when follow is off, which is what stops this effect from having any opinion at all the
+   * rest of the time - it is not "follow, but ignore me", it simply has nothing to say.
+   *
+   * The zoom check lives INSIDE the updater rather than in the dependency list, so changing zoom
+   * doesn't re-fire the effect and yank the view back to the last shot while somebody is adjusting
+   * it. At 1x the whole board is in frame and there is nowhere to pan, so it correctly does nothing.
+   */
+  const followCell = follow ? (newestShot?.cell ?? null) : null;
+  const followTeam = newestShot?.team ?? null;
+  const followBoard = room?.board_size ?? 0;
+  useEffect(() => {
+    if (followCell === null || followBoard <= 0) return;
+    // With punch-in on, the shot takes the camera and the light burns in the firing fleet's colour
+    // for the hold. Without it, the older behaviour: slide the frame across and change nothing else.
+    if (punchCfg.current.on) {
+      punchTo([followCell], followTeam === null ? null : teamHex(followTeam), followBoard);
+      return;
+    }
+    setView((v) =>
+      v.zoom <= MIN_ZOOM
+        ? v
+        : {
+            ...v,
+            // Centre of the square, not its corner - a shot in the last column would otherwise
+            // frame half a square of board and half a square of nothing.
+            cx: ((followCell % followBoard) + 0.5) / followBoard,
+            cy: (Math.floor(followCell / followBoard) + 0.5) / followBoard,
+          }
+    );
+  }, [followCell, followTeam, followBoard, punchTo]);
 
   /**
    * Two keyboards' worth of aiming, for two different jobs.
@@ -236,6 +522,25 @@ export function CasterControl() {
 
       const digit = digitOf(e.code);
 
+      /**
+       * Shift + 1-4 recalls a saved framing.
+       *
+       * On a modifier because the bare digits are the aim pad and that mapping is the good thing
+       * about this keyboard - a keypad that is a map of the board. Shift is the only free hand
+       * position that keeps the recall keys in the same place as the aim keys, which is the whole
+       * point of putting them on the number keys rather than on F-keys nobody can find by touch.
+       *
+       * Checked before the pad so a shifted digit never also steps the view.
+       */
+      if (e.shiftKey && digit) {
+        const slot = Number(digit) - 1;
+        if (slot >= 0 && slot < PRESET_SLOTS) {
+          e.preventDefault();
+          recallPreset(slot);
+        }
+        return;
+      }
+
       // The middle key means the middle of the board. Nothing else it could sensibly do, and it
       // saves reaching for the Fit button when the zoom itself is fine.
       if (digit === "5") {
@@ -255,7 +560,7 @@ export function CasterControl() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panBy, recentre]);
+  }, [panBy, recentre, recallPreset]);
 
   if (!room) {
     return (
@@ -301,24 +606,100 @@ export function CasterControl() {
   });
 
   const relevant = state.attacks.filter((a) => shownTeams.includes(a.defender_team));
-  const sunkCells = sunkCellOrientations(relevant, boardSize);
   /**
    * The attribution rings - the same derivation the source makes, from the same shots.
    *
    * Built from `relevant` rather than from every attack, so it answers the question the board in
    * front of it is actually asking: on a single-fleet view the rings describe the shots that fleet
    * has taken, not shots at a board nobody is looking at.
+   *
+   * Deliberately built BEFORE the marker filter below and from the unfiltered set: with the markers
+   * off, these rings are the entire board. See lib/overlayMarkers.
    */
   const firedBy = new Map(
     [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
   );
+  // Only the shots allowed to draw a result - see lib/overlayMarkers for the two toggles and for
+  // why the attacker/defender distinction is the easy one to get backwards.
+  const marked = markedAttacks(relevant, view);
+  // From `marked`, not `relevant`. A hull sunk by a fleet whose markers are hidden must not leave
+  // its wreckage on the board - the sunk cells are a result like any other, and they are also what
+  // `cellVisuals` applies last and lets win outright.
+  const sunkCells = sunkCellOrientations(marked, boardSize);
   // Resolved in one pass, exactly as the source does it - the monitor and the board it is driving
   // have to merge a square the same way. See lib/cellVisuals.
-  const visuals = cellVisuals(relevant, sunkCells);
+  const visuals = cellVisuals(marked, sunkCells);
   const cellVisual = (index: number): CellVisual => visuals.get(index) ?? "empty";
+  const spotCells = spotSet(view);
+
+  /** Squares carrying a hit, in one pass, for the hull tallies below. */
+  const struck = new Set<number>();
+  for (const a of relevant) if (a.result === "hit") struck.add(a.cell_index);
+
+  /**
+   * Every hull the desk can see, with the squares sitting on it and how many are down.
+   *
+   * Built from `state.revealedFleets` rather than from `fleets`, so the LIST is readable in every
+   * view - including Results only, which deliberately sends no placements at all. A caster wants to
+   * know what is on the Carrier before deciding whether to put it on stream, and that decision
+   * cannot be made from a list that is empty until after they have made it.
+   *
+   * Putting one on stream is a different matter entirely - see `canSpotShips`.
+   */
+  const hulls = state.revealedFleets.flatMap((f) =>
+    (f.placements ?? []).map((p, n) => {
+      const def = room.ship_defs[p.shipIndex];
+      const size = def?.size ?? 1;
+      const cells: number[] = [];
+      for (let k = 0; k < size; k++) {
+        const r = p.isHorizontal ? p.startRow : p.startRow + k;
+        const c = p.isHorizontal ? p.startCol + k : p.startCol;
+        // Bounds-checked per axis, as lib/shipCells does it - a hull running off the right edge
+        // would otherwise wrap onto the start of the next row.
+        if (r >= 0 && c >= 0 && r < boardSize && c < boardSize) cells.push(r * boardSize + c);
+      }
+      return {
+        key: `${f.team}-${n}`,
+        team: f.team,
+        name: def?.name ?? "Destroyer",
+        cells,
+        // Full names, not the board's shortened forms: this is the line a caster reads out, and the
+        // board is the only place the abbreviation is the right call.
+        squares: cells.map((i) => challenges[i]?.name ?? cellLabel(i, boardSize)),
+        down: cells.filter((i) => struck.has(i)).length,
+      };
+    })
+  );
+
+  /**
+   * Whether a hull may be spotlit.
+   *
+   * A ship spotlight rings every square of a hull, which states its position, its length and its
+   * orientation - so it IS a ship reveal, whatever the View buttons say. "Results only" promises no
+   * ship positions on stream, and a control that quietly broke that promise would be the worst kind
+   * of leak: one the caster believed they had already ruled out.
+   */
+  const canSpotShips = view.mode !== "results";
+  const spotIsHull = (cells: number[]) =>
+    (view.spot?.length ?? 0) === cells.length && cells.every((c) => view.spot?.includes(c));
 
   // Identical to the source's own sizing, because the monitor IS the source at display scale.
   const boardPx = Math.round(SOURCE_SIZE * view.zoom);
+
+  /**
+   * The monitor's on-screen side: the largest square the deck will hold.
+   *
+   * Square because the source is square, so the binding constraint is whichever of the deck's two
+   * sides is shorter - in practice the height, on every ordinary monitor, which is why widening
+   * this column past what the height allows buys nothing. The slack that leaves beside the board is
+   * where .cast-rail lives.
+   *
+   * Read in exactly three places, all of which have to agree or the drag stops tracking the hand:
+   * the box's own size, the scale on .cast-viewport, and `panTo` below. That last one is the reason
+   * this is a variable rather than three copies of a constant - see the note there.
+   */
+  const previewPx =
+    deck.w > 0 && deck.h > 0 ? Math.max(MIN_PREVIEW, Math.floor(Math.min(deck.w, deck.h))) : FALLBACK_PREVIEW;
 
   /**
    * Panning, as grabbing the picture and sliding it.
@@ -343,8 +724,19 @@ export function CasterControl() {
   function panTo(e: { clientX: number; clientY: number }) {
     const start = drag.current;
     if (!start || stage.w <= 0 || stage.h <= 0) return;
+    // Dragging is the caster aiming by hand, so it takes the view off follow and drops any pending
+    // punch restore - see `follow` and `cancelPunch`.
+    setFollow(false);
+    cancelPunch();
     // Preview px -> the source's logical px -> a fraction of the whole board.
-    const scale = PREVIEW_PX / SOURCE_SIZE;
+    //
+    // `previewPx`, NOT a constant. This is what converts the pointer's travel in screen pixels into
+    // travel across the board, so it has to be the size the monitor is actually drawn at - the same
+    // number .cast-viewport is scaled by. While that was a fixed 420 the two could not disagree;
+    // now that the monitor is sized from the window, a constant here would mean the board moved a
+    // different distance than the hand did, by whatever ratio the window happened to be. That reads
+    // as the aim being imprecise rather than as a bug, which is the worst way for it to fail.
+    const scale = previewPx / SOURCE_SIZE;
     const dx = (e.clientX - start.x) / scale / stage.w;
     const dy = (e.clientY - start.y) / scale / stage.h;
     setView((v) => ({
@@ -391,29 +783,54 @@ export function CasterControl() {
       )}
 
       <div className="cast-body">
-        {/* Pinned to the monitor's own width, from the same constant that sizes it. Without this the
-            column is as wide as its WIDEST child - and one of those children is a line of text that
-            changes with every square the crosshair crosses, so panning made this column breathe in
-            and out and shoved the controls beside it back and forth. See .cast-hint. */}
-        <div className="cast-preview-wrap" style={{ width: PREVIEW_PX }}>
+        {/* The deck: the box the monitor is centred in, and the one thing here whose size is
+            MEASURED. Everything about how large the board is drawn comes from it - see `previewPx`,
+            and the layout note at the top of CasterControl.css for why it can't be the monitor
+            itself that gets measured. */}
+        <div className="cast-deck" ref={deckRef}>
           {/* Drag to slide the stream view around; the wheel zooms. Both act on the same point
               under the cursor, so following a fleet is one gesture rather than a set of decisions. */}
           <div
-            className={`cast-preview${dragging ? " cast-dragging" : ""}`}
-            style={{ width: PREVIEW_PX, height: PREVIEW_PX }}
+            className={`cast-preview${dragging ? " cast-dragging" : ""}${spotting ? " cast-spotting" : ""}`}
+            style={{ width: previewPx, height: previewPx }}
             onPointerDown={(e) => {
+              downAt.current = { x: e.clientX, y: e.clientY };
               drag.current = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
               setDragging(true);
               e.currentTarget.setPointerCapture(e.pointerId);
             }}
-            onPointerMove={(e) => drag.current && panTo(e)}
+            onPointerMove={(e) => {
+              if (!drag.current) return;
+              // While spotting, hold the view perfectly still until the gesture has committed to
+              // being a drag. Without this the jitter between press and release on a click pans the
+              // board a pixel or two, and the caster's "point at D7" also nudges the stream.
+              if (spotting && downAt.current) {
+                const dx = Math.abs(e.clientX - downAt.current.x);
+                const dy = Math.abs(e.clientY - downAt.current.y);
+                if (dx <= CLICK_SLOP && dy <= CLICK_SLOP) return;
+              }
+              panTo(e);
+            }}
             onPointerUp={(e) => {
+              const from = downAt.current;
+              const root = e.currentTarget;
               drag.current = null;
+              downAt.current = null;
               setDragging(false);
-              e.currentTarget.releasePointerCapture(e.pointerId);
+              root.releasePointerCapture(e.pointerId);
+              if (!spotting || !from) return;
+              if (Math.abs(e.clientX - from.x) > CLICK_SLOP || Math.abs(e.clientY - from.y) > CLICK_SLOP) return;
+              const cell = cellAtPoint(root, e.clientX, e.clientY);
+              setView((v) => {
+                // Clicking the lit square again puts the light out, which is the gesture everyone
+                // tries first and the only way to clear it without reaching for another control.
+                const lit = v.spot?.length === 1 && v.spot[0] === cell;
+                return { ...v, spot: cell === null || lit ? null : [cell] };
+              });
             }}
             onPointerCancel={() => {
               drag.current = null;
+              downAt.current = null;
               setDragging(false);
             }}
             onWheel={(e) => {
@@ -438,8 +855,12 @@ export function CasterControl() {
               style={{
                 width: SOURCE_SIZE,
                 height: SOURCE_SIZE,
-                transform: `scale(${PREVIEW_PX / SOURCE_SIZE})`,
+                transform: `scale(${previewPx / SOURCE_SIZE})`,
                 ["--ovb-cells" as string]: boardSize,
+                // The coordinate labels take the same multiplier the names do. They are plain CSS
+                // rather than fitted per square, so this variable is the only way they scale - and
+                // without it the monitor's gutters would be a different size from the stream's.
+                ["--ovb-text" as string]: view.text ?? 1,
               }}
             >
               <div
@@ -460,7 +881,19 @@ export function CasterControl() {
                   sunkOrientation={sunkCells}
                   firedBy={firedBy}
                   deepCells={deepCells}
+                  spotCells={spotCells}
+                  spotColor={view.spotColor ?? undefined}
                   // Matches the source exactly - the monitor has to BE the frame, not resemble it.
+                  //
+                  // These three were missing, and that was a real fault rather than an omission:
+                  // the source draws names up to OVERLAY_MAX_FONT and the monitor capped them at
+                  // BoardGrid's 17px, so on any board with cells over ~122px - a 6x6 room, or an
+                  // 11x11 past 1.7x zoom - the desk showed names visibly smaller than the ones
+                  // going out. A preview whose whole claim is "this IS the frame" cannot be wrong
+                  // about the size of the only thing anybody reads off it.
+                  textBoost={view.text ?? 1}
+                  maxCellFont={OVERLAY_MAX_FONT}
+                  growText
                   coordEdges="all"
                   maxVh={`${boardPx}px`}
                   maxVw={`${boardPx}px`}
@@ -491,6 +924,23 @@ export function CasterControl() {
             */}
             {!view.visible && <div className="cast-hidden-veil">Hidden on stream</div>}
           </div>
+        </div>
+
+        {/*
+          The readout, beside the board rather than under it.
+
+          It used to sit below the monitor with 3.3em of height reserved for it, because it ends in
+          the full name of whatever square is under the crosshair - which changes on every frame of
+          a pan, and ran from "Rick" to "Lurnia Crystalian (Ringblade)". Reserving that space was
+          what stopped the column breathing in and out during a drag.
+
+          A square board in a wider column leaves slack at the sides anyway, so the readout goes
+          THERE and the height it used to reserve goes back to the board - about 47px, which is the
+          difference between 43px squares and 40px ones on a 20x20 room. The twitch it was reserving
+          against is gone structurally rather than by arithmetic: this is a column of its own with a
+          bounded width, so text growing from one line to five pushes on nothing.
+        */}
+        <div className="cast-rail">
           <span className="muted cast-hint">
             Drag to slide · wheel to zoom · <strong>1-9</strong> (numpad or top row) step in 8
             directions, 4 presses edge to edge, 5 recentres · arrows nudge. On stream:{" "}
@@ -597,6 +1047,274 @@ export function CasterControl() {
           {/* Every fleet's chases, with no team passed to recordChases - a caster is told everything,
               the same as with the things hiding in the water. This is the panel that gives them a
               reason to look up: "Aljex is two hits from the record" is a call they can build on. */}
+          {/*
+            Text size, as a fraction of what each square will hold.
+
+            The default is now "as large as it fits", per square - so the size varies with the name,
+            which is the point: "Dane" gets a big one and "Consecrated Death Rite Bird" gets a small
+            one, and neither leaves the square mostly empty. This slider only comes DOWN from that,
+            because there is nothing above filling the square. See lib/textFit.
+          */}
+          <section>
+            <h3>Text size</h3>
+            <div className="cast-row">
+              <input
+                type="range"
+                min={MIN_TEXT_SIZE}
+                max={1}
+                step={0.05}
+                value={view.text ?? 1}
+                onChange={(e) => set({ text: Number(e.target.value) })}
+                title="How much of each square the name fills"
+              />
+              <span className="cast-zoom-value">{Math.round((view.text ?? 1) * 100)}%</span>
+              <button onClick={() => set({ text: 1 })} title="Fill every square">
+                Fill
+              </button>
+            </div>
+            <p className="cast-note muted">
+              Every square is sized to its own name, so short names come out large. This trims the
+              whole board together.
+            </p>
+          </section>
+
+          {/*
+            Framing slots. Save is a separate small button rather than a long-press or a shift-click,
+            because the two actions have very different costs: recalling the wrong slot is a
+            keypress you undo by pressing the right one, and OVERWRITING the wrong slot loses a
+            framing you set up before the match and cannot get back.
+          */}
+          <section>
+            <h3>Framing presets</h3>
+            <div className="cast-presets">
+              {presets.map((p, i) => (
+                <div className="cast-preset" key={i}>
+                  <button
+                    className={p ? "primary" : ""}
+                    disabled={!p}
+                    onClick={() => recallPreset(i)}
+                    title={
+                      p
+                        ? `Recall ${p.zoom.toFixed(1)}x - keyboard Shift+${i + 1}`
+                        : "Empty - aim the board, then press Save"
+                    }
+                  >
+                    {i + 1}
+                    {p && <span className="cast-preset-zoom">{p.zoom.toFixed(1)}x</span>}
+                  </button>
+                  <button
+                    className="cast-preset-set"
+                    onClick={() => (p ? clearPreset(i) : savePreset(i))}
+                    title={p ? "Forget this framing" : "Save the current framing here"}
+                  >
+                    {p ? "clear" : "save"}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="cast-note muted">
+              Saves the zoom and centre together. <strong>Shift+1-4</strong> recalls without
+              reaching for the mouse.
+            </p>
+          </section>
+
+          {/*
+            Follow the action. Off by default and it yields to the hand - see the note on `follow`.
+          */}
+          <section>
+            <h3>Follow the action</h3>
+            <label className="cast-check">
+              <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+              <span>Swing to the newest shot</span>
+            </label>
+            <p className="cast-note muted">
+              {punchOn
+                ? "Each shot takes the camera and holds it, lit in the firing fleet's colour."
+                : view.zoom <= MIN_ZOOM
+                  ? "Nothing to follow at 1x - the whole board is already in frame. Zoom in first."
+                  : "Slides the frame to each new shot without changing the zoom."}
+            </p>
+          </section>
+
+          {/*
+            Punch-in: what a highlight DOES, rather than what it looks like.
+
+            Governs both the shot follow above and the ship buttons below, because they are the same
+            gesture - "look at this" - and having one of them take the camera while the other only
+            lit a square would read as a bug rather than as two settings.
+
+            Clicking a square by hand is deliberately NOT punched. That is the caster pointing at
+            something they are already talking about, at a framing they already chose; moving the
+            camera out from under them and then moving it back would be the opposite of helpful.
+          */}
+          <section>
+            <h3>Punch in</h3>
+            <label className="cast-check">
+              <input type="checkbox" checked={punchOn} onChange={(e) => setPunchOn(e.target.checked)} />
+              <span>Zoom to a highlight, then come back</span>
+            </label>
+            {punchOn && (
+              <>
+                <div className="cast-row">
+                  <input
+                    type="range"
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    step={0.1}
+                    value={punchZoom}
+                    onChange={(e) => setPunchZoom(Number(e.target.value))}
+                    title="How far in a highlight zooms"
+                  />
+                  <span className="cast-zoom-value">{punchZoom.toFixed(1)}x</span>
+                </div>
+                <div className="cast-row">
+                  <input
+                    type="range"
+                    min={2}
+                    max={15}
+                    step={1}
+                    value={punchSecs}
+                    onChange={(e) => setPunchSecs(Number(e.target.value))}
+                    title="How long it holds before going back"
+                  />
+                  <span className="cast-zoom-value">{punchSecs}s</span>
+                </div>
+                <p className="cast-note muted">
+                  Returns to exactly the framing you were on. Touching the aim yourself cancels the
+                  return and leaves the square lit.
+                </p>
+              </>
+            )}
+          </section>
+
+          {/*
+            The spotlight: what the caster is pointing at. A stream viewer cannot follow a finger on
+            a monitor, so "the one at D7" otherwise has no picture attached to it.
+          */}
+          <section>
+            <h3>Spotlight</h3>
+            <label className="cast-check">
+              <input type="checkbox" checked={spotting} onChange={(e) => setSpotting(e.target.checked)} />
+              <span>Click the board to point at a square</span>
+            </label>
+            <div className="cast-buttons">
+              <button
+                disabled={!view.spot?.length}
+                onClick={() => {
+                  cancelPunch();
+                  set({ spot: null, spotColor: null });
+                }}
+                title="Put the light out"
+              >
+                Clear spotlight
+              </button>
+              {view.spot?.length === 1 && challenges[view.spot[0]] && (
+                <span className="cast-spot-name">
+                  {cellLabel(view.spot[0], boardSize)} - {challenges[view.spot[0]].name}
+                </span>
+              )}
+            </div>
+            <p className="cast-note muted">
+              With this on, a click points and a drag still pans. Click the lit square again to
+              clear it.
+            </p>
+
+            {hulls.length > 0 && (
+              <>
+                <h3 className="cast-subhead">Ships</h3>
+                {!canSpotShips && (
+                  <p className="cast-warn">
+                    Results only is on, so no ship positions go to stream - including these.
+                    Switch the view to a fleet to spotlight a hull.
+                  </p>
+                )}
+                <div className="cast-hulls">
+                  {hulls.map((h) => (
+                    <button
+                      key={h.key}
+                      className={`cast-hull${spotIsHull(h.cells) ? " primary" : ""}`}
+                      disabled={!canSpotShips || h.cells.length === 0}
+                      onClick={() => {
+                        if (spotIsHull(h.cells)) {
+                          cancelPunch();
+                          set({ spot: null, spotColor: null });
+                        } else if (punchOn) {
+                          // Takes the camera to the whole hull and holds it, in that fleet's colour.
+                          punchTo(h.cells, teamHex(h.team), boardSize);
+                        } else {
+                          set({ spot: h.cells, spotColor: teamHex(h.team) });
+                        }
+                      }}
+                      title={canSpotShips ? "Ring this hull on stream" : "Not while the view is Results only"}
+                    >
+                      <span className="cast-hull-head" style={{ color: teamHex(h.team) }}>
+                        {teamName(h.team)} · {h.name}
+                        <span className="cast-hull-tally">
+                          {h.down}/{h.cells.length}
+                        </span>
+                      </span>
+                      <span className="cast-hull-squares">{h.squares.join(", ")}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
+          {/*
+            Result markers. One switch for the sprite AND the cell fill together: turning off only
+            the sprite leaves a fully colour-coded board, which is not what anybody means by taking
+            the icons off. What survives either way is the attribution ring, so the board still says
+            which squares have been shot at and by whom - see lib/overlayMarkers.
+          */}
+          <section>
+            <h3>Result markers</h3>
+            <label className="cast-check">
+              <input
+                type="checkbox"
+                checked={view.markers !== false}
+                onChange={(e) => set({ markers: e.target.checked })}
+              />
+              <span>Show hits, misses and wrecks</span>
+            </label>
+            {view.markers !== false && teams.length > 1 && (
+              <>
+                <div className="cast-buttons">
+                  <button
+                    className={!view.markerTeams?.length ? "primary" : ""}
+                    onClick={() => set({ markerTeams: null })}
+                    title="Every fleet's shots"
+                  >
+                    All shots
+                  </button>
+                  {teams.map((t) => {
+                    const only = view.markerTeams?.length === 1 && view.markerTeams[0] === t;
+                    return (
+                      <button
+                        key={t}
+                        className={only ? "primary" : ""}
+                        onClick={() => set({ markerTeams: only ? null : [t] })}
+                        style={{ color: teamHex(t) }}
+                        title={`Only ${teamName(t)}'s shots get markers`}
+                      >
+                        {teamName(t)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="cast-note muted">
+                  Whose <em>shots</em> are marked - separate from whose board is on screen.
+                </p>
+              </>
+            )}
+            {view.markers === false && (
+              <p className="cast-note muted">
+                Squares keep their coloured outline, so the board still shows who has fired where.
+                The names get the whole square.
+              </p>
+            )}
+          </section>
+
           {chases.length > 0 && (
             <section>
               <h3>Records in play</h3>
