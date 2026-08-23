@@ -1,5 +1,12 @@
 import { supabase, ensureSignedIn } from "./supabase";
 import { MATCH_START_MARKER } from "./matchTime";
+import {
+  closedWindow,
+  pauseWindows,
+  PAUSE_COUNTDOWN_SECONDS,
+  RESUME_COUNTDOWN_SECONDS,
+} from "./matchPause";
+import { serverNow } from "./serverTime";
 import { initialHitsRemaining, emptyGrid } from "./battleshipLogic";
 import { teamName } from "./teamColors";
 import { generateRoomCode, normalizeRoomCode, formatRoomCode, generateRejoinCode, generateSeed } from "./roomCode";
@@ -541,6 +548,16 @@ export async function startBattle(roomId: string): Promise<BalanceOutcome> {
   });
   if (markerErr) throw markerErr;
 
+  // Belt and braces on the clock, and BEFORE the status flip so there is no frame in which the room
+  // is in 'battle' carrying stopped time from the last game - a leftover pause_at would freeze the
+  // new clock at a timestamp from a match that is already over. resetRoomToLobby has normally done
+  // this already; a room reaching a second battle by some other route has not.
+  //
+  // Unchecked, like the deep-water roll above it: a project that hasn't run the match_pause
+  // migration has no pause to clear, and being unable to pause is not a reason to be unable to play.
+  await supabase.from("rooms").update(PAUSE_CLEARED).eq("id", roomId);
+  await clearPauseState(roomId);
+
   const { error } = await supabase.from("rooms").update({ status: "battle" }).eq("id", roomId);
   if (error) throw error;
 
@@ -668,6 +685,156 @@ export async function sendAttack(
  * wrote zero rows for every team but their own, which is why "End match" only ever appeared
  * to reset the host's board.
  */
+/**
+ * The columns that carry a pause, cleared. See lib/matchPause.ts for what they mean.
+ *
+ * Its own constant because three different moments have to do it and they must do it identically:
+ * a match ending, a match starting, and a host cancelling a pause during its own warning window.
+ * A room that starts a match holding somebody's stale pause_at is a room whose clock is frozen at a
+ * timestamp from the last game.
+ */
+const PAUSE_CLEARED = { pause_at: null, resume_at: null, pause_log: [] };
+
+/** Whether a failed write is the schema missing rather than the write being refused. */
+function isMissingPauseSchema(message: string): boolean {
+  return /pause_at|resume_at|pause_log|pause_ready|pause_requested_at/i.test(message);
+}
+
+/** The sentence to show when it is. Names the file, because the fix is to run one. */
+const PAUSE_SCHEMA_HINT =
+  "Pausing needs one more migration. Run supabase/migrations/20260823010000_match_pause.sql " +
+  "in your Supabase SQL editor.";
+
+/**
+ * "Can we stop for a minute?" - the ask any player can make, host or not.
+ *
+ * Writes a timestamp rather than a flag so a second ask is a distinguishable event: the host is
+ * under no obligation to act on the first one, and somebody who has been waiting three minutes
+ * should be able to say so again and have it chime again. See components/PauseControls.
+ */
+export async function requestPause(playerId: string): Promise<void> {
+  const { error } = await supabase
+    .from("players")
+    .update({ pause_requested_at: new Date(serverNow()).toISOString() })
+    .eq("id", playerId);
+  if (error) throw new Error(isMissingPauseSchema(error.message) ? PAUSE_SCHEMA_HINT : error.message);
+}
+
+/** Taking it back - the door was answered, the controller was found. */
+export async function clearPauseRequest(playerId: string): Promise<void> {
+  const { error } = await supabase.from("players").update({ pause_requested_at: null }).eq("id", playerId);
+  if (error) throw error;
+}
+
+/** "I'm back." Written by each player to their own row; the host clears them all at both ends. */
+export async function setPauseReady(playerId: string, ready: boolean): Promise<void> {
+  const { error } = await supabase.from("players").update({ pause_ready: ready }).eq("id", playerId);
+  if (error) throw new Error(isMissingPauseSchema(error.message) ? PAUSE_SCHEMA_HINT : error.message);
+}
+
+/**
+ * Stop the clock, in five seconds' time.
+ *
+ * The delay is the feature. It is the window in which the room finishes what it is doing - the
+ * message on screen is "finish your fight, then quit out" - and it is why pause_at is a future
+ * instant rather than a flag: those five seconds are real match time, played under a countdown, and
+ * they belong on the clock like any other five seconds.
+ *
+ * Folds any unsettled window into the log on the way past. Normally there isn't one, because
+ * settlePause runs when a resume lands - but a host whose browser died mid-countdown never got to
+ * write it, and pausing again on top of it would otherwise overwrite the record of a real break.
+ *
+ * Clears every request and every ready flag in the room, so the pause opens with an honest roster.
+ * That needs the "players update by host" policy, which is host-only by design and exactly who this
+ * is for.
+ */
+export async function pauseMatch(room: Room): Promise<void> {
+  const now = serverNow();
+  const settled = closedWindow(room, now);
+  const log = settled ? [...pauseWindows(room), settled] : pauseWindows(room);
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({
+      pause_at: new Date(now + PAUSE_COUNTDOWN_SECONDS * 1000).toISOString(),
+      resume_at: null,
+      pause_log: log,
+    })
+    .eq("id", room.id);
+  if (error) throw new Error(isMissingPauseSchema(error.message) ? PAUSE_SCHEMA_HINT : error.message);
+
+  await clearPauseState(room.id);
+}
+
+/**
+ * Start the clock again, in five seconds' time - or call the whole thing off.
+ *
+ * Pressing this during the warning window means "never mind": the clock never actually stopped, so
+ * there is no window to record and the right thing is to leave no trace of one. Past the freeze it
+ * schedules the restart, and every client counts down to the same instant.
+ */
+export async function resumeMatch(room: Room): Promise<void> {
+  const now = serverNow();
+  const pauseAt = room.pause_at ? Date.parse(room.pause_at) : NaN;
+  const cancelling = !Number.isNaN(pauseAt) && now < pauseAt;
+
+  const { error } = await supabase
+    .from("rooms")
+    .update(
+      cancelling
+        ? { pause_at: null, resume_at: null }
+        : { resume_at: new Date(now + RESUME_COUNTDOWN_SECONDS * 1000).toISOString() }
+    )
+    .eq("id", room.id);
+  if (error) throw new Error(isMissingPauseSchema(error.message) ? PAUSE_SCHEMA_HINT : error.message);
+
+  if (cancelling) await clearPauseState(room.id);
+}
+
+/**
+ * Write a finished pause into the log and hand the room back its running clock.
+ *
+ * Tidying, not truth. Every client already reads a resume_at that has passed as "running again, with
+ * this much stopped time behind us" (see pauseInfoAt), so the clock is correct on every screen
+ * whether or not this ever runs. What it buys is durability: the window becomes a row rather than a
+ * derivation, so it survives the next pause overwriting pause_at, and the archive can bill for it.
+ *
+ * Called from the host's client alone, because only the host may write these columns and because a
+ * second writer would double-append the same window.
+ */
+export async function settlePause(room: Room): Promise<void> {
+  const now = serverNow();
+  // Only once the scheduled restart has actually arrived. closedWindow would happily bank the part
+  // of a still-open pause that has passed so far, which is right for the caller that is about to
+  // overwrite pause_at and wrong here - it would end the pause early on every client.
+  if (!room.resume_at || now < Date.parse(room.resume_at)) return;
+
+  const settled = closedWindow(room, now);
+  if (!settled) return;
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({ pause_at: null, resume_at: null, pause_log: [...pauseWindows(room), settled] })
+    .eq("id", room.id);
+  if (error) throw error;
+
+  await clearPauseState(room.id);
+}
+
+/**
+ * Wipe every request and ready flag in the room.
+ *
+ * Best-effort, and unchecked on purpose: this is housekeeping either side of a pause, and a room
+ * that cannot clear a stale tick-mark must still be able to stop and start. Same reasoning as the
+ * square_counts delete in resetRoomToLobby.
+ */
+async function clearPauseState(roomId: string): Promise<void> {
+  await supabase
+    .from("players")
+    .update({ pause_requested_at: null, pause_ready: false })
+    .eq("room_id", roomId);
+}
+
 export async function resetOwnTeamState(room: Room, team: number): Promise<void> {
   const totalCells = room.board_size * room.board_size;
 
@@ -770,6 +937,13 @@ export async function resetRoomToLobby(roomId: string, activeTeamsList: number[]
   // (`team_ready delete by host`), and a row that isn't there cannot be stale - every client
   // re-creates its own the moment it confirms.
   await supabase.from("team_ready").delete().eq("room_id", roomId);
+
+  // Stopped time belongs to the match it was stopped in: carried into the lobby, the log would
+  // discount the NEXT match by the length of this one's coffee break. Its own write rather than a
+  // line in the patch below, so a project without the columns doesn't lose the fresh seed to a
+  // rejected update - and unchecked, so it cannot leave anybody stuck in a finished match.
+  await supabase.from("rooms").update(PAUSE_CLEARED).eq("id", roomId);
+  await clearPauseState(roomId);
 
   // A fresh seed for the next match, rolled in the same write as the status flip so there is no
   // moment where the lobby is open on the match everyone has just played. Both routes back to the

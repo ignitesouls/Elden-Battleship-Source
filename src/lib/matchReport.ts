@@ -2,6 +2,7 @@ import { groupIntoShots, type FeedShot } from "./attackFeed";
 import { cellLabel } from "./battleshipLogic";
 import { teamName } from "./teamColors";
 import { formatDuration, matchStartedAt, matchTimings } from "./matchTime";
+import { pausedMsBefore, pauseWindows } from "./matchPause";
 import { shipCellIndices } from "./shipCells";
 import { deepWater, bottleNote, type DeepHide, type DeepWater } from "./deepWater";
 import { seedFrom, rng } from "./seededRandom";
@@ -137,7 +138,17 @@ export function buildMatchReport(
   const lastShot = shots.length > 0 ? shots[0].at : null; // groupIntoShots sorts newest-first
   let duration = "--:--";
   if (startedAt && lastShot) {
-    const secs = (new Date(lastShot).getTime() - new Date(startedAt).getTime()) / 1000;
+    // Stopped clock comes off the same way the countdown buffer does, and for the same reason: this
+    // is the match that was played, not the evening it was played over. Measured at the LAST SHOT
+    // rather than at now, so a pause that is still open when the recap renders bills only the part
+    // of it that had passed by the time the match ended.
+    //
+    // Mirrors archive_match, which recomputes this from the room's own columns when the result is
+    // filed (see the match_pause migration). The recap on screen and the record in the book have to
+    // read the same, or a crew watching their own duration will catch the difference.
+    const lastShotMs = new Date(lastShot).getTime();
+    const stopped = pausedMsBefore(pauseWindows(room), lastShotMs);
+    const secs = (lastShotMs - new Date(startedAt).getTime() - stopped) / 1000;
     duration = formatDuration(secs - matchTimings(room).matchBeginsAt);
   }
 

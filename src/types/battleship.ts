@@ -75,6 +75,25 @@ export interface Room {
    * genuinely is unknown until asMatchBalance has looked at it, which is what every reader does.
    */
   balance_report?: unknown;
+  /**
+   * The instant the match clock freezes, or null when it is running - see lib/matchPause.ts.
+   *
+   * Set five seconds AHEAD of the press, so a room in this state may still be counting down to the
+   * freeze rather than sitting in it. Optional, like every column added after launch: a room from a
+   * project that hasn't run the match_pause migration reads as a match that has never been stopped,
+   * which is exactly what it is.
+   */
+  pause_at?: string | null;
+  /** The instant the clock restarts, likewise set five seconds ahead of the host's press. */
+  resume_at?: string | null;
+  /** Every pause that has already closed, oldest first. */
+  pause_log?: PauseWindow[] | null;
+}
+
+/** One stretch of stopped clock, written by the host once the window closes. */
+export interface PauseWindow {
+  at: string;
+  until: string;
 }
 
 /**
@@ -261,6 +280,16 @@ export interface Player {
   rejoin_code?: string | null;
   /** When this player picked their current fleet. Earliest on a team is its captain. */
   team_joined_at?: string | null;
+  /**
+   * When this player last asked for a pause, or null if they haven't - see components/PauseControls.
+   *
+   * A column rather than a Realtime broadcast so the ask survives the host being tabbed out, and a
+   * timestamp rather than a boolean so a second ask after an ignored first one is a fresh event the
+   * chime can tell apart from the one already on screen.
+   */
+  pause_requested_at?: string | null;
+  /** Whether this player has readied up during the current pause. Cleared by the host at both ends. */
+  pause_ready?: boolean;
 }
 
 export interface Fleet {

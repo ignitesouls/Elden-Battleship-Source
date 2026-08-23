@@ -5,6 +5,7 @@ import { sendAttack } from "../../lib/rooms";
 import { playSfx } from "../../lib/sfx";
 import { teamName, teamHex } from "../../lib/teamColors";
 import { EndMatchButton } from "../../components/EndMatchButton";
+import { PauseBanner, PauseControls } from "../../components/PauseControls";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { MatchInfoBox } from "../../components/MatchInfoBox";
@@ -686,6 +687,10 @@ export function BattlePhase({
         </button>
       )}
       <OverlayLinkBox roomCode={room.code} team={myTeam} rejoinCode={rejoinCode} teams={activeTeamsList} />
+      {/* Above "End match" rather than below it, because it is the one people reach for in a hurry
+          and the two must never be adjacent enough to misclick: stopping the clock and binning the
+          match are a long way apart in consequence. */}
+      <PauseControls room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
       {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
       <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
       {/* Last item in the right-hand column, so it sits bottom-right of the match screen -
@@ -705,6 +710,10 @@ export function BattlePhase({
           {toast}
         </div>
       )}
+
+      {/* Also fixed, and above the toast in the stack: a hit toast is a thing that happened, this is
+          a thing being asked of you. Returns null for the whole of almost every match. */}
+      <PauseBanner room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
       {error && <div className="error-text">{error}</div>}
 
       {/* Counters that aren't reaching the database. Worth a line on screen: the numbers still

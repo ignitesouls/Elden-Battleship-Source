@@ -22,11 +22,33 @@ const PHASE_LABEL = {
   match: "Match",
 } as const;
 
+/**
+ * What the label says instead while the match is stopped - see lib/matchPause.
+ *
+ * The label rather than the digits, because the digits are already telling the truth: a frozen clock
+ * is what a pause IS, and battlePhaseAt holds them at the instant the freeze began. What they cannot
+ * say on their own is WHY they have stopped, and a clock that has stopped for no visible reason is
+ * indistinguishable from a clock that has broken - which is the one reading this must never give.
+ *
+ * `pausing` is not in here on purpose: during the warning window the clock is genuinely still
+ * running, and relabelling it would claim otherwise. The banner over the boards is carrying that
+ * countdown, and it is carrying the sentence that goes with it.
+ */
+const PAUSE_LABEL = {
+  paused: "Paused",
+  resuming: "Resuming",
+} as const;
+
 export function MatchClock({ attacks, room, maxVh = 34, maxVw = 26, compact }: Props) {
   // The one component on the match screen that genuinely draws seconds, and so the one that takes
   // the ticking hook. Everything else reads the phase name instead - see useBattlePhase.
   const info = useBattleClock(attacks, room);
-  const label = info ? PHASE_LABEL[info.phase] : "Match";
+  const stopped = info && info.pause.phase !== "running" && info.pause.phase !== "pausing";
+  const label = stopped
+    ? PAUSE_LABEL[info.pause.phase as keyof typeof PAUSE_LABEL]
+    : info
+      ? PHASE_LABEL[info.phase]
+      : "Match";
   // STARTING/PREPARATION count down toward zero, so they read as negative time; MATCH counts up.
   const display = info
     ? info.phase === "match"

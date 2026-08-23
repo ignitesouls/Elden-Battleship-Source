@@ -83,6 +83,21 @@ const FILES = {
    * hearing a fanfare for a match they didn't win would read as the game congratulating them.
    */
   defeat: "sfx/battleship_defeat.mp3",
+  /**
+   * Somebody is asking the room to stop - and, five seconds later, the moment it actually does.
+   *
+   * Synthesised rather than sampled (scratchpad/synth-pause.mjs): two struck bell tones a fourth
+   * apart, B5 under E6, with inharmonic partials so it rings rather than beeps. Deliberately the
+   * quietest and shortest cue here. It is the only sound in the game that can fire while nothing has
+   * happened on the board, it can be asked for repeatedly by somebody the host hasn't got to yet,
+   * and it must never be mistaken for a hit - so it sits in a register nothing else uses and gets
+   * out of the way.
+   *
+   * There is no matching resume sound: coming back takes the prepare horn, which is already what the
+   * room hears when a match is about to open fire. A restart IS that moment, so it should not need a
+   * second vocabulary.
+   */
+  pause: "sfx/battleship_pause.wav",
 } as const;
 
 export type SfxName = keyof typeof FILES;

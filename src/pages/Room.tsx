@@ -40,6 +40,7 @@ import { playSfx } from "../lib/sfx";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
 import { MatchClock } from "../components/MatchClock";
 import { EndMatchButton } from "../components/EndMatchButton";
+import { PauseBanner, PauseControls } from "../components/PauseControls";
 import { LeaveMatchButton } from "../components/LeaveMatchButton";
 import { useBoxSize, boardSideFor, boardColumns } from "../hooks/useBoxSize";
 import { CanvasPanel } from "../components/CanvasPanel";
@@ -709,6 +710,11 @@ function SpectatorView({
 
   return (
     <div className="spectate">
+      {/* A watcher may not call a pause, but must be able to see one - a caster whose clock has
+          silently stopped has nothing to say about it on air. Fixed over the page, like it is over
+          the boards on a player's screen, and null for the whole of almost every match. */}
+      <PauseBanner room={room} players={players} myPlayerId={myPlayer.id} isHost={myPlayer.is_host} />
+
       {/*
         One bar holding everything that isn't a board.
 
@@ -868,7 +874,17 @@ function SpectatorView({
         )}
 
         {/* A host who is spectating keeps every host power they'd have on a fleet - ending the
-            match is the one that matters here, since nobody else in the room can do it. */}
+            match is the one that matters here, since nobody else in the room can do it. Stopping the
+            clock is the second: the host is often the caster, and the caster is often the person who
+            can see that the room needs a minute.
+
+            Offered to the host alone, not to every spectator. A pause REQUEST is harmless enough on
+            its own, but a published room code means the gallery is strangers, and a chime anybody
+            passing can ring in a live match is the sort of thing spectators_cannot_disrupt exists to
+            keep out. Watchers still see the banner, which is the part they need. */}
+        {myPlayer.is_host && (
+          <PauseControls room={room} players={players} myPlayerId={myPlayer.id} isHost />
+        )}
         {myPlayer.is_host && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
         <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} spectating />
       </div>

@@ -1,0 +1,78 @@
+/* The pause banner.
+
+   Fixed and centred at the top of the match screen, over the boards rather than in the flow with
+   them: the whole point is that it appears without warning mid-fight, and a block that pushed the
+   board down a hundred pixels while somebody was aiming would cause the exact misclick it is asking
+   them to avoid. Same reasoning as the toast it sits above (see BattlePhase). */
+.pause-banner {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(30rem, calc(100vw - 1.5rem));
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+/* Brass while a countdown is running, so the two moments that need looking at now - the clock is
+   about to stop, the clock is about to start - are the two that are lit. A settled pause is a
+   state, not an event, and wears the panel's own border. */
+.pause-banner.is-counting {
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 18px rgba(217, 164, 65, 0.22);
+}
+
+.pause-banner-title {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+}
+
+.pause-banner-count {
+  font-size: clamp(2.2rem, 6vh, 3.4rem);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-bright);
+}
+
+/* The house rule, and the only sentence on here anybody has to act on. */
+.pause-banner-rule {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.pause-roster {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.pause-roster-name {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-raised);
+  color: var(--text-dim);
+}
+
+.pause-roster-name.is-ready {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+/* Outstanding asks, shown whether or not a pause has been called - that is the whole job of the
+   request: to be visible to a host who is looking at their own board. */
+.pause-requests {
+  font-size: 0.9rem;
+  color: var(--accent-bright);
+}

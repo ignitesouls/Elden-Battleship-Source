@@ -742,7 +742,7 @@ console.log('\n-- Igon, beside the dragon --------------------------------------
    * late. Taipei is UTC+8 with no daylight saving, so this is a fixed offset and can be asserted.
    */
   const taipei = new Date(Date.parse(IGON_UNVEILED) + 8 * 3600 * 1000).toISOString()
-  check('the reveal is 11pm in Taipei', taipei.startsWith('2026-08-23T23:00'), taipei)
+  check('the reveal is 10:50pm in Taipei', taipei.startsWith('2026-08-23T22:50'), taipei)
 
   /**
    * Unparseable reads as too early on purpose. The failure that matters is leaking him before the

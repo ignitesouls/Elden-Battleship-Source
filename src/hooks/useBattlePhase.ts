@@ -6,6 +6,7 @@ import {
   type BattlePhaseInfo,
   type BattlePhaseName,
 } from "../lib/matchTime";
+import { pauseInfoAt, type PauseInfo } from "../lib/matchPause";
 import { serverNow, syncServerClock } from "../lib/serverTime";
 import type { Attack, Room } from "../types/battleship";
 
@@ -90,6 +91,11 @@ function subscribeNever(): () => void {
   return () => {};
 }
 
+/** What the clock reads, plus why it is or isn't moving. */
+export interface BattleClockInfo extends BattlePhaseInfo {
+  pause: PauseInfo;
+}
+
 /**
  * The full clock, re-rendering the caller once a second.
  *
@@ -100,7 +106,7 @@ function subscribeNever(): () => void {
  * timestamp, so the two have to be on the same clock or every player's timer is offset by whatever
  * their own PC clock is wrong by. See lib/serverTime.ts.
  */
-export function useBattleClock(attacks: Attack[], room?: Room | null): BattlePhaseInfo | null {
+export function useBattleClock(attacks: Attack[], room?: Room | null): BattleClockInfo | null {
   const startedAt = matchStartedAt(attacks);
   const running = startedAt !== null;
 
@@ -110,7 +116,13 @@ export function useBattleClock(attacks: Attack[], room?: Room | null): BattlePha
   const getNow = useCallback(() => (running ? now : 0), [running]);
   const nowMs = useSyncExternalStore(running ? subscribe : subscribeNever, getNow, getNow);
 
-  return battlePhaseAt(startedAt, nowMs, matchTimings(room));
+  // Derived here rather than taken from usePauseInfo, so the two numbers that have to agree - the
+  // instant the clock is read at, and the stopped time coming off it - are both taken from this
+  // render's single reading of `now`. Two hooks sampling the tick a millisecond apart is how a
+  // frozen clock ends up drifting by one second and back again.
+  const pause = pauseInfoAt(room, nowMs);
+  const info = battlePhaseAt(startedAt, nowMs, matchTimings(room), pause);
+  return info && { ...info, pause };
 }
 
 /**
@@ -127,14 +139,59 @@ export function useBattlePhaseName(attacks: Attack[], room?: Room | null): Battl
 
   // Depends on the timing NUMBERS rather than the object matchTimings builds fresh each render -
   // an unstable getSnapshot identity would make useSyncExternalStore resubscribe every render.
+  // Pause-aware for the same reason the clock is: RANDOMIZATION and PREPARATION are time windows,
+  // so a pause called during either has to hold them where they are rather than letting the room
+  // walk into the match while everybody is away from their desk.
+  const pauseAt = room?.pause_at ?? null;
+  const resumeAt = room?.resume_at ?? null;
+  const pauseLog = room?.pause_log ?? null;
+
   const getPhase = useCallback(
     () =>
       startedAt
-        ? (battlePhaseAt(startedAt, now, { starting, matchBeginsAt, preparation: matchBeginsAt - starting })
-            ?.phase ?? null)
+        ? (battlePhaseAt(
+            startedAt,
+            now,
+            { starting, matchBeginsAt, preparation: matchBeginsAt - starting },
+            pauseInfoAt({ pause_at: pauseAt, resume_at: resumeAt, pause_log: pauseLog }, now)
+          )?.phase ?? null)
         : null,
-    [startedAt, starting, matchBeginsAt]
+    [startedAt, starting, matchBeginsAt, pauseAt, resumeAt, pauseLog]
   );
 
   return useSyncExternalStore(running ? subscribe : subscribeNever, getPhase, getPhase);
+}
+
+/**
+ * The pause on its own, for the controls and the banner that draw it.
+ *
+ * Rides the same tick as the two hooks above, and takes the same trick `useBattlePhaseName` does to
+ * stay cheap: the snapshot is a STRING built from the phase and the whole second showing on the
+ * countdown, so a caller re-renders when the digit changes and not sixty times between. A room with
+ * no pause on it never subscribes at all, which is every room for almost all of every match.
+ *
+ * Separate from useBattleClock because the two are drawn by different components in different
+ * corners of the screen, and the banner must not have to mount a clock to know a pause is on.
+ */
+export function usePauseInfo(room?: Room | null): PauseInfo {
+  const pauseAt = room?.pause_at ?? null;
+  const resumeAt = room?.resume_at ?? null;
+  const pauseLog = room?.pause_log ?? null;
+  const fields = { pause_at: pauseAt, resume_at: resumeAt, pause_log: pauseLog };
+
+  // No pause in flight means nothing here changes with time, so no timer needs to exist - which is
+  // the state a room is in for all of almost every match. Note this turns on pause_at alone and not
+  // on the log: a room with three closed windows behind it and none open is just running.
+  const idle = pauseAt === null;
+
+  const getKey = useCallback(() => {
+    const info = pauseInfoAt({ pause_at: pauseAt, resume_at: resumeAt, pause_log: pauseLog }, now);
+    return `${info.phase}:${Math.ceil(info.countdown)}`;
+  }, [pauseAt, resumeAt, pauseLog]);
+
+  useSyncExternalStore(idle ? subscribeNever : subscribe, getKey, getKey);
+
+  // serverNow() rather than the module's `now` on the idle path: nothing has been ticking it, so it
+  // can be arbitrarily stale, and the accumulated total read off a stale instant would be short.
+  return pauseInfoAt(fields, idle ? serverNow() : now);
 }

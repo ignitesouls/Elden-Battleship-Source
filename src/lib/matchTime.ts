@@ -1,3 +1,4 @@
+import { RUNNING, type PauseInfo } from "./matchPause";
 import type { Attack } from "../types/battleship";
 
 /**
@@ -75,13 +76,27 @@ export interface BattlePhaseInfo {
   matchElapsed: number;
 }
 
+/**
+ * Where the clock stands, given when it started and what time it is now.
+ *
+ * `pause` is how a match that has been stopped stays stopped, and it does the whole job in two
+ * numbers (see lib/matchPause): while the clock is frozen `frozenAtMs` stands in for now, so every
+ * reading below is taken at the instant the pause began; and `pausedMs` is the stopped time already
+ * behind us, which comes off the elapsed figure so the clock picks up where it left off rather than
+ * jumping forward by the length of the break.
+ *
+ * Defaulted to RUNNING rather than made required, so a caller with no room to hand - the replay, the
+ * tests - reads a match that was never stopped, which is what every match before this was.
+ */
 export function battlePhaseAt(
   startedAt: string | null,
   nowMs: number,
-  timings: MatchTimings
+  timings: MatchTimings,
+  pause: PauseInfo = RUNNING
 ): BattlePhaseInfo | null {
   if (!startedAt) return null;
-  const elapsed = (nowMs - new Date(startedAt).getTime()) / 1000;
+  const at = pause.frozenAtMs ?? nowMs;
+  const elapsed = (at - new Date(startedAt).getTime() - pause.pausedMs) / 1000;
 
   if (elapsed < timings.starting) {
     return { phase: "starting", countdown: timings.starting - elapsed, matchElapsed: 0 };

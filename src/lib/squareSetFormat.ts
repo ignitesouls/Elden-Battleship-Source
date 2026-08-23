@@ -799,15 +799,15 @@ export const BAYLE_SQUARES = new Set([
 ]);
 
 /**
- * When Igon goes into the water: 11pm Taipei on the 23rd of August 2026.
+ * When Igon goes into the water: 10:50pm Taipei on the 23rd of August 2026.
  *
  * Written in UTC because that is what `Date.parse` agrees about, and Taipei is UTC+8 all year - no
- * daylight saving to get wrong - so 23:00 there is 15:00 here, same day.
+ * daylight saving to get wrong - so 22:50 there is 14:50 here, same day.
  *
  * Everything about him hangs off this one line. No anchor means no meeting, no marks, no sounds, no
  * honors, and nothing written into the archive.
  */
-export const IGON_UNVEILED = "2026-08-23T15:00:00.000Z";
+export const IGON_UNVEILED = "2026-08-23T14:50:00.000Z";
 
 /**
  * Whether a board is new enough to have him in it.
