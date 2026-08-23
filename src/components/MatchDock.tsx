@@ -2,12 +2,14 @@ import { BoardLegend } from "./BoardLegend";
 import { MatchInfoBox } from "./MatchInfoBox";
 import { OverlayLinkBox } from "./OverlayLinkBox";
 import { EndMatchButton } from "./EndMatchButton";
+import { PauseControls } from "./PauseControls";
 import { LeaveMatchButton } from "./LeaveMatchButton";
 import { FireHoldSelect } from "./FireHoldSelect";
 import { AutoFireStatus } from "./AutoFireStatus";
 import { NOTE_HINT } from "../hooks/usePencilMarks";
 import { AUTO_RULE_HINT } from "../lib/deduction";
 import type { Challenge } from "../lib/challenges";
+import type { Player, Room } from "../types/battleship";
 import "./MatchDock.css";
 
 interface Props {
@@ -16,6 +18,17 @@ interface Props {
   squareSet?: string | null;
   roomId: string;
   roomCode: string;
+  /**
+   * The whole room row, and the roster, for the pause controls alone.
+   *
+   * Everything else in here is handed the two or three fields it uses, which is the better shape and
+   * the one to keep. The pause cannot take it: what it reads is three columns that change DURING a
+   * match (pause_at, resume_at, pause_log - see lib/matchPause), and a decomposed copy would be a
+   * snapshot this bar had no way to know had gone stale. Same for the roster, which carries who has
+   * asked for a pause and who has readied up.
+   */
+  room: Room;
+  players: Player[];
   seed?: string | null;
   rejoinCode?: string | null;
   myTeam: number;
@@ -51,6 +64,8 @@ export function MatchDock({
   squareSet,
   roomId,
   roomCode,
+  room,
+  players,
   seed,
   rejoinCode,
   myTeam,
@@ -104,6 +119,10 @@ export function MatchDock({
         <OverlayLinkBox roomCode={roomCode} team={myTeam} rejoinCode={rejoinCode} teams={activeTeamsList} />
       </div>
 
+      {/* The dock is the canvas layout's answer to the right-hand control column, so it carries the
+          same buttons in the same order - see the `controls` fragment in room/BattlePhase. A control
+          that exists in one layout and not the other is one nobody can find when they need it. */}
+      <PauseControls room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
       {isHost && <EndMatchButton roomId={roomId} activeTeamsList={activeTeamsList} />}
       <LeaveMatchButton playerId={myPlayerId} roomCode={roomCode} />
     </div>

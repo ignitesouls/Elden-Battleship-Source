@@ -821,6 +821,8 @@ export function BattlePhase({
             squareSet={room.square_set}
             roomId={room.id}
             roomCode={room.code}
+            room={room}
+            players={players}
             seed={room.seed}
             rejoinCode={rejoinCode}
             myTeam={myTeam}
