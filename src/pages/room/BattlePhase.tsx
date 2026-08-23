@@ -711,8 +711,9 @@ export function BattlePhase({
         </div>
       )}
 
-      {/* Also fixed, and above the toast in the stack: a hit toast is a thing that happened, this is
-          a thing being asked of you. Returns null for the whole of almost every match. */}
+      {/* Also fixed, but centred over the board rather than tucked under the top edge where the
+          toast lives: a hit toast is a thing that happened and can be glanced at, this is a thing
+          being asked of you. Returns null for the whole of almost every match. */}
       <PauseBanner room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
       {error && <div className="error-text">{error}</div>}
 

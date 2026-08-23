@@ -1,14 +1,22 @@
 /* The pause banner.
 
-   Fixed and centred at the top of the match screen, over the boards rather than in the flow with
-   them: the whole point is that it appears without warning mid-fight, and a block that pushed the
-   board down a hundred pixels while somebody was aiming would cause the exact misclick it is asking
-   them to avoid. Same reasoning as the toast it sits above (see BattlePhase). */
+   Fixed and centred in the viewport, so it lands over the middle of the board - which is where
+   somebody mid-match is already looking, and the only place a notice can appear without anybody
+   having to go and find it.
+
+   Centred on the VIEWPORT rather than on the board element, which is the more obvious thing to want
+   and the wrong thing to build: in canvas mode the boards are panels the player drags and resizes
+   wherever they like, so there is no board position to anchor to. The board is most of the screen in
+   every arrangement, so the viewport's middle is over it in all of them.
+
+   Fixed rather than in the flow for the same reason it always was: a block that pushed the board
+   down a hundred pixels while somebody was aiming would cause the exact misclick it exists to
+   prevent. */
 .pause-banner {
   position: fixed;
-  top: 0.75rem;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 30;
   width: min(30rem, calc(100vw - 1.5rem));
   padding: 0.9rem 1.1rem;
@@ -17,6 +25,13 @@
   align-items: center;
   gap: 0.6rem;
   text-align: center;
+  /* Sitting on top of live squares, it must never eat a shot. Clicks fall straight through to the
+     board underneath, which matters most during the five-second window whose whole message is
+     "finish your fight" - the notice would otherwise be covering the square being asked for. */
+  pointer-events: none;
+  /* Heavier than the panel's own shadow: over a board full of colour it has to read as something
+     laid on top rather than as another card in the layout. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 34px rgba(0, 0, 0, 0.66);
 }
 
 /* Brass while a countdown is running, so the two moments that need looking at now - the clock is
@@ -49,7 +64,11 @@
   font-weight: 600;
 }
 
+/* The one part that takes the pointer back, for its per-name "Ready"/"Not ready yet" tooltips. Safe
+   to do here and nowhere else: the roster is drawn only in the settled `paused` state, when nobody
+   is firing anyway - during the countdown, when they are, the banner is click-through all over. */
 .pause-roster {
+  pointer-events: auto;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
