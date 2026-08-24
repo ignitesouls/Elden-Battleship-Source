@@ -1,7 +1,7 @@
 import { cellLabel } from "../lib/battleshipLogic";
 import { teamHex } from "../lib/teamColors";
 import { groupIntoShots, outcomeText } from "../lib/attackFeed";
-import { matchStartedAt, formatDuration, matchTimings } from "../lib/matchTime";
+import { matchStartedAt, matchTimeAt, matchTimings } from "../lib/matchTime";
 import type { Challenge } from "../lib/challenges";
 import type { DeepMark, IgonEncounter } from "../lib/deepWater";
 import type { Attack, Player, Room } from "../types/battleship";
@@ -40,13 +40,10 @@ export function AttackFeed({
   const startedAt = matchStartedAt(attacks);
   const timings = matchTimings(room);
 
-  // Shots can only land once MATCH begins, so this is elapsed MATCH time (matching the clock
-  // above the board), not raw time since the STARTING countdown first kicked off.
-  function gameTimeAt(iso: string): string {
-    if (!startedAt) return "--:--";
-    const sinceAnchor = (new Date(iso).getTime() - new Date(startedAt).getTime()) / 1000;
-    return formatDuration(sinceAnchor - timings.matchBeginsAt);
-  }
+// Shots can only land once MATCH begins, so this is elapsed MATCH time (matching the clock above
+  // the board), not raw time since the STARTING countdown first kicked off - and it discounts any
+  // pause, so the log and the clock cannot disagree. See matchTimeAt.
+  const gameTimeAt = (iso: string) => matchTimeAt(startedAt, iso, timings, room);
 
   return (
     <div className="panel stack" style={{ width: "100%", flex: 1, minHeight: 0, gap: "0.4rem" }}>

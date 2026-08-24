@@ -5,7 +5,7 @@ import { activeTeams, sunkCellOrientations, cellLabel, sunkHullFlags } from "../
 import { groupIntoShots, outcomeText } from "../lib/attackFeed";
 import { deepWater, deepMarks } from "../lib/deepWater";
 import { challengesForRoom, igonAnchor } from "../lib/challenges";
-import { formatDuration, matchTimings, matchStartedAt } from "../lib/matchTime";
+import { formatDuration, matchTimeAt, matchTimings, matchStartedAt } from "../lib/matchTime";
 import { useBattleClock, useBattlePhaseName } from "../hooks/useBattlePhase";
 import { teamName, teamHex } from "../lib/teamColors";
 import { OverlayGrid, type OverlayLayer } from "../components/OverlayGrid";
@@ -167,11 +167,9 @@ export function Overlay() {
     return sunkHullFlags(state.attacks, team, room!.ship_defs);
   }
 
-  function gameTimeAt(iso: string): string {
-    if (!startedAt) return "--:--";
-    const since = (new Date(iso).getTime() - new Date(startedAt).getTime()) / 1000;
-    return formatDuration(since - timings.matchBeginsAt);
-  }
+  // Shares its arithmetic with the battle log beside the board (see matchTimeAt), so a stream and
+  // the players it is pointed at stamp the same shot with the same time - pauses included.
+  const gameTimeAt = (iso: string) => matchTimeAt(startedAt, iso, timings, room);
 
   return (
     <div className={`ov ov-${side}`}>

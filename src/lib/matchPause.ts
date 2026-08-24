@@ -148,6 +148,32 @@ export function pauseInfoAt(room: PauseFields | null | undefined, nowMs: number)
 }
 
 /**
+ * Total stopped clock before `atMs`, counting a pause that is still open.
+ *
+ * The difference from pausedMsBefore, and the reason both exist: that one reads the LOG, which only
+ * holds windows the host has closed. An event during a pause still in progress - a kill landing in
+ * the middle of one, which the house rule expressly allows - would be measured against a log that
+ * does not yet mention the pause it happened inside, and come out late by however long the room had
+ * been stopped.
+ *
+ * This is what anything stamping an EVENT wants. The clock itself does not use it: pauseInfoAt
+ * already handles the open window by freezing the instant it reads at, which is a different and
+ * cheaper trick that only works when the thing being measured is "now".
+ */
+export function pausedMsAt(room: PauseFields | null | undefined, atMs: number): number {
+  let total = pausedMsBefore(pauseWindows(room), atMs);
+
+  const from = room?.pause_at ? Date.parse(room.pause_at) : NaN;
+  if (Number.isNaN(from) || atMs <= from) return total;
+
+  const scheduled = room?.resume_at ? Date.parse(room.resume_at) : NaN;
+  const until = Number.isNaN(scheduled) ? atMs : Math.min(scheduled, atMs);
+  total += Math.max(0, until - from);
+
+  return total;
+}
+
+/**
  * The stretch of clock that has ALREADY been stopped and is owed to the log, or null if none is.
  *
  * Clamped at `nowMs` rather than trusting resume_at, because this is also what a host pressing pause

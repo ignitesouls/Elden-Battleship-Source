@@ -28,10 +28,9 @@ registerHooks({
   },
 })
 
-const { pauseInfoAt, pausedMsBefore, pauseWindows, closedWindow, readyToResume } = await import(
-  '../src/lib/matchPause.ts'
-)
-const { battlePhaseAt, matchTimings } = await import('../src/lib/matchTime.ts')
+const { pauseInfoAt, pausedMsBefore, pausedMsAt, pauseWindows, closedWindow, readyToResume } =
+  await import('../src/lib/matchPause.ts')
+const { battlePhaseAt, matchTimeAt, matchTimings } = await import('../src/lib/matchTime.ts')
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -226,6 +225,41 @@ const near = (a: number, b: number, tol = 0.001) => Math.abs(a - b) <= tol
   check('and nor is a missing flag', readyToResume([{ pause_ready: true }, {}]) === false)
   // An empty crew reading "ready" would light the host's prompt green in a room with nobody in it.
   check('an empty crew is not ready', readyToResume([]) === false)
+}
+
+// -- 13. the battle log agrees with the clock above it ---------------------
+// This is the one that got out: both logs measured raw wall time, so every line after a break was
+// ahead of the timer beside it by the length of the break. The property to hold is not "the log
+// subtracts something" but "the log and the clock never disagree", so that is what is asserted.
+{
+  const settled = { pause_at: null, resume_at: null, pause_log: [{ at: iso(135), until: iso(300) }] }
+  const stamp = (seconds: number) => matchTimeAt(iso(0), iso(seconds), TIMINGS, settled)
+
+  // T+100 is before the pause: 100s in, less the 30s buffer.
+  check('a shot before any pause is untouched', stamp(100) === '01:10', stamp(100))
+  // T+400 is after it: 400s in, less 165s stopped, less the buffer.
+  check('a shot after one is docked the whole window', stamp(400) === '03:25', stamp(400))
+}
+
+// -- 14. a kill landing DURING a pause -------------------------------------
+// The house rule ("finish your fight") makes this the normal path rather than an edge case - and the
+// pause it happened inside is still open, so it is not in the log yet. pausedMsBefore reads the log
+// alone and would bill this shot for time that had not passed; pausedMsAt is what closes that.
+{
+  const open = { pause_at: iso(135), resume_at: null, pause_log: [] }
+
+  check('an open pause counts toward an event inside it', pausedMsAt(open, at(200)) === 65000, String(pausedMsAt(open, at(200))))
+  check('but not toward one before it', pausedMsAt(open, at(100)) === 0)
+  check(
+    'the log alone would have missed it',
+    pausedMsBefore(pauseWindows(open), at(200)) === 0,
+    'the window is not written until the host settles it'
+  )
+
+  // The heart of it: a kill at T+200 is stamped 01:45, and the frozen clock also reads 01:45.
+  const stamped = matchTimeAt(iso(0), iso(200), TIMINGS, open)
+  check('so the kill is stamped with the frozen clock', stamped === '01:45', stamped)
+  check('which is exactly what the clock is showing', near(clock(open, 200), 105), String(clock(open, 200)) + 's')
 }
 
 console.log(failures === 0 ? '\nall match pause checks passed' : `\n${failures} match pause check(s) failed`)

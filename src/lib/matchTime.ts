@@ -1,4 +1,4 @@
-import { RUNNING, type PauseInfo } from "./matchPause";
+import { pausedMsAt, RUNNING, type PauseFields, type PauseInfo } from "./matchPause";
 import type { Attack } from "../types/battleship";
 
 /**
@@ -27,6 +27,31 @@ export function matchStartedAt(attacks: Attack[]): string | null {
   const real = attacks.filter((a) => a.cell_index >= 0);
   if (real.length === 0) return null;
   return real.reduce((earliest, a) => (a.created_at < earliest ? a.created_at : earliest), real[0].created_at);
+}
+
+/**
+ * Where a single event sits on the match clock, formatted the way a log line wants it.
+ *
+ * One function rather than the copy each log had, because there were two of them - the battle log
+ * beside the board and the one on the stream overlay - and they drifted the moment pausing arrived:
+ * both went on measuring raw wall time while the clock beside them stopped, so every line logged
+ * after a break was ahead of the timer above it by the length of the break.
+ *
+ * Reads the pause windows CLAMPED at the event (see pausedMsAt), which is what makes a kill landing
+ * during a pause read as the moment the pause began rather than as time nobody played. That is the
+ * same rule archive_match applies when it writes match_seconds, so a line in the live log and the
+ * same line on the recap afterwards agree.
+ */
+export function matchTimeAt(
+  startedAt: string | null,
+  at: string,
+  timings: MatchTimings,
+  pause?: PauseFields | null
+): string {
+  if (!startedAt) return "--:--";
+  const atMs = new Date(at).getTime();
+  const elapsed = (atMs - new Date(startedAt).getTime() - pausedMsAt(pause, atMs)) / 1000;
+  return formatDuration(elapsed - timings.matchBeginsAt);
 }
 
 export function formatDuration(totalSeconds: number): string {

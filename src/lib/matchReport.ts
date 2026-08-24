@@ -2,7 +2,7 @@ import { groupIntoShots, type FeedShot } from "./attackFeed";
 import { cellLabel } from "./battleshipLogic";
 import { teamName } from "./teamColors";
 import { formatDuration, matchStartedAt, matchTimings } from "./matchTime";
-import { pausedMsBefore, pauseWindows } from "./matchPause";
+import { pausedMsAt, pausedMsBefore, pauseWindows, type PauseFields } from "./matchPause";
 import { shipCellIndices } from "./shipCells";
 import { deepWater, bottleNote, type DeepHide, type DeepWater } from "./deepWater";
 import { seedFrom, rng } from "./seededRandom";
@@ -175,10 +175,17 @@ export function buildMatchReport(
       room.ship_defs?.length ?? 0,
       deep,
       (cell) => bottleNote(room, cell),
-      matchKey
+      matchKey,
+      room
     ),
     deep,
   };
+}
+
+/** An instant on the match clock: wall time with any stopped clock before it taken off. */
+function matchMs(at: string, pause?: PauseFields | null): number {
+  const ms = new Date(at).getTime();
+  return ms - pausedMsAt(pause, ms);
 }
 
 /** One shot's worth of facts, resolved back to the player who pulled the trigger. */
@@ -1059,8 +1066,14 @@ export function honorClaims(
   const shots = groupIntoShots(attacks, players);
   const stats = buildPlayerStats(players, shots);
   const deep = deepWater(room, shots, deepHides, bayleCell);
-  const context = buildHonorContext(stats, shots, room.board_size, room.ship_defs?.length ?? 0, deep, (cell) =>
-    bottleNote(room, cell)
+  const context = buildHonorContext(
+    stats,
+    shots,
+    room.board_size,
+    room.ship_defs?.length ?? 0,
+    deep,
+    (cell) => bottleNote(room, cell),
+    room
   );
 
   const out = new Map<string, Array<{ nickname: string; detail: string }>>();
@@ -1116,12 +1129,13 @@ function buildAwards(
   fleetSize: number,
   deep: DeepWater,
   bottleMessage: (cellIndex: number) => string,
-  matchKey: string
+  matchKey: string,
+  pause?: PauseFields | null
 ): Award[] {
   const awards: Award[] = [];
   if (stats.length === 0) return awards;
 
-  const context = buildHonorContext(stats, shots, boardSize, fleetSize, deep, bottleMessage);
+  const context = buildHonorContext(stats, shots, boardSize, fleetSize, deep, bottleMessage, pause);
 
   // Every honor's claimants, resolved once. earnedBy can be expensive and is about to be read from
   // two directions.
@@ -1260,7 +1274,9 @@ function buildHonorContext(
   boardSize: number,
   fleetSize: number,
   deep: DeepWater,
-  bottleMessage: (cellIndex: number) => string
+  bottleMessage: (cellIndex: number) => string,
+  /** The room's pause columns, so a stoppage doesn't read as somebody taking their time. */
+  pause?: PauseFields | null
 ): HonorContext {
   // Same keying as the scoreboard: the player id when known, else the team, so shots fired by
   // someone who has since left the room still resolve to their row.
@@ -1276,7 +1292,12 @@ function buildHonorContext(
     return {
       shot,
       player: byKey.get(first.attacker_player_id ?? `team:${first.attacker_team}`),
-      atMs: new Date(shot.at).getTime(),
+      // MATCH time rather than wall time: the stopped clock comes off here, once, so everything
+      // downstream measures the game rather than the evening. Only ever read as a DIFFERENCE
+      // (reload gaps, streak windows), so shifting the whole timeline changes no other answer -
+      // and without it the one gap that happens to span a pause reads as a player who wandered
+      // off for five minutes, which is exactly what "fastest reload" must not reward or punish.
+      atMs: matchMs(shot.at, pause),
       row: Math.floor(shot.cellIndex / boardSize),
       col: shot.cellIndex % boardSize,
       connected: struck.size > 0,
