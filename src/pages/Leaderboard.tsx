@@ -9,10 +9,24 @@ import { squarePace, paceLabel, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 import { RecordBook } from "../components/RecordBook";
 import { LoadingScreen } from "../components/BrandMark";
 import { SortHeader, useSortColumns, type SortColumn } from "../components/SortHeader";
+import { useStoredToggle } from "../hooks/useStoredToggle";
 import type { MatchEventRow } from "../lib/almanac";
 import { SiteFooter } from "../components/SiteFooter";
 
 type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
+
+/**
+ * How many matches a career needs before the "regulars only" filter keeps it.
+ *
+ * Five, because that is roughly where a rate stops describing one good night. A captain two matches
+ * into their career can sit on a 100% win rate and the best accuracy on the board, and there is no
+ * way to tell from the row whether that is a great player or a lucky Tuesday - which is exactly the
+ * reading the filter exists to remove.
+ */
+const REGULAR_MATCHES = 5;
+
+/** Remembered per browser, not per board: it is how somebody likes to read a table. */
+const REGULARS_KEY = "eb_regulars_only";
 
 /** A career row with the two things the table needs that aggregation doesn't carry. */
 interface Row extends CareerStats {
@@ -180,8 +194,24 @@ export function Leaderboard() {
     }));
   }, [rows, shownSet, paces, profiles]);
 
+  /**
+   * "Regulars only" - hide careers thinner than REGULAR_MATCHES matches.
+   *
+   * Off by default, so the page opens showing everybody who has ever played: this is a lens for
+   * reading the standings, not a bar for being in them, and somebody who has played twice should be
+   * able to find themselves on the leaderboard the first time they look.
+   *
+   * Applied to the standings table ALONE, deliberately. The record book above it is untouched,
+   * because a record is a single match rather than a career - the best game anybody has ever had is
+   * still the best game if the person who had it never came back, and filtering it out would be
+   * rewriting history rather than filtering a view.
+   */
+  const [regularsOnly, setRegularsOnly] = useStoredToggle(REGULARS_KEY, false);
+  const thin = careers.length - careers.filter((c) => c.matches >= REGULAR_MATCHES).length;
+
   const sorted = useMemo(() => {
-    return [...careers].sort((a, b) => {
+    const shown = regularsOnly ? careers.filter((c) => c.matches >= REGULAR_MATCHES) : careers;
+    return [...shown].sort((a, b) => {
       // A captain without a pace yet sits at the bottom in BOTH directions rather than sorting as
       // zero, which would otherwise read as infinitely fast. Same for any column that can be blank.
       if (sort === "pace" && (a.pace === null || b.pace === null)) {
@@ -191,7 +221,7 @@ export function Leaderboard() {
       const cmp = compare(a, b, sort);
       return direction === "asc" ? cmp : -cmp;
     });
-  }, [careers, sort, direction]);
+  }, [careers, sort, direction, regularsOnly]);
 
   /**
    * The record book, for the same board the table is showing.
@@ -239,6 +269,23 @@ export function Leaderboard() {
         />
 
         <div className="panel stack" style={{ gap: "0.6rem" }}>
+          {/* Above the table rather than beside the heading, so it reads as a control ON these rows.
+              Hidden when it would do nothing: a board where everybody is a regular has nothing to
+              filter, and a dead toggle is worse than no toggle. */}
+          {thin > 0 && (
+            <div className="row" style={{ justifyContent: "flex-end", gap: "0.5rem" }}>
+              <button
+                onClick={() => setRegularsOnly(!regularsOnly)}
+                style={{ fontSize: "0.78rem", borderColor: regularsOnly ? "var(--accent)" : undefined }}
+                aria-pressed={regularsOnly}
+                title={`Hides careers under ${REGULAR_MATCHES} matches. They stay on the leaderboard - this only changes what this table shows.`}
+              >
+                {regularsOnly
+                  ? `Showing regulars only (${thin} hidden)`
+                  : `Showing everyone (${thin} under ${REGULAR_MATCHES} matches)`}
+              </button>
+            </div>
+          )}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
               {/* Not sticky: this table scrolls with the PAGE rather than inside a box, and a
