@@ -95,6 +95,19 @@ export const MIN_SHOTS_FOR_ACCURACY = 5;
 export const MIN_STREAK = 3;
 
 /**
+ * Wins in a row before a run counts as a streak.
+ *
+ * Two, where a run of hits needs three, because the two are not the same currency. A hit is one
+ * click and a match is an evening, so back-to-back wins over two separate nights is already a claim
+ * worth printing - and holding it to three on an archive this size would leave the record showing
+ * nobody for weeks at a time, which teaches a reader that the record does not work rather than that
+ * it is hard.
+ *
+ * Raise it as the archive grows: it is one number and both win records read it.
+ */
+export const MIN_WIN_STREAK = 2;
+
+/**
  * Shortest gap that counts as two fights rather than one.
  *
  * The rule is that you fire the moment you kill, so a gap is normally a fight start to finish - but
@@ -264,6 +277,85 @@ function hitStreaks(shots: ArchivedShot[]): Candidate[] {
   return out;
 }
 
+/**
+ * Runs of wins, per career: the best anybody has ever put together, and the ones still alive.
+ *
+ * -- What breaks a run ------------------------------------------------------------------------------
+ *
+ * Anything that is not a win, draws included. A draw is every fleet going down together, which is a
+ * match nobody won - and a streak that survived one would be claiming a run of wins that has a
+ * not-a-win in the middle of it. It is the harsher of the two readings and it is the honest one.
+ *
+ * -- Why "active" is a separate record rather than a flag ---------------------------------------------
+ *
+ * They answer different questions. The longest is history and it is settled - it can only be taken by
+ * somebody beating it. The active one is the standings right now: who walks into tonight's match on a
+ * run, and who has one to lose. A player can hold both at once, which is exactly the situation worth
+ * putting on a leaderboard.
+ *
+ * A run counts as active only if this career's LAST match was a win. One defeat ends it, and it drops
+ * out of the record entirely rather than lingering at its old length.
+ *
+ * -- Scope -------------------------------------------------------------------------------------------
+ *
+ * Per square set, like every record here, because the rows arrive already filtered to one board. A
+ * run of wins on the boss board and a run on the objectives board are not the same run, and splicing
+ * them would invent streaks nobody actually played.
+ *
+ * Each career contributes at most ONE candidate to each record, so a player on a long run cannot fill
+ * the holder slot and both chaser slots underneath themselves.
+ */
+function winStreaks(rows: ParticipantRow[]): { longest: Candidate[]; active: Candidate[] } {
+  const careers = new Map<string, ParticipantRow[]>();
+  for (const row of rows) {
+    const key = participantKey(row);
+    const list = careers.get(key);
+    if (list) list.push(row);
+    else careers.set(key, [row]);
+  }
+
+  const longest: Candidate[] = [];
+  const active: Candidate[] = [];
+
+  for (const played of careers.values()) {
+    // Oldest first, so a run reads in the order it happened. match_key breaks a tie between two
+    // matches archived in the same second, so the walk is deterministic rather than dependent on
+    // whatever order the rows came back in.
+    const order = [...played].sort(
+      (a, b) => a.finished_at.localeCompare(b.finished_at) || a.match_key.localeCompare(b.match_key)
+    );
+
+    let run = 0;
+    let best = 0;
+    // The match a run ENDED on, which is what the record links through to: for a finished streak
+    // that is its last win, and for a live one it is the most recent match played.
+    let bestAt: ParticipantRow | null = null;
+
+    for (const row of order) {
+      if (!row.won) {
+        run = 0;
+        continue;
+      }
+      run++;
+      if (run > best) {
+        best = run;
+        bestAt = row;
+      }
+    }
+
+    if (best >= MIN_WIN_STREAK && bestAt) longest.push(fromRow(bestAt, best));
+
+    // `run` is whatever survived to the end of the walk, so it is non-zero only when the last match
+    // was a win - which is the definition of still being on one.
+    const last = order.at(-1);
+    if (run >= MIN_WIN_STREAK && last) {
+      active.push(fromRow(last, run));
+    }
+  }
+
+  return { longest, active };
+}
+
 /** The earliest shot of a given kind in each match, per player. */
 function earliest(shots: ArchivedShot[], wanted: (s: ArchivedShot) => boolean): Candidate[] {
   const first = new Map<string, ArchivedShot>();
@@ -375,6 +467,9 @@ export function buildRecordBook(
   // has never heard of.
   const shots = archivedShots(events.filter((e) => keys.has(e.match_key)));
 
+  // Both win records come off one walk of the rows, because they are two readings of the same runs.
+  const wins = winStreaks(rows);
+
   const book: RecordEntry[] = [
     /**
      * The rarest thing anybody has been handed, and the only record here whose value is a deed
@@ -414,6 +509,27 @@ export function buildRecordBook(
         }),
         (c) => ({ display: c.display ?? "", detail: c.detail })
       ),
+    },
+    /**
+     * The two win records, directly under the honor and above everything that counts shooting.
+     *
+     * Same reasoning that puts the honor first: these say what HAPPENED, and the entries below them
+     * say how much shooting there was. A run of wins is also the only record here a reader can be in
+     * the middle of - which is what the second one is for.
+     */
+    {
+      id: "win-streak",
+      emoji: "👑",
+      label: "Longest win streak",
+      note: `${MIN_WIN_STREAK} or more wins, back to back`,
+      ...rank(wins.longest, (c) => ({ display: `${c.value} in a row` })),
+    },
+    {
+      id: "active-win-streak",
+      emoji: "🔥",
+      label: "Longest active streak",
+      note: "still unbeaten - one loss and it's gone",
+      ...rank(wins.active, (c) => ({ display: `${c.value} and counting` })),
     },
     {
       id: "hits",

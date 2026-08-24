@@ -28,9 +28,8 @@ registerHooks({
   },
 })
 
-const { buildRecordBook, archivedShots, MIN_SHOTS_FOR_ACCURACY, MIN_STREAK } = await import(
-  '../src/lib/recordBook.ts'
-)
+const { buildRecordBook, archivedShots, MIN_SHOTS_FOR_ACCURACY, MIN_STREAK, MIN_WIN_STREAK } =
+  await import('../src/lib/recordBook.ts')
 const { HONOR_ORDER } = await import('../src/lib/matchReport.ts')
 
 let failures = 0
@@ -410,6 +409,77 @@ const holderOf = (book: ReturnType<typeof buildRecordBook>, id: string) => find(
 {
   const book = buildRecordBook([], [])
   check('an empty book has every category and no holders', book.length > 0 && book.every((r) => r.holder === null), `${book.length} categories`)
+}
+
+// -- win streaks -----------------------------------------------------------
+// Streaks are the only records here built from a career rather than from one match, so what needs
+// pinning down is the WALK: the order it reads matches in, what resets it, and the difference
+// between the best run ever and the one somebody is standing in right now.
+{
+  /** A career's results in order, oldest first. 'w' won, 'l' lost, 'd' drawn. */
+  const career = (nickname: string, results: string, from = 1) =>
+    [...results].map((r, i) =>
+      part({
+        nickname,
+        match_key: `${nickname}-m${from + i}`,
+        won: r === 'w',
+        draw: r === 'd',
+        // Days apart, so finished_at alone fixes the order the walk must read them in.
+        finished_at: `2026-08-${String(from + i).padStart(2, '0')}T12:00:00.000Z`,
+      })
+    )
+
+  {
+    // Ada: three in a row, then loses, then wins two. Best is 3, and she is NOT on it any more.
+    const book = buildRecordBook(career('Ada', 'wwwlww'))
+    check('the longest run is the best anywhere in a career', holderOf(book, 'win-streak')?.value === 3, String(holderOf(book, 'win-streak')?.value))
+    check('and it reads as a run', holderOf(book, 'win-streak')?.display === '3 in a row', holderOf(book, 'win-streak')?.display)
+    check('the active run is only what survived to the end', holderOf(book, 'active-win-streak')?.value === 2, String(holderOf(book, 'active-win-streak')?.value))
+    check('and it reads as unfinished', holderOf(book, 'active-win-streak')?.display === '2 and counting', holderOf(book, 'active-win-streak')?.display)
+  }
+
+  {
+    // A loss most recently: the run is over, so there is no active record to hold at all.
+    const book = buildRecordBook(career('Bo', 'wwwl'))
+    check('a defeat ends the active run outright', holderOf(book, 'active-win-streak') === null)
+    check('but the history keeps it', holderOf(book, 'win-streak')?.value === 3, String(holderOf(book, 'win-streak')?.value))
+  }
+
+  {
+    // A draw is every fleet going down together - a match nobody won, so it cannot sit inside a run.
+    const book = buildRecordBook(career('Cy', 'wwdww'))
+    check('a draw breaks a run like a loss does', holderOf(book, 'win-streak')?.value === 2, String(holderOf(book, 'win-streak')?.value))
+    check('and the run after it is the active one', holderOf(book, 'active-win-streak')?.value === 2)
+  }
+
+  {
+    const book = buildRecordBook(career('Dee', 'w'))
+    check(`a single win is under the ${MIN_WIN_STREAK}-match floor`, holderOf(book, 'win-streak') === null)
+    check('and holds no active record either', holderOf(book, 'active-win-streak') === null)
+  }
+
+  {
+    // Rows arriving newest-first, which is how the archive actually hands them over. The walk must
+    // sort them itself: read in the given order this career looks like one win, a loss, then wins.
+    const inOrder = career('Eli', 'wwww')
+    const book = buildRecordBook([...inOrder].reverse())
+    check('the walk sorts by finish time rather than trusting row order', holderOf(book, 'win-streak')?.value === 4, String(holderOf(book, 'win-streak')?.value))
+  }
+
+  {
+    // Two careers, so the holder/chaser split has something to split.
+    const book = buildRecordBook([...career('Fay', 'wwww'), ...career('Gus', 'ww', 20)])
+    check('the longer run holds it', holderOf(book, 'win-streak')?.nickname === 'Fay')
+    check('and the shorter is the chaser', find(book, 'win-streak')?.chasers[0]?.nickname === 'Gus')
+    check('one career fills one slot, not three', find(book, 'win-streak')?.chasers.length === 1, `${find(book, 'win-streak')?.chasers.length} chasers`)
+  }
+
+  {
+    // The record links through to the match the run ended on, so a reader can go and look at it.
+    const runs = career('Hal', 'www')
+    const book = buildRecordBook(runs)
+    check('the record points at the match the run ended on', holderOf(book, 'win-streak')?.matchKey === runs[2].match_key, holderOf(book, 'win-streak')?.matchKey)
+  }
 }
 
 console.log(failures === 0 ? '\nall record book checks passed\n' : `\n${failures} check(s) failed\n`)
