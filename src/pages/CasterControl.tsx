@@ -752,6 +752,9 @@ export function CasterControl() {
   const boardUrl = `${origin}#/overlay-board/${room.code}`;
   const timerUrl = `${origin}#/overlay-timer/${room.code}`;
   const keyUrl = `${origin}#/overlay-key/${room.code}`;
+  // No team on the caster's copy: with none, the closing sting is the spectator's - somebody was
+  // left standing, which is the interesting fact from the desk. See pages/OverlayAudio.
+  const audioUrl = `${origin}#/overlay-audio/${room.code}`;
 
   // The square under the crosshair, for the readout. Clamped the same way the pan is.
   const framed = (c: number) => Math.min(boardSize - 1, Math.max(0, Math.floor(c * boardSize)));
@@ -1381,6 +1384,14 @@ export function CasterControl() {
               url={keyUrl}
               size="1920 x 90"
               note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+            />
+            {/* Nothing to look at and nothing to aim, so it takes no frame from this page at all -
+                it reads the room directly, exactly as the clock and the key do. */}
+            <SourceRow
+              label="Audio"
+              url={audioUrl}
+              size="100 x 100"
+              note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
             />
           </section>
         </div>

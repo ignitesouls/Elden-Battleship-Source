@@ -113,3 +113,62 @@
 .ovt .ov-fleet-ship {
   height: 1.6rem;
 }
+
+/* -- the odds band (?odds=1) --------------------------------------------- */
+
+/**
+ * The scorebug becomes a column when the odds are on: the clock row, then the band under it.
+ *
+ * The row keeps every rule the bar used to carry, so a source WITHOUT ?odds=1 lays out exactly as
+ * it did before this landed - the column wrapper around a single child changes nothing about it.
+ */
+.ovt-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.ovt-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+}
+
+.ovt-odds {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.7rem 0.45rem;
+  border-radius: 10px;
+  background: rgba(6, 16, 24, 0.72);
+  border: 1px solid rgba(180, 210, 230, 0.22);
+}
+
+.ovt-odds .odds-graph {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ovt-odds-keys {
+  display: flex;
+  justify-content: center;
+  gap: 1.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #d8e6ef;
+}
+
+.ovt-odds-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* The fleet's colour, so the key ties to its band without the band needing a label inside it. */
+.ovt-odds-key i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}

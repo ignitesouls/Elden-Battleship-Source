@@ -58,11 +58,23 @@ screen. Casters get a control page at `/cast/<room code>`.
 | Source | Size | What it is |
 | --- | --- | --- |
 | Board | 1000x1000 | The board itself. A caster aims it live from the control page; a player can pin it to one fleet with `?team=N`. |
+| Fleet | 400x400 | Your own ships, for showing chat where they are. Needs `?key=<rejoin code>`. |
 | Clock | 1200x200 | Match clock and every fleet's surviving hulls. |
 | Key | 1920x90 | A thin colour key for the bottom edge. |
+| Audio | 100x100 | The board's sound, with no picture: every shot, every find in the water, the horns and the final sting. |
 
-The board source never shows a ship position unless it is explicitly given one. A caster
-pushes fleets from their own logged-in session, and a player's pinned board draws only their
+The Audio source is the room heard rather than watched, and it is a source of its own so that
+OBS's mixer can treat it as one - tick **Control audio via OBS** in its properties and it gets
+a fader and a mute button like any other input. `?vol=0.5` sets the level it starts at, for a
+scene where that is easier than the fader. It plays every crew's finds to both audiences, which
+is what the Board source already draws; `?team=N` decides only which sting closes the match.
+
+The Fleet source is the small board a player already has beside their fire board: no square
+names, because at that size they don't survive an encoder - each square wears its challenge
+colour instead, which is enough to match against the big board or the key strip.
+
+No source ever shows a ship position unless it is explicitly given one. A caster pushes fleets
+from their own logged-in session, and a player's pinned board and Fleet source draw only their
 own hulls, and only when the URL carries their rejoin code.
 
 ## One-time Supabase setup

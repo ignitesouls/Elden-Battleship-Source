@@ -1,5 +1,6 @@
-import { HitMark, MissMark, SunkMark } from "./HitMarkers";
+import { HitMark, MissMark, SunkMark, DeepMarkIcon } from "./HitMarkers";
 import { shipArtUrl } from "../lib/shipArt";
+import type { DeepMark } from "../lib/deepWater";
 
 export type OverlayCellState = "none" | "miss" | "hit" | "sunk";
 
@@ -39,6 +40,20 @@ interface Props {
   showCoords?: boolean;
   /** Challenge name per cell. Only worth passing at large cell sizes - see NAME_MIN_CELL. */
   cellName?: (index: number) => string | null;
+  /**
+   * What the water gave up, keyed by square (see lib/deepWater.ts). Drawn in place of that square's
+   * splash, exactly as on the players' own board.
+   *
+   * Build it with `deepMarks`, which is where the rule about who may see what lives - this component
+   * draws whatever it is handed and decides nothing.
+   *
+   * Unlike the hit/miss/sunk markers below, these are NOT dropped in combined mode. Those are
+   * per-fleet, so in combined mode they'd have to be squeezed into one band of a stacked cell and
+   * would come out a smudge. A find belongs to the SEA rather than to any one fleet - it is a single
+   * square that came back open water against everybody - so it has the whole cell to itself either
+   * way, and there is nothing to shrink.
+   */
+  deepCells?: ReadonlyMap<number, DeepMark>;
 }
 
 /**
@@ -67,6 +82,7 @@ export function OverlayGrid({
   label,
   showCoords = true,
   cellName,
+  deepCells,
 }: Props) {
   const gutter = showCoords ? Math.max(10, Math.round(cell * 0.62)) : 0;
   const combined = layers.length > 1;
@@ -146,6 +162,7 @@ export function OverlayGrid({
               name={showNames ? cellName!(index) : null}
               baseFont={baseFont}
               cellPx={cell}
+              deep={deepCells?.get(index)}
             />
           );
         })}
@@ -207,6 +224,7 @@ function Cell({
   name,
   baseFont,
   cellPx,
+  deep,
 }: {
   index: number;
   gridRow: number;
@@ -218,6 +236,7 @@ function Cell({
   name: string | null;
   baseFont: number;
   cellPx: number;
+  deep: DeepMark | undefined;
 }) {
   return (
     <>
@@ -240,7 +259,13 @@ function Cell({
         {/* The real board's markers: a burst for a hit, ripples for a miss, fire and smoke over a
             sunk hull - the same components the game itself draws, so the stream matches what the
             players are looking at. */}
-        {!combined && renderMark(layers[0], index)}
+        {!combined && renderMark(layers[0], index, deep)}
+
+        {/* Anything found in the water stands in for the splash on its own square rather than
+            floating over it - the shot that found it was a miss, so both would otherwise draw here
+            at once. Same rule, same reason, as the players' own board; see the note on `deepCells`
+            for why this one is drawn in combined mode when the markers above are not. */}
+        {deep && <DeepMarkIcon mark={deep} />}
 
         {/* Above the marker, not below it. A square you've already struck is exactly the one whose
             identity people are discussing, so the explosion goes behind the name rather than
@@ -286,11 +311,12 @@ function fitFontSize(name: string, cell: number, baseFont: number): number {
   return Math.max(5, Math.min(baseFont, byWidth, byArea));
 }
 
-function renderMark(layer: OverlayLayer | undefined, index: number) {
+function renderMark(layer: OverlayLayer | undefined, index: number, deep: DeepMark | undefined) {
   if (!layer) return null;
   const state = layer.state(index);
   if (state === "hit") return <HitMark />;
-  if (state === "miss") return <MissMark />;
+  // The splash gives way to whatever was found in it - see the note beside the call.
+  if (state === "miss") return deep ? null : <MissMark />;
   if (state === "sunk") return <SunkMark horizontal={layer.sunkHorizontal?.get(index) ?? true} />;
   return null;
 }

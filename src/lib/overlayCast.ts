@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { ShipPlacement } from "../types/battleship";
+import { castSendKind, frameKey } from "./castFrame";
+
+// The frame's pure half lives in castFrame.ts so it can be run outside a browser and asserted -
+// see the note there. Re-exported so callers keep importing the cast protocol from one place.
+export { DEFAULT_VIEW, castSendKind, frameKey } from "./castFrame";
 
 /**
  * The link between a caster's control page and their OBS browser sources.
@@ -133,11 +138,11 @@ export const MIN_OPACITY = 0.25;
 /**
  * `?opacity=` off a source's URL, clamped, defaulting to solid.
  *
- * Shared by all three player-facing sources rather than parsed three times. They are dropped into
- * one scene and usually want the same setting - a streamer fading the board over their gameplay
- * wants the clock and the key to match, and the overlay box writes one slider into all three URLs.
- * One reader means one clamp, so a hand-typed `?opacity=0` can't make one source invisible while
- * another quietly floors at 0.25.
+ * Shared by every player-facing source rather than parsed once each. They are dropped into one
+ * scene and usually want the same setting - a streamer fading the board over their gameplay wants
+ * the clock, the key and their own fleet to match, and the overlay box writes one slider into all
+ * of their URLs. One reader means one clamp, so a hand-typed `?opacity=0` can't make one source
+ * invisible while another quietly floors at 0.25.
  */
 export function readOpacity(params: URLSearchParams): number {
   const raw = params.get("opacity");
@@ -160,21 +165,6 @@ export interface CastMessage {
   at: number;
 }
 
-export const DEFAULT_VIEW: CastView = {
-  mode: "results",
-  zoom: 1,
-  cx: 0.5,
-  cy: 0.5,
-  names: true,
-  coords: true,
-  opacity: 1,
-  visible: true,
-  markers: true,
-  markerTeams: null,
-  spot: null,
-  text: 1,
-};
-
 /**
  * Zoom bounds. 1 fits the whole board; 2 shows a quarter of it.
  *
@@ -190,6 +180,19 @@ const STATE_EVENT = "cast-state";
 const HELLO_EVENT = "cast-hello";
 /** The source telling its controller how big it is - see SourceSize. */
 const SIZE_EVENT = "cast-size";
+/**
+ * "Still here, nothing has changed."
+ *
+ * The heartbeat below exists to prove the controller is alive, not to deliver news, and for most
+ * of a match there is no news: a caster sets a view and then talks over it for ten minutes while
+ * the same frame goes out every five seconds to every source they have open. A frame carries every
+ * fleet's placements, so that silence was costing kilobytes a beat per source.
+ *
+ * So an unchanged beat sends this instead - a stamp and nothing else. The source treats it exactly
+ * as it treats a frame for the purpose of deciding whether its controller has gone quiet, and
+ * keeps drawing what it already has. The moment anything actually changes, a real frame goes.
+ */
+const PING_EVENT = "cast-ping";
 
 /**
  * The browser source's own pixel dimensions, reported back to the controller.
@@ -211,6 +214,10 @@ export interface SourceSize {
  * the caster next touched a control. `hello` covers the normal case; this covers the ugly ones -
  * a dropped socket, a controller that reconnected, an OBS source restored from a saved scene while
  * the control page was mid-refresh.
+ *
+ * A beat only carries a whole frame when the frame has actually changed; otherwise it sends
+ * PING_EVENT. Both keep a source's staleness clock fed, which is the only thing a beat is FOR once
+ * the source has a picture - see push().
  */
 const HEARTBEAT_MS = 5000;
 
@@ -250,8 +257,23 @@ export function useCastPublisher(code: string | undefined) {
   const sentAt = useRef(0);
   const trailing = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Sends the stored frame immediately, cancelling anything queued. */
-  const push = useCallback(() => {
+  /**
+   * The frame the sources are believed to be holding, serialised.
+   *
+   * Compared against rather than the object itself: `publish` is called from render and hands us a
+   * fresh object every time, so identity says nothing about whether anything changed. `at` is
+   * excluded because it changes on every send by definition and would defeat the whole comparison.
+   */
+  const sentFrame = useRef<string | null>(null);
+
+  /**
+   * Sends the stored frame immediately, cancelling anything queued.
+   *
+   * `force` skips the unchanged-frame shortcut. It is for `hello`: a source that has just
+   * announced itself is holding NOTHING, so the fact that the frame matches what the other sources
+   * already have is precisely the wrong reason not to send it one.
+   */
+  const push = useCallback((force = false) => {
     if (trailing.current) {
       clearTimeout(trailing.current);
       trailing.current = null;
@@ -260,6 +282,13 @@ export function useCastPublisher(code: string | undefined) {
     const message = last.current;
     if (!channel || !message) return;
     sentAt.current = Date.now();
+
+    const key = frameKey(message);
+    if (castSendKind(sentFrame.current, key, force) === "ping") {
+      void channel.send({ type: "broadcast", event: PING_EVENT, payload: { at: sentAt.current } });
+      return;
+    }
+    sentFrame.current = key;
     void channel.send({ type: "broadcast", event: STATE_EVENT, payload: { ...message, at: sentAt.current } });
   }, []);
 
@@ -293,18 +322,22 @@ export function useCastPublisher(code: string | undefined) {
 
     channel
       // A source announcing itself. Answer with the current frame so it fills in at once rather
-      // than waiting out the heartbeat with an empty scene on stream.
-      .on("broadcast", { event: HELLO_EVENT }, () => push())
+      // than waiting out the heartbeat with an empty scene on stream. Forced, because what the
+      // OTHER sources are already holding says nothing about what this one needs.
+      .on("broadcast", { event: HELLO_EVENT }, () => push(true))
       .on("broadcast", { event: SIZE_EVENT }, ({ payload }) => setSourceSize(payload as SourceSize))
       .subscribe((status) => setReady(status === "SUBSCRIBED"));
 
-    const beat = setInterval(push, HEARTBEAT_MS);
+    const beat = setInterval(() => push(), HEARTBEAT_MS);
 
     return () => {
       clearInterval(beat);
       if (trailing.current) clearTimeout(trailing.current);
       trailing.current = null;
       channelRef.current = null;
+      // Forget what the sources were holding: this channel is going away, and the next one must
+      // open by saying something rather than pinging about a frame it never sent.
+      sentFrame.current = null;
       setReady(false);
       void supabase.removeChannel(channel);
     };
@@ -331,6 +364,14 @@ export function useCastPublisher(code: string | undefined) {
 export function useCastReceiver(code: string | undefined) {
   const [message, setMessage] = useState<CastMessage | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  /**
+   * Bumped every time this source (re)joins the channel.
+   *
+   * Exists so a caller can re-announce things that are only true per link - the source's own size,
+   * in practice. That used to hang off the arrival of a frame, which meant a size report went back
+   * up the channel every five seconds forever to tell the controller a number it already had.
+   */
+  const [linkEpoch, setLinkEpoch] = useState(0);
 
   useEffect(() => {
     if (!code) return;
@@ -339,10 +380,23 @@ export function useCastReceiver(code: string | undefined) {
 
     channel
       .on("broadcast", { event: STATE_EVENT }, ({ payload }) => setMessage(payload as CastMessage))
+      /**
+       * An unchanged beat. Keeps the staleness clock fed without redrawing anything.
+       *
+       * The stamp is written onto the frame already held, so `at` keeps meaning "when did we last
+       * hear from the controller" for every reader of it. A ping that arrives before any frame is
+       * dropped: there is nothing to stamp, and inventing an empty frame would put a blank board on
+       * stream. The `hello` sent on subscribe is what fills that gap.
+       */
+      .on("broadcast", { event: PING_EVENT }, ({ payload }) => {
+        const at = (payload as { at?: number }).at ?? Date.now();
+        setMessage((prev) => (prev ? { ...prev, at } : prev));
+      })
       .subscribe((status) => {
         // Ask on every (re)subscribe, not just the first: a reconnect after a network blip is
         // exactly when this source's picture is most likely to be out of date.
         if (status === "SUBSCRIBED") {
+          setLinkEpoch((n) => n + 1);
           void channel.send({ type: "broadcast", event: HELLO_EVENT, payload: {} });
         }
       });
@@ -360,5 +414,5 @@ export function useCastReceiver(code: string | undefined) {
     void channel.send({ type: "broadcast", event: SIZE_EVENT, payload: size });
   }, []);
 
-  return { message, report };
+  return { message, report, linkEpoch };
 }

@@ -1,4 +1,5 @@
 /** Small per-cell result markers, drawn in place of a flat hit/miss/sunk background wash. */
+import type { DeepMark } from "../lib/deepWater";
 
 /**
  * The burst star, grown from an outer radius of 40 to 48 (and its inner radius from 17 to 20.4) so
@@ -649,4 +650,41 @@ export function SunkMark({ horizontal = true }: SunkMarkProps) {
       </g>
     </svg>
   );
+}
+
+/**
+ * Whatever the water gave up on this square, drawn.
+ *
+ * One place, because there are now four boards that have to draw the same eleven marks - the
+ * players' own (BoardGrid), the recap's list (TheDeep), the caster's board source, and the HUD
+ * column's mini-boards (OverlayGrid) - and while each kept its own chain of eleven conditionals,
+ * adding a find meant remembering all of them. Missing one doesn't break a build or fail a check;
+ * it just quietly means that on one surface the rarest thing in a match doesn't happen.
+ *
+ * `sleeper` and `tentacle`, `jar` and `jarFree`, `igon` and `igonAvenged` are three pairs of states
+ * of one object rather than six things, which is why each pair shares a component and passes a flag.
+ * See lib/deepWater.ts, where the same pairing is the reason the marks exist at all.
+ */
+export function DeepMarkIcon({ mark }: { mark: DeepMark }) {
+  switch (mark) {
+    case "whale":
+      return <WhaleMark />;
+    case "laboon":
+      return <LaboonMark />;
+    case "tentacle":
+    case "sleeper":
+      return <TentacleMark awake={mark === "sleeper"} />;
+    case "dutchman":
+      return <DutchmanMark />;
+    case "bottle":
+      return <BottleMark />;
+    case "jar":
+    case "jarFree":
+      return <JarMark freed={mark === "jarFree"} />;
+    case "igon":
+    case "igonAvenged":
+      return <IgonMark avenged={mark === "igonAvenged"} />;
+    case "patches":
+      return <PatchesMark />;
+  }
 }

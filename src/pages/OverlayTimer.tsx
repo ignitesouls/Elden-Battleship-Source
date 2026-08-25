@@ -3,10 +3,13 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { useBoxSize } from "../hooks/useBoxSize";
 import { useBattleClock } from "../hooks/useBattlePhase";
+import { useVictoryOdds } from "../hooks/useVictoryOdds";
 import { activeTeams, sunkHullFlags } from "../lib/battleshipLogic";
 import { formatDuration } from "../lib/matchTime";
 import { teamName, teamHex } from "../lib/teamColors";
+import { oddsLabel } from "../lib/victoryOdds";
 import { OverlayFleetStatus } from "../components/OverlayFleetStatus";
+import { OddsGraph } from "../components/OddsGraph";
 import { fitScale } from "../lib/overlayFit";
 import { readOpacity } from "../lib/overlayCast";
 import { readTextSize } from "../lib/overlayText";
@@ -39,6 +42,18 @@ export function OverlayTimer() {
   const phase = useBattleClock(state.attacks, state.room);
   const [frameRef, frame] = useBoxSize<HTMLDivElement>();
   const [barRef, bar] = useBoxSize<HTMLDivElement>();
+  const [rowRef, row] = useBoxSize<HTMLDivElement>();
+
+  /**
+   * ?odds=1 - the win-probability band, under the clock.
+   *
+   * Off by default, and deliberately so. The scorebug is the one element a streamer sets up once
+   * and leaves running all match, so it is the wrong place to add ink nobody asked for; a caster
+   * who wants the odds permanently attached to the clock opts in, and everybody else's existing
+   * source is unchanged by this landing. The fuller treatment is its own source - see OverlayOdds.
+   */
+  const showOdds = params.get("odds") === "1";
+  const { snapshot, timeline } = useVictoryOdds(state.attacks, state.room, state.players, showOdds);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -114,14 +129,36 @@ export function OverlayTimer() {
   return (
     <div className="ovt" ref={frameRef}>
       <div className="ovt-bar" ref={barRef} style={{ transform: `translate(-50%, -50%) scale(${scale})`, opacity }}>
-        {showFleets && <div className="ovt-side ovt-left">{side(left)}</div>}
+        <div className="ovt-row" ref={rowRef}>
+          {showFleets && <div className="ovt-side ovt-left">{side(left)}</div>}
 
-        <div className="ovt-clock">
-          <span className="ovt-phase">{phase ? PHASE_LABEL[phase.phase] : "Match"}</span>
-          <span className="ovt-time">{clock}</span>
+          <div className="ovt-clock">
+            <span className="ovt-phase">{phase ? PHASE_LABEL[phase.phase] : "Match"}</span>
+            <span className="ovt-time">{clock}</span>
+          </div>
+
+          {showFleets && <div className="ovt-side ovt-right">{side(right)}</div>}
         </div>
 
-        {showFleets && <div className="ovt-side ovt-right">{side(right)}</div>}
+        {/**
+         * The band runs the width of the row above it, so the odds share the clock's axis - a
+         * swing lines up with the minute it happened on. Width comes from measuring that row
+         * rather than from a constant, because a four-fleet scorebug is wider than a duel's and a
+         * band that guessed would either fall short or push the bug wider than its own contents.
+         */}
+        {showOdds && snapshot && timeline.length > 1 && row.w > 0 && (
+          <div className="ovt-odds">
+            <OddsGraph teams={snapshot.teams} points={timeline} width={row.w} height={26} rule={false} />
+            <div className="ovt-odds-keys">
+              {snapshot.teams.map((t, i) => (
+                <span className="ovt-odds-key" key={t}>
+                  <i style={{ background: teamHex(t) }} />
+                  {teamName(t)} {oddsLabel(snapshot.odds[i])}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

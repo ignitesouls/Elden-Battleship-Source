@@ -104,8 +104,29 @@ export type SfxName = keyof typeof FILES;
 
 const VOLUME_KEY = "eb_sfx_volume";
 
+/**
+ * A level set by the page rather than by the person listening, which beats the stored one.
+ *
+ * Exists for the audio browser source (pages/OverlayAudio), where the ordinary route to this number
+ * does not exist: the slider lives in the top bar, which every overlay route deliberately does not
+ * render, and the storage behind it belongs to a browser nobody is sitting at. A streamer's only
+ * way to say "quieter" is the URL they pasted into OBS, so that is what this carries.
+ *
+ * In memory only, and never written to storage. An OBS install runs its browser sources out of one
+ * shared profile, so persisting it would let one source's ?vol= silently redefine the default for
+ * every other source pointed at this site.
+ *
+ * null means "nobody has overruled anything", which is every page but that one.
+ */
+let volumeOverride: number | null = null;
+
+export function setVolumeOverride(v: number | null): void {
+  volumeOverride = v === null || !Number.isFinite(v) ? null : Math.min(1, Math.max(0, v));
+}
+
 /** 0-1. Defaults to 0.7 rather than full blast on a fresh browser. */
 export function getVolume(): number {
+  if (volumeOverride !== null) return volumeOverride;
   const stored = localStorage.getItem(VOLUME_KEY);
   if (stored === null) return 0.7;
   const n = Number(stored);
@@ -143,6 +164,50 @@ export function playSfx(name: SfxName): void {
   const audio = template.cloneNode() as HTMLAudioElement;
   audio.volume = volume;
   void audio.play().catch(() => {
-    // Autoplay can be blocked before the first user gesture - not worth surfacing to the player.
+    // Autoplay can be blocked before the first user gesture - not worth surfacing to the player,
+    // who will hear the next sound the moment they click anything. It IS worth surfacing to a
+    // browser source nobody is going to click, which is what the handler below is for.
+    blockedHandler?.();
   });
+}
+
+/**
+ * Told when a sound was refused, for a page that has no listener to click anything.
+ *
+ * Deliberately a single handler rather than a subscriber list: the only page that wants this is the
+ * audio browser source (pages/OverlayAudio), and one page can only be mounted once. A second caller
+ * replacing the first is the correct outcome, not a leak.
+ *
+ * Nothing else registers one, which is why an ordinary player still sees no error for a blocked
+ * sound - they are about to click something, and then it works.
+ */
+let blockedHandler: (() => void) | null = null;
+
+export function onAudioBlocked(fn: (() => void) | null): void {
+  blockedHandler = fn;
+}
+
+/**
+ * Asks the browser whether it will let this page make a noise, without making one.
+ *
+ * Plays the shortest file here at zero volume and immediately stops it. A page that waits to find
+ * out the ordinary way learns it on the first hit of the match, having already swallowed that hit -
+ * which on a stream means the failure is discovered by the audience, in the form of nothing.
+ *
+ * Also serves as the click handler when a real gesture arrives: the gesture is what lifts the
+ * policy, so simply asking again after one is the whole of the recovery.
+ *
+ * Resolves true when sound is allowed. Never rejects - a refusal is an answer, not a fault.
+ */
+export function primeAudio(): Promise<boolean> {
+  const probe = new Audio(base + FILES.miss);
+  probe.volume = 0;
+  return probe
+    .play()
+    .then(() => {
+      probe.pause();
+      probe.currentTime = 0;
+      return true;
+    })
+    .catch(() => false);
 }

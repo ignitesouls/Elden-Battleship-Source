@@ -1,13 +1,4 @@
-import {
-  WhaleMark,
-  LaboonMark,
-  TentacleMark,
-  DutchmanMark,
-  BottleMark,
-  JarMark,
-  PatchesMark,
-  IgonMark,
-} from "./HitMarkers";
+import { DeepMarkIcon } from "./HitMarkers";
 import { cellLabel } from "../lib/battleshipLogic";
 import { teamName } from "../lib/teamColors";
 import type { DeepMark } from "../lib/deepWater";
@@ -92,18 +83,7 @@ export function TheDeep({
             nothing at all on a dark panel. So the list brings the square with it.
           */}
           <span className="deep-find-icon" aria-hidden="true">
-            {entry.mark === "whale" && <WhaleMark />}
-            {entry.mark === "laboon" && <LaboonMark />}
-            {(entry.mark === "tentacle" || entry.mark === "sleeper") && (
-              <TentacleMark awake={entry.mark === "sleeper"} />
-            )}
-            {entry.mark === "dutchman" && <DutchmanMark />}
-            {entry.mark === "bottle" && <BottleMark />}
-            {(entry.mark === "jar" || entry.mark === "jarFree") && <JarMark freed={entry.mark === "jarFree"} />}
-            {(entry.mark === "igon" || entry.mark === "igonAvenged") && (
-              <IgonMark avenged={entry.mark === "igonAvenged"} />
-            )}
-            {entry.mark === "patches" && <PatchesMark />}
+            <DeepMarkIcon mark={entry.mark} />
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <strong className="display" style={{ color: "var(--accent)" }}>

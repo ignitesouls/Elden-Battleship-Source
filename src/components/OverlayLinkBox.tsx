@@ -18,7 +18,8 @@ interface Props {
 }
 
 /**
- * The player's OBS sources: the same three the caster gets, plus a few decisions of their own.
+ * The player's OBS sources: the same three the caster gets, one only a player can have, plus a few
+ * decisions of their own.
  *
  * -- Why this used to be a form and isn't any more --
  *
@@ -27,11 +28,12 @@ interface Props {
  * off. Every one of those existed to make a 200px-wide strip carry a whole match, and most were the
  * same question in another form: is this readable? The strip could only ever answer no.
  *
- * The three separate sources answer it properly: a full-size board that can be zoomed, a clock, and
- * a colour key, each placed where the streamer wants it. What survives of that form is only what a
- * streamer cannot settle by dragging a source around in OBS: whether their own ships go on stream,
- * and the two scene-wide settings below, how solid it all is and how large the text is. The rest of
- * those seven controls were layout, and layout belongs in OBS.
+ * The separate sources answer it properly: a full-size board that can be zoomed, a clock, a colour
+ * key, and - for a player who wants chat to see the fleet - a small board of their own ships, each
+ * placed where the streamer wants it. What survives of that form is only what a streamer cannot
+ * settle by dragging a source around in OBS: whether their own ships go on stream, and the two
+ * scene-wide settings below, how solid it all is and how large the text is. The rest of those seven
+ * controls were layout, and layout belongs in OBS.
  *
  * (The old column still exists at /overlay/:code with all its query parameters, for anyone running
  * one. It just isn't something anyone has to configure here to get started.)
@@ -122,6 +124,54 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const keyQs = withScene(new URLSearchParams());
   const keyUrl = `${base}#/overlay-key/${roomCode}${keyQs ? `?${keyQs}` : ""}`;
 
+  /**
+   * The odds source. Takes the scene settings and nothing else - it has no fleet of its own.
+   *
+   * Pointedly not given `team`: every other source takes one to mark whose stream this is, but the
+   * odds are a statement about the whole room and highlighting one fleet inside them would be the
+   * beginning of an argument about which number the source is really for.
+   */
+  const oddsQs = withScene(new URLSearchParams());
+  const oddsUrl = `${base}#/overlay-odds/${roomCode}${oddsQs ? `?${oddsQs}` : ""}`;
+
+  /**
+   * The small board of your own ships, offered only once you've said you want them on stream.
+   *
+   * Unlike the big board this doesn't take a `team` at all - the rejoin code names one fleet and
+   * that is the only fleet it can draw - so it is built off `showShips` rather than `shipsApply`.
+   * Which board you have pointed at makes no difference to it: a player watching an opponent's
+   * board still gets their own fleet in the corner.
+   *
+   * `text` is dropped from the scene settings on purpose. This source has no text in it to size -
+   * it trades square names for square colours, which is the whole reason it exists. See
+   * pages/OverlayFleet.
+   */
+  const fleetQuery = new URLSearchParams();
+  if (showShips && canShowShips) fleetQuery.set("key", rejoinCode!);
+  if (opacity < 1) fleetQuery.set("opacity", opacity.toFixed(2));
+  const fleetUrl = `${base}#/overlay-fleet/${roomCode}?${fleetQuery.toString()}`;
+
+  /**
+   * The board's sound, with no picture attached - see pages/OverlayAudio.
+   *
+   * Takes the fleet only to decide which sting plays at the end, which is why it carries `myTeam`
+   * rather than `boardTeam`: a player watching an opponent's board has not changed sides, and the
+   * fanfare should still be about them.
+   *
+   * Neither scene setting applies, so neither is written: `opacity` is about a picture this source
+   * hasn't got, and `text` is about names it never draws.
+   *
+   * Nor is a volume, though the page will read a `?vol=` if one is typed. Level is the one thing OBS
+   * itself does better than a URL - tick "Control audio via OBS" and the source gets a fader and a
+   * mute button that can be ridden mid-match - and a number baked into the link would be a second
+   * volume control that the fader silently overrules. Better to ship no opinion and let the mixer
+   * hold the only one.
+   */
+  const audioQuery = new URLSearchParams();
+  if (myTeam !== null) audioQuery.set("team", String(myTeam));
+  const audioQs = audioQuery.toString();
+  const audioUrl = `${base}#/overlay-audio/${roomCode}${audioQs ? `?${audioQs}` : ""}`;
+
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} style={{ fontSize: "0.8rem" }} title="Get stream overlay URLs for OBS">
@@ -210,18 +260,20 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
             Yes - show them
           </button>
         </div>
-        {shipsApply && (
+        {/* Gated on the toggle rather than on shipsApply, because the Fleet source below carries the
+            credential and draws the hulls whatever the big board is pointed at. */}
+        {showShips && canShowShips && (
           <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
             <strong>
-              This URL draws your ships and carries your rejoin code. Put it on stream only if you
-              want viewers to see your fleet, and share it with nobody.
+              These URLs draw your ships and carry your rejoin code. Put them on stream only if you
+              want viewers to see your fleet, and share them with nobody.
             </strong>
           </span>
         )}
         {showShips && canShowShips && boardTeam !== myTeam && (
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Ships only ever draw on your own board, so none appear on {teamName(boardTeam!)}'s.
-            Switch the board to {teamName(myTeam!)} to see yours.
+            Ships only ever draw on your own board, so none appear on the {teamName(boardTeam!)}{" "}
+            board. The Fleet source below shows them anyway - it's always {teamName(myTeam!)}'s.
           </span>
         )}
       </div>
@@ -305,7 +357,30 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         note={boardTeam !== null ? `${teamName(boardTeam)}'s board` : "every fleet's shots on one board"}
       />
 
-      <SourceRow label="Clock" url={clockUrl} size="1200 x 200" note="the match clock and every fleet's hulls" />
+      {/* Only shown once ships are wanted on stream. Offering it otherwise would be offering a
+          source that draws nothing, next to the toggle that is the reason it draws nothing. */}
+      {showShips && canShowShips && (
+        <SourceRow
+          label="Fleet"
+          url={fleetUrl}
+          size="400 x 400"
+          note="your ships, small - for showing chat where they are"
+        />
+      )}
+
+      <SourceRow
+        label="Clock"
+        url={clockUrl}
+        size="1200 x 200"
+        note="the match clock and every fleet's hulls - add ?odds=1 for the odds band under it"
+      />
+
+      <SourceRow
+        label="Odds"
+        url={oddsUrl}
+        size="900 x 300"
+        note="each fleet's chance of winning, and how it has moved - add ?graph=0 for the bar alone"
+      />
 
       <SourceRow
         label="Key"
@@ -314,11 +389,21 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         note="a thin strip for the bottom edge - add ?plate=0 for no backing"
       />
 
+      {/* The one source with nothing to look at, so the size is a formality and the note has to do
+          the whole job of saying what it is. Listed last for the same reason: it is the only one
+          whose placement in the scene doesn't matter. */}
+      <SourceRow
+        label="Audio"
+        url={audioUrl}
+        size="100 x 100"
+        note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+      />
+
       {/* Said here because the alternative is a streamer discovering it live and assuming their
           source is broken. See lib/overlayReveal.ts. */}
       <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        Square names and the colour key stay blank until the match starts, so nobody can read the
-        board during placement. That includes you.
+        Square names, square colours and the colour key stay blank until the match starts, so nobody
+        can read the board during placement. That includes you.
       </span>
     </div>
   );

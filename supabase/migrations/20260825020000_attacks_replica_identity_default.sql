@@ -1,0 +1,24 @@
+-- Attacks stop carrying a copy of themselves on every update.
+--
+-- REPLICA IDENTITY FULL puts the OLD tuple in the WAL alongside the new one, and Realtime hands
+-- both to every subscriber. A shot writes one attack row per opposing team as 'pending' and then
+-- resolves each one, so every single shot in a match paid that surcharge on its update - and the
+-- rows are read by every player, every spectator and every OBS source, because "attacks select"
+-- is `using (true)`. On a four-fleet match that is the largest per-shot cost on the wire after the
+-- fleet row itself.
+--
+-- Nothing has read the old tuple since the attacks DELETE listener was removed. onAttackChange in
+-- hooks/useRoom.ts takes `payload.new` and nothing else, and the two `payload.old` readers left in
+-- the client are players (a kick) and team_ready (a fleet standing down), both of which keep their
+-- own identity settings and are untouched here.
+--
+-- WHAT THIS COSTS, and it is a real cost: a DELETE on this table now replicates the primary key
+-- alone. The client filters this channel by room_id, which will no longer be present, so attack
+-- DELETEs would silently never arrive - not error, never arrive. That is SALTYLANTERN's shape and
+-- it is exactly what the original FULL was for.
+--
+-- So: if you ever add a DELETE listener to attacks, revert this migration first. The lobby
+-- transition in useRoom (rooms.status -> 'lobby' clears the log) is what replaced that listener,
+-- and it is the reason this is safe today. It is not permanently safe; it is safe as long as that
+-- remains how a wiped log is learned about.
+alter table public.attacks replica identity default;

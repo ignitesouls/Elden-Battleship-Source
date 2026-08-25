@@ -135,7 +135,7 @@ export function OverlayBoard() {
    * missing code as "nothing to subscribe to", so passing undefined is the whole mechanism.
    */
   const pinned = pinnedView(params);
-  const { message: cast, report } = useCastReceiver(pinned ? undefined : code);
+  const { message: cast, report, linkEpoch } = useCastReceiver(pinned ? undefined : code);
 
   /**
    * The owner's own fleet, for a pinned source that asked for it with ?key=.
@@ -180,11 +180,15 @@ export function OverlayBoard() {
   }, []);
 
   // Tell the controller how big this source is, so its preview rectangle means something. Re-sent
-  // whenever a frame arrives as well as on resize: the first report can easily be made before the
-  // channel finishes subscribing, and the size never changes again to trigger a retry.
+  // on every (re)join as well as on resize: the first report can easily be made before the channel
+  // finishes subscribing, and the size never changes again to trigger a retry.
+  //
+  // Keyed to the link rather than to the last frame's stamp. Both cover the race, but a frame
+  // stamp changes on every heartbeat, so that version sent the controller an unchanged size four
+  // times every minute per source, for the whole broadcast.
   useEffect(() => {
     if (frame.w > 0 && frame.h > 0) report({ w: frame.w, h: frame.h });
-  }, [frame.w, frame.h, report, cast?.at]);
+  }, [frame.w, frame.h, report, linkEpoch]);
 
   const room = state.room;
   // Drives the reveal gate below: names hold until the board has finished being dealt.
@@ -378,6 +382,24 @@ export function OverlayBoard() {
           {Math.round(stage.h)} · want {boardPx} · zoom {view.zoom.toFixed(2)} · offset{" "}
           {Math.round(placeBoard(stage.w, frame.w, view.cx))},{Math.round(placeBoard(stage.h, frame.h, view.cy))} ·
           centre {view.cx.toFixed(2)},{view.cy.toFixed(2)}
+          {/*
+            The water, on its own line, because it answers a different question from the sizing
+            numbers above it and gets asked when nothing looks wrong at all.
+
+            Three counts, and the gap between any two of them says which end is broken. `hides` is
+            rows this source could READ - a row becomes readable when somebody fires at its square,
+            so on a match where finds are being called out and this stays 0, the rows are not
+            arriving and the problem is the read, not the drawing. `marks` is what deepMarks made of
+            them, which is every crew's finds because no team is passed here; `marks` short of the
+            finds a caster has seen called means the walk disagrees with the log. And `shots` is what
+            both are derived from, so a low figure there explains the other two without either being
+            at fault.
+          */}
+          <div>
+            deep: hides {state.deepHides.length} · marks {deepCells.size} · shots{" "}
+            {state.attacks.filter((a) => a.cell_index >= 0 && a.result !== "pending").length} · igon anchor{" "}
+            {igonAnchor(room) ?? "none"}
+          </div>
         </div>
       )}
     </div>

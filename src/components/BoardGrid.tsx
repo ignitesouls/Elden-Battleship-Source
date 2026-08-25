@@ -3,20 +3,7 @@ import { createPortal } from "react-dom";
 import { shipArtUrl } from "../lib/shipArt";
 import type { Region } from "../lib/challenges";
 import "./BoardGrid.css";
-import {
-  HitMark,
-  MissMark,
-  SunkMark,
-  RuledOutMark,
-  WhaleMark,
-  LaboonMark,
-  TentacleMark,
-  DutchmanMark,
-  BottleMark,
-  JarMark,
-  IgonMark,
-  PatchesMark,
-} from "./HitMarkers";
+import { HitMark, MissMark, SunkMark, RuledOutMark, DeepMarkIcon } from "./HitMarkers";
 import { fitText, useTextFit, breakSegments } from "../lib/textFit";
 import type { MarkKind } from "../hooks/usePencilMarks";
 import type { DeepMark } from "../lib/deepWater";
@@ -859,14 +846,7 @@ export function BoardGrid({
               here at once. */}
           {visual === "miss" && !deep && <MissMark />}
           {visual === "sunk" && <SunkMark horizontal={sunkOrientation?.get(i) ?? true} />}
-          {deep === "whale" && <WhaleMark />}
-          {deep === "laboon" && <LaboonMark />}
-          {(deep === "tentacle" || deep === "sleeper") && <TentacleMark awake={deep === "sleeper"} />}
-          {deep === "dutchman" && <DutchmanMark />}
-          {deep === "bottle" && <BottleMark />}
-          {(deep === "jar" || deep === "jarFree") && <JarMark freed={deep === "jarFree"} />}
-          {(deep === "igon" || deep === "igonAvenged") && <IgonMark avenged={deep === "igonAvenged"} />}
-          {deep === "patches" && <PatchesMark />}
+          {deep && <DeepMarkIcon mark={deep} />}
           {mark === "guess" && <span className="bg-pencil-mark" aria-hidden />}
           {/* Dead water. Drawn across the whole square rather than in a corner like the guess pin,
               because it's a verdict on the square rather than a note about it - and because the

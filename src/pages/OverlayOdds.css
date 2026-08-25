@@ -1,0 +1,147 @@
+/**
+ * The odds source.
+ *
+ * Laid out at a natural size and then scaled to fit whatever source it is dropped into, exactly as
+ * the scorebug is - see the note in OverlayTimer.css for why nothing here is sized in viewport
+ * units. Sized generously for the same reason: downscaling survives a stream encoder, upscaling
+ * does not.
+ */
+.ovo {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.ovo-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem 1.2rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(6, 16, 24, 0.72);
+  border: 1px solid rgba(180, 210, 230, 0.22);
+  white-space: nowrap;
+}
+
+.ovo-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ovo-title {
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #9fb8c8;
+}
+
+.ovo-decided {
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #f2c14e;
+}
+
+/* -- the bar ------------------------------------------------------------- */
+
+.ovo-now {
+  display: flex;
+  align-items: stretch;
+  height: 4.4rem;
+  border-radius: 10px;
+  overflow: hidden;
+  /* The slices butt against each other; a rule between them keeps two similar team colours from
+     reading as one wide slice. */
+  gap: 2px;
+}
+
+.ovo-seg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0 0.8rem;
+  /**
+   * Zero basis, so a slice's width is its ODDS and nothing else.
+   *
+   * With the default `auto` basis each slice would start out as wide as the text inside it and only
+   * the leftover would be shared out - which means a fleet down to 4% would still be as wide as the
+   * word "Crimson" and the bar would be lying about the one number it exists to show. min-width
+   * lets a slice shrink below its content for the same reason.
+   */
+  flex-basis: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* Dark text on the team colour, which is what every team hex in the palette is chosen to carry. */
+  color: rgba(4, 12, 18, 0.92);
+  transition: flex-grow 400ms ease;
+}
+
+.ovo-seg-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ovo-seg-pct {
+  font-size: 2.3rem;
+  font-weight: 700;
+  line-height: 1;
+  /* Tabular figures, or the panel twitches every time a digit changes width. */
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * A fleet on its way out has no room for two labels.
+ *
+ * The percentage is the one that survives, because "4%" is the whole story at that point and the
+ * colour already says whose it is. Without this the name and the number fight over about thirty
+ * pixels and neither one is readable, which is worst exactly when the panel matters most.
+ */
+.ovo-seg-tight {
+  justify-content: center;
+  padding: 0 0.2rem;
+}
+
+.ovo-seg-tight .ovo-seg-name {
+  display: none;
+}
+
+.ovo-seg-tight .ovo-seg-pct {
+  font-size: 1.5rem;
+}
+
+/* -- the history line ---------------------------------------------------- */
+
+.ovo-graph {
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.odds-graph {
+  display: block;
+}
+
+.ovo-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: #9fb8c8;
+}
+
+.ovo-axis-now {
+  color: #f2f7fa;
+  font-weight: 600;
+}

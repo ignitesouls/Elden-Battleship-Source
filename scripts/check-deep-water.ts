@@ -805,21 +805,52 @@ console.log('\n-- Igon, beside the dragon --------------------------------------
  * Every mark has to be DRAWN, and this is the check that says so.
  *
  * Worth a test rather than trusting a reviewer, because the way it fails is silent and wrong in both
- * directions at once: BoardGrid suppresses the miss splash on any square carrying a deep mark, so a
- * mark the grid has no branch for does not fall back to a plain miss - it renders the square EMPTY.
- * A find would come out as a hole in the board, which is worse than not shipping it. That is exactly
+ * directions at once: a board suppresses the miss splash on any square carrying a deep mark, so a
+ * mark nothing has a branch for does not fall back to a plain miss - it renders the square EMPTY. A
+ * find would come out as a hole in the board, which is worse than not shipping it. That is exactly
  * what Igon did until somebody asked to see one.
+ *
+ * It reads HitMarkers rather than BoardGrid because the eleven conditionals now live in ONE
+ * component there (DeepMarkIcon), which is the other half of the same lesson. While every surface
+ * kept its own chain, this check could only ever guard the one it was pointed at - and the surface
+ * it was NOT pointed at, the HUD column's mini-boards, turned out to have no chain at all: every
+ * find on it drew as a plain splash, for months, with this check passing the whole time.
  */
 {
-  const grid = readFileSync(new URL('../src/components/BoardGrid.tsx', import.meta.url), 'utf8')
+  const icon = readFileSync(new URL('../src/components/HitMarkers.tsx', import.meta.url), 'utf8')
   const src = readFileSync(new URL('../src/lib/deepWater.ts', import.meta.url), 'utf8')
   const from = src.indexOf('export type DeepMark')
   const union = src.slice(from, src.indexOf(';', from))
   const marks = [...union.matchAll(/"([a-zA-Z]+)"/g)].map((mk) => mk[1])
 
   check('the mark union is readable', marks.length > 0, marks.join(' '))
-  const undrawn = marks.filter((k) => !grid.includes('"' + k + '"'))
-  check('every DeepMark is drawn by the board', undrawn.length === 0, undrawn.join(', '))
+  const undrawn = marks.filter((k) => !icon.includes('"' + k + '"'))
+  check('every DeepMark is drawn by DeepMarkIcon', undrawn.length === 0, undrawn.join(', '))
+
+  /**
+   * And every surface that draws finds goes through it.
+   *
+   * The guard above only means something while there is one chain to guard. A board that grows its
+   * own private list of conditionals passes every check in this file and still silently omits
+   * whichever find was added last - which is precisely the failure this section exists to catch, so
+   * the shape of the code is worth asserting rather than merely preferring.
+   */
+  const surfaces = ['BoardGrid.tsx', 'OverlayGrid.tsx', 'TheDeep.tsx']
+  for (const file of surfaces) {
+    const body = readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8')
+    check(`  -> ${file} draws finds through DeepMarkIcon`, body.includes('DeepMarkIcon'))
+    /**
+     * Two or more named marks is a LIST; one is a special case.
+     *
+     * The distinction is the whole point of the threshold. TheDeep singles out `bottle`, because the
+     * note in it is the one find that has something to say in words - that is a fact about bottles,
+     * it cannot silently omit a future find, and forbidding it would only push it somewhere less
+     * obvious. A file naming several is the thing that goes stale: it is a chain being maintained by
+     * hand beside the one that is supposed to be the only one.
+     */
+    const named = marks.filter((k) => body.includes('"' + k + '"'))
+    check(`  -> ${file} keeps no list of its own`, named.length < 2, named.join(', '))
+  }
 }
 
 console.log('\n-- what outlives the match ----------------------------------------------\n')

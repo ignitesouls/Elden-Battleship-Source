@@ -24,6 +24,7 @@
  *   node --experimental-strip-types scripts/check-fleet-status.ts
  */
 import { sunkHullFlags } from '../src/lib/battleshipLogic.ts'
+import { fleetByLength } from '../src/lib/fleetOrder.ts'
 import { fleetFor, FLEET_PRESETS, BOARD_SIZES } from '../src/types/battleship.ts'
 import type { Attack, ShipDefinition } from '../src/types/battleship.ts'
 
@@ -188,6 +189,67 @@ const shown = (flags: boolean[], defs: ShipDefinition[]) =>
   }
   check(`every hull sunk drops the count by one, across all ${combos} board/preset fleets`, bad === 0, worst)
 }
+// -- 10. the roster's reading order keeps every hull's own index -----------
+//
+// fleetByLength sorts a COPY, longest hull first, and hands back the index each def held in
+// ship_defs. That index is the whole point of the pairing: sunkHulls, ship_sunk and shipIndex are
+// all keyed on it, so a roster that sorted the defs and then read sunkHulls[position] would strike
+// through whichever hull happened to land where the dead one used to be. Section 1's bug, arrived
+// at from the other direction, and just as invisible until a Carrier reads as sunk on stream.
+{
+  let bad = 0
+  let worst = ''
+  let combos = 0
+  for (const board of BOARD_SIZES as unknown as number[]) {
+    for (const preset of Object.keys(FLEET_PRESETS)) {
+      const defs = fleetFor(board, preset)
+      const order = fleetByLength(defs)
+      combos++
+
+      // Every hull exactly once, each still pointing at its own def.
+      const indices = order.map((h) => h.index).sort((a, b) => a - b)
+      const complete =
+        order.length === defs.length &&
+        indices.every((ix, i) => ix === i) &&
+        order.every((h) => defs[h.index] === h.def)
+
+      // Descending by length, with ties left in dealt order so Cruiser still precedes Submarine.
+      const sorted = order.every(
+        (h, i) =>
+          i === 0 ||
+          order[i - 1].def.size > h.def.size ||
+          (order[i - 1].def.size === h.def.size && order[i - 1].index < h.index)
+      )
+
+      // The read the roster actually performs: sink one hull, and the entry struck through is one
+      // of that CLASS - not whatever now sits where the dead hull used to be in the dealt list.
+      //
+      // Class rather than index, because a fleet holding two Destroyers has nothing to tell them
+      // apart when the sunk row carries no placements to match against, and sunkHullFlags is free
+      // to strike either (section 5). Which of a matched pair is struck is invisible on screen;
+      // striking a Carrier because a Destroyer went down is not, and that is what this catches.
+      let strikesRight = true
+      for (let i = 0; i < defs.length; i++) {
+        const flags = sunkHullFlags([sunk(1, defs[i], i, 0)], 1, defs)
+        const struck = order.filter((h) => flags[h.index])
+        if (
+          struck.length !== 1 ||
+          struck[0].def.size !== defs[i].size ||
+          struck[0].def.name !== defs[i].name
+        ) {
+          strikesRight = false
+        }
+      }
+
+      if (!complete || !sorted || !strikesRight) {
+        bad++
+        if (!worst) worst = `${board}x${board} ${preset}: dealt ${defs.map((d) => d.size).join('-')}`
+      }
+    }
+  }
+  check(`reading order is longest-first and keeps each hull's index, across all ${combos} fleets`, bad === 0, worst)
+}
+
 
 console.log(failures === 0 ? '\nall fleet status checks passed' : `\n${failures} fleet status check(s) failed`)
 if (failures > 0) process.exit(1)

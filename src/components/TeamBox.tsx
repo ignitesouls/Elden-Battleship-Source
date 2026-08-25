@@ -1,4 +1,5 @@
 import { teamName, teamHex } from "../lib/teamColors";
+import { fleetByLength } from "../lib/fleetOrder";
 import type { Player, ShipDefinition } from "../types/battleship";
 
 interface Props {
@@ -55,19 +56,23 @@ export function TeamBox({ team, players, shipDefs, sunkHulls, eliminated, isMine
         ))}
       </div>
 
+      {/* Longest hull first, each carrying its length - see lib/fleetOrder. A bare name asks the
+          reader to already know that a Cruiser is three squares, which is exactly what somebody
+          watching their first match doesn't, and the sizes are what the whole roster is read for:
+          "they're down to a Destroyer" only means something next to the 5 at the other end. */}
       {sunkHulls && (
         <div className="row" style={{ gap: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
-          {shipDefs.map((s, i) => {
-            const sunk = sunkHulls[i];
+          {fleetByLength(shipDefs).map(({ def, index }) => {
+            const sunk = sunkHulls[index];
             return (
               <span
-                key={i}
+                key={index}
                 style={{
                   textDecoration: sunk ? "line-through" : undefined,
                   color: sunk ? "var(--text-dim)" : "var(--text)",
                 }}
               >
-                {s.name}
+                {def.name} - {def.size}
               </span>
             );
           })}

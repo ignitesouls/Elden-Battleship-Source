@@ -6,6 +6,9 @@ import { Overlay } from "./pages/Overlay";
 import { OverlayBoard } from "./pages/OverlayBoard";
 import { OverlayTimer } from "./pages/OverlayTimer";
 import { OverlayKey } from "./pages/OverlayKey";
+import { OverlayAudio } from "./pages/OverlayAudio";
+import { OverlayFleet } from "./pages/OverlayFleet";
+import { OverlayOdds } from "./pages/OverlayOdds";
 import { CasterControl } from "./pages/CasterControl";
 import { TopBar } from "./components/TopBar";
 import { BuildStamp } from "./components/BuildStamp";
@@ -16,7 +19,7 @@ import { LoadingScreen } from "./components/BrandMark";
  * The browsing pages, fetched on demand rather than baked into the bundle everything else loads.
  *
  * Every route above is a page somebody is in the middle of a match on - the join form, the room
- * itself, the four OBS browser sources, and the caster's desk - and those stay eagerly imported so
+ * itself, the five OBS browser sources, and the caster's desk - and those stay eagerly imported so
  * that nothing on a game path can ever wait on a network round trip it didn't used to wait on.
  *
  * These five are the opposite: they are read between matches, and between them they drag in the
@@ -39,7 +42,16 @@ const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.S
  * The caster's CONTROL page is deliberately not in this list - it is an ordinary page on a second
  * monitor, and wants the top bar like anything else.
  */
-const OVERLAY_ROUTES = ["/overlay/", "/overlay-board/", "/overlay-timer/", "/overlay-key/"];
+const OVERLAY_ROUTES = [
+  "/overlay/",
+  "/overlay-board/",
+  "/overlay-timer/",
+  "/overlay-key/",
+  "/overlay-odds/",
+  "/overlay-fleet/",
+  // Draws nothing at all, and still belongs here: the chrome would be the ONLY thing it drew.
+  "/overlay-audio/",
+];
 
 function Chrome() {
   const { pathname } = useLocation();
@@ -71,6 +83,16 @@ function App() {
           <Route path="/overlay-board/:code" element={<OverlayBoard />} />
           <Route path="/overlay-timer/:code" element={<OverlayTimer />} />
           <Route path="/overlay-key/:code" element={<OverlayKey />} />
+          {/* Each fleet's chance of winning, and the line that shows how it got there. Follows
+              the room on its own like the clock does - see pages/OverlayOdds. */}
+          <Route path="/overlay-odds/:code" element={<OverlayOdds />} />
+          {/* The fifth source has no picture at all - see pages/OverlayAudio. It is in
+              OVERLAY_ROUTES above for the same reason the rest are: a top bar rendered into a
+              browser source is a top bar composited onto somebody's stream. */}
+          <Route path="/overlay-audio/:code" element={<OverlayAudio />} />
+          {/* A player's own fleet, small, for showing chat where their ships are. Not a caster
+              source: it needs the owner's rejoin code and can only ever draw that one fleet. */}
+          <Route path="/overlay-fleet/:code" element={<OverlayFleet />} />
           <Route path="/cast/:code" element={<CasterControl />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/player/:key" element={<PlayerStats />} />

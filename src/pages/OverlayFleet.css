@@ -1,0 +1,97 @@
+/**
+ * The fleet browser source: one small board, centred in whatever rectangle OBS was given.
+ *
+ * Fixed to the viewport for the same reason the board source is - a Browser Source has a hard width
+ * and height and no scrollbars, so "the page" and "the frame" are the same rectangle. Unlike that
+ * one there is no zoom and no pan here, so the board simply sits in the middle: this source is
+ * parked in a corner of a scene and never aimed at anything.
+ */
+.ovf-frame {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* Transparent: OBS composites this over the game capture. */
+  background: transparent;
+}
+
+.ovf-stage {
+  /* Shrink to the board rather than to the frame, so the centring above has something to centre. */
+  width: max-content;
+}
+
+/**
+ * The tint, turned up from the 20% the app uses.
+ *
+ * --bg-tint exists to be moved per board, and this is the board it was left adjustable for (see the
+ * note on .bg-cell-tinted). In the app the wash is deliberately quiet: the player has the fire board
+ * next to it at ten times the area, and the tint only has to be enough to match a colour across two
+ * boards a foot from your face. Here the wash is the ONLY thing carrying a square's identity, it is
+ * being read at a fraction of the size, and a stream encoder takes a bite out of low-contrast fills
+ * before anyone sees them. Far enough up to survive that, and still short of the point where the
+ * fill starts winning against the hull sprites drawn over it - which are 0.8 opaque and, as that
+ * note says, have nowhere to go.
+ */
+.ovf-board .bg-grid {
+  --bg-tint: 34%;
+}
+
+/**
+ * The coordinate gutter, collapsed unless ?coords=1 asked for it.
+ *
+ * COLLAPSED, not merely hidden. BoardGrid's gutter tracks are `auto`, and the whole grid - gutters
+ * included - is sized to exactly the square this source hands it. So a hidden-but-present label
+ * would go on charging the board for two edges it isn't drawing, which on a 400px source is real
+ * estate the squares can't spare. Zeroing the label's own box collapses its track to nothing and
+ * gives those pixels back to the cells.
+ *
+ * The board source hides its gutter instead of collapsing it, for the opposite reason: it pans, and
+ * a footprint that changed with a setting would move every offset under it.
+ */
+.ovf-no-coords .bg-coord {
+  visibility: hidden;
+  font-size: 0;
+  line-height: 0;
+  padding: 0;
+}
+
+/**
+ * Coordinates a viewer can read, when they are switched on at all.
+ *
+ * Same reasoning as the board source's: in the app these are deliberately quiet because a player
+ * can point at their own screen, and on a stream they are the only way anybody can say where. Sized
+ * off the cell measurement rather than the viewport, which on a browser source means nothing.
+ * Smaller ceiling than the board source's, because this board's cells are a fraction of the size
+ * and a 44px label beside a 28px square is a label with a board attached to it.
+ */
+.ovf-board .bg-coord {
+  color: #f2f7fb;
+  font-weight: 800;
+  font-size: clamp(9px, calc(var(--bg-cell-font, 11px) * 1.4), 20px);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+  padding: 0.1em 0.25em;
+}
+
+/* No cursor or hover response - this is a picture, not a board anyone can press. */
+.ovf-board .bg-cell {
+  cursor: default;
+}
+
+/**
+ * A URL that can't draw anything, said on stream.
+ *
+ * Loud on purpose, and not faded by ?opacity= (see the note in OverlayFleet). This is the one thing
+ * on this source that is about the source rather than about the match, and a streamer who has
+ * pasted a stale rejoin code needs to find out from the scene rather than from chat.
+ */
+.ovf-fault {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(120, 20, 20, 0.85);
+  color: #ffd9d9;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

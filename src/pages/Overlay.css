@@ -477,3 +477,25 @@ body.overlay-mode .tb-bar {
   padding-left: 64px;
   margin-top: -1px;
 }
+
+/**
+ * What the water gave up, on the HUD column's mini-boards.
+ *
+ * z-index 2 puts a find above the band stack (z 0), above the hull hint (z 1) and below the boss
+ * name (z 3) - the same order the markers already take, and the same order the players' own board
+ * uses. Without it a whale drawn on a square the streamer has a ship on would be UNDER the ship,
+ * which is the one square it is most worth seeing.
+ *
+ * These are the shared drawings from HitMarkers, already `position: absolute` via BoardGrid.css
+ * (imported by the page), so the cell's own `position: relative` is what they measure against.
+ */
+.ov-grid-cell .whale-mark,
+.ov-grid-cell .laboon-mark,
+.ov-grid-cell .tentacle-mark,
+.ov-grid-cell .dutchman-mark,
+.ov-grid-cell .bottle-mark,
+.ov-grid-cell .jar-mark,
+.ov-grid-cell .igon-mark,
+.ov-grid-cell .patches-mark {
+  z-index: 2;
+}

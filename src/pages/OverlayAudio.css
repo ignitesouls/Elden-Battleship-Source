@@ -1,0 +1,26 @@
+/**
+ * The audio source draws nothing, so it has no layout - only this one warning.
+ *
+ * Sized to be readable in an OBS preview at whatever tiny rectangle a streamer gave a source with no
+ * picture in it, and coloured like the board source's fault light for the same reason: it is the
+ * only thing that can appear here, so it must never be mistaken for content.
+ */
+.ova-blocked {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border: 2px solid #ff8a8a;
+  border-radius: 4px;
+  background: rgba(120, 20, 20, 0.92);
+  color: #ffd9d9;
+  font-family: inherit;
+  font-size: clamp(10px, 4vw, 20px);
+  line-height: 1.3;
+  text-align: center;
+  /* The gesture that clears this is a click in OBS's Interact window, so the whole source has to be
+     the target - a streamer should not have to find a button inside a 200px box. */
+  cursor: pointer;
+}

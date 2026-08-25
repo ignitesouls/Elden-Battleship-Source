@@ -223,6 +223,10 @@ export function Overlay() {
               layers={layers}
               showCoords={showCoords}
               cellName={showNames ? (i) => challenges[i]?.short ?? challenges[i]?.name ?? null : undefined}
+              // What the water gave up. Already computed above for the log, and until now that was
+              // the ONLY place a find appeared on this overlay - the boards themselves drew a plain
+              // splash on the rarest square in the match. See lib/deepWater.ts.
+              deepCells={deepCells}
             />
           </div>
         ) : (
@@ -238,6 +242,11 @@ export function Overlay() {
                   label={highlightTeam === l.team ? `${l.teamLabel} - you` : l.teamLabel}
                   showCoords={showCoords}
                   cellName={showNames ? (i) => challenges[i]?.short ?? challenges[i]?.name ?? null : undefined}
+                  // Every board, not only the one that was fired at. A find is a fact about the
+                  // ROOM rather than about any one fleet, and the shot that turned it up wrote no
+                  // row at all against the crew who fired it - so a find drawn only where a splash
+                  // landed would be missing from its own finder's board.
+                  deepCells={deepCells}
                 />
               </div>
             ))}

@@ -1,5 +1,6 @@
 import type { ShipDefinition } from "../types/battleship";
 import { shipArtUrl } from "../lib/shipArt";
+import { fleetByLength } from "../lib/fleetOrder";
 
 interface Props {
   teamLabel: string;
@@ -32,12 +33,16 @@ export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkHulls, i
           {afloat}/{shipDefs.length}
         </span>
       </div>
+      {/* Longest hull first rather than dealt order - see lib/fleetOrder. It matters more here than
+          on the roster it matches: these are silhouettes, so a sorted strip is a staircase that
+          shortens as the fleet dies, while the dealt order of a busy preset interleaves the lengths
+          and leaves a viewer counting shapes to work out what is left. */}
       <div className="ov-fleet-ships">
-        {shipDefs.map((def, i) => (
+        {fleetByLength(shipDefs).map(({ def, index: i }) => (
           <span
             key={i}
             className={`ov-fleet-ship${sunk[i] ? " ov-fleet-ship-sunk" : ""}`}
-            title={`${def.name}${sunk[i] ? " - sunk" : ""}`}
+            title={`${def.name} - ${def.size}${sunk[i] ? ", sunk" : ""}`}
             style={{
               // Width tracks hull length so a Carrier reads as the big one, exactly as on the board.
               //
