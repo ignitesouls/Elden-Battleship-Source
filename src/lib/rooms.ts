@@ -593,30 +593,19 @@ export async function beginPlacementPhase(room: Room): Promise<void> {
   const { error: readyErr } = await supabase.from("team_ready").delete().eq("room_id", room.id);
   if (readyErr) throw readyErr;
 
-  const totalCells = room.board_size * room.board_size;
   // One statement for every fleet in the room rather than a loop over the team list, because the
-  // host is allowed to write all of them ("fleets reset by host") and has no business knowing how
-  // many there are or which is which.
+  // host is allowed to write all of them and has no business knowing how many there are or which is
+  // which.
   //
-  // Deliberately NOT verified by rows returned, unlike the attack-log delete in resetRoomToLobby.
-  // RLS applies to an UPDATE's RETURNING as well as to the write, and `fleets select own team` lets
-  // the host read only their own - a host who is spectating holds no fleet at all and would read
-  // back nothing from a write that had just succeeded for every crew. There is genuinely no way to
-  // confirm this one from a browser, which is precisely why the same migration that ships the
-  // re-seed also refuses the start of a battle over a fleet that isn't shaped for the board: a
-  // silently rejected write here surfaces there as a sentence, instead of as an unhittable fleet.
-  const { error: fleetErr } = await supabase
-    .from("fleets")
-    .update({
-      ship_grid: emptyGrid(totalCells, false),
-      ship_index_grid: emptyGrid(totalCells, -1),
-      ship_hits_remaining: initialHitsRemaining(room.ship_defs),
-      ship_sunk: emptyGrid(room.ship_defs.length, false),
-      placements: null,
-      placement_confirmed: false,
-    })
-    .eq("room_id", room.id);
-  if (fleetErr) throw fleetErr;
+  // This used to be a direct UPDATE, built from the host's own copy of the room and deliberately
+  // NOT verified by rows returned - RLS applies to an UPDATE's RETURNING as well as to the write,
+  // and `fleets select own team` lets the host read back only their own, so a host who is
+  // spectating would read nothing from a write that had just succeeded for every crew. Both of
+  // those go away inside the function: it is security definer, so it can see the rows it wrote and
+  // hand back a count, and it takes the board's shape off the room row rather than off whatever
+  // this browser last heard about the room. The second is the one that matters - see
+  // resetOwnTeamState for what a stale copy of the room costs.
+  await resetRoomFleets(room.id);
 
   const { error: roomErr } = await supabase.from("rooms").update({ status: "placement" }).eq("id", room.id);
   if (roomErr) throw roomErr;
@@ -835,33 +824,82 @@ async function clearPauseState(roomId: string): Promise<void> {
     .eq("room_id", roomId);
 }
 
-export async function resetOwnTeamState(room: Room, team: number): Promise<void> {
-  const totalCells = room.board_size * room.board_size;
-
-  const { error: fleetErr } = await supabase
-    .from("fleets")
-    .update({
-      ship_grid: emptyGrid(totalCells, false),
-      ship_index_grid: emptyGrid(totalCells, -1),
-      ship_hits_remaining: initialHitsRemaining(room.ship_defs),
-      ship_sunk: emptyGrid(room.ship_defs.length, false),
-      placements: null,
-      placement_confirmed: false,
-    })
-    .eq("room_id", room.id)
-    .eq("team", team);
-  if (fleetErr) throw fleetErr;
-
-  // Update rather than delete: the per-team update policy exists, a delete policy may not.
-  const { error: readyErr } = await supabase
-    .from("team_ready")
-    .upsert({ room_id: room.id, team, ready: false, eliminated: false }, { onConflict: "room_id,team" });
-  if (readyErr) throw readyErr;
+/**
+ * Blanks this client's own crew's fleet and ready flag, through the database.
+ *
+ * -- Why this stopped taking a `room` --------------------------------------------------------------
+ *
+ * It used to build the blank fleet here, out of the caller's `room` object: board_size squared for
+ * the grids, ship_defs for the counters. That is the SALTYLANTERN bug in one line. A browser's copy
+ * of the room can be minutes old - the lobby refits board size and fleet reactively as the roster
+ * changes, with nobody clicking anything (see LobbyPhase) - and a reset written from a stale one
+ * stamps the fleet with a board the room stopped being. That is the misshapen row DEEPVOYAGE was
+ * diagnosed from; the diagnosis blamed ensureFleet, which cannot overwrite a row, and left the
+ * actual author of it running.
+ *
+ * Postgres reads board_size and ship_defs off the room itself now, so there is no shape for a caller
+ * to get wrong, and it refuses outright once the room is past placement - which is the other half of
+ * what went wrong, since the effect that calls this fires on the caller's own opinion of the phase.
+ *
+ * Returns whether anything was actually cleared. `false` means the room has moved on and this
+ * request had nothing behind it - not an error, and specifically not something to retry.
+ *
+ * No fallback to the old direct write on an un-migrated project, deliberately, unlike most of the
+ * degrade-gracefully paths in this file. Falling back here would restore the exact write this exists
+ * to prevent, and a lobby that fails to tidy itself is a cosmetic problem that re-placing fixes.
+ */
+/**
+ * Blanks EVERY fleet in the room - the host's two reset paths, opening placement and ending a match.
+ *
+ * Same reasoning as resetOwnTeamState: the shape comes off the room row inside Postgres, so it
+ * cannot be written from a stale browser. Unlike that one it is allowed in any phase, because
+ * "End match" runs while the room is still in 'battle' or 'finished' and clearing the boards is the
+ * whole point of it. That grants the host nothing new - ending the match was already theirs to call.
+ *
+ * Returns how many fleet rows were actually rewritten, which is a number no browser could work out
+ * for itself.
+ */
+export async function resetRoomFleets(roomId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("reset_room_fleets", { p_room_id: roomId });
+  if (error) {
+    if (error.code === "PGRST202" || /reset_room_fleets/.test(error.message)) {
+      throw new Error(
+        "This room's database doesn't have the fleet-reset function yet - see " +
+          "supabase/migrations/20260825000000_no_fleet_reset_mid_match.sql."
+      );
+    }
+    throw error;
+  }
+  return typeof data === "number" ? data : 0;
 }
 
-export async function resetRoomToLobby(roomId: string, activeTeamsList: number[] = []): Promise<void> {
-  const { data: room } = await supabase.from("rooms").select().eq("id", roomId).single();
+export async function resetOwnTeamState(roomId: string, team: number): Promise<boolean> {
+  const { data, error } = await supabase.rpc("reset_team_fleet", {
+    p_room_id: roomId,
+    p_team: team,
+  });
+  if (error) {
+    if (error.code === "PGRST202" || /reset_team_fleet/.test(error.message)) {
+      throw new Error(
+        "This room's database doesn't have the fleet-reset function yet - see " +
+          "supabase/migrations/20260825000000_no_fleet_reset_mid_match.sql."
+      );
+    }
+    throw error;
+  }
+  return data === true;
+}
 
+/**
+ * Ends the match and puts the room back in the lobby.
+ *
+ * No longer takes the team list, and no longer re-reads the room: the only thing either was for was
+ * building blank fleets by hand, and Postgres does that now (see resetRoomFleets). Not reading the
+ * room is worth having on its own - it was read here to get a board size, and a board size read by
+ * one browser and written to everyone's fleet is exactly the mistake this file has now stopped
+ * making twice.
+ */
+export async function resetRoomToLobby(roomId: string): Promise<void> {
   // Deliberately does NOT archive first. A match abandoned part-way through isn't a result, and
   // recording it would pollute career records with half-played games - so ending early bins the
   // whole thing. Archiving happens only when a match actually reaches its conclusion, from the
@@ -908,24 +946,19 @@ export async function resetRoomToLobby(roomId: string, activeTeamsList: number[]
   // before it inserts.
   await supabase.from("deep_hides").delete().eq("room_id", roomId);
 
-  // Best-effort: reset any team's fleet we're actually allowed to write (our own, plus every
-  // team if the optional host policies are installed). Each client also self-heals on seeing
-  // 'lobby', so teams we can't touch here clean themselves up.
-  if (room) {
-    for (const team of activeTeamsList) {
-      await supabase
-        .from("fleets")
-        .update({
-          ship_grid: emptyGrid(room.board_size * room.board_size, false),
-          ship_index_grid: emptyGrid(room.board_size * room.board_size, -1),
-          ship_hits_remaining: initialHitsRemaining(room.ship_defs),
-          ship_sunk: emptyGrid(room.ship_defs.length, false),
-          placements: null,
-          placement_confirmed: false,
-        })
-        .eq("room_id", roomId)
-        .eq("team", team);
-    }
+  // Every fleet in the room, in one call, shaped by Postgres from the room row.
+  //
+  // This was a loop over `activeTeamsList` writing each row from the host's own copy of the room,
+  // which had two faults. It could only reach teams this browser knew about, and it stamped them
+  // with whatever board size and fleet that browser last heard of - the write that ruined
+  // SALTYLANTERN, in its host-side form. The function knows every team and reads the room itself.
+  //
+  // Still best-effort: a reset that cannot clear the boards must not strand everyone in a finished
+  // match, and each client self-heals on seeing 'lobby' anyway.
+  try {
+    await resetRoomFleets(roomId);
+  } catch (e) {
+    console.warn("Could not clear the fleets on the way back to the lobby.", e);
   }
 
   // Readiness goes as a whole, in one delete, rather than as a per-team update inside the loop

@@ -123,7 +123,7 @@ export function MatchDock({
           same buttons in the same order - see the `controls` fragment in room/BattlePhase. A control
           that exists in one layout and not the other is one nobody can find when they need it. */}
       <PauseControls room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
-      {isHost && <EndMatchButton roomId={roomId} activeTeamsList={activeTeamsList} />}
+      {isHost && <EndMatchButton roomId={roomId} />}
       <LeaveMatchButton playerId={myPlayerId} roomCode={roomCode} />
     </div>
   );

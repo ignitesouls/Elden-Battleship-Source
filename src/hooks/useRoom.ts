@@ -293,13 +293,34 @@ export function useRoom(code: string | undefined) {
         }
 
         async function readEverything() {
-          const [{ data: freshPlayers }, { data: freshAttacks }, { data: freshReady }, { data: freshRoom }] =
-            await Promise.all([
-              supabase.from("players").select().eq("room_id", roomId),
-              supabase.from("attacks").select().eq("room_id", roomId).order("created_at", { ascending: true }),
-              supabase.from("team_ready").select().eq("room_id", roomId),
-              supabase.from("rooms").select().eq("id", roomId).maybeSingle(),
-            ]);
+          const [
+            { data: freshPlayers },
+            { data: freshAttacks },
+            { data: freshReady },
+            { data: freshRoom },
+            { data: freshFleets },
+          ] = await Promise.all([
+            supabase.from("players").select().eq("room_id", roomId),
+            supabase.from("attacks").select().eq("room_id", roomId).order("created_at", { ascending: true }),
+            supabase.from("team_ready").select().eq("room_id", roomId),
+            supabase.from("rooms").select().eq("id", roomId).maybeSingle(),
+            /**
+             * Fleets belong here too, and their absence is what SALTYLANTERN was built out of.
+             *
+             * Everything else in this room was repaired on every channel join; the fleet was the one
+             * thing that could only ever be learned from a realtime message, and a missed message
+             * was permanent. So `room` and `myFleet` refreshed on different clocks and could
+             * describe different moments - and the self-heal below reads BOTH to decide whether a
+             * board is last match's leftovers. Handed a fresh confirmed fleet beside a room still
+             * remembered as an empty lobby, it read exactly what it was built to read, and wiped a
+             * fleet in the middle of a live battle.
+             *
+             * One row for a player (RLS gives a crew their own team and nothing else) and every row
+             * for a spectator, which is the same split the initial read makes - so the assignment
+             * below has to make it too.
+             */
+            supabase.from("fleets").select().eq("room_id", roomId),
+          ]);
           if (cancelled) return;
           setState((prev) => {
             const room = (freshRoom as Room) ?? prev.room;
@@ -307,14 +328,24 @@ export function useRoom(code: string | undefined) {
             const attacks = (freshAttacks as Attack[]) ?? prev.attacks;
             const teamReady = (freshReady as TeamReady[]) ?? prev.teamReady;
 
+            const fleets = (freshFleets as Fleet[]) ?? [];
+            const myTeam = prev.myPlayer?.team;
+            const spectating = prev.myPlayer != null && (myTeam === null || myTeam === undefined);
+            // `?? prev.myFleet` rather than null: a read that came back empty means RLS showed us
+            // nothing this pass, which is not the same as the fleet having gone away.
+            const myFleet = spectating ? prev.myFleet : fleets.find((f) => f.team === myTeam) ?? prev.myFleet;
+            const revealedFleets = spectating ? fleets : prev.revealedFleets;
+
             // Stringified rather than shallow-compared: `rooms` carries ship_defs and board_perm,
-            // which come back as fresh arrays every read and would report a change on every pass.
-            // It's one small object, only on a resync.
+            // and a fleet is four arrays, all of which come back as fresh arrays every read and
+            // would report a change on every pass. Small objects, only on a resync.
             const roomSame = JSON.stringify(room) === JSON.stringify(prev.room);
             const playersSame = sameRows(players, prev.players);
             const attacksSame = sameRows(attacks, prev.attacks);
             const readySame = sameRows(teamReady, prev.teamReady);
-            if (roomSame && playersSame && attacksSame && readySame) return prev;
+            const myFleetSame = JSON.stringify(myFleet) === JSON.stringify(prev.myFleet);
+            const revealedSame = JSON.stringify(revealedFleets) === JSON.stringify(prev.revealedFleets);
+            if (roomSame && playersSame && attacksSame && readySame && myFleetSame && revealedSame) return prev;
 
             return {
               ...prev,
@@ -322,6 +353,8 @@ export function useRoom(code: string | undefined) {
               players: playersSame ? prev.players : players,
               attacks: attacksSame ? prev.attacks : attacks,
               teamReady: readySame ? prev.teamReady : teamReady,
+              myFleet: myFleetSame ? prev.myFleet : myFleet,
+              revealedFleets: revealedSame ? prev.revealedFleets : revealedFleets,
             };
           });
         }
@@ -613,6 +646,7 @@ export function useRoom(code: string | undefined) {
   // physically cannot clear everyone else's board - each client clears its own instead as soon
   // as it sees the room back in 'lobby' with stale data still on its fleet.
   const resettingRef = useRef(false);
+  const refusedRef = useRef<string | null>(null);
   useEffect(() => {
     const room = state.room;
     const myFleet = state.myFleet;
@@ -661,10 +695,23 @@ export function useRoom(code: string | undefined) {
     if (!misshapen && !myFleet.placements && !myFleet.placement_confirmed) return; // already clean
     if (resettingRef.current) return;
 
+    /**
+     * A refusal is final for this fleet, not something to try again on the next render.
+     *
+     * reset_team_fleet returns false when the room has moved past placement - which is precisely
+     * the state this effect used to be dangerous in, and is now the state it gets told about. Every
+     * input above changes on more or less every realtime message in the room, so without this the
+     * refusal would be re-requested a few times a second for the rest of the match. Keyed on the
+     * fleet rather than latched outright, so a genuinely new fleet row is still looked at.
+     */
+    const key = `${room.id}:${team}:${myFleet.placement_confirmed}:${myFleet.ship_grid?.length ?? 0}`;
+    if (refusedRef.current === key) return;
+
     resettingRef.current = true;
     (async () => {
       try {
-        await resetOwnTeamState(room, team);
+        const cleared = await resetOwnTeamState(room.id, team);
+        if (!cleared) refusedRef.current = key;
       } catch {
         // Nothing actionable for the player here; the lobby still works and they can re-place.
       } finally {

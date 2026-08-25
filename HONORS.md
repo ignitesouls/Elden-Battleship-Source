@@ -46,7 +46,7 @@ The hardest thing on the list, and the only title ranked above what the water wa
 
 | # | | Title | Earned by | Kind |
 |---|---|---|---|---|
-| 1 | 🐐 | **Shaker's Protégé** | Every ship in an enemy fleet, every killing blow theirs. Needs the room's fleet recorded, and one crewmate stealing one finish ends it. | Ranked (a two-fleet sweep outranks one) |
+| 1 | 🐐 | **Shaker's Protégé** | Every ship in an enemy fleet, every killing blow theirs. Needs the room's fleet recorded, a crew of **three or more**, and one crewmate stealing one finish ends it. | Ranked (a two-fleet sweep outranks one) |
 
 ### What the water was hiding
 
@@ -143,6 +143,13 @@ fleet is also the top sinker, so ranked below the Admiralty they would be handed
 while the far better story went untold. It is the hardest title on the list to get: it takes both the
 shooting and a whole match in which nobody on your own side closes out a single hull. The icon is 🐐
 rather than the man himself: Unicode has no Faker, and the GOAT is as close as the emoji set gets.
+
+It takes a crew of three, and that floor is not decoration. The claim is that nobody ELSE on your side
+closed out a hull, and in a duel there is nobody else - so the title was unconditional for whoever won,
+and all four times it was ever awarded were crews of one. The last of those went to a fleet that a bug
+had wiped off the board mid-battle, so its owner could not be hit, could not be sunk, and could not
+lose. Three is the same line bossSetForRoster already draws between a small room and a full one, and
+those four titles were taken back off the record when the floor landed.
 
 **Ishmael** is the opposite end of the same match — "and I only am escaped alone to tell thee". It is
 one claim per wrecked fleet rather than a cascade: a crewmate who did less is a worse survivor than

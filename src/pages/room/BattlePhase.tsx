@@ -691,7 +691,7 @@ export function BattlePhase({
           and the two must never be adjacent enough to misclick: stopping the clock and binning the
           match are a long way apart in consequence. */}
       <PauseControls room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
-      {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
+      {isHost && <EndMatchButton roomId={room.id} />}
       <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
       {/* Last item in the right-hand column, so it sits bottom-right of the match screen -
           in view for the whole game, which is the point (see MatchInfoBox). */}

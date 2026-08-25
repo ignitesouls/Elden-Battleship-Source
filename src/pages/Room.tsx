@@ -257,7 +257,7 @@ export function Room() {
           {/* A spectating host still runs the room. Without this the only person who can open the
               next match had no button to do it with. */}
           <div className="stack" style={{ width: "min(320px, 100%)" }}>
-            {myPlayer.is_host && <PlayAgainButton room={room} activeTeamsList={teamsList} />}
+            {myPlayer.is_host && <PlayAgainButton room={room} />}
             <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} spectating />
           </div>
         </div>
@@ -885,7 +885,7 @@ function SpectatorView({
         {myPlayer.is_host && (
           <PauseControls room={room} players={players} myPlayerId={myPlayer.id} isHost />
         )}
-        {myPlayer.is_host && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
+        {myPlayer.is_host && <EndMatchButton roomId={room.id} />}
         <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} spectating />
       </div>
 
@@ -1086,7 +1086,7 @@ function FinishedView({
           host has gone dark isn't stuck: presence exposes a "Become host" takeover in the lobby. */}
       <div className="stack" style={{ width: "min(320px, 100%)", gap: "0.4rem" }}>
         {isHost ? (
-          <PlayAgainButton room={room} activeTeamsList={activeTeamsList} />
+          <PlayAgainButton room={room} />
         ) : (
           <p className="muted" style={{ textAlign: "center", margin: 0 }}>
             Waiting for the host to start a new match...
@@ -1107,7 +1107,7 @@ function FinishedView({
  * component - a host who isn't on a fleet sees the spectator's finished screen, and that screen
  * previously had no way to start the next game.
  */
-function PlayAgainButton({ room, activeTeamsList }: { room: RoomType; activeTeamsList: number[] }) {
+function PlayAgainButton({ room }: { room: RoomType }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1115,7 +1115,7 @@ function PlayAgainButton({ room, activeTeamsList }: { room: RoomType; activeTeam
     setBusy(true);
     setError(null);
     try {
-      await resetRoomToLobby(room.id, activeTeamsList);
+      await resetRoomToLobby(room.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);

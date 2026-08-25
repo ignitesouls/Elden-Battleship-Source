@@ -381,6 +381,27 @@ interface Honor {
  * tonight. Inserting a new one is free - the archive stores titles, not positions, so every held
  * record keeps its title and simply reads a rung further down a longer list.
  */
+/**
+ * The smallest crew Shaker's Protégé can be earned in.
+ *
+ * The title's whole claim is that nobody ELSE on your side closed out a hull, and in a small crew
+ * that is not a deed, it is arithmetic. In a 1v1 it is unconditional: there is nobody else who could
+ * have taken a killing blow, so beating the other fleet at all wins the rarest thing on this list -
+ * which is what SALTYLANTERN handed out, to a player whose own fleet was never on the board.
+ *
+ * Three is the same line the rest of the app already draws between a small room and a full one:
+ * bossSetForRoster switches a room off the 2v2 cut of the boss board when a crew reaches three, so
+ * "3v3 or bigger" already means something specific here and this is that. Measured on the SWEEPER'S
+ * OWN crew rather than on the room, because that is the crew the claim is about - a lone gunner
+ * facing a six-strong fleet has still beaten nobody to the punch.
+ */
+const SHAKER_MIN_CREW = 3;
+
+/** How many people were on one fleet. `stats` is seeded from the roster, so non-firers count. */
+function crewSize(c: HonorContext, team: number): number {
+  return c.stats.filter((s) => s.team === team).length;
+}
+
 const HONORS: Honor[] = [
   {
     title: "Shaker's Protégé",
@@ -405,6 +426,8 @@ const HONORS: Honor[] = [
       for (const [team, hulls] of wipedFleets(c)) {
         const finisher = hulls[0].finisher;
         if (!finisher || hulls.some((h) => h.finisher !== finisher)) continue;
+        // Only a crew big enough for "alone" to mean anything - see SHAKER_MIN_CREW.
+        if (crewSize(c, finisher.team) < SHAKER_MIN_CREW) continue;
         const teams = sweeps.get(finisher);
         if (teams) teams.push(team);
         else sweeps.set(finisher, [team]);

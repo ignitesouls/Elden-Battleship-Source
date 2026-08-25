@@ -329,6 +329,9 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
   const ada = player('p1', 'Ada', 0)
   const cid = player('p2', 'Cid', 0)
   const bo = player('p3', 'Bo', 1)
+  // Ada's crew has to be three strong for the title to exist at all - see SHAKER_MIN_CREW. Dot
+  // never fires; she is here to be somebody who COULD have taken a finish and didn't.
+  const dot = player('p4', 'Dot', 0)
 
   const cruiser: Hull = { name: 'Cruiser', size: 3, row: 0, col: 0, horizontal: true }
   const submarine: Hull = { name: 'Submarine', size: 3, row: 3, col: 3, horizontal: false }
@@ -351,7 +354,7 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
     log.shot(ada, 1, cell(5, 3), 'sunk', submarine)
     log.shot(ada, 1, cell(9, 8), 'hit')
     log.shot(last, 1, cell(9, 9), 'sunk', destroyer)
-    return buildMatchReport(fleet, [ada, cid, bo], log.attacks)
+    return buildMatchReport(fleet, [ada, cid, dot, bo], log.attacks)
   }
 
   const swept = sweep(ada)
@@ -375,9 +378,40 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
     log.shot(ada, 1, cell(0, 2), 'sunk', cruiser)
     log.shot(ada, 1, cell(9, 8), 'hit')
     log.shot(ada, 1, cell(9, 9), 'sunk', destroyer)
-    return buildMatchReport(room(), [ada, cid, bo], log.attacks)
+    return buildMatchReport(room(), [ada, cid, dot, bo], log.attacks)
   })()
   check('and an unrecorded fleet earns nobody the sweep', !titles(unknown).includes("Shaker's Protégé"), titles(unknown).join(', '))
+
+  /**
+   * The same clean sweep, by a crew too small for it to be a feat.
+   *
+   * This is SALTYLANTERN, where a 1v1 handed the rarest title on the list to the only gunner who
+   * could ever have earned it - and did it in a match where his own fleet had been wiped off the
+   * board by a bug, so he could not lose either. Nobody else on your side taking a finish is only a
+   * deed when there is somebody else on your side.
+   */
+  const twoStrong = (() => {
+    const log = new Log()
+    log.shot(ada, 1, cell(0, 0), 'hit')
+    log.shot(ada, 1, cell(0, 1), 'hit')
+    log.shot(ada, 1, cell(0, 2), 'sunk', cruiser)
+    log.shot(ada, 1, cell(3, 3), 'hit')
+    log.shot(ada, 1, cell(4, 3), 'hit')
+    log.shot(ada, 1, cell(5, 3), 'sunk', submarine)
+    log.shot(ada, 1, cell(9, 8), 'hit')
+    log.shot(ada, 1, cell(9, 9), 'sunk', destroyer)
+    return buildMatchReport(fleet, [ada, cid, bo], log.attacks)
+  })()
+  check(
+    'a crew of two never earns the sweep, however clean it was',
+    !titles(twoStrong).includes("Shaker's Protégé"),
+    titles(twoStrong).join(', ')
+  )
+  check(
+    'and the gunner is still honored for the shooting itself',
+    given(twoStrong).length > 0,
+    given(twoStrong).join(', ')
+  )
 }
 
 // -- 1e. Ishmael: the best gun on a fleet that went down with all hands -----
@@ -850,9 +884,11 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
     swept.shot(ada, 1, cell(0, 0), 'hit')
     swept.shot(ada, 1, cell(0, 1), 'sunk', hull)
     swept.shot(ada, 1, home, 'miss')
+    // A crew of three, because the title needs one now (SHAKER_MIN_CREW). Neither crewmate fires,
+    // so Ada is still the only claimant to every shooting title in the list.
     const sweep = buildMatchReport(
       { ...r, ship_defs: [{ name: 'Destroyer', size: 2 }] },
-      [ada, bo],
+      [ada, player('p3', 'Cid', 0), player('p4', 'Dot', 0), bo],
       swept.attacks,
       [hide(home, 'whale')]
     )
@@ -1054,7 +1090,9 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
     log.shot(ada, 1, cell(0, 0), 'sunk', sweep[0])
     log.shot(ada, 1, cell(1, 1), 'sunk', sweep[1])
     log.shot(bo, 0, cell(9, 9), 'miss')
-    const report = buildMatchReport(r, [ada, bo], log.attacks)
+    // Three on Ada's fleet, which the title now requires - see SHAKER_MIN_CREW. What is being
+    // checked here is that a GUARANTEED title never goes to the draw, not the crew rule.
+    const report = buildMatchReport(r, [ada, player('p3', 'Cid', 0), player('p4', 'Dot', 0), bo], log.attacks)
     check(
       "a wiped fleet always earns its taker Shaker's Protégé, draw or no draw",
       awarded(report, "Shaker's Protégé") === 'Ada',

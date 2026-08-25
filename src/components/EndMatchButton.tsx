@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { resetRoomToLobby } from "../lib/rooms";
 
-export function EndMatchButton({ roomId, activeTeamsList }: { roomId: string; activeTeamsList: number[] }) {
+export function EndMatchButton({ roomId }: { roomId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,7 +10,7 @@ export function EndMatchButton({ roomId, activeTeamsList }: { roomId: string; ac
     setBusy(true);
     setError(null);
     try {
-      await resetRoomToLobby(roomId, activeTeamsList);
+      await resetRoomToLobby(roomId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

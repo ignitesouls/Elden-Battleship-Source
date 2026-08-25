@@ -346,7 +346,7 @@ export function PlacementPhase({
             />
           ))}
 
-          {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
+          {isHost && <EndMatchButton roomId={room.id} />}
           <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
         </div>
       </div>
@@ -373,7 +373,7 @@ export function PlacementPhase({
           <div style={{ width: "100%", textAlign: "left" }}>
             <SeedBox room={room} />
           </div>
-          {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
+          {isHost && <EndMatchButton roomId={room.id} />}
           <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
         </div>
       </div>
@@ -479,7 +479,7 @@ export function PlacementPhase({
         <button className="primary" disabled={!allPlaced || !allValid || saving} onClick={handleConfirm}>
           Confirm fleet
         </button>
-        {isHost && <EndMatchButton roomId={room.id} activeTeamsList={activeTeamsList} />}
+        {isHost && <EndMatchButton roomId={room.id} />}
         <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
       </div>
       </div>
