@@ -13,42 +13,54 @@ interface Props {
    * Without it, ships can't be offered at all.
    */
   rejoinCode?: string | null;
-  /** Every fleet in the room, so the board source can be pointed at one of them. */
+  /** Every fleet in the room, so the box can offer one set of sources per crew. */
   teams?: number[];
 }
 
 /**
- * The player's OBS sources: the same three the caster gets, one only a player can have, plus a few
- * decisions of their own.
+ * Who a scene is being built for. A crew, or the desk.
  *
- * -- Why this used to be a form and isn't any more --
+ * One type rather than a team plus an `isCaster` flag, because they are the same choice: every
+ * source below is decided by this one value, and two pieces of state that must never both be set
+ * is a bug waiting for the one render that sets them both.
+ */
+type Audience = number | "caster";
+
+/**
+ * The OBS sources, chosen by WHO IS STREAMING rather than by what each source does.
  *
- * It built one all-in-one HUD column and offered seven controls to shape it: which edge to hug,
- * whether to draw boards, one board or two, three cell sizes, boss names on or off, ships on or
- * off. Every one of those existed to make a 200px-wide strip carry a whole match, and most were the
- * same question in another form: is this readable? The strip could only ever answer no.
+ * -- Why this is a role picker and not a form -----------------------------------------------------
  *
- * The separate sources answer it properly: a full-size board that can be zoomed, a clock, a colour
- * key, and - for a player who wants chat to see the fleet - a small board of their own ships, each
- * placed where the streamer wants it. What survives of that form is only what a streamer cannot
- * settle by dragging a source around in OBS: whether their own ships go on stream, and the two
- * scene-wide settings below, how solid it all is and how large the text is. The rest of those seven
- * controls were layout, and layout belongs in OBS.
+ * It used to be one flat list of six sources with the decisions spread across it: which fleet's
+ * board, ships on or off, a note on the clock row saying you could type ?odds=1 onto it. Every one
+ * of those was the same question in another costume - what am I, a player or a caster? - and the
+ * box made a streamer answer it once per row, in the vocabulary of the source rather than their
+ * own. A player setting up at 3am had to know that "the board" meant the board of shots fired AT
+ * them, that their own hunting board wasn't on the list at all, and that the odds bar sitting in
+ * the middle of it was not for them.
  *
- * (The old column still exists at /overlay/:code with all its query parameters, for anyone running
- * one. It just isn't something anyone has to configure here to get started.)
+ * So the question is asked once, at the top, and the list answers it. A crew gets the two boards
+ * they already play off and nothing they would have to think about; the desk gets the boards it
+ * drives and the numbers it reads. Nobody is offered a source that would be wrong for them.
  *
- * -- Why this is worth opening in the LOBBY ---------------------------------------------------
+ * -- The odds -------------------------------------------------------------------------------------
  *
- * A stream scene gets built before the match, not during it, so the fleet chooser has to work in a
- * lobby: one fleet in the room, or none picked yet, and it still has to let you say which board is
- * yours. It used to hide itself until two fleets had players. That meant the first person into the
- * room, usually the one streaming and there early to set up, was the one person who couldn't. They
- * got the all-fleets fallback instead, pointed at nobody in particular.
+ * The win-probability bar is a caster's instrument. It is an evaluation bar: a player who can see
+ * their own odds swing mid-match is being told something about the shape of the board that the
+ * match is supposed to make them work out. So it is on the caster's clock and is not offered to a
+ * crew at all.
  *
- * And because the box is opened before you join a fleet as often as after, the board follows your
- * fleet until you overrule it. Opening this, then picking Blue, then finding your source still
- * aimed at "all" is a trap that only springs on stream.
+ * Said plainly because it cannot be enforced and pretending otherwise would be worse: the model
+ * runs on the public attack log in the viewer's own browser (see lib/victoryOdds), so there is
+ * nothing to authenticate against and never was. Keeping it off the player list is a matter of not
+ * handing somebody a loaded gun, not of locking the armoury.
+ *
+ * -- Why this is worth opening in the LOBBY -------------------------------------------------------
+ *
+ * A stream scene gets built before the match, not during it, so this has to work in a lobby: one
+ * fleet in the room, or none picked yet, and it still has to name the sources. Hence the audience
+ * following your fleet until you overrule it - opening this, then picking Blue, then finding your
+ * sources still aimed at nobody is a trap that only springs on stream.
  *
  * Built from window.location so the URLs stay correct on localhost, on GitHub Pages under its
  * /Elden-Battleship/ base, and anywhere else it gets hosted - hardcoding the deployed origin would
@@ -56,107 +68,113 @@ interface Props {
  */
 export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const [open, setOpen] = useState(false);
-  const [showShips, setShowShips] = useState(false);
   /**
-   * Which fleet's board goes on stream, once the player has said.
+   * Who this scene is for, once they've said.
    *
-   * `undefined` means they haven't - which is not the same as `null` ("all fleets, deliberately").
-   * Until they do, the board follows whichever fleet they join, so the lobby order that everyone
-   * actually uses - open this, then pick a colour - ends up with a source aimed at themselves.
+   * `undefined` means they haven't. Until then the box follows whichever fleet they joined, so the
+   * lobby order everybody actually uses - open this, then pick a colour - lands on their own crew.
    */
-  const [pickedTeam, setPickedTeam] = useState<number | null | undefined>(undefined);
-  /** How solid the whole scene is on stream. One setting, written into all three sources. */
+  const [picked, setPicked] = useState<Audience | undefined>(undefined);
+  /** How solid the scene is on stream. One setting, written into every source that draws. */
   const [opacity, setOpacity] = useState(1);
   /**
-   * How large the text is on stream. One setting, written into all three sources - same reasoning as
-   * the transparency slider below it, spelled out in lib/overlayText.
+   * How large the text is on stream. One setting, written into every source that draws text - same
+   * reasoning as the transparency slider below it, spelled out in lib/overlayText.
    */
   const [textSize, setTextSize] = useState(1);
 
   const myTeam = team !== null && team !== undefined ? team : null;
-  const boardTeam = pickedTeam !== undefined ? pickedTeam : myTeam;
-  const canShowShips = Boolean(rejoinCode) && myTeam !== null;
+  const audience: Audience | undefined = picked !== undefined ? picked : myTeam ?? undefined;
+  const isCaster = audience === "caster";
+  /** The crew this scene is for, or null at the desk. */
+  const crew = typeof audience === "number" ? audience : null;
+  /** Your own fleet can only be drawn with your own rejoin code, and only on your own board. */
+  const canDrawFleet = Boolean(rejoinCode) && myTeam !== null && crew === myTeam;
 
   /**
-   * The fleets this board can be pointed at: everyone in the room, plus your own.
+   * The fleets this box can build a scene for: everyone in the room, plus your own.
    *
    * Your own is unioned in rather than assumed present because `teams` is the fleets that have
    * players, and in a lobby you may be the only one in it - the list would otherwise be missing the
    * one entry that matters to the person reading it.
    */
-  const boardOptions = Array.from(new Set([...(teams ?? []), ...(myTeam !== null ? [myTeam] : [])])).sort(
+  const crewOptions = Array.from(new Set([...(teams ?? []), ...(myTeam !== null ? [myTeam] : [])])).sort(
     (a, b) => a - b
   );
-  // Ships come from the fleet the rejoin code unlocks, so they can only ever appear on that fleet's
-  // own board. Asking for them while watching an opponent's board would be a promise we can't keep.
-  const shipsApply = showShips && canShowShips && boardTeam === myTeam;
 
   const base = `${window.location.origin}${window.location.pathname}`;
 
   /**
-   * The two settings every source shares, appended last.
+   * The two settings every drawing source shares, appended last.
    *
    * Only written when they are actually doing something - a URL full of defaults is harder to read,
-   * and harder to hand-edit afterwards, which is the escape hatch for anyone who wants one source to
-   * differ from the other two.
+   * and harder to hand-edit afterwards, which is the escape hatch for anyone who wants one source
+   * to differ from the rest.
    */
   const withScene = (q: URLSearchParams) => {
     if (opacity < 1) q.set("opacity", opacity.toFixed(2));
     if (textSize !== 1) q.set("text", String(textSize));
     return q.toString();
   };
-
-  const boardQuery = new URLSearchParams();
-  // `pin=1` rather than an empty query when every fleet is wanted: a board source with no
-  // parameters at all is the CASTER's, waiting to be aimed from a control page. See pinnedView.
-  if (boardTeam !== null) boardQuery.set("team", String(boardTeam));
-  else boardQuery.set("pin", "1");
-  // The credential is attached only when it is actually going to be used - no reason to leave a
-  // bearer token sitting in an OBS config that isn't drawing ships.
-  if (shipsApply) boardQuery.set("key", rejoinCode!);
-
-  const clockQuery = new URLSearchParams();
-  if (myTeam !== null) clockQuery.set("team", String(myTeam));
-
-  const boardUrl = `${base}#/overlay-board/${roomCode}?${withScene(boardQuery)}`;
-  const clockQs = withScene(clockQuery);
-  const clockUrl = `${base}#/overlay-timer/${roomCode}${clockQs ? `?${clockQs}` : ""}`;
-  const keyQs = withScene(new URLSearchParams());
-  const keyUrl = `${base}#/overlay-key/${roomCode}${keyQs ? `?${keyQs}` : ""}`;
+  const url = (route: string, qs: string) => `${base}#/${route}/${roomCode}${qs ? `?${qs}` : ""}`;
 
   /**
-   * The odds source. Takes the scene settings and nothing else - it has no fleet of its own.
+   * The crew's hunting board: their own shots, on the board they play off. See the ?fire= note in
+   * pages/OverlayBoard.
    *
-   * Pointedly not given `team`: every other source takes one to mark whose stream this is, but the
-   * odds are a statement about the whole room and highlighting one fleet inside them would be the
-   * beginning of an argument about which number the source is really for.
+   * No rejoin code goes anywhere near it. Which squares a fleet has fired at, and what came back,
+   * is in the public attack log already - so this source works the moment it is pasted in, and a
+   * player who hands the URL to a co-streamer has handed over nothing they didn't have.
    */
-  const oddsQs = withScene(new URLSearchParams());
-  const oddsUrl = `${base}#/overlay-odds/${roomCode}${oddsQs ? `?${oddsQs}` : ""}`;
+  const fireQuery = new URLSearchParams();
+  if (crew !== null) {
+    fireQuery.set("team", String(crew));
+    fireQuery.set("fire", "1");
+  }
+  const fireUrl = url("overlay-board", withScene(fireQuery));
 
   /**
-   * The small board of your own ships, offered only once you've said you want them on stream.
+   * The caster's board: no parameters at all.
    *
-   * Unlike the big board this doesn't take a `team` at all - the rejoin code names one fleet and
-   * that is the only fleet it can draw - so it is built off `showShips` rather than `shipsApply`.
-   * Which board you have pointed at makes no difference to it: a player watching an opponent's
-   * board still gets their own fleet in the corner.
+   * That is what puts it under the control page rather than pinning it - see pinnedView. The scene
+   * settings are deliberately left off for the same reason: transparency and text size are two of
+   * the sliders on the desk, and writing them into the URL would pin the board and disconnect the
+   * very page the caster is about to drive it from.
+   */
+  const casterBoardUrl = url("overlay-board", "");
+
+  /**
+   * The player's own fleet panel - the small board from their play screen, hulls and all.
    *
-   * `text` is dropped from the scene settings on purpose. This source has no text in it to size -
-   * it trades square names for square colours, which is the whole reason it exists. See
+   * `text` is dropped from the scene settings on purpose. This source has no text in it to size: it
+   * trades square names for square colours, which is the whole reason it exists. See
    * pages/OverlayFleet.
    */
   const fleetQuery = new URLSearchParams();
-  if (showShips && canShowShips) fleetQuery.set("key", rejoinCode!);
+  if (canDrawFleet) fleetQuery.set("key", rejoinCode!);
   if (opacity < 1) fleetQuery.set("opacity", opacity.toFixed(2));
-  const fleetUrl = `${base}#/overlay-fleet/${roomCode}?${fleetQuery.toString()}`;
+  const fleetUrl = url("overlay-fleet", fleetQuery.toString());
+
+  /**
+   * Two clocks, and the only difference between them is the odds band.
+   *
+   * A player's carries their fleet, which is what marks their own hulls out in the row of them.
+   * A caster's carries `odds=1` and no fleet: the odds are a statement about the whole room, and
+   * highlighting one crew inside them would be the beginning of an argument about which number the
+   * source is really for.
+   */
+  const clockQuery = new URLSearchParams();
+  if (crew !== null) clockQuery.set("team", String(crew));
+  else clockQuery.set("odds", "1");
+  const clockUrl = url("overlay-timer", withScene(clockQuery));
+
+  const keyUrl = url("overlay-key", withScene(new URLSearchParams()));
 
   /**
    * The board's sound, with no picture attached - see pages/OverlayAudio.
    *
-   * Takes the fleet only to decide which sting plays at the end, which is why it carries `myTeam`
-   * rather than `boardTeam`: a player watching an opponent's board has not changed sides, and the
-   * fanfare should still be about them.
+   * Takes the crew only to decide which sting plays at the end, so the desk's copy carries none:
+   * a caster has no side to be cheered for.
    *
    * Neither scene setting applies, so neither is written: `opacity` is about a picture this source
    * hasn't got, and `text` is about names it never draws.
@@ -168,9 +186,10 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
    * hold the only one.
    */
   const audioQuery = new URLSearchParams();
-  if (myTeam !== null) audioQuery.set("team", String(myTeam));
-  const audioQs = audioQuery.toString();
-  const audioUrl = `${base}#/overlay-audio/${roomCode}${audioQs ? `?${audioQs}` : ""}`;
+  if (crew !== null) audioQuery.set("team", String(crew));
+  const audioUrl = url("overlay-audio", audioQuery.toString());
+
+  const castUrl = url("cast", "");
 
   if (!open) {
     return (
@@ -195,216 +214,248 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
       </span>
 
       {/*
-        Which fleet is yours - the first thing to settle, and the one that has to work in a lobby.
-        Shown whatever the room looks like, including a room containing only you: see the note on
-        boardOptions and the lobby paragraph above.
+        The one question, asked once. Everything below is its answer - see the role-picker note at
+        the top of the file. Shown whatever the room looks like, including a room containing only
+        you: see crewOptions and the lobby paragraph.
       */}
       <div className="stack" style={{ gap: "0.25rem" }}>
-        <span style={{ fontSize: "0.78rem" }}>Which fleet's board goes on stream?</span>
-        {myTeam === null ? (
-          <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            You're not on a fleet yet. Pick one in the lobby and the board follows it. Or leave
-            this on <em>All fleets</em> to show every fleet's shots on one board.
-          </span>
-        ) : (
-          <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Your own board shows the shots fired <em>at</em> you. An opponent's board shows your
-            shots landing.
-          </span>
-        )}
+        <span style={{ fontSize: "0.78rem" }}>Who's streaming?</span>
         <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
-          {boardOptions.map((t) => (
+          {crewOptions.map((t) => (
             <button
               key={t}
-              onClick={() => setPickedTeam(t)}
+              onClick={() => setPicked(t)}
               style={{
                 fontSize: "0.74rem",
                 color: teamHex(t),
-                borderColor: boardTeam === t ? "var(--accent)" : undefined,
+                borderColor: audience === t ? "var(--accent)" : undefined,
               }}
             >
               {t === myTeam ? `${teamName(t)} (you)` : teamName(t)}
             </button>
           ))}
           <button
-            onClick={() => setPickedTeam(null)}
-            style={{ fontSize: "0.74rem", borderColor: boardTeam === null ? "var(--accent)" : undefined }}
+            onClick={() => setPicked("caster")}
+            style={{ fontSize: "0.74rem", borderColor: isCaster ? "var(--accent)" : undefined }}
           >
-            All fleets
+            Caster
           </button>
         </div>
+        <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+          {isCaster
+            ? "The desk: a board you aim from the control page, and the clock with the odds bar in it."
+            : "A crew's own scene - the two boards they're playing off, and nothing they'd have to think about."}
+        </span>
       </div>
 
-      {/* Everything else about these sources is either fixed or a matter of where you drag them
-          in OBS. */}
-      <div className="stack" style={{ gap: "0.25rem" }}>
-        <span style={{ fontSize: "0.78rem" }}>Show my ships on stream?</span>
-        <div className="row" style={{ gap: "0.3rem" }}>
-          <button
-            onClick={() => setShowShips(false)}
-            style={{ flex: 1, fontSize: "0.74rem", borderColor: showShips ? undefined : "var(--accent)" }}
-          >
-            No - snipe-safe
-          </button>
-          <button
-            onClick={() => setShowShips(true)}
-            disabled={!canShowShips}
-            title={canShowShips ? undefined : "Needs a fleet and a rejoin code"}
-            style={{
-              flex: 1,
-              fontSize: "0.74rem",
-              opacity: canShowShips ? 1 : 0.5,
-              borderColor: showShips && canShowShips ? "var(--hit)" : undefined,
-            }}
-          >
-            Yes - show them
-          </button>
-        </div>
-        {/* Gated on the toggle rather than on shipsApply, because the Fleet source below carries the
-            credential and draws the hulls whatever the big board is pointed at. */}
-        {showShips && canShowShips && (
-          <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
-            <strong>
-              These URLs draw your ships and carry your rejoin code. Put them on stream only if you
-              want viewers to see your fleet, and share them with nobody.
-            </strong>
-          </span>
-        )}
-        {showShips && canShowShips && boardTeam !== myTeam && (
+      {/* A spectator who hasn't said which scene they're building. Offering them one crew's sources
+          at random would be worse than offering none. */}
+      {audience === undefined ? (
+        <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+          Pick a fleet above - or <em>Caster</em> - and the sources for it appear here. Joining a
+          fleet in the lobby picks it for you.
+        </span>
+      ) : (
+        <>
+          {/*
+            Text size, offered as named steps rather than a slider.
+
+            A slider is right for transparency, where every value in the range is as good as its
+            neighbour and what you want is the one that looks right over YOUR footage. Legibility
+            isn't like that: the question behind it is "who is watching, and on what", and the
+            answers are a handful of distinct situations rather than a continuum. Named steps say
+            what each one is for - which is the part a streamer setting up a scene at 3am actually
+            needs - and land on round numbers that stay round in the URL.
+          */}
+          <div className="stack" style={{ gap: "0.25rem" }}>
+            <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
+              <span style={{ fontSize: "0.78rem" }}>Text size</span>
+              <span className="muted" style={{ fontSize: "0.72rem" }}>
+                {TEXT_SIZE_OPTIONS.find((o) => o.value === textSize)?.note ?? `${textSize}x`}
+              </span>
+            </div>
+            <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
+              {TEXT_SIZE_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setTextSize(o.value)}
+                  title={o.note}
+                  aria-pressed={textSize === o.value}
+                  style={{
+                    fontSize: "0.74rem",
+                    borderColor: textSize === o.value ? "var(--accent)" : undefined,
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+              Sets the size of square names, coordinates, the clock and the key together. Text
+              never overflows: a size that doesn't fit draws as large as it can.
+            </span>
+          </div>
+
+          {/*
+            One slider for the whole scene rather than one per source. These are dropped into a
+            single layer over the same gameplay, and a board at half strength under a solid scorebug
+            looks like a mistake rather than a choice. Anyone who really does want them to differ can
+            still edit ?opacity= afterwards - the sources read the parameter, they just aren't asked
+            about it separately here.
+          */}
+          <div className="stack" style={{ gap: "0.25rem" }}>
+            <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
+              <span style={{ fontSize: "0.78rem" }}>Overlay transparency</span>
+              <span className="muted" style={{ fontSize: "0.72rem" }}>
+                {opacity >= 1 ? "solid" : `${Math.round(opacity * 100)}%`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={MIN_OPACITY}
+              max={1}
+              step={0.05}
+              value={opacity}
+              onChange={(e) => setOpacity(Number(e.target.value))}
+              aria-label="Overlay transparency"
+              style={{ width: "100%" }}
+            />
+            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+              {isCaster
+                ? "Fades the clock and the key over your footage."
+                : "Fades your gameplay through the boards. It's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move."}{" "}
+              {Math.round(MIN_OPACITY * 100)}% is as faint as it goes. To hide a source outright,
+              use OBS.
+            </span>
+          </div>
+
+          {/* Both settings above are written into the clock and the key, which nothing else drives.
+              The Board is the exception: it takes transparency and text size live off the control
+              page, and writing them into its URL would PIN it and disconnect the very desk the
+              caster is about to drive it from. See the casterBoardUrl note. */}
+          {isCaster && (
+            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+              Those two apply to the clock and the key. The Board takes its transparency, text size,
+              zoom and framing from the control page instead - set them there, mid-match, with the
+              board in front of you.
+            </span>
+          )}
+
+          {isCaster ? (
+            <>
+              <SourceRow
+                label="Board"
+                url={casterBoardUrl}
+                size="1000 x 1000"
+                note="the board you aim from the control page - zoom, pan and spotlight"
+              />
+              <SourceRow
+                label="Caster clock"
+                url={clockUrl}
+                size="1200 x 300"
+                note="the match clock, every fleet's hulls, and the odds bar under it"
+              />
+              <SourceRow
+                label="Key"
+                url={keyUrl}
+                size="1920 x 90"
+                note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+              />
+              <SourceRow
+                label="Audio"
+                url={audioUrl}
+                size="100 x 100"
+                note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+              />
+
+              {/* Not a browser source, and listed apart so nobody pastes it into OBS. */}
+              <div className="stack" style={{ gap: "0.15rem" }}>
+                <span style={{ fontSize: "0.78rem" }}>Control page</span>
+                <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+                  Open <a href={castUrl}>{castUrl}</a> in a normal browser window - not in OBS. It
+                  drives the Board source above: zoom, pan, spotlight, which fleets' markers show,
+                  and the transparency and text size for the scene.
+                </span>
+              </div>
+
+              <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+                The odds bar is a caster's instrument, so it's on this clock and not on a crew's. It
+                runs on the public shot log in the browser, so it isn't locked to this page - it's
+                simply not something to put in front of somebody who's still playing.
+              </span>
+            </>
+          ) : (
+            <>
+              {/* First, because it is the board the player is actually looking at. */}
+              <SourceRow
+                label="Fire board"
+                url={fireUrl}
+                size="1000 x 1000"
+                note={`${teamName(crew!)}'s own shots - the board they're playing off`}
+              />
+
+              {canDrawFleet ? (
+                <SourceRow
+                  label="Your fleet"
+                  url={fleetUrl}
+                  size="400 x 400"
+                  note="your ships and the damage they've taken - the small board from your screen"
+                />
+              ) : (
+                <div className="stack" style={{ gap: "0.15rem" }}>
+                  <span style={{ fontSize: "0.78rem" }}>Your fleet</span>
+                  <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+                    {myTeam === null
+                      ? "Only the crew themselves can put this on stream - it's drawn with their rejoin code, from this page, while they're on the fleet."
+                      : `You're on ${teamName(myTeam)}, so this is the one source you can't build for ${teamName(crew!)}. Pick your own fleet above to get it.`}
+                  </span>
+                </div>
+              )}
+
+              {/* The warning belongs on the row, not on a toggle three rows up: the decision is made
+                  at the moment the URL is copied, and that is the moment it has to be readable. */}
+              {canDrawFleet && (
+                <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
+                  <strong>
+                    The Fleet URL draws your ships and carries your rejoin code. Put it on stream
+                    only if you want viewers to see where your hulls are, and share it with nobody.
+                  </strong>
+                </span>
+              )}
+
+              <SourceRow
+                label="Clock"
+                url={clockUrl}
+                size="1200 x 200"
+                note="the match clock and every fleet's hulls, with yours marked"
+              />
+              <SourceRow
+                label="Key"
+                url={keyUrl}
+                size="1920 x 90"
+                note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+              />
+
+              {/* The one source with nothing to look at, so the size is a formality and the note has
+                  to do the whole job of saying what it is. Listed last for the same reason: it is
+                  the only one whose placement in the scene doesn't matter. */}
+              <SourceRow
+                label="Audio"
+                url={audioUrl}
+                size="100 x 100"
+                note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+              />
+            </>
+          )}
+
+          {/* Said here because the alternative is a streamer discovering it live and assuming their
+              source is broken. See lib/overlayReveal.ts. */}
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Ships only ever draw on your own board, so none appear on the {teamName(boardTeam!)}{" "}
-            board. The Fleet source below shows them anyway - it's always {teamName(myTeam!)}'s.
+            Square names, square colours and the colour key stay blank until the match starts, so
+            nobody can read the board during placement. That includes you.
           </span>
-        )}
-      </div>
-
-      {/*
-        Text size, offered as named steps rather than a slider.
-
-        A slider is right for transparency, where every value in the range is as good as its
-        neighbour and what you want is the one that looks right over YOUR footage. Legibility isn't
-        like that: the question behind it is "who is watching, and on what", and the answers are a
-        handful of distinct situations rather than a continuum. Named steps say what each one is for
-        - which is the part a streamer setting up a scene at 3am actually needs - and land on round
-        numbers that stay round in the URL.
-
-        Deliberately in the box rather than only in the URL: this is the setting most likely to be
-        wrong on the first try and most likely to need changing between one stream and the next.
-      */}
-      <div className="stack" style={{ gap: "0.25rem" }}>
-        <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-          <span style={{ fontSize: "0.78rem" }}>Text size</span>
-          <span className="muted" style={{ fontSize: "0.72rem" }}>
-            {TEXT_SIZE_OPTIONS.find((o) => o.value === textSize)?.note ?? `${textSize}x`}
-          </span>
-        </div>
-        <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
-          {TEXT_SIZE_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              onClick={() => setTextSize(o.value)}
-              title={o.note}
-              aria-pressed={textSize === o.value}
-              style={{
-                fontSize: "0.74rem",
-                borderColor: textSize === o.value ? "var(--accent)" : undefined,
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Sets the size of square names, coordinates, the clock and the key together. Text never
-          overflows: a size that doesn't fit draws as large as it can.
-        </span>
-      </div>
-
-      {/*
-        One slider for the whole scene rather than one per source.
-        These three are dropped into a single layer over the same gameplay, and a board at half
-        strength under a solid scorebug looks like a mistake rather than a choice. Anyone who really
-        does want them to differ can still edit ?opacity= on the one URL afterwards - the sources
-        read the parameter, they just aren't asked about it separately here.
-      */}
-      <div className="stack" style={{ gap: "0.25rem" }}>
-        <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-          <span style={{ fontSize: "0.78rem" }}>Overlay transparency</span>
-          <span className="muted" style={{ fontSize: "0.72rem" }}>
-            {opacity >= 1 ? "solid" : `${Math.round(opacity * 100)}%`}
-          </span>
-        </div>
-        <input
-          type="range"
-          min={MIN_OPACITY}
-          max={1}
-          step={0.05}
-          value={opacity}
-          onChange={(e) => setOpacity(Number(e.target.value))}
-          aria-label="Overlay transparency"
-          style={{ width: "100%" }}
-        />
-        <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Fades all three sources so your gameplay shows through. {Math.round(MIN_OPACITY * 100)}% is as faint
-          as it goes. To hide a source outright, use OBS.
-        </span>
-      </div>
-
-      <SourceRow
-        label="Board"
-        url={boardUrl}
-        size="1000 x 1000"
-        note={boardTeam !== null ? `${teamName(boardTeam)}'s board` : "every fleet's shots on one board"}
-      />
-
-      {/* Only shown once ships are wanted on stream. Offering it otherwise would be offering a
-          source that draws nothing, next to the toggle that is the reason it draws nothing. */}
-      {showShips && canShowShips && (
-        <SourceRow
-          label="Fleet"
-          url={fleetUrl}
-          size="400 x 400"
-          note="your ships, small - for showing chat where they are"
-        />
+        </>
       )}
-
-      <SourceRow
-        label="Clock"
-        url={clockUrl}
-        size="1200 x 200"
-        note="the match clock and every fleet's hulls - add ?odds=1 for the odds band under it"
-      />
-
-      <SourceRow
-        label="Odds"
-        url={oddsUrl}
-        size="900 x 300"
-        note="each fleet's chance of winning, and how it has moved - add ?graph=0 for the bar alone"
-      />
-
-      <SourceRow
-        label="Key"
-        url={keyUrl}
-        size="1920 x 90"
-        note="a thin strip for the bottom edge - add ?plate=0 for no backing"
-      />
-
-      {/* The one source with nothing to look at, so the size is a formality and the note has to do
-          the whole job of saying what it is. Listed last for the same reason: it is the only one
-          whose placement in the scene doesn't matter. */}
-      <SourceRow
-        label="Audio"
-        url={audioUrl}
-        size="100 x 100"
-        note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
-      />
-
-      {/* Said here because the alternative is a streamer discovering it live and assuming their
-          source is broken. See lib/overlayReveal.ts. */}
-      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        Square names, square colours and the colour key stay blank until the match starts, so nobody
-        can read the board during placement. That includes you.
-      </span>
     </div>
   );
 }

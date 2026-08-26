@@ -123,7 +123,9 @@
  * first. Half-opaque, they mix toward a third colour and a contested square reads as contested.
  */
 .ovb-board .bg-ship-overlay-inner {
-  opacity: 0.55;
+  /* Times the ink tier, not replaced by it: the halving above is about two hulls sharing one
+     square and has nothing to do with how faint the caster wants the source. Both are true. */
+  opacity: calc(0.55 * var(--ovl-a-ink, 1));
 }
 
 /* The coordinate gutter, when the caster turns it off. Hidden rather than removed so the board

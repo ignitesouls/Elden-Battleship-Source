@@ -1,0 +1,208 @@
+/**
+ * Board transparency, shared by every overlay source that draws a real board.
+ *
+ * Written against .ovl-fade / .ovl-fade-stage rather than one source's own classes, because the
+ * board source, the small fleet panel and the caster's monitor all draw the same BoardGrid and all
+ * take the same one slider. Two copies of the rules below would be two places for a tier to drift,
+ * and the whole point of the tiers is that they hold a fixed relationship to each other.
+ *
+ * Wear both classes to opt in: .ovl-fade on whatever element the board's palette resolves against,
+ * and .ovl-fade-stage on the box inside it that carries the board - they have to be different
+ * elements, see the note on the base paints below. Then set --ovl-a-bg on the stage and nothing
+ * else.
+ */
+
+/**
+ * ===========================================================================================
+ *  Transparency, in three tiers off one slider
+ * ===========================================================================================
+ *
+ * The caster has ONE control (see MIN_OPACITY and the slider in OverlayLinkBox), and it used to be
+ * a flat `opacity` on .ovl-fade-stage. That faded everything at the same rate, which is the one thing a
+ * faded board must not do. At 25% the water was see-through and so was the frame, the grid, every
+ * square name and every shot - the board stopped being a board and became a smudge over the
+ * gameplay. But a board is not one picture: it is water you WANT to see through, marks you need to
+ * read, and a skeleton that says where the squares are. Those three want different answers to the
+ * same question.
+ *
+ *   --ovl-a-bg     the water. The slider, whole. This is the setting the caster thinks they are
+ *                  making: how much of my gameplay shows through the blue.
+ *
+ *   --ovl-a-ink    square names, coordinates, shots, hulls, rings. Half the distance back to solid,
+ *                  so it fades WITH the board - the caster asked for a fainter overlay and has to
+ *                  get one - but always ahead of it. A viewer has to be able to read the square the
+ *                  caster just called out, and at 25% water this is still 62%.
+ *
+ *   --ovl-a-line   the frame and the grid lines. Floored at 85%. These carry almost no area, so
+ *                  keeping them near-solid costs the gameplay underneath nearly nothing, and they
+ *                  are what makes a faint board still legible AS a grid: a viewer can count squares
+ *                  across from a coordinate even when the water is nearly gone.
+ *
+ * All three are derived here rather than in TypeScript so the relationship between them is readable
+ * next to the paint it governs; the component sets --ovl-a-bg and nothing else.
+ */
+
+/**
+ * The base paints, captured on the FRAME so the stage below can redefine the same variables in
+ * terms of them. The same element would be a cycle; an ancestor is not, because a custom property's
+ * var() is substituted where it is declared - --ovl-cell-base resolves to the palette colour here,
+ * and the stage inherits that resolved colour rather than the reference.
+ */
+.ovl-fade {
+  --ovl-cell-base: var(--cell);
+  --ovl-line-base: var(--board-line);
+  --ovl-miss-base: var(--miss-fill);
+  --ovl-hit-base: var(--hit-fill);
+  --ovl-sunk-base: var(--sunk-fill);
+  --ovl-ship-base: var(--ship);
+}
+
+.ovl-fade-stage {
+  /* Overridden inline by the component. The fallback is what a source shows before the first cast
+     frame arrives, and solid is the right thing to be while the caster is still deciding. */
+  --ovl-a-bg: 1;
+  --ovl-a-ink: calc(var(--ovl-a-bg) + (1 - var(--ovl-a-bg)) * 0.5);
+  --ovl-a-line: calc(0.85 + 0.15 * var(--ovl-a-bg));
+}
+
+/**
+ * -- Why every faded colour below is written twice --
+ *
+ * color-mix() wants Chromium 111. An OBS a few versions back is CEF 103, and there it is a parse
+ * error - so each of these leads with the flat colour it is fading. An old source then draws the
+ * board it draws today, solid, and only the ink tier (plain `opacity`, supported everywhere) still
+ * responds to the slider. Worth the duplication: without the first declaration the second is simply
+ * dropped, and .bg-cell below has already given up painting its own water, so the board would come
+ * out as one flat slab with no squares on it at all.
+ *
+ * And why they are written out rather than held in a variable: a var() carrying an unsupported
+ * value fails at computed-value time, not parse time, which UNSETS the property instead of falling
+ * back to the declaration above it. The pattern only works with the function written in place.
+ */
+
+/**
+ * The water, and why it is painted HERE rather than on each square.
+ *
+ * .bg-grid's background is normally the grid lines: it shows through the 2px gaps between squares,
+ * and each opaque cell hides the rest of it. Fading the cells breaks that arrangement badly - the
+ * line colour sits BEHIND every square, so a half-transparent cell composites over it and the board
+ * stops letting anything through at all. Whatever the slider said, the gameplay stayed hidden.
+ *
+ * So the two layers swap jobs. This one background becomes the water for the whole board - every
+ * square, every gap, the coordinate gutter and the corner where its two arms meet - which means one
+ * layer at exactly --ovl-a-bg and nowhere composited twice. The lines are drawn back on top by the
+ * rule below.
+ *
+ * The gutter therefore takes the water's colour instead of the line colour it used to inherit from
+ * this background. Deliberate: it is the only way the corner square gets painted at all (nothing is
+ * rendered into that grid track), and a gutter that fades in step with the squares is easier to
+ * read over footage than one left a different shade of navy.
+ */
+.ovl-fade .bg-grid {
+  background: var(--ovl-cell-base);
+  background: color-mix(in srgb, var(--ovl-cell-base) calc(var(--ovl-a-bg) * 100%), transparent);
+  border-color: var(--ovl-line-base);
+  border-color: color-mix(in srgb, var(--ovl-line-base) calc(var(--ovl-a-line) * 100%), transparent);
+}
+
+/**
+ * Squares stop painting their own water - it is behind them now - and take over drawing the lines.
+ *
+ * A 1px shadow spread on every side, into a 2px gap with a square on both sides of it: each
+ * contributes half and the gap fills exactly. Outer edges spill their 1px under the frame's own
+ * border, which is the same colour, so the seam is invisible. .bg-cell carries no other box-shadow
+ * (the attribution ring and the spotlight are drawn in the marker layer, a sibling - see
+ * BoardGrid.css), so there is nothing here to preserve.
+ */
+.ovl-fade .bg-cell {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--ovl-line-base);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ovl-line-base) calc(var(--ovl-a-line) * 100%), transparent);
+}
+
+/**
+ * The region tint, now a wash over the water instead of a colour mixed into it.
+ *
+ * Scaled by the tier as well, or an unfired square - which is most of the board - would sit at 20%
+ * opaque over transparent water and the fade would visibly stop short. At full strength this
+ * composites to the same colour the players' board shows, which is the whole point of tinting the
+ * stream the same way in the first place.
+ */
+.ovl-fade .bg-cell-tinted.bg-empty {
+  /* The fallback is plain water rather than a tinted square, because the tint was a color-mix in
+     BoardGrid.css to begin with - an old source has never shown it and does not start now. */
+  background: var(--ovl-cell-base);
+  background: color-mix(
+    in srgb,
+    var(--bg-region, transparent) calc(var(--bg-tint, 20%) * var(--ovl-a-bg)),
+    transparent
+  );
+}
+
+/**
+ * Results: the ink tier, because a shot is a mark and not a background.
+ *
+ * These land over the water rather than replacing it, so a resolved square ends up more solid than
+ * either layer alone - correct, and the reason a wreck still reads at the faintest setting the
+ * slider offers. The gradients are restated rather than inherited because their outer stops are
+ * literals in BoardGrid.css, and an opaque ring around a faded hit is exactly the artefact this
+ * block exists to prevent; keep the stops in step with .bg-hit / .bg-sunk there.
+ */
+.ovl-fade .bg-miss {
+  background: var(--ovl-miss-base);
+  background: color-mix(in srgb, var(--ovl-miss-base) calc(var(--ovl-a-ink) * 100%), transparent);
+}
+
+.ovl-fade .bg-hit {
+  background: radial-gradient(circle at 50% 50%, var(--ovl-hit-base) 0%, #2a1103 78%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--ovl-hit-base) calc(var(--ovl-a-ink) * 100%), transparent) 0%,
+    color-mix(in srgb, #2a1103 calc(var(--ovl-a-ink) * 100%), transparent) 78%
+  );
+}
+
+.ovl-fade .bg-sunk {
+  background: radial-gradient(circle at 50% 60%, var(--ovl-sunk-base) 0%, #1a0808 80%);
+  background: radial-gradient(
+    circle at 50% 60%,
+    color-mix(in srgb, var(--ovl-sunk-base) calc(var(--ovl-a-ink) * 100%), transparent) 0%,
+    color-mix(in srgb, #1a0808 calc(var(--ovl-a-ink) * 100%), transparent) 80%
+  );
+}
+
+.ovl-fade .bg-ship {
+  background: var(--ovl-ship-base);
+  background: color-mix(in srgb, var(--ovl-ship-base) calc(var(--ovl-a-ink) * 100%), transparent);
+}
+
+/**
+ * Everything written on the board: names, coordinates, and the whole marker layer - result glyphs,
+ * the attribution ring, the tally chips, the caster's spotlight.
+ *
+ * Plain element opacity is right here and wrong for the fills above. These are drawn OVER the water
+ * rather than being part of it, so fading one cannot bleed into the other; the fills had to go
+ * through their colours instead, because .bg-cell-text lives INSIDE .bg-cell and an opacity on the
+ * square would have taken the square's name down with it.
+ *
+ * The spotlight fades with the rest of the layer rather than being held solid. It pulses and
+ * carries its own glow, so it survives the ink tier easily, and a ring that ignored the slider
+ * would be the brightest thing on a board the caster had deliberately made faint.
+ */
+.ovl-fade .bg-cell-text,
+.ovl-fade .bg-coord,
+.ovl-fade .bg-cell-mark-layer {
+  opacity: var(--ovl-a-ink);
+}
+
+/**
+ * Hulls, on the same tier as everything else drawn over the water.
+ *
+ * Separate from the rule above only because a source may have its own reason to dim them further -
+ * the big board halves them so two fleets sharing a square blend into a third colour, which is a
+ * statement about overlap and not about the slider. Any such rule multiplies this tier rather than
+ * replacing it, and lands later in the cascade to do so.
+ */
+.ovl-fade .bg-ship-overlay-inner {
+  opacity: var(--ovl-a-ink);
+}

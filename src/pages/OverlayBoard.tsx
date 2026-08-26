@@ -25,6 +25,7 @@ import { markedAttacks, spotSet } from "../lib/overlayMarkers";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import "./Overlay.css";
+import "./OverlayTiers.css";
 import "./OverlayBoard.css";
 
 /**
@@ -36,6 +37,7 @@ import "./OverlayBoard.css";
  * query string instead:
  *
  *     ?team=2            just that fleet's board (shots against them)
+ *     ?team=2&fire=1     turned around: that fleet's own shots, i.e. the board they play off
  *     ?zoom=1.4&cx=.3&cy=.5   framed on part of it, held there
  *     ?names=0 ?coords=0
  *     ?opacity=0.5       see-through, so gameplay reads underneath it
@@ -59,7 +61,7 @@ function pinnedView(params: URLSearchParams): CastView | null {
   // it is drawn, which no controller sends and nobody else has an opinion about. Including it would
   // mean a caster who typed ?text= onto their own source had silently pinned it and lost their
   // control page - a setting about legibility must not be able to disconnect anything.
-  const keys = ["pin", "team", "zoom", "cx", "cy", "names", "coords", "opacity", "key"];
+  const keys = ["pin", "team", "fire", "zoom", "cx", "cy", "names", "coords", "opacity", "key"];
   if (!keys.some((k) => params.get(k) !== null)) return null;
 
   const num = (key: string, fallback: number, lo: number, hi: number) => {
@@ -224,41 +226,31 @@ export function OverlayBoard() {
   const shown = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
 
   /**
-   * One board carrying every shown fleet, hulls overlapping where they cross.
+   * Which end of the shooting this board is drawn from.
    *
-   * Each team fires at the same named coordinates, so one grid is the honest picture of the match
-   * and two fleets sharing a square is information rather than a collision. Hulls are half-opaque
-   * and blend; the square's name sits above them, because the name is the thing being talked about.
+   * `?fire=1` alongside `?team=` turns the board around: instead of the shots that landed ON that
+   * fleet, it draws the shots that fleet FIRED, wherever they landed - which is the board that
+   * fleet's own players are looking at while they play. See room/BattlePhase's fireBoard, which
+   * this is deliberately a copy of: a streamer's source should show the board they are playing,
+   * and the damage they have TAKEN is what the small fleet panel is for.
+   *
+   * Needs a fleet to be about, so it is ignored without one. `?team=` already pins the source (see
+   * pinnedView), which is what this has to be - it states what it wants, and no caster's control
+   * page should be able to repaint a board somebody is playing off.
    */
-  const ships: ShipOverlay[] = shown.flatMap((team) => {
-    // A pinned source draws hulls from ONE place only: the fleet its own ?key= unlocked, and only
-    // on that fleet's board. It never reads the cast channel's fleets, so a caster revealing every
-    // fleet on the same room cannot leak an opponent's ships onto a player's stream - the player
-    // doesn't have to think about what anyone else is doing.
-    const fleet = pinned
-      ? ownFleet?.team === team
-        ? ownFleet
-        : undefined
-      : cast?.fleets.find((f) => f.team === team);
-    return (fleet?.placements ?? []).map((p) => ({
-      row: p.startRow,
-      col: p.startCol,
-      size: room.ship_defs[p.shipIndex]?.size ?? 1,
-      horizontal: p.isHorizontal,
-      shipName: room.ship_defs[p.shipIndex]?.name ?? "Destroyer",
-      colorHex: teamHex(team),
-    }));
-  });
+  const fireTeam = params.get("fire") === "1" && typeof view.mode === "number" ? view.mode : null;
 
   /**
-   * Shot results across every shown fleet, merged worst-first.
+   * The shots this board is about, from whichever end it is drawn.
    *
-   * On a composited board a square can be a hit on one fleet and a miss on another, and there is
-   * one cell to say it in. Sunk beats hit beats miss: the more consequential outcome is the one a
-   * caster is talking about, and a square that sank something should never read as a miss because
-   * the other fleet happened to be empty there.
+   * Defence is every shot aimed at a shown fleet. Attack is every shot ONE fleet fired, wherever it
+   * landed - so on a board with three opponents it is still one fleet's hunt, which is exactly what
+   * its players see. Everything below is written against `relevant` and does not care which it got.
    */
-  const relevant = state.attacks.filter((a) => shown.includes(a.defender_team));
+  const relevant =
+    fireTeam !== null
+      ? state.attacks.filter((a) => a.attacker_team === fireTeam)
+      : state.attacks.filter((a) => shown.includes(a.defender_team));
   // Only the shots the controller is letting draw a result. Shared with the control page's monitor
   // so the two cannot drift - see lib/overlayMarkers, which is also where the attacker/defender
   // distinction is spelled out. A pinned source inherits DEFAULT_VIEW here, i.e. every marker.
@@ -266,6 +258,53 @@ export function OverlayBoard() {
   // From `marked`: wreckage is a result like any other, and a hull sunk by a fleet whose markers
   // are hidden must not leave its ship drawn across the board.
   const sunkCells = sunkCellOrientations(marked, boardSize);
+
+  /**
+   * The hulls on the board, which are a different thing at each end.
+   *
+   * Defending, they are the source owner's OWN fleet, drawn from the one place a pinned board is
+   * allowed to read: the fleet its own ?key= unlocked. It never reads the cast channel's fleets, so
+   * a caster revealing every fleet in the same room cannot leak an opponent's ships onto a player's
+   * stream - the player doesn't have to think about what anyone else is doing.
+   *
+   * Attacking, they are WRECKS: enemy hulls this fleet has sunk, each in its owner's colour. Those
+   * come off the sunk_* fields of the resolved attack row - a public record of a ship that is
+   * already gone - and never from reading anybody's private fleet. A fire board that drew live
+   * hulls would be a wallhack; one that draws the wreckage is a scoreboard.
+   *
+   * Both cases put several fleets' hulls on one grid where they cross. Each fleet fires at the same
+   * named coordinates, so one grid is the honest picture and two hulls sharing a square is
+   * information rather than a collision. They are half-opaque and blend; the square's name sits
+   * above them, because the name is the thing being talked about.
+   */
+  const ships: ShipOverlay[] =
+    fireTeam !== null
+      ? marked
+          .filter((a) => a.result === "sunk" && a.sunk_start_row !== null)
+          .map((a) => ({
+            row: a.sunk_start_row!,
+            col: a.sunk_start_col!,
+            size: a.sunk_ship_size!,
+            horizontal: a.sunk_horizontal!,
+            shipName: a.sunk_ship_name!,
+            colorHex: teamHex(a.defender_team),
+          }))
+      : shown.flatMap((team) => {
+          const fleet = pinned
+            ? ownFleet?.team === team
+              ? ownFleet
+              : undefined
+            : cast?.fleets.find((f) => f.team === team);
+          return (fleet?.placements ?? []).map((p) => ({
+            row: p.startRow,
+            col: p.startCol,
+            size: room.ship_defs[p.shipIndex]?.size ?? 1,
+            horizontal: p.isHorizontal,
+            shipName: room.ship_defs[p.shipIndex]?.name ?? "Destroyer",
+            colorHex: teamHex(team),
+          }));
+        });
+
   /**
    * Whose shot each square was, in each fleet's colour - drawn as a ring around the square.
    *
@@ -273,16 +312,34 @@ export function OverlayBoard() {
    * things hiding in the water are: it is derived from rows every spectator can already read, so a
    * pinned source with no controller behind it shows the same rings as a caster-driven one, and the
    * cast protocol gains nothing to go stale.
+   *
+   * Dropped entirely on a fire board. Every shot on it was fired by the same fleet, so a ring round
+   * every square in one colour answers a question nobody asked and costs the square's name the
+   * contrast it needs. The players' own board draws none either.
    */
-  const firedBy = new Map(
-    [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
-  );
-  // Every fleet's shots, not `relevant`: what is hiding in the water belongs to the sea rather than to
-  // any one board, and the shot that found it may well have been aimed at a fleet this source isn't
-  // showing. No team passed to deepMarks - a caster's board holds nothing back.
-  const deepCells = deepMarks(
-    deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides, igonAnchor(room))
-  );
+  const firedBy =
+    fireTeam !== null
+      ? undefined
+      : new Map([...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)]));
+
+  /**
+   * What is hiding in the water (see lib/deepWater.ts).
+   *
+   * A caster's board holds nothing back, and is handed every fleet's shots rather than `relevant`:
+   * a find belongs to the sea rather than to any one board, and the shot that turned it up may well
+   * have been aimed at a fleet this source isn't showing.
+   *
+   * A fire board is the opposite, and has to be. It is one crew's board, so it gets that crew's
+   * team and the squares that crew has fired at - which is the whole visibility rule: they see what
+   * they found and nothing anybody else found. Without the fired-cell set, four squares would
+   * appear the moment the sleeper wakes, including squares this crew has never shot at, which would
+   * hand a streaming player "there is no hull here" for free on their own overlay.
+   */
+  const deep = deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides, igonAnchor(room));
+  const deepCells =
+    fireTeam !== null
+      ? deepMarks(deep, fireTeam, new Set(relevant.map((a) => a.cell_index)))
+      : deepMarks(deep);
 
   // One walk of the shown fleets' shots rather than one filter of the whole log per square - which
   // on a source re-rendering off the cast heartbeat was the most expensive thing this page did.
@@ -298,7 +355,7 @@ export function OverlayBoard() {
 
   return (
     <div
-      className={`ovb-frame ovb-board${view.coords ? "" : " ovb-no-coords"}`}
+      className={`ovb-frame ovb-board ovl-fade${view.coords ? "" : " ovb-no-coords"}`}
       ref={frameRef}
       // Board size as a CSS variable so the stylesheet can recompute the cell font from the real
       // board size - BoardGrid's own figure is capped at 1600px. See OverlayBoard.css.
@@ -306,17 +363,27 @@ export function OverlayBoard() {
       // plain CSS rather than fitted per square and so can't take it as a prop.
       style={{ ["--ovb-cells" as string]: boardSize, ["--ovb-text" as string]: drawnText }}
     >
-      {/* Opacity lives on the STAGE, not the frame: the stale badge and the debug readout are
-          diagnostics about the source itself, and fading them along with the board would make a
-          frozen board hardest to notice exactly when it has been left faint and forgotten.
+      {/* Transparency is THREE alphas off one slider rather than a flat opacity on this element -
+          see the tier block in OverlayBoard.css, which derives the other two from this one in CSS so
+          the relationship between them lives next to the paint it governs.
+
+          A flat opacity faded the water, the names and the frame at the same rate, which is the one
+          thing a faded board must not do: at 25% it still has to be a BOARD, and a viewer still has
+          to be able to read the square the caster just called. So the blue takes the slider whole,
+          the names and shots fade half as far, and the frame and grid lines barely move at all.
+
+          Still on the STAGE rather than the frame, because the stale badge and the debug readout are
+          diagnostics about the source itself - a frozen board must not be hardest to notice exactly
+          when it has been left faint and forgotten.
+
           `?? 1` because a frame from a controller predating this field carries no opacity at all. */}
       <div
-        className="ovb-stage"
+        className="ovb-stage ovl-fade-stage"
         ref={stageRef}
         style={{
           left: placeBoard(stage.w, frame.w, view.cx),
           top: placeBoard(stage.h, frame.h, view.cy),
-          opacity: view.opacity ?? 1,
+          ["--ovl-a-bg" as string]: view.opacity ?? 1,
         }}
       >
         <BoardGrid
@@ -338,9 +405,15 @@ export function OverlayBoard() {
           // from the desk to know: the finds are in the public log, so it works them out for itself
           // and they appear on stream by themselves.
           deepCells={deepCells}
-          // All four edges: a viewer can't point at the screen, and on a zoomed board the top-left
-          // labels are often outside the frame entirely.
-          coordEdges="all"
+          // Top and left only - BoardGrid's default, so there is no prop here.
+          //
+          // It did draw all four. The argument was that a viewer can't point at the screen and a
+          // zoomed board can carry its top-left labels out of frame, so a label near the square
+          // beats one in the far corner. What that missed is that the far edges are two more gutter
+          // tracks charged to the same square the source was given: they cost cell size on every
+          // board to answer a problem only a panned one has, and they put a second copy of every
+          // label into a frame already carrying 100+ square names, a clock and a key. Two edges is
+          // what a board looks like, and it is what the caster asked for.
           // Both bounds the same, because BoardGrid resolves min(maxVh, maxVw, 1600px) to a square.
           maxVh={`${boardPx}px`}
           maxVw={`${boardPx}px`}

@@ -32,6 +32,7 @@ import {
   type CastView,
 } from "../lib/overlayCast";
 import "./CasterControl.css";
+import "./OverlayTiers.css";
 import "./OverlayBoard.css";
 import "../components/BoardGrid.css";
 
@@ -750,8 +751,41 @@ export function CasterControl() {
 
   const origin = `${window.location.origin}${import.meta.env.BASE_URL}`;
   const boardUrl = `${origin}#/overlay-board/${room.code}`;
-  const timerUrl = `${origin}#/overlay-timer/${room.code}`;
-  const keyUrl = `${origin}#/overlay-key/${room.code}`;
+  /**
+   * The caster's clock, which is the player's clock with the odds bar built into it.
+   *
+   * `odds=1` rather than a source of its own, and no `team`: the odds are a statement about the
+   * whole room, so there is no fleet to mark, and a caster reading a swing wants it on the thing
+   * already parked in the corner rather than as a second box to bring up.
+   *
+   * This is the ONLY place the bar is handed out. It is an evaluation bar - a player who can watch
+   * their own odds move is being told something the match is supposed to make them work out - so
+   * the player-facing menu offers a clock without it and never mentions the parameter. That is a
+   * matter of not putting it in front of somebody who is still playing rather than a lock: the
+   * model runs on the public shot log in the viewer's own browser (see lib/victoryOdds), so there
+   * has never been anything to authenticate against. See components/OverlayLinkBox.
+   */
+  /**
+   * The scene settings, written into the sources that can only take them as a URL.
+   *
+   * The board reads transparency and text size off the cast frame, live, which is why its own URL
+   * carries neither - see the boardUrl note. The clock and the key have no controller behind them
+   * and never will, so the only way they can match the board is to be told at the moment they are
+   * copied. Without this a desk set to 60% put a faded board under a solid scorebug, which reads as
+   * a broken source rather than a choice.
+   *
+   * A snapshot, therefore, and said so on the page: move the sliders afterwards and the board
+   * follows on its own, while these two want copying again.
+   */
+  const sceneQs = () => {
+    const q = new URLSearchParams();
+    if (view.opacity < 1) q.set("opacity", view.opacity.toFixed(2));
+    if ((view.text ?? 1) !== 1) q.set("text", String(view.text));
+    return q.toString();
+  };
+  const scene = sceneQs();
+  const timerUrl = `${origin}#/overlay-timer/${room.code}?odds=1${scene ? `&${scene}` : ""}`;
+  const keyUrl = `${origin}#/overlay-key/${room.code}${scene ? `?${scene}` : ""}`;
   // No team on the caster's copy: with none, the closing sting is the spectator's - somebody was
   // left standing, which is the interesting fact from the desk. See pages/OverlayAudio.
   const audioUrl = `${origin}#/overlay-audio/${room.code}`;
@@ -854,7 +888,7 @@ export function CasterControl() {
               thing we can just show.
             */}
             <div
-              className={`ovb-board cast-viewport${view.coords ? "" : " ovb-no-coords"}`}
+              className={`ovb-board ovl-fade cast-viewport${view.coords ? "" : " ovb-no-coords"}`}
               style={{
                 width: SOURCE_SIZE,
                 height: SOURCE_SIZE,
@@ -867,14 +901,17 @@ export function CasterControl() {
               }}
             >
               <div
-                className="ovb-stage"
+                className="ovb-stage ovl-fade-stage"
                 ref={stageRef}
                 style={{
                   left: placeBoard(stage.w, SOURCE_SIZE, view.cx),
                   top: placeBoard(stage.h, SOURCE_SIZE, view.cy),
                   // The monitor has to show the fade too, or the caster is judging legibility
-                  // against a board that is more solid than the one on stream.
-                  opacity: view.opacity,
+                  // against a board that is more solid than the one on stream. Same variable the
+                  // source sets, so the monitor gets the three tiers rather than a flat fade - see
+                  // the tier block in OverlayTiers.css, whose rules this viewport opts into by
+                  // wearing .ovl-fade and .ovl-fade-stage.
+                  ["--ovl-a-bg" as string]: view.opacity,
                 }}
               >
                 <BoardGrid
@@ -897,7 +934,6 @@ export function CasterControl() {
                   textBoost={view.text ?? 1}
                   maxCellFont={OVERLAY_MAX_FONT}
                   growText
-                  coordEdges="all"
                   maxVh={`${boardPx}px`}
                   maxVw={`${boardPx}px`}
                   cellText={
@@ -1363,19 +1399,32 @@ export function CasterControl() {
               </button>
             </div>
             <p className="cast-note muted">
-              The monitor above shows the same fade, over this page's background rather than
-              gameplay. Real footage is busier than this.
+              Fades the water. Square names and shots hold back about halfway to solid, and the
+              frame and grid lines barely move, so a faint board still reads as a board. The monitor
+              above shows the same fade, over this page's background rather than gameplay - real
+              footage is busier than this.
             </p>
           </section>
 
           <section>
             <h3>Browser sources</h3>
             <p className="muted cast-note">
-              Add each as a Browser Source in OBS. The board follows this page. The timer and the
-              colour key run on their own.
+              Add each as a Browser Source in OBS. The board follows this page - its transparency,
+              text size, zoom and framing all come from here, which is why none of them are baked
+              into its URL. The clock and the colour key run on their own, so they take the
+              transparency and text size as they stand right now - move a slider afterwards and the
+              board follows by itself, while those two want copying again.
             </p>
             <SourceRow label="Board" url={boardUrl} size="1000 x 1000" note="square - the board fits the shorter side" />
-            <SourceRow label="Clock" url={timerUrl} size="1200 x 200" note="the match clock and every fleet's hulls" />
+            {/* Taller than the player's 1200 x 200 because the odds band sits under the clock and
+                the whole bar scales to fit its source - give it 200 and the clock shrinks to make
+                room for the thing that was meant to be an addition. */}
+            <SourceRow
+              label="Caster clock"
+              url={timerUrl}
+              size="1200 x 300"
+              note="the match clock, every fleet's hulls, and the odds bar - casters only"
+            />
             {/* Sized for the full width of a 1080p canvas, because that is where it goes - a strip
                 along the bottom edge. It scales down to whatever it's given, so the number is a
                 starting point rather than a requirement. */}

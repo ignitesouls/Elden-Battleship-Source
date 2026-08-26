@@ -12,6 +12,7 @@ import { readOpacity } from "../lib/overlayCast";
 import { teamHex } from "../lib/teamColors";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import "./Overlay.css";
+import "./OverlayTiers.css";
 import "./OverlayFleet.css";
 
 /** What the source draws at before OBS has measured it. Square, like the board. */
@@ -164,19 +165,22 @@ export function OverlayFleet() {
   const boardPx = frame.w > 0 ? Math.round(Math.min(frame.w, frame.h)) : SOURCE_SIZE;
 
   return (
-    <div className={`ovf-frame ovf-board${coords ? "" : " ovf-no-coords"}`} ref={frameRef}>
-      {/* Opacity on the board rather than the frame, so a fault notice never fades along with it. */}
-      <div className="ovf-stage" style={{ opacity }}>
+    <div className={`ovf-frame ovf-board ovl-fade${coords ? "" : " ovf-no-coords"}`} ref={frameRef}>
+      {/* The fade sits on the board rather than the frame, so a fault notice never goes faint along
+          with it. Three tiers off the one slider, exactly as the big board - see OverlayTiers.css.
+          The reasoning carries over intact: this panel is water, hulls and wreckage in the same
+          layers, and a flat opacity took the hulls down with the water it was asked to thin. */}
+      <div className="ovf-stage ovl-fade-stage" style={{ ["--ovl-a-bg" as string]: opacity }}>
         <BoardGrid
           boardSize={boardSize}
           cellVisual={cellVisual}
           ships={ships}
           sunkOrientation={sunkCells}
-          // All four edges when they're asked for: a viewer can't point at the screen, so a label
-          // near the square beats one in the far corner. "start" when they aren't, because the
-          // gutter tracks are inside the board's own square - see the collapse rule in the
-          // stylesheet, which is what gives those pixels back to the cells.
-          coordEdges={coords ? "all" : "start"}
+          // Top and left only, BoardGrid's default - see the note in OverlayBoard, which dropped
+          // the far edges for the same reason. It matters most here: this source is a fraction of
+          // the board source's size, and two extra gutter tracks come straight out of cells that
+          // are already down at 28px. ?coords=0 still collapses the two that remain - see the rule
+          // in the stylesheet, which is what gives those pixels back.
           // Both bounds the same, because BoardGrid resolves min(maxVh, maxVw) to a square.
           maxVh={`${boardPx}px`}
           maxVw={`${boardPx}px`}
