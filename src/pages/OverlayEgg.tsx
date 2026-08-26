@@ -3,12 +3,11 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useRoom } from "../hooks/useRoom";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, finalFinds, type DeepFindRow } from "../lib/deepWater";
-import { alertLabel, isHeadline } from "../lib/deepLabels";
+import { freshDeepEvents } from "../lib/deepQueue";
 import { igonAnchor } from "../lib/challenges";
 import { cellLabel } from "../lib/battleshipLogic";
 import { readOpacity, readAlertSecs } from "../lib/overlayCast";
-import { teamHex } from "../lib/teamColors";
-import { DeepMarkIcon } from "../components/HitMarkers";
+import { FindCard } from "../components/FindCard";
 import "./Overlay.css";
 import "./OverlayEgg.css";
 
@@ -89,51 +88,21 @@ export function OverlayEgg() {
     [room, state.attacks, state.players, state.deepHides]
   );
 
-  /**
-   * What has already been shown. Null until the first pass has primed it.
-   *
-   * Keyed by square AND mark, which is the rule everything watching the water uses - the four
-   * squares turning from "tentacle" to "sleeper" the moment he wakes are news, not squares already
-   * seen. Stated here rather than shared with useSpectatorSfx because the two want the same rule
-   * and different POLICIES: sound plays one find and drops the rest, since three noises at once is
-   * a mess, while this queues them, since three alerts at once is three alerts.
-   */
+  /** What has already been shown. Null until the first pass has primed it - see freshDeepEvents. */
   const shown = useRef<Set<string> | null>(null);
   const [queue, setQueue] = useState<DeepFindRow[]>([]);
   const [current, setCurrent] = useState<DeepFindRow | null>(null);
 
   useEffect(() => {
-    const key = (r: DeepFindRow) => `${r.find.cellIndex}:${r.mark}`;
-    const before = shown.current;
-    shown.current = new Set(rows.map(key));
-    // First pass primes only, so a source added to a scene mid-match doesn't replay the whole hunt
-    // into the corner of somebody's stream. Same guard the sound makes.
-    if (!before) return;
-    const fresh = rows.filter((r) => !before.has(key(r)));
-    if (fresh.length === 0) return;
-
-    /**
-     * One alert per EVENT, not per square.
-     *
-     * Cthulhu waking is the case that forces this and the reason it is worth the paragraph. He wakes
-     * by turning every tentacle already found from "tentacle" to "sleeper" at once, so a tick that
-     * looks like four fresh finds is one thing happening - and queued naively it played as four
-     * consecutive alerts, all captioned the same, for half a minute, while the sound source played
-     * a single sting. The alert has to say what the sound says.
-     *
-     * The LAST of a collapsed group wins rather than the first. `rows` is oldest first, so for the
-     * wake that is the crew who fired the shot that woke him, which is whose name belongs on it -
-     * the three who found tentacles earlier were credited when they did.
-     */
-    const perMark = new Map<string, DeepFindRow>();
-    for (const r of fresh) perMark.set(r.mark, r);
-    // Headline finds go to the front of the queue rather than winning outright: nothing gets
-    // dropped here - there is time to show both - but the sleeper waking should not sit behind an
-    // ordinary find that landed in the same tick. See isHeadline, which the sound shares.
-    const ordered = [...perMark.values()].sort(
-      (a, b) => Number(isHeadline(b.mark)) - Number(isHeadline(a.mark))
+    // Priming, collapsing a wake to one event and putting headlines first all live in lib/deepQueue,
+    // which the sound source reads too - so a stream cannot show a whale the speakers never mention.
+    const { fresh, keys } = freshDeepEvents(
+      rows.map((r) => ({ cell: r.find.cellIndex, mark: r.mark, item: r })),
+      shown.current
     );
-    setQueue((q) => [...q, ...ordered]);
+    shown.current = keys;
+    if (fresh.length === 0) return;
+    setQueue((q) => [...q, ...fresh]);
     // Memoised above, so this runs when the log moves rather than on every render - which matters
     // here in a way it doesn't for the sound: this component re-renders on its own timer as each
     // alert comes and goes, and an unmemoised list would rebuild the whole hunt on every tick of it.
@@ -165,18 +134,7 @@ export function OverlayEgg() {
       {/* Keyed by the find, so a second alert re-mounts the icon rather than swapping the artwork
           inside a box that is already on screen. The entry animations are the cue - without a
           remount the second whale would simply appear, mid-bob, having never surfaced. */}
-      <div className="ove-card" key={`${find.cellIndex}:${mark}:${find.at}`}>
-        <div className="ove-art">
-          <DeepMarkIcon mark={mark} />
-        </div>
-        <div className="ove-words">
-          <div className="ove-what">{alertLabel(mark)}</div>
-          <div className="ove-who">
-            <span style={{ color: teamHex(find.attackerTeam) }}>{who}</span>
-            <span className="ove-where">{where}</span>
-          </div>
-        </div>
-      </div>
+      <FindCard key={`${find.cellIndex}:${mark}:${find.at}`} mark={mark} who={who} team={find.attackerTeam} where={where} />
     </div>
   );
 }

@@ -1,0 +1,104 @@
+/**
+ * The preview: a real board, over something standing in for gameplay.
+ *
+ * The stand-in is the whole reason this exists. Transparency shown over a panel is not shown at all
+ * - the caster's monitor has always had to admit as much ("over this page's background rather than
+ * gameplay; real footage is busier than this") - and the settings these sliders drive are exactly
+ * the ones that look fine over flat navy and fall apart over a bright, busy scene. A streamer
+ * needs to find that out here rather than on stream.
+ */
+.ovp-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+}
+
+/**
+ * The footage layer.
+ *
+ * Two backgrounds, and the order matters. The screenshot from public/preview/footage.jpg is painted
+ * by the component as an inline style; the generated field below is the floor beneath it. A missing
+ * file paints nothing rather than erroring, so the field shows through and the preview still does
+ * its job - which means the site is deployable before the image is added, and stays working if it is
+ * ever removed.
+ *
+ * The field itself is aiming at "busy and mid-bright" rather than at looking like anything: several
+ * overlapping gradients at angles that don't line up, so no part of it is a flat colour a square
+ * could hide against. That is the property being tested.
+ */
+.ovp-shot {
+  position: absolute;
+  inset: 0;
+  background-color: #6b6455;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  /* The floor, drawn under whatever the inline style paints. */
+  background-image:
+    linear-gradient(107deg, rgba(255, 236, 190, 0.55) 0%, rgba(0, 0, 0, 0) 42%),
+    linear-gradient(21deg, rgba(30, 60, 90, 0.5) 0%, rgba(0, 0, 0, 0) 55%),
+    radial-gradient(circle at 72% 28%, rgba(255, 214, 140, 0.6) 0%, rgba(0, 0, 0, 0) 45%),
+    radial-gradient(circle at 18% 74%, rgba(60, 40, 30, 0.65) 0%, rgba(0, 0, 0, 0) 50%),
+    repeating-linear-gradient(63deg, rgba(0, 0, 0, 0.14) 0 3px, rgba(255, 255, 255, 0.08) 3px 7px);
+}
+
+/* The inline style adds the screenshot as an extra first layer, so it must not inherit the floor's
+   sizing rules per-layer - `cover` and `center` above already apply to every layer. */
+
+/**
+ * The board itself.
+ *
+ * `.ovb-board` is worn deliberately: it brings the browser source's own coordinate styling, its
+ * lifted font ceiling and its --ovb-text plumbing, so the preview is the source rather than a board
+ * that resembles it. It needs --ovb-cells set for the font rule that reads it, which the component
+ * passes.
+ *
+ * position: relative only to sit above the footage layer - there is no z-index race worth having
+ * here, the two are siblings in DOM order and the board is second.
+ */
+.ovp-board {
+  position: relative;
+  line-height: 1;
+}
+
+/* No cursor, no hover, nothing to press. Same reasoning as the browser source: this is a picture. */
+.ovp-board .bg-cell {
+  cursor: default;
+}
+
+/* The board's own wrapper adds a scroll box and a label slot that a preview has no use for. */
+.ovp-board .bg-wrap,
+.ovp-board .bg-grid-scroll {
+  max-width: none;
+  overflow: visible;
+}
+
+/**
+ * The find alert, previewed in place.
+ *
+ * .ove-card sizes itself in viewport units, because in its own browser source the viewport IS the
+ * source. Dropped into a corner of a panel that reasoning gives a card several times the size of the
+ * box holding it, so both of its scale terms are restated here in px. Everything else about it -
+ * the artwork, the caption, the entry animation - is untouched and is the same component the alert
+ * source mounts.
+ */
+.ovp-alert {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Dim what is behind it, exactly as a real alert doesn't - but here the board is a distraction
+     from the thing being judged, which is whether the alert reads at all. */
+  background: rgba(2, 8, 14, 0.45);
+}
+
+.ovp-alert .ove-card {
+  width: 150px;
+  font-size: 13px;
+}

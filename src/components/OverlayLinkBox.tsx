@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { teamName, teamHex } from "../lib/teamColors";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { TEXT_SIZE_OPTIONS, MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
 import { SourceRow } from "./SourceRow";
+import { OverlaySample } from "./OverlaySample";
+import type { DeepMark } from "../lib/deepWater";
 
 interface Props {
   roomCode: string;
@@ -157,6 +159,19 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const [emptyFade, setEmptyFade] = useState(1);
   /** How long the find alert holds a find. */
   const [alertSecs, setAlertSecs] = useState(DEFAULT_ALERT_SECS);
+  /**
+   * A find held over the preview, while the streamer is looking at it.
+   *
+   * The one setting with nothing to show for itself: every other slider changes a picture that is
+   * already on screen, and this one changes a number of seconds. So it gets a button that plays one,
+   * which is also the only way to see how large the card is against the board it will sit next to.
+   */
+  const [playing, setPlaying] = useState<DeepMark | null>(null);
+  useEffect(() => {
+    if (!playing) return;
+    const t = setTimeout(() => setPlaying(null), alertSecs * 1000);
+    return () => clearTimeout(t);
+  }, [playing, alertSecs]);
   /**
    * How large the text is on stream. One setting, written into every source that draws text - same
    * reasoning as the transparency slider below it, spelled out in lib/overlayText.
@@ -373,6 +388,26 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
       ) : (
         <>
           {/*
+            The sample, and the sliders under it.
+
+            A streamer used to have to paste a URL into OBS, look at it, come back, drag something,
+            and look again - and the settings that most need that loop are the ones about legibility
+            over their own footage, which is the one thing the loop cannot show them either, because
+            by then they are looking at the overlay in isolation. So the sample sits above the
+            sliders and moves as they do.
+
+            It is not a picture OF the sources. It is the same BoardGrid wearing the same classes and
+            reading the same variables - see OverlaySample, which is deliberately built so there is no
+            second implementation here to drift.
+          */}
+          <OverlaySample
+            opacity={opacity}
+            emptyFade={isCaster ? 1 : emptyFade}
+            textSize={textSize}
+            alertMark={playing}
+          />
+
+          {/*
             Every adjustable thing about these sources, as sliders that say what they do.
 
             The sizes and the transparency used to be two different KINDS of control - a slider for
@@ -443,6 +478,16 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
             onChange={setAlertSecs}
             readout={`${alertSecs}s`}
           />
+
+          {/* Sat next to the slider it demonstrates rather than under the sample, because it is the
+              slider that needs explaining and the button is the explanation. */}
+          <button
+            onClick={() => setPlaying(playing ? null : "whale")}
+            style={{ fontSize: "0.74rem", alignSelf: "flex-start" }}
+            title="Show a sample find over the preview above"
+          >
+            {playing ? "Stop" : "Play a sample find"}
+          </button>
 
           {/* The Board is the exception to all of the above, and only for a caster: it takes these
               live off the control page, and writing them into its URL would PIN it and disconnect

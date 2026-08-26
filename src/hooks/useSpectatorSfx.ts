@@ -1,8 +1,42 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { playSfx } from "../lib/sfx";
 import type { DeepMark } from "../lib/deepWater";
-import { isHeadline } from "../lib/deepLabels";
+import { freshDeepEvents } from "../lib/deepQueue";
 import type { Attack } from "../types/battleship";
+
+/**
+ * What each find sounds like.
+ *
+ * Two of them borrow rather than owning a file: the ghost ship takes the whale call, because a
+ * mournful horn out of the fog is the same register and Laboon already established that two
+ * creatures may share one, and Patches takes the tentacle sound, since hearing the dread and
+ * getting HIM is the joke. Alexander uses one file for both his states, which is the same argument
+ * the tentacle and the sleeper make.
+ */
+const SOUND = {
+  whale: "whale",
+  laboon: "whale",
+  tentacle: "tentacle",
+  sleeper: "awaken",
+  dutchman: "whale",
+  patches: "tentacle",
+  bottle: "bottle",
+  jar: "jar",
+  jarFree: "jar",
+  // The only two finds here with their own voice rather than a borrowed noise - see lib/sfx.
+  igon: "igonFinger",
+  igonAvenged: "igonHappy",
+} as const;
+
+/**
+ * How long to leave between two stings.
+ *
+ * A spacing rather than a duration: playSfx clones an Audio element and returns, so there is no
+ * completion to wait for and no way to ask a file how long it is. This is long enough that the two
+ * longest - the whale call and the waking - do not talk over the front of whatever follows them,
+ * and short enough that a second find still feels like part of the same moment.
+ */
+const SFX_GAP_MS = 1500;
 
 /**
  * Sound for someone watching rather than playing.
@@ -68,48 +102,51 @@ export function useSpectatorSfx(
    * a find is a square, not an attack row, and the row that produced it has already been played as a
    * miss by the time this runs. Both sounds firing together is correct - the splash, then the whale.
    */
+  /**
+   * Finds waiting to be heard, and the timer walking through them.
+   *
+   * It used to play one find per tick and drop the rest, because the case it was defending against
+   * was the wake - four squares changing at once, which as four overlapping stings is a mess. That
+   * is now handled properly one layer down: freshDeepEvents collapses a wake into the single event
+   * it always was, so what reaches here is distinct finds, and dropping those was only ever losing
+   * information. Two crews turning up two different things a second apart is rare, and it is
+   * exactly the moment a stream should be making a noise about both.
+   */
+  const waiting = useRef<DeepMark[]>([]);
+  const timer = useRef<number | null>(null);
+
+  const pump = useCallback(() => {
+    const next = waiting.current.shift();
+    if (next === undefined) {
+      timer.current = null;
+      return;
+    }
+    playSfx(SOUND[next]);
+    timer.current = window.setTimeout(pump, SFX_GAP_MS);
+  }, []);
+
+  // A queue that outlived its page would go on playing into a closed tab.
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
+      waiting.current = [];
+    };
+  }, []);
+
   useEffect(() => {
     if (!enabled || !deepCells) return;
-    // Square AND kind, so the four squares turning from "tentacle" to "sleeper" the moment he wakes
-    // count as news rather than as squares already heard. See the same note in BattlePhase.
-    const key = (cell: number, kind: DeepMark) => `${cell}:${kind}`;
-    const heard = heardDeep.current;
-    heardDeep.current = new Set([...deepCells].map(([cell, kind]) => key(cell, kind)));
-    if (!heard) return; // first pass primes only
+    // Priming, the wake collapse and the headline ordering all live in lib/deepQueue, shared with
+    // the alert source so the sound and the picture can never disagree about what just happened.
+    const { fresh, keys } = freshDeepEvents(
+      [...deepCells].map(([cell, mark]) => ({ cell, mark, item: mark })),
+      heardDeep.current
+    );
+    heardDeep.current = keys;
+    if (fresh.length === 0) return;
 
-    // One at a time - a four-tentacle wake is not four sounds at once - and the waking wins.
-    const fresh = [...deepCells].filter(([cell, kind]) => !heard.has(key(cell, kind)));
-    // The two long ones win the tick. Both are the biggest thing that can happen in a match and both
-    // can land alongside an ordinary find - so without this, the sleeper waking or Igon getting to his
-    // feet can be silently dropped in favour of whichever square sorted first. Shared with the alert
-    // source, so the sound and the picture always agree about which find was the event.
-    const next = fresh.find(([, kind]) => isHeadline(kind)) ?? fresh[0];
-    if (!next) return;
-
-    /**
-     * What each find sounds like.
-     *
-     * Two of them borrow rather than owning a file: the ghost ship takes the whale call, because a
-     * mournful horn out of the fog is the same register and Laboon already established that two
-     * creatures may share one, and Patches takes the tentacle sound, since hearing the dread and
-     * getting HIM is the joke. Alexander uses one file for both his states, which is the same
-     * argument the tentacle and the sleeper make.
-     */
-    const SOUND = {
-      whale: "whale",
-      laboon: "whale",
-      tentacle: "tentacle",
-      sleeper: "awaken",
-      dutchman: "whale",
-      patches: "tentacle",
-      bottle: "bottle",
-      jar: "jar",
-      jarFree: "jar",
-      // The only two finds here with their own voice rather than a borrowed noise - see lib/sfx.
-      igon: "igonFinger",
-      igonAvenged: "igonHappy",
-    } as const;
-
-    playSfx(SOUND[next[1]]);
-  }, [deepCells, enabled]);
+    waiting.current.push(...fresh);
+    // Nothing draining yet, so this find is heard now rather than after a gap it did not earn.
+    if (timer.current === null) pump();
+  }, [deepCells, enabled, pump]);
 }
