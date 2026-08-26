@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { teamName, teamHex } from "../lib/teamColors";
-import { MIN_OPACITY } from "../lib/overlayCast";
-import { TEXT_SIZE_OPTIONS } from "../lib/overlayText";
+import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
+import { TEXT_SIZE_OPTIONS, MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
 import { SourceRow } from "./SourceRow";
 
 interface Props {
@@ -25,6 +25,76 @@ interface Props {
  * is a bug waiting for the one render that sets them both.
  */
 type Audience = number | "caster";
+
+/**
+ * One setting: what it is, where it stands, and what it changes.
+ *
+ * All three parts are here rather than left to each caller, because the box's whole failing was
+ * that a streamer could not tell its controls apart. A bare track says nothing about what it does,
+ * and the value it is at is the first thing you look for after dragging one.
+ *
+ * `--eb-fill` is the fraction of the track to paint up to the thumb; the styling behind it is in
+ * index.css, along with the note on why a range input needs any of this.
+ */
+function Setting({
+  label,
+  hint,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+  readout,
+}: {
+  label: string;
+  hint: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+  readout: string;
+}) {
+  return (
+    <div className="stack" style={{ gap: "0.25rem" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
+        <span style={{ fontSize: "0.78rem" }}>{label}</span>
+        <span className="muted" style={{ fontSize: "0.72rem" }}>
+          {readout}
+        </span>
+      </div>
+      <input
+        type="range"
+        className="eb-slider"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={label}
+        style={{ ["--eb-fill" as string]: (value - min) / (max - min) }}
+      />
+      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+        {hint}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A text size, named.
+ *
+ * The named steps were the whole control once and are now the readout, which is the job they were
+ * always best at: nobody needs "1.25" as a number, they need to know that where they have dragged
+ * to is the one that is comfortable on a 1080p stream. The nearest step wins, so the name changes
+ * as you drag past it rather than blinking out between the round values.
+ */
+function textReadout(value: number): string {
+  const nearest = TEXT_SIZE_OPTIONS.reduce((best, o) =>
+    Math.abs(o.value - value) < Math.abs(best.value - value) ? o : best
+  );
+  return `${value.toFixed(2).replace(/0+$/, "").replace(/.$/, "")}x - ${nearest.label}`;
+}
 
 /**
  * The OBS sources, chosen by WHO IS STREAMING rather than by what each source does.
@@ -77,6 +147,16 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const [picked, setPicked] = useState<Audience | undefined>(undefined);
   /** How solid the scene is on stream. One setting, written into every source that draws. */
   const [opacity, setOpacity] = useState(1);
+  /**
+   * How solid a square nobody has fired at is - see readEmptyFade.
+   *
+   * Starts at 1, which is the board exactly as it was before this existed. A default that quietly
+   * thinned every player's board would be this box making a decision about their scene that they
+   * did not ask it to make; the slider is there to be found, and the label says what it does.
+   */
+  const [emptyFade, setEmptyFade] = useState(1);
+  /** How long the find alert holds a find. */
+  const [alertSecs, setAlertSecs] = useState(DEFAULT_ALERT_SECS);
   /**
    * How large the text is on stream. One setting, written into every source that draws text - same
    * reasoning as the transparency slider below it, spelled out in lib/overlayText.
@@ -131,6 +211,9 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
     fireQuery.set("team", String(crew));
     fireQuery.set("fire", "1");
   }
+  // The crew's own board is the one place the unfired-square setting means anything - see the
+  // Setting for it below, and readEmptyFade for why a caster's board never takes one.
+  if (emptyFade < 1) fireQuery.set("empty", emptyFade.toFixed(2));
   const fireUrl = url("overlay-board", withScene(fireQuery));
 
   /**
@@ -144,6 +227,21 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const casterBoardUrl = url("overlay-board", "");
 
   /**
+   * Every fleet's shots on one board, pinned - a board with nobody driving it.
+   *
+   * `pin=1` rather than an empty query is the whole point: no parameters at all is the CASTER's
+   * board, waiting to be aimed, and "all fleets, unattended" is the opposite intention expressed in
+   * the same characters. See pinnedView.
+   *
+   * For a scene with no desk behind it - a co-stream, a second monitor, a room left running on a
+   * screen at an event. It takes the scene settings for the same reason: nothing else is going to
+   * tell it how solid to be.
+   */
+  const allFleetsQuery = new URLSearchParams();
+  allFleetsQuery.set("pin", "1");
+  const allFleetsUrl = url("overlay-board", withScene(allFleetsQuery));
+
+  /**
    * The player's own fleet panel - the small board from their play screen, hulls and all.
    *
    * `text` is dropped from the scene settings on purpose. This source has no text in it to size: it
@@ -153,6 +251,7 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const fleetQuery = new URLSearchParams();
   if (canDrawFleet) fleetQuery.set("key", rejoinCode!);
   if (opacity < 1) fleetQuery.set("opacity", opacity.toFixed(2));
+  if (emptyFade < 1) fleetQuery.set("empty", emptyFade.toFixed(2));
   const fleetUrl = url("overlay-fleet", fleetQuery.toString());
 
   /**
@@ -188,6 +287,22 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const audioQuery = new URLSearchParams();
   if (crew !== null) audioQuery.set("team", String(crew));
   const audioUrl = url("overlay-audio", audioQuery.toString());
+
+  /**
+   * The find alert - see pages/OverlayEgg.
+   *
+   * On both lists, and identical on both. What the water gives up belongs to the room rather than
+   * to a fleet: the board already draws every crew's finds and the audio source already plays them,
+   * so an alert that differed by audience would be the one thing on the stream disagreeing with the
+   * other two about what just happened.
+   *
+   * No text size - the caption sizes itself off the source, which is the only measurement that
+   * means anything for a box this is dropped into. Opacity applies like anywhere else.
+   */
+  const eggQuery = new URLSearchParams();
+  if (opacity < 1) eggQuery.set("opacity", opacity.toFixed(2));
+  if (alertSecs !== DEFAULT_ALERT_SECS) eggQuery.set("secs", String(alertSecs));
+  const eggUrl = url("overlay-egg", eggQuery.toString());
 
   const castUrl = url("cast", "");
 
@@ -258,86 +373,85 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
       ) : (
         <>
           {/*
-            Text size, offered as named steps rather than a slider.
+            Every adjustable thing about these sources, as sliders that say what they do.
 
-            A slider is right for transparency, where every value in the range is as good as its
-            neighbour and what you want is the one that looks right over YOUR footage. Legibility
-            isn't like that: the question behind it is "who is watching, and on what", and the
-            answers are a handful of distinct situations rather than a continuum. Named steps say
-            what each one is for - which is the part a streamer setting up a scene at 3am actually
-            needs - and land on round numbers that stay round in the URL.
-          */}
-          <div className="stack" style={{ gap: "0.25rem" }}>
-            <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>Text size</span>
-              <span className="muted" style={{ fontSize: "0.72rem" }}>
-                {TEXT_SIZE_OPTIONS.find((o) => o.value === textSize)?.note ?? `${textSize}x`}
-              </span>
-            </div>
-            <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
-              {TEXT_SIZE_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  onClick={() => setTextSize(o.value)}
-                  title={o.note}
-                  aria-pressed={textSize === o.value}
-                  style={{
-                    fontSize: "0.74rem",
-                    borderColor: textSize === o.value ? "var(--accent)" : undefined,
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              Sets the size of square names, coordinates, the clock and the key together. Text
-              never overflows: a size that doesn't fit draws as large as it can.
-            </span>
-          </div>
+            The sizes and the transparency used to be two different KINDS of control - a slider for
+            one, named buttons for the other - on the theory that legibility is a handful of
+            distinct situations rather than a continuum. In front of a streamer that distinction is
+            invisible: they are all just "settings for my overlay", and having two of them behave
+            differently only made the box harder to read. The named steps survive where they were
+            actually useful, in the readout, which says which one you have landed on and what it is
+            for as you drag past it.
 
-          {/*
-            One slider for the whole scene rather than one per source. These are dropped into a
-            single layer over the same gameplay, and a board at half strength under a solid scorebug
-            looks like a mistake rather than a choice. Anyone who really does want them to differ can
-            still edit ?opacity= afterwards - the sources read the parameter, they just aren't asked
-            about it separately here.
+            Each carries its own label, its own readout and a line saying what it changes, because
+            the alternative is a row of unmarked tracks and a streamer guessing which is which at
+            3am. See .eb-slider in index.css for why they are styled rather than left native - a
+            slider you cannot drag to either end is a slider that lies about its own range.
           */}
-          <div className="stack" style={{ gap: "0.25rem" }}>
-            <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>Overlay transparency</span>
-              <span className="muted" style={{ fontSize: "0.72rem" }}>
-                {opacity >= 1 ? "solid" : `${Math.round(opacity * 100)}%`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min={MIN_OPACITY}
+          <Setting
+            label="Overlay transparency"
+            hint="How much of your gameplay shows through the whole scene. On the boards it's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move."
+            min={MIN_OPACITY}
+            max={1}
+            step={0.05}
+            value={opacity}
+            onChange={setOpacity}
+            readout={opacity >= 1 ? "solid" : opacity <= 0 ? "hidden" : `${Math.round(opacity * 100)}%`}
+          />
+
+          {/* Crews only. A caster is reading the whole board and needs the squares nobody has fired
+              at yet to still be squares - it is the empty water they are looking for patterns in.
+              A player already knows where they have been, so the fill is just something between
+              them and their own footage. */}
+          {!isCaster && (
+            <Setting
+              label="Unfired squares"
+              hint="How solid a square you haven't shot at yet is. Turn it down and your own gameplay shows through everywhere you haven't been, while hits, misses and wrecks stay as solid as ever."
+              min={0}
               max={1}
               step={0.05}
-              value={opacity}
-              onChange={(e) => setOpacity(Number(e.target.value))}
-              aria-label="Overlay transparency"
-              style={{ width: "100%" }}
+              value={emptyFade}
+              onChange={setEmptyFade}
+              readout={
+                emptyFade >= 1
+                  ? "same as the rest"
+                  : emptyFade <= 0
+                    ? "no fill at all"
+                    : `${Math.round(emptyFade * 100)}%`
+              }
             />
-            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              {isCaster
-                ? "Fades the clock and the key over your footage."
-                : "Fades your gameplay through the boards. It's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move."}{" "}
-              {Math.round(MIN_OPACITY * 100)}% is as faint as it goes. To hide a source outright,
-              use OBS.
-            </span>
-          </div>
+          )}
 
-          {/* Both settings above are written into the clock and the key, which nothing else drives.
-              The Board is the exception: it takes transparency and text size live off the control
-              page, and writing them into its URL would PIN it and disconnect the very desk the
-              caster is about to drive it from. See the casterBoardUrl note. */}
+          <Setting
+            label="Text size"
+            hint="Square names, coordinates, the clock and the key together. Text never overflows: a size that doesn't fit draws as large as it can."
+            min={MIN_TEXT_SIZE}
+            max={MAX_TEXT_SIZE}
+            step={0.05}
+            value={textSize}
+            onChange={setTextSize}
+            readout={textReadout(textSize)}
+          />
+
+          <Setting
+            label="Find alert time"
+            hint="How long the Finds source holds a find on screen before it goes back to drawing nothing."
+            min={MIN_ALERT_SECS}
+            max={MAX_ALERT_SECS}
+            step={1}
+            value={alertSecs}
+            onChange={setAlertSecs}
+            readout={`${alertSecs}s`}
+          />
+
+          {/* The Board is the exception to all of the above, and only for a caster: it takes these
+              live off the control page, and writing them into its URL would PIN it and disconnect
+              the very desk the caster is about to drive it from. See the casterBoardUrl note. */}
           {isCaster && (
             <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              Those two apply to the clock and the key. The Board takes its transparency, text size,
-              zoom and framing from the control page instead - set them there, mid-match, with the
-              board in front of you.
+              These apply to the clock, the key and the alert. The Board takes its transparency,
+              text size, zoom and framing from the control page instead - set them there, mid-match,
+              with the board in front of you.
             </span>
           )}
 
@@ -348,6 +462,14 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
                 url={casterBoardUrl}
                 size="1000 x 1000"
                 note="the board you aim from the control page - zoom, pan and spotlight"
+              />
+              {/* Second, and deliberately after the one this page drives: a desk that wants a board
+                  wants the controllable one, and this is for the scene that has no desk. */}
+              <SourceRow
+                label="All fleets"
+                url={allFleetsUrl}
+                size="1000 x 1000"
+                note="every fleet's shots on one board, with nobody driving it - no control page needed"
               />
               <SourceRow
                 label="Caster clock"
@@ -366,6 +488,13 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
                 url={audioUrl}
                 size="100 x 100"
                 note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+              />
+
+              <SourceRow
+                label="Finds"
+                url={eggUrl}
+                size="600 x 600"
+                note="empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer"
               />
 
               {/* Not a browser source, and listed apart so nobody pastes it into OBS. */}
@@ -434,6 +563,13 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
                 url={keyUrl}
                 size="1920 x 90"
                 note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+              />
+
+              <SourceRow
+                label="Finds"
+                url={eggUrl}
+                size="600 x 600"
+                note="empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer"
               />
 
               {/* The one source with nothing to look at, so the size is a formality and the note has

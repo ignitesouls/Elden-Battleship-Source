@@ -2,24 +2,8 @@ import { DeepMarkIcon } from "./HitMarkers";
 import { cellLabel } from "../lib/battleshipLogic";
 import { teamName } from "../lib/teamColors";
 import type { DeepMark } from "../lib/deepWater";
-
-/** What to call each thing, in a list where the drawing beside it is only 2rem wide. */
-const DEEP_LABEL: Record<DeepMark, string> = {
-  whale: "The white whale",
-  laboon: "Laboon, who did not mind",
-  tentacle: "A tentacle",
-  // Same creature, same square: waking is what the last one did, not a different thing to have found.
-  sleeper: "A tentacle",
-  dutchman: "The Flying Dutchman",
-  bottle: "A message in a bottle",
-  jar: "Alexander, stuck fast",
-  // Same square, same jar - being out is what the second shot did, not a different thing to have found.
-  jarFree: "Alexander, out at last",
-  igon: "Igon, and his furled finger",
-  // Same square, same man - killing Bayle is what got him up, not a different thing to have found.
-  igonAvenged: "Igon, tormented no longer",
-  patches: 'Patches, who is "sorry"',
-};
+// Moved out to lib when the stream alert started naming the same finds - see lib/deepLabels.
+import { DEEP_LABEL } from "../lib/deepLabels";
 
 /**
  * One find, flattened to the few facts the panel prints.

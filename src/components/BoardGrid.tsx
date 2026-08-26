@@ -69,17 +69,6 @@ interface BoardGridProps {
   /** Cell index -> sunk ship orientation, so the fire/smoke marker rotates to match the hull. */
   sunkOrientation?: Map<number, boolean>;
   /**
-   * Which edges carry the A-J / 1-10 labels. "start" (default) is top and left; "all" repeats them
-   * along the bottom and right.
-   *
-   * Opt-in because it costs a gutter on two more sides, which a player's board - sharing a screen
-   * with a fleet roster, a log and a clock - can't spare. The stream board can: it is the only
-   * thing in its source, and it is being read by people who cannot point at it. On a 10x10 the
-   * distance from a square in the middle to the nearest label is halved, and a caster saying "D7"
-   * is understood without anyone tracing a line across the whole board.
-   */
-  coordEdges?: "start" | "all";
-  /**
    * Caps grid height. A number is read as a percentage of viewport height; a string is used as a
    * raw CSS length, which is what you want for a board meant to fill the window - `100vh` alone
    * always overflows, because it doesn't know about the page's padding or this board's own label.
@@ -294,7 +283,6 @@ export function BoardGrid({
   label,
   ships,
   sunkOrientation,
-  coordEdges = "start",
   maxVh = 82,
   maxVw = 92,
   cellText,
@@ -873,15 +861,15 @@ export function BoardGrid({
   }
 
   /**
-   * The A-J and 1-10 labels.
+   * The A-J and 1-10 labels, along the top and down the left.
    *
-   * `edge` places the same label on the far side of the board: an extra grid track appended after
-   * the cells, which shifts nothing, because every cell and hull is positioned from the START of
-   * the grid (row/col + 2). So the opposite edges are purely additive.
+   * There was a `coordEdges="all"` that repeated them along the bottom and right as well, for the
+   * stream boards - a viewer can't point at the screen, so a label near the square beats one in the
+   * far corner. It came back off: the far edges are two more `auto` grid tracks charged against the
+   * same square the board is given, so they cost cell size on EVERY board to answer a problem only a
+   * panned one has, and they put a second copy of every label into a frame already carrying a
+   * hundred square names. Two edges is what a board looks like.
    */
-  const allEdges = coordEdges === "all";
-  const lastTrack = boardSize + 2;
-
   const coord = (key: string, text: string, active: boolean, gridRow: number, gridColumn: number) => (
     <div key={key} className={`bg-coord${active ? " bg-coord-active" : ""}`} style={{ gridRow, gridColumn }}>
       {text}
@@ -894,7 +882,6 @@ export function BoardGrid({
     return (
       <Fragment key={`c${c}`}>
         {coord(`ct${c}`, text, active, 1, c + 2)}
-        {allEdges && coord(`cb${c}`, text, active, lastTrack, c + 2)}
       </Fragment>
     );
   });
@@ -905,7 +892,6 @@ export function BoardGrid({
     return (
       <Fragment key={`r${r}`}>
         {coord(`rl${r}`, text, active, r + 2, 1)}
-        {allEdges && coord(`rr${r}`, text, active, r + 2, lastTrack)}
       </Fragment>
     );
   });
@@ -920,8 +906,8 @@ export function BoardGrid({
           role="grid"
           aria-label={label ?? "Game board"}
           style={{
-            gridTemplateColumns: `auto repeat(${boardSize}, 1fr)${allEdges ? " auto" : ""}`,
-            gridTemplateRows: `auto repeat(${boardSize}, 1fr)${allEdges ? " auto" : ""}`,
+            gridTemplateColumns: `auto repeat(${boardSize}, 1fr)`,
+            gridTemplateRows: `auto repeat(${boardSize}, 1fr)`,
             ["--bg-max-vh" as string]: vhLimit,
             ["--bg-max-vw" as string]: vwLimit,
             // Derive the label size from the real cell size rather than guessing off the

@@ -238,6 +238,101 @@ input:focus, select:focus, button:focus-visible {
   outline-offset: 1px;
 }
 
+/* --- sliders -------------------------------------------------------------
+   Every range input in the app, styled from scratch - and the reset at the top is the point of it.
+
+   The global `input, select` rule above lands on range inputs too, wrapping them in a bordered box
+   with 0.7rem of padding at each end. That leaves the track occupying only the middle of the
+   control with a dead gap either side, so the slider looks like it stops short of both ends
+   because visually it does - you cannot drag it to empty or to full, however the values are set.
+
+   The fill is then placed at the THUMB'S CENTRE rather than at a flat percentage of the track. A
+   range input insets the thumb by half its width at each end (its centre travels between 6px and
+   width-6px, never to the edges), so a plain `... var(--eb-fill) * 100%` gradient would drift away
+   from the thumb by up to half a thumb - reintroducing a smaller version of the same gap. Hence the
+   0-1 fraction the component passes: it multiplies a length inside calc(), which a percentage
+   cannot do.
+
+   Lives here rather than beside the volume control it was written for, because it turned out to be
+   the answer everywhere: the overlay box's sliders had the bordered-box problem this fixes, and a
+   streamer dragging one to the end and finding it hadn't reached the end has been told the control
+   is broken. Wear `.eb-slider` and pass `--eb-fill`; size it with the two variables if the default
+   full width is wrong.
+
+   The pseudo-element rules are repeated per engine rather than grouped: one unrecognised selector
+   in a comma list invalidates the whole list, so WebKit's and Firefox's cannot share a block. */
+.eb-slider {
+  --eb-thumb: 12px;
+  --eb-track: 5px;
+
+  width: 100%;
+  height: var(--eb-thumb);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.eb-slider::-webkit-slider-runnable-track {
+  height: var(--eb-track);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
+      calc(var(--eb-thumb) / 2 + var(--eb-fill, 0) * (100% - var(--eb-thumb))) 100%,
+    var(--panel-border);
+}
+
+.eb-slider::-moz-range-track {
+  height: var(--eb-track);
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
+      calc(var(--eb-thumb) / 2 + var(--eb-fill, 0) * (100% - var(--eb-thumb))) 100%,
+    var(--panel-border);
+}
+
+.eb-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--eb-thumb);
+  height: var(--eb-thumb);
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  /* Centres the thumb on a track thinner than it is; WebKit alone needs this, as Firefox already
+     centres ::-moz-range-thumb for us. */
+  margin-top: calc((var(--eb-track) - var(--eb-thumb)) / 2);
+}
+
+.eb-slider::-moz-range-thumb {
+  width: var(--eb-thumb);
+  height: var(--eb-thumb);
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.eb-slider:hover::-webkit-slider-thumb {
+  background: var(--accent-bright);
+}
+
+.eb-slider:hover::-moz-range-thumb {
+  background: var(--accent-bright);
+}
+
+/* The global input:focus outline hugs the padded box, which no longer exists here. */
+.eb-slider:focus {
+  outline: none;
+}
+
+.eb-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
 .panel {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.12)), var(--panel);
   border: 1px solid var(--panel-border);

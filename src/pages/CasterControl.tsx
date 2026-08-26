@@ -1039,6 +1039,8 @@ export function CasterControl() {
                 max={MAX_ZOOM}
                 step={0.1}
                 value={view.zoom}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: (view.zoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) }}
                 onChange={(e) => set({ zoom: Number(e.target.value) })}
               />
               <span className="cast-zoom-value">{view.zoom.toFixed(1)}x</span>
@@ -1103,6 +1105,8 @@ export function CasterControl() {
                 max={1}
                 step={0.05}
                 value={view.text ?? 1}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: ((view.text ?? 1) - MIN_TEXT_SIZE) / (1 - MIN_TEXT_SIZE) }}
                 onChange={(e) => set({ text: Number(e.target.value) })}
                 title="How much of each square the name fills"
               />
@@ -1201,6 +1205,8 @@ export function CasterControl() {
                     max={MAX_ZOOM}
                     step={0.1}
                     value={punchZoom}
+                    className="eb-slider"
+                    style={{ ["--eb-fill" as string]: (punchZoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) }}
                     onChange={(e) => setPunchZoom(Number(e.target.value))}
                     title="How far in a highlight zooms"
                   />
@@ -1213,6 +1219,8 @@ export function CasterControl() {
                     max={15}
                     step={1}
                     value={punchSecs}
+                    className="eb-slider"
+                    style={{ ["--eb-fill" as string]: (punchSecs - 2) / 13 }}
                     onChange={(e) => setPunchSecs(Number(e.target.value))}
                     title="How long it holds before going back"
                   />
@@ -1390,10 +1398,14 @@ export function CasterControl() {
                 max={1}
                 step={0.05}
                 value={view.opacity}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: view.opacity }}
                 onChange={(e) => set({ opacity: Number(e.target.value) })}
                 title="How solid the board is on stream"
               />
-              <span className="cast-zoom-value">{Math.round(view.opacity * 100)}%</span>
+              <span className="cast-zoom-value">
+                {view.opacity <= 0 ? "hidden" : `${Math.round(view.opacity * 100)}%`}
+              </span>
               <button onClick={() => set({ opacity: 1 })} title="Back to a solid board">
                 Solid
               </button>

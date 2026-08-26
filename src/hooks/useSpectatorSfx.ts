@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { playSfx } from "../lib/sfx";
 import type { DeepMark } from "../lib/deepWater";
+import { isHeadline } from "../lib/deepLabels";
 import type { Attack } from "../types/battleship";
 
 /**
@@ -80,8 +81,9 @@ export function useSpectatorSfx(
     const fresh = [...deepCells].filter(([cell, kind]) => !heard.has(key(cell, kind)));
     // The two long ones win the tick. Both are the biggest thing that can happen in a match and both
     // can land alongside an ordinary find - so without this, the sleeper waking or Igon getting to his
-    // feet can be silently dropped in favour of whichever square sorted first.
-    const next = fresh.find(([, kind]) => kind === "sleeper" || kind === "igonAvenged") ?? fresh[0];
+    // feet can be silently dropped in favour of whichever square sorted first. Shared with the alert
+    // source, so the sound and the picture always agree about which find was the event.
+    const next = fresh.find(([, kind]) => isHeadline(kind)) ?? fresh[0];
     if (!next) return;
 
     /**

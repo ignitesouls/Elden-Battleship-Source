@@ -158,90 +158,14 @@ button.tb-item {
 }
 
 /* --- volume slider -------------------------------------------------------
-   Styled from scratch, and the reset at the top is the point of it: the global `input, select`
-   rule in index.css was landing on this range input too, wrapping it in a bordered box with
-   0.7rem of padding at each end. On a 66px control that left the track occupying only the middle
-   ~44px, with a dead gap either side - so the slider looked like it stopped short of both 0% and
-   100% because visually it did.
-
-   The fill is then placed at the THUMB'S CENTRE rather than at a flat percentage of the track. A
-   range input insets the thumb by half its width at each end (its centre travels between 6px and
-   width-6px, never to the edges), so a plain `... var(--tb-fill) * 100%` gradient would drift
-   away from the thumb by up to half a thumb - reintroducing a smaller version of the same gap.
-   Hence the 0-1 fraction from TopBar.tsx: it multiplies a length inside calc(), which a
-   percentage cannot do. */
+   The look is .eb-slider in index.css, which was written here first and moved out when the overlay
+   box turned out to need the same reset. All that is particular to this one is its size: a fixed
+   66px in a bar of items rather than the full width of a panel. */
 .tb-slider {
-  --tb-thumb: 12px;
-  --tb-track: 5px;
-
   width: 66px;
-  height: var(--tb-thumb);
   flex: none;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
 }
 
-.tb-slider::-webkit-slider-runnable-track {
-  height: var(--tb-track);
-  border-radius: 999px;
-  background:
-    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
-      calc(var(--tb-thumb) / 2 + var(--tb-fill, 0) * (100% - var(--tb-thumb))) 100%,
-    var(--panel-border);
-}
-
-.tb-slider::-moz-range-track {
-  height: var(--tb-track);
-  border-radius: 999px;
-  background:
-    linear-gradient(var(--accent), var(--accent)) no-repeat 0 /
-      calc(var(--tb-thumb) / 2 + var(--tb-fill, 0) * (100% - var(--tb-thumb))) 100%,
-    var(--panel-border);
-}
-
-.tb-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: var(--tb-thumb);
-  height: var(--tb-thumb);
-  border: none;
-  border-radius: 50%;
-  background: var(--text);
-  /* Centres the thumb on a track thinner than it is; WebKit alone needs this, as Firefox already
-     centres ::-moz-range-thumb for us. */
-  margin-top: calc((var(--tb-track) - var(--tb-thumb)) / 2);
-}
-
-.tb-slider::-moz-range-thumb {
-  width: var(--tb-thumb);
-  height: var(--tb-thumb);
-  border: none;
-  border-radius: 50%;
-  background: var(--text);
-}
-
-.tb-slider:hover::-webkit-slider-thumb {
-  background: var(--accent-bright);
-}
-
-.tb-slider:hover::-moz-range-thumb {
-  background: var(--accent-bright);
-}
-
-/* The global input:focus outline hugs the old padded box, which no longer exists here. */
-.tb-slider:focus {
-  outline: none;
-}
-
-.tb-slider:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  border-radius: 999px;
-}
 
 .tb-on {
   color: var(--text);

@@ -132,8 +132,16 @@ export interface CastView {
   text?: number;
 }
 
-/** How faint a source may be made before "hidden" is the honest word for it. */
-export const MIN_OPACITY = 0.25;
+/**
+ * The floor on a source's transparency, which is now none at all.
+ *
+ * It was 0.25, on the reasoning that a source faded past a quarter is hidden rather than faint, and
+ * that hiding a source is OBS's job. What that cost was a slider whose left end was not an end:
+ * dragging to the bottom of the track left the board at quarter strength, which reads as a control
+ * that doesn't work rather than as a guard rail. A streamer who wants nothing on screen can say so
+ * here now, and the box says "hidden" when they have.
+ */
+export const MIN_OPACITY = 0;
 
 /**
  * `?opacity=` off a source's URL, clamped, defaulting to solid.
@@ -145,11 +153,53 @@ export const MIN_OPACITY = 0.25;
  * invisible while another quietly floors at 0.25.
  */
 export function readOpacity(params: URLSearchParams): number {
-  const raw = params.get("opacity");
+  return readFraction(params, "opacity");
+}
+
+/**
+ * `?empty=` - how solid a square nobody has fired at is, as a fraction of the scene's own opacity.
+ *
+ * A second, narrower transparency, and it exists because the two questions are different. The scene
+ * setting is "how much of my gameplay shows through this overlay"; this one is "which squares am I
+ * actually being told about". A player already knows where they have been, so the fill on the
+ * squares they haven't is the part of the board with nothing to say - turn it down and their own
+ * footage shows through everywhere they have yet to shoot, while every hit, miss and wreck stays
+ * exactly as solid as it was.
+ *
+ * Multiplied by the scene opacity rather than replacing it, so the two sliders compose instead of
+ * fighting: at 100% the board looks exactly as it did before this existed.
+ *
+ * Deliberately absent from a caster's sources. The desk is reading the whole board, and the empty
+ * water is where the patterns are.
+ */
+export function readEmptyFade(params: URLSearchParams): number {
+  return readFraction(params, "empty");
+}
+
+/** Shared clamp for the 0-1 settings above. Absent means 1, which is "as it comes". */
+function readFraction(params: URLSearchParams, key: string): number {
+  const raw = params.get(key);
   if (raw === null || raw === "") return 1;
   const n = Number(raw);
   if (!Number.isFinite(n)) return 1;
-  return Math.min(1, Math.max(MIN_OPACITY, n));
+  return Math.min(1, Math.max(0, n));
+}
+
+/**
+ * How long the find alert holds a find on screen.
+ *
+ * Under two seconds nobody reads the caption; over thirty it has stopped being an alert and become
+ * furniture. Both ends are guard rails rather than opinions - see pages/OverlayEgg.
+ */
+export const MIN_ALERT_SECS = 2;
+export const MAX_ALERT_SECS = 30;
+export const DEFAULT_ALERT_SECS = 6;
+
+/** `?secs=` off the alert source's URL, clamped. */
+export function readAlertSecs(params: URLSearchParams): number {
+  const raw = Number(params.get("secs"));
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_ALERT_SECS;
+  return Math.min(MAX_ALERT_SECS, Math.max(MIN_ALERT_SECS, raw));
 }
 
 export interface CastFleet {

@@ -17,12 +17,14 @@ import {
   MIN_ZOOM,
   MAX_ZOOM,
   readOpacity,
+  readEmptyFade,
   type CastView,
 } from "../lib/overlayCast";
 import { readTextSize, OVERLAY_MAX_FONT } from "../lib/overlayText";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { markedAttacks, spotSet } from "../lib/overlayMarkers";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
+import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
 import "./Overlay.css";
 import "./OverlayTiers.css";
@@ -192,6 +194,20 @@ export function OverlayBoard() {
     if (frame.w > 0 && frame.h > 0) report({ w: frame.w, h: frame.h });
   }, [frame.w, frame.h, report, linkEpoch]);
 
+  /**
+   * Every fleet's square tallies, for the fire board below.
+   *
+   * Called unconditionally and for every source, including the ones that will never draw a chip -
+   * a hook cannot sit behind the `fire` test without breaking the rules of hooks, and it costs one
+   * select on a table the spectator page already reads the same way.
+   *
+   * These are safe to put on a stream because they are not private in the first place: tallies are
+   * stored per player and shared with the whole fleet, and `useSpectatorCounts` is what the
+   * spectator seat already reads them with. Pencil marks are the opposite and are deliberately
+   * absent from this source - see usePencilMarks, which never sends them anywhere.
+   */
+  const teamCounts = useSpectatorCounts(state.room?.id);
+
   const room = state.room;
   // Drives the reveal gate below: names hold until the board has finished being dealt.
   const battlePhase = useBattlePhaseName(state.attacks, room);
@@ -341,6 +357,24 @@ export function OverlayBoard() {
       ? deepMarks(deep, fireTeam, new Set(relevant.map((a) => a.cell_index)))
       : deepMarks(deep);
 
+  /**
+   * The fleet's own square tallies, resolved from player ids into something a square can print.
+   *
+   * Fire board only. On a defensive board the chips would be one fleet's reasoning drawn over a
+   * board somebody else is reading, and on the caster's they would be several fleets' at once,
+   * stacked into a square already carrying a name.
+   *
+   * No `myPlayerId`, so nothing is flagged as mine: a browser source belongs to no player, and the
+   * accent that marks your own chip on your own screen would be a lie about whose it is here.
+   */
+  const counts =
+    fireTeam !== null
+      ? countChips(teamCounts.get(fireTeam) ?? new Map(), (pid) => {
+          const who = state.players.find((pl) => pl.id === pid);
+          return who?.nickname ?? "Someone";
+        })
+      : undefined;
+
   // One walk of the shown fleets' shots rather than one filter of the whole log per square - which
   // on a source re-rendering off the cast heartbeat was the most expensive thing this page did.
   // See lib/cellVisuals for the precedence, which is the same merge described above.
@@ -384,6 +418,10 @@ export function OverlayBoard() {
           left: placeBoard(stage.w, frame.w, view.cx),
           top: placeBoard(stage.h, frame.h, view.cy),
           ["--ovl-a-bg" as string]: view.opacity ?? 1,
+          // Thins the squares nobody has fired at, and nothing else - see readEmptyFade. Off the
+          // URL rather than the cast frame: it is a player's setting for a player's own source, and
+          // a caster's board simply never carries one.
+          ["--ovl-a-empty" as string]: readEmptyFade(params),
         }}
       >
         <BoardGrid
@@ -405,15 +443,9 @@ export function OverlayBoard() {
           // from the desk to know: the finds are in the public log, so it works them out for itself
           // and they appear on stream by themselves.
           deepCells={deepCells}
-          // Top and left only - BoardGrid's default, so there is no prop here.
-          //
-          // It did draw all four. The argument was that a viewer can't point at the screen and a
-          // zoomed board can carry its top-left labels out of frame, so a label near the square
-          // beats one in the far corner. What that missed is that the far edges are two more gutter
-          // tracks charged to the same square the source was given: they cost cell size on every
-          // board to answer a problem only a panned one has, and they put a second copy of every
-          // label into a frame already carrying 100+ square names, a clock and a key. Two edges is
-          // what a board looks like, and it is what the caster asked for.
+          // The fleet's own tallies, on their own board and nowhere else. Read-only: with no
+          // onCount, a source draws the chips and cannot add to them.
+          counts={counts}
           // Both bounds the same, because BoardGrid resolves min(maxVh, maxVw, 1600px) to a square.
           maxVh={`${boardPx}px`}
           maxVw={`${boardPx}px`}

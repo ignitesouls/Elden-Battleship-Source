@@ -8,6 +8,7 @@ import { OverlayTimer } from "./pages/OverlayTimer";
 import { OverlayKey } from "./pages/OverlayKey";
 import { OverlayAudio } from "./pages/OverlayAudio";
 import { OverlayFleet } from "./pages/OverlayFleet";
+import { OverlayEgg } from "./pages/OverlayEgg";
 import { OverlayOdds } from "./pages/OverlayOdds";
 import { CasterControl } from "./pages/CasterControl";
 import { TopBar } from "./components/TopBar";
@@ -51,6 +52,8 @@ const OVERLAY_ROUTES = [
   "/overlay-fleet/",
   // Draws nothing at all, and still belongs here: the chrome would be the ONLY thing it drew.
   "/overlay-audio/",
+  // Draws nothing for most of a match, which is the same argument.
+  "/overlay-egg/",
 ];
 
 function Chrome() {
@@ -93,6 +96,8 @@ function App() {
           {/* A player's own fleet, small, for showing chat where their ships are. Not a caster
               source: it needs the owner's rejoin code and can only ever draw that one fleet. */}
           <Route path="/overlay-fleet/:code" element={<OverlayFleet />} />
+          {/* Empty until the water gives something up - see pages/OverlayEgg. */}
+          <Route path="/overlay-egg/:code" element={<OverlayEgg />} />
           <Route path="/cast/:code" element={<CasterControl />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/player/:key" element={<PlayerStats />} />

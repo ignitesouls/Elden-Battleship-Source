@@ -227,10 +227,11 @@ export function TopBar() {
           value={volumePercent}
           onChange={(e) => applyVolume(Number(e.target.value) / 100)}
           aria-label="Sound effect volume"
-          className="tb-slider"
+          className="eb-slider tb-slider"
           // A range input offers no hook for colouring the track up to the thumb, so the fill is
-          // painted in CSS from this fraction. See TopBar.css for why it's 0-1 and not a percent.
-          style={{ ["--tb-fill" as string]: volumePercent / 100 }}
+          // painted in CSS from this fraction. See .eb-slider in index.css for why it's 0-1 and not
+          // a percent.
+          style={{ ["--eb-fill" as string]: volumePercent / 100 }}
         />
       </div>
     </div>
