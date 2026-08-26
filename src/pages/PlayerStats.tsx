@@ -5,7 +5,7 @@ import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type P
 import { playerPace, playerKills, playerBestKills, type MatchEventRow } from "../lib/almanac";
 import { LoadingScreen } from "../components/BrandMark";
 import { AutoFireSetup } from "../components/AutoFireSetup";
-import { useAuthProfile } from "../hooks/useAuthProfile";
+import { accountName, useAuthProfile } from "../hooks/useAuthProfile";
 import {
   aggregateCareers,
   headToHeadRecords,
@@ -92,11 +92,49 @@ export function PlayerStats() {
   }, [rows, playerKey]);
 
   if (rows === null) return <LoadingScreen>Loading the log...</LoadingScreen>;
+  /**
+   * Nobody has played a match under this key yet.
+   *
+   * For a visitor that is the whole page: there is no career to read. For the signed-in owner it
+   * is their FIRST visit, and the auto-marking panel is the reason they were sent here - the room
+   * screen's "Set it up on your profile" link and the top bar's account link both point at exactly
+   * this URL. Gating that panel on having a career made the feature unreachable for the only
+   * people who need it before their first match: a new captain followed the link and was told they
+   * did not exist. So the career sections drop away and the token panel stays.
+   */
   if (!view?.career) {
     return (
-      <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
-        <p className="muted" style={{ margin: 0 }}>No record found for this captain.</p>
-        <Link to="/leaderboard">Back to the leaderboard</Link>
+      <div className="stack" style={{ width: "min(760px, 100%)", gap: "0.9rem" }}>
+        <div className="panel row" style={{ gap: "0.75rem", alignItems: "center" }}>
+          {isMe && viewer?.avatarUrl && (
+            <img
+              src={viewer.avatarUrl}
+              alt=""
+              width={56}
+              height={56}
+              style={{ borderRadius: "50%", border: "2px solid var(--accent)" }}
+            />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: "1.5rem" }}>
+              {isMe ? accountName(viewer) ?? "Your record" : "No record found"}
+            </h1>
+            <span className="muted" style={{ fontSize: "0.82rem" }}>
+              {isMe
+                ? "No matches yet. Your record starts with the first one."
+                : "No matches under this captain."}
+            </span>
+          </div>
+          <Link to="/leaderboard" style={{ fontSize: "0.8rem" }}>
+            Leaderboard
+          </Link>
+        </div>
+
+        {/* The point of the page for a brand new captain: set up auto-marking before playing,
+            rather than discovering it only after a match has already been recorded by hand. */}
+        {isMe && <AutoFireSetup />}
+
+        <SiteFooter />
       </div>
     );
   }
