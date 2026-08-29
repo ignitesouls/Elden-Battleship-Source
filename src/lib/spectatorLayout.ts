@@ -9,7 +9,7 @@ import type { PanelLayout } from "./panelLayout";
  * than by position, so a caster who has parked Red's board somewhere keeps it there when a fifth
  * fleet joins and the tiling changes underneath.
  */
-export type SpectatorPanelId = `team${number}` | "crewFire" | "crewFleet" | "log" | "roster";
+export type SpectatorPanelId = `team${number}` | "crewFire" | "crewFleet" | "log" | "roster" | "odds";
 
 export type SpectatorLayout = PanelLayout<SpectatorPanelId>;
 
@@ -31,7 +31,11 @@ const RAIL_X = 0.78;
  * Boards go at most two across for the same reason boardSideFor caps at two columns: three side by
  * side on a 16:9 screen are each shorter than half the height they could have had.
  */
-export function defaultSpectatorLayout(boardIds: SpectatorPanelId[], railShown: boolean): SpectatorLayout {
+export function defaultSpectatorLayout(
+  boardIds: SpectatorPanelId[],
+  railShown: boolean,
+  oddsShown: boolean
+): SpectatorLayout {
   const out = {} as SpectatorLayout;
   const n = boardIds.length;
   const boardsW = railShown ? RAIL_X : 1;
@@ -50,15 +54,42 @@ export function defaultSpectatorLayout(boardIds: SpectatorPanelId[], railShown: 
     });
   }
 
-  // The log gets the taller share: it's the thing a caster reads continuously, while the rosters
-  // are a glance to check who has hulls left.
-  out.log = { x: RAIL_X, y: 0, w: 1 - RAIL_X, h: 0.56, z: n + 1 };
-  out.roster = { x: RAIL_X, y: 0.57, w: 1 - RAIL_X, h: 0.43, z: n + 2 };
+  /**
+   * The rail, top to bottom: odds, log, rosters.
+   *
+   * The eval bar goes at the TOP and gets the smallest share, and both halves of that are
+   * deliberate. It is a glance rather than a read - the bar IS the number, so a caster takes it in
+   * without stopping - and a glance belongs where the eye lands first. The log gets the tall share
+   * because it is the thing being read continuously, and the rosters the rest, being a check on who
+   * still has hulls.
+   *
+   * When the odds are off the other two expand into the space rather than leaving a gap, which is
+   * what makes the toggle worth having on a screen where every pixel is already spoken for.
+   */
+  const oddsH = 0.18;
+  const top = oddsShown ? oddsH + 0.01 : 0;
+  if (oddsShown) out.odds = { x: RAIL_X, y: 0, w: 1 - RAIL_X, h: oddsH, z: n + 1 };
+
+  const rest = 1 - top;
+  out.log = { x: RAIL_X, y: top, w: 1 - RAIL_X, h: rest * 0.56, z: n + 2 };
+  out.roster = { x: RAIL_X, y: top + rest * 0.57, w: 1 - RAIL_X, h: rest * 0.43, z: n + 3 };
 
   return out;
 }
 
-/** Every panel id on screen for a given mode, which is what the layout hook is bound to. */
-export function spectatorPanelIds(boardIds: SpectatorPanelId[], railShown: boolean): SpectatorPanelId[] {
-  return railShown ? [...boardIds, "log", "roster"] : boardIds;
+/**
+ * Every panel id on screen for a given mode, which is what the layout hook is bound to.
+ *
+ * The odds ride with the rail rather than having their own switch here: they are part of the same
+ * "what a caster has beside the boards" decision, and a rail that is hidden has nothing to hang them
+ * off. Their own toggle sits inside that, so hiding the rail hides them and showing it restores
+ * whatever the caster last chose.
+ */
+export function spectatorPanelIds(
+  boardIds: SpectatorPanelId[],
+  railShown: boolean,
+  oddsShown: boolean
+): SpectatorPanelId[] {
+  if (!railShown) return boardIds;
+  return oddsShown ? [...boardIds, "odds", "log", "roster"] : [...boardIds, "log", "roster"];
 }

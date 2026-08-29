@@ -253,8 +253,14 @@ export interface MatchReportRow {
   winner_team: number | null;
   duration: string | null;
   total_shots: number;
-  summary: unknown;
-  report_text: string;
+  /**
+   * Both optional because the list readers do not ask for either - see REPORT_LINE_COLUMNS in
+   * lib/rooms. `summary` is the biggest column in the archive and nothing that renders a LIST of
+   * matches reads it; `report_text` is fetched only by the front page, which has a Copy button for
+   * it. Required here would be a type that promises data the row was never asked for.
+   */
+  summary?: unknown;
+  report_text?: string;
   finished_at: string;
   /** Struck from every stat and record but still archived - see lib/voidedMatches. */
   voided?: boolean;

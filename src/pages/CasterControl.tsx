@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import type { OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { activeTeams, sunkCellOrientations, attackerTeamsByCell, cellLabel } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
@@ -121,8 +122,13 @@ const PAD: Array<[string, number, number, string]> = [
  * it every fleet exactly as it does the spectator page. The browser sources get their ships from
  * here rather than from the database - see lib/overlayCast.ts.
  */
-export function CasterControl() {
-  const { code } = useParams<{ code: string }>();
+export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code"> = {}) {
+  // The room comes from /cast/:code, or from the persistent /stream/cast route which resolved it off
+  // the caster's overlay token. The cast channel is keyed on the room code (see lib/overlayCast), so
+  // a token-resolved desk and a token-resolved board meet on it without either knowing the other
+  // arrived by a different door. No query string: this page has never taken one.
+  const { code: routeCode } = useParams<{ code: string }>();
+  const code = codeProp ?? routeCode;
   const state = useRoom(code);
   const { publish, ready } = useCastPublisher(code);
 
@@ -248,6 +254,7 @@ export function CasterControl() {
    * while this one is running.
    */
   const [book, setBook] = useState<RecordEntry[]>([]);
+  const roomSquareSet = room?.square_set;
   useEffect(() => {
     if (!room) return;
     void (async () => {
@@ -255,7 +262,11 @@ export function CasterControl() {
       const set = rowSquareSet(room);
       setBook(buildRecordBook(rows.filter((r) => rowSquareSet(r) === set), [], set));
     })();
-  }, [room]);
+    // Keyed on the square set rather than the room object - see the same fix in BattlePhase. The
+    // caster page is the worst place to get this wrong: it is open for the whole broadcast, and it
+    // is the one screen that is also driving nine browser sources.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomSquareSet]);
 
   const chases = useMemo(() => {
     if (!room || book.length === 0) return [];

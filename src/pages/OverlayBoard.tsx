@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
 import { useBoxSize } from "../hooks/useBoxSize";
@@ -117,9 +117,10 @@ function pinnedView(params: URLSearchParams): CastView | null {
  * corner with half of it cropped in the first version.
  */
 
-export function OverlayBoard() {
-  const { code } = useParams<{ code: string }>();
-  const [params] = useSearchParams();
+export function OverlayBoard(props: OverlaySourceProps = {}) {
+  // The room and the query string come from the URL, or from the persistent stream route that has
+  // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
+  const { code, params } = useOverlaySource(props);
   const debug = params.get("debug") === "1";
   /**
    * How large the names are drawn, over what the squares would choose - see lib/overlayText.
@@ -393,8 +394,10 @@ export function OverlayBoard() {
       ref={frameRef}
       // Board size as a CSS variable so the stylesheet can recompute the cell font from the real
       // board size - BoardGrid's own figure is capped at 1600px. See OverlayBoard.css.
-      // --ovb-text carries the same multiplier the names get to the COORDINATE labels, which are
-      // plain CSS rather than fitted per square and so can't take it as a prop.
+      // --ovb-text is the text-size slider, and reaches only the square names' FIRST render - the
+      // estimate drawn before there is a cell to measure, after which textFit writes a fitted size
+      // inline and inline wins. The coordinate gutter deliberately doesn't read it; see the note on
+      // .bg-coord in the stylesheet for why the two are different questions.
       style={{ ["--ovb-cells" as string]: boardSize, ["--ovb-text" as string]: drawnText }}
     >
       {/* Transparency is THREE alphas off one slider rather than a flat opacity on this element -

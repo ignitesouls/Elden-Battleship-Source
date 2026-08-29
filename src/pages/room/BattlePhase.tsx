@@ -356,7 +356,13 @@ export function BattlePhase({
       const set = rowSquareSet(room);
       setBook(buildRecordBook(rows.filter((r) => rowSquareSet(r) === set), [], set));
     })();
-  }, [room]);
+    // `room.square_set` and not `room`, which is what the comment above always meant by "once".
+    // useRoom replaces the room OBJECT on every realtime UPDATE - a pause, a resume, a settings
+    // change, the status moving on - so depending on it re-read the entire participation table
+    // mid-match, on every player's screen, several times a game. The only thing read out of the
+    // room here is which square set to build the book for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.square_set]);
 
   const chases = useMemo(() => {
     if (book.length === 0) return [];

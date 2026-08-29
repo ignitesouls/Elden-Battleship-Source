@@ -30,12 +30,22 @@ const EMPTY: VictoryOddsRead = { snapshot: null, timeline: [] };
  * @param withTimeline whether to replay the whole match for the history line. Costs one simulation
  * per sampled point - about 85ms for a duel - so a surface that only prints the current number says
  * no and skips it entirely.
+ *
+ * @param enabled whether to run the model at all.
+ *
+ * Distinct from `withTimeline`, and both are needed: `withTimeline` says "the current number but not
+ * the history", which is what the odds source with ?graph=0 wants, while this says "nothing". Every
+ * caller here is a surface the number can be switched OFF on - a scorebug without ?odds=1, an eval
+ * bar a caster has collapsed - and without this the ten thousand rollouts ran anyway, once per shot,
+ * for the whole match, to produce a snapshot nobody rendered. A hook cannot be called conditionally,
+ * so the condition has to come in as an argument.
  */
 export function useVictoryOdds(
   attacks: Attack[],
   room: Room | null,
   players: Player[],
-  withTimeline = false
+  withTimeline = false,
+  enabled = true
 ): VictoryOddsRead {
   const teams = activeTeams(players);
   let shots = 0;
@@ -49,6 +59,7 @@ export function useVictoryOdds(
     teams.join(","),
     crews,
     withTimeline ? 1 : 0,
+    enabled ? 1 : 0,
     room?.pause_at ?? "",
     room?.resume_at ?? "",
   ].join("|");
@@ -59,6 +70,8 @@ export function useVictoryOdds(
 
   return useMemo(() => {
     const { attacks: log, room: current, players: crew, teams: fleetTeams } = latest.current;
+    // Before anything else: switched off is switched off, and the cost of being off must be zero.
+    if (!enabled) return EMPTY;
     if (!current || fleetTeams.length < 2) return EMPTY;
     const shipDefs = current.ship_defs ?? [];
     if (shipDefs.length === 0) return EMPTY;
@@ -74,5 +87,5 @@ export function useVictoryOdds(
     // themselves are read through a ref so that a new `attacks` array alone cannot trigger ten
     // thousand rollouts. See the note above.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, withTimeline]);
+  }, [key, withTimeline, enabled]);
 }

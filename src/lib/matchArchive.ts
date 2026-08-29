@@ -97,29 +97,89 @@ export interface ArchivedMatchDetail {
 export const ARCHIVE_LIST_LIMIT = 200;
 
 /**
+ * One line of the history list.
+ *
+ * A deliberately smaller thing than `ArchivedMatch`: it is what the list can actually be drawn from
+ * and no more, so that the type cannot promise a `report_text` the row was never asked for.
+ */
+export interface ArchivedMatchListing {
+  match_key: string;
+  room_code: string;
+  winner_team: number | null;
+  duration: string | null;
+  total_shots: number;
+  square_set?: string | null;
+  finished_at: string;
+  /** Only the two blocks `matchName` reads. The finds and the prose stay on the server. */
+  summary: { stats?: PlayerStats[]; awards?: Award[] } | null;
+}
+
+/**
  * A match's headline row, for lists.
  *
  * Deliberately reads `match_reports` rather than aggregating `match_events`: the recap header was
  * computed once, at the end of the match, from the full attack log. Re-deriving it here from the
  * 5000-row event sample the Almanac happens to hold would quietly disagree with the recap page
  * itself on older matches.
+ *
+ * -- Why the two arrows -----------------------------------------------------------------------------
+ *
+ * `summary` is the largest column in the archive, and the list needs two blocks out of it: matchName
+ * reads `stats` and `awards`, and reads nothing else. Fetching the whole thing to get them meant
+ * also fetching every find in the water and the entire prose recap, for two hundred matches, to
+ * render a list of twelve names - 229 KB gzip where 78 KB does the same job.
+ *
+ * PostgREST projects into jsonb with `->`, so the two blocks come back on their own and are folded
+ * into a `summary` shape here, which is what matchName and the list already speak. The one thing
+ * that must NOT be done is dropping `summary` outright: the names would all silently fall through to
+ * matchName's size-based fallback, and a list of "The Ten-Square Skirmish" repeated twelve times
+ * looks like a working page rather than a broken one.
  */
-export async function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<ArchivedMatch[]> {
+export async function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<ArchivedMatchListing[]> {
   const { data, error } = await supabase
     .from("match_reports")
-    .select()
+    .select("match_key,room_code,winner_team,duration,total_shots,square_set,finished_at,stats:summary->stats,awards:summary->awards")
     .order("finished_at", { ascending: false })
     .limit(limit);
   if (error || !data) return [];
-  return data as ArchivedMatch[];
+
+  return (data as unknown as (Omit<ArchivedMatchListing, "summary"> & {
+    stats: PlayerStats[] | null;
+    awards: Award[] | null;
+  })[]).map(({ stats, awards, ...row }) => ({
+    ...row,
+    summary: { stats: stats ?? [], awards: awards ?? [] },
+  }));
 }
 
-/** Everything about one archived match, fetched in parallel. */
+/**
+ * Everything about one archived match, fetched in parallel.
+ *
+ * Columns are listed rather than taken wholesale, but this is the one archive read that still asks
+ * for nearly all of them, and that is not an oversight: a recap page redraws the whole match, so it
+ * genuinely wants the finds, the prose, the fairness record and the board source. What it drops is
+ * only what nothing here reads - the row `id`s, and the `user_id`/`finished_at` on events that the
+ * recap never looks at.
+ *
+ * `board_perm` stays on the event rows, unlike the Almanac's bulk feed. The duplication is the same,
+ * but the scale is not: this is one match's ~120 rows rather than the archive's 17,000, and leaving
+ * the replay path reading exactly where it always has is worth more than the few KB.
+ */
 export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatchDetail> {
   const [report, fleets, events] = await Promise.all([
-    supabase.from("match_reports").select().eq("match_key", matchKey).maybeSingle(),
-    supabase.from("match_fleets").select().eq("match_key", matchKey),
-    supabase.from("match_events").select().eq("match_key", matchKey),
+    supabase
+      .from("match_reports")
+      .select("match_key,room_code,winner_team,duration,total_shots,summary,report_text,square_set,finished_at,balance,voided")
+      .eq("match_key", matchKey)
+      .maybeSingle(),
+    supabase
+      .from("match_fleets")
+      .select("match_key,team,board_size,room_id,placements,ship_defs,square_set")
+      .eq("match_key", matchKey),
+    supabase
+      .from("match_events")
+      .select("match_key,nickname,team,cell_index,challenge_name,result,match_seconds,board_size,room_id,square_set,board_seed,board_perm")
+      .eq("match_key", matchKey),
   ]);
   return {
     report: (report.data as ArchivedMatch) ?? null,

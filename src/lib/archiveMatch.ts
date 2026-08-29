@@ -3,6 +3,7 @@ import { challengesForRoom, igonAnchor } from "./challenges";
 import { supabase } from "./supabase";
 import { bottleNote, type DeepHide } from "./deepWater";
 import { deepForArchive } from "./deepArchive";
+import { clearArchiveCache } from "./profiles";
 import type { Attack, Fleet, Player, Room } from "../types/battleship";
 
 /**
@@ -70,4 +71,10 @@ export async function archiveMatch(
     console.error("[archive] could not save the match record:", error.message);
     throw error;
   }
+
+  // The stats feeds are cached for a few minutes, so that clicking between the Almanac, the
+  // leaderboard and a player page reads the archive once rather than three times over. This tab has
+  // just ADDED to that archive, which makes its copy the one thing the cache cannot be allowed to
+  // keep: a caster who ends a match and opens the Almanac is exactly the person who would notice.
+  clearArchiveCache();
 }

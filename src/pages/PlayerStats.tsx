@@ -4,7 +4,6 @@ import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET } from ".
 import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type Profile } from "../lib/profiles";
 import { playerPace, playerKills, playerBestKills, type MatchEventRow } from "../lib/almanac";
 import { LoadingScreen } from "../components/BrandMark";
-import { AutoFireSetup } from "../components/AutoFireSetup";
 import { accountName, useAuthProfile } from "../hooks/useAuthProfile";
 import {
   aggregateCareers,
@@ -130,10 +129,6 @@ export function PlayerStats() {
           </Link>
         </div>
 
-        {/* The point of the page for a brand new captain: set up auto-marking before playing,
-            rather than discovering it only after a match has already been recorded by hand. */}
-        {isMe && <AutoFireSetup />}
-
         <SiteFooter />
       </div>
     );
@@ -183,12 +178,6 @@ export function PlayerStats() {
           Leaderboard
         </Link>
       </div>
-
-      {/* Only on your own page. This is a public career page - anyone can open anyone's - so the
-          token panel is gated on the viewer being the captain it belongs to, not merely on being
-          signed in. RLS would refuse to hand over someone else's token regardless; this is what
-          stops the controls appearing at all where they'd make no sense. */}
-      {isMe && <AutoFireSetup />}
 
       <div className="panel stack" style={{ gap: "0.4rem" }}>
         <h3 style={{ margin: 0 }}>Career</h3>

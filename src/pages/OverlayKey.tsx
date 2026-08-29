@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
-import { useBoxSize } from "../hooks/useBoxSize";
 import { legendItems } from "../lib/legend";
-import { fitScale } from "../lib/overlayFit";
+import { KeyStrip } from "../components/KeyStrip";
 import { challengesForRoom } from "../lib/challenges";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
@@ -29,12 +28,11 @@ import "./OverlayKey.css";
  * board for a colour that was never dealt. Comes from the same legendItems() the players' own key
  * uses, so what the stream names a colour and what they see beside their board cannot disagree.
  */
-export function OverlayKey() {
-  const { code } = useParams<{ code: string }>();
-  const [params] = useSearchParams();
+export function OverlayKey(props: OverlaySourceProps = {}) {
+  // The room and the query string come from the URL, or from the persistent stream route that has
+  // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
+  const { code, params } = useOverlaySource(props);
   const state = useRoom(code);
-  const [frameRef, frame] = useBoxSize<HTMLDivElement>();
-  const [barRef, bar] = useBoxSize<HTMLDivElement>();
 
   // Same transparency opt-out the other sources make - see the note in Overlay.css.
   useEffect(() => {
@@ -94,23 +92,16 @@ export function OverlayKey() {
    * so the source stays the boundary - a key is a strip whose whole job is to span the screen, and
    * one scaled past its own source loses the colours at both ends.
    */
-  const scale = fitScale(bar, frame, 8, textSize);
-
   return (
-    <div className="ovk" ref={frameRef}>
-      <div
-        className={`ovk-bar${plate ? " ovk-plate" : ""}`}
-        ref={barRef}
-        style={{ transform: `translate(-50%, -50%) scale(${scale})`, opacity }}
-      >
-        {showLabel && <span className="ovk-label">{heading}</span>}
-        {items.map((item) => (
-          <span key={item.key} className="ovk-item">
-            <span className={`${item.className} ovk-swatch`} style={item.style} aria-hidden />
-            {item.label}
-          </span>
-        ))}
-      </div>
+    <div className="ovk">
+      <KeyStrip
+        items={items}
+        heading={heading}
+        showLabel={showLabel}
+        plate={plate}
+        opacity={opacity}
+        textSize={textSize}
+      />
     </div>
   );
 }

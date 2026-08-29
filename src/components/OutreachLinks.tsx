@@ -11,7 +11,7 @@ import "./OutreachLinks.css";
 const LOGO = `${import.meta.env.BASE_URL}ignite_logo.png`;
 
 /**
- * The three ways to reach somebody about this, as items in the top bar.
+ * The ways to reach somebody about this, plus the one setup errand, as items in the top bar.
  *
  * These used to be chips at the bottom of every menu page. The trouble with a footer is that it is
  * only ever seen by somebody who has already scrolled past everything they came for - so the bug
@@ -34,6 +34,17 @@ const LOGO = `${import.meta.env.BASE_URL}ignite_logo.png`;
  * The bug report is exempt and shows to everybody, always. It is the one link whose worth goes UP
  * during a match - that is when a bug happens - and it opens in a new tab, so it cannot cost you the
  * room you are sitting in.
+ *
+ * -- Why the setup page is up here at all --------------------------------------------------------
+ *
+ * OBS and auto-marking are both set up once, before anybody plays anything, and both used to be
+ * findable only by someone who already knew where to look - auto-marking on the profile page, the
+ * overlay URLs inside a room you had to have joined first. Neither is a thing you go and READ, which
+ * is what the rest of the site's navigation is organised around; they are things you go and DO, like
+ * reporting a bug, so they live where that already does.
+ *
+ * It follows the social two rather than the bug report: nobody sets up their overlay in the middle
+ * of a battle, and a link that navigates away from a live match is a hazard.
  */
 export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
   return (
@@ -56,6 +67,15 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
 
       {!inLiveMatch && (
         <>
+          {/* An ordinary in-app link, not a new tab: this one IS the site, and the three around it
+              are only opened in tabs because they lead away from it. */}
+          <a className="tb-item tb-out tb-out-obs" href="#/streaming" title="Set up your stream overlay and auto-marking">
+            <span className="tb-out-icon" aria-hidden="true">
+              <CameraMark />
+            </span>
+            <span className="tb-label">OBS &amp; auto-marking</span>
+          </a>
+
           <a
             className="tb-item tb-out tb-out-hello"
             href="https://github.com/kcbrazos"
@@ -90,6 +110,26 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * A studio camera, in the same hand as the beetle below it.
+ *
+ * Heavy dark strokes and flat fills, no gradients and no thin detail, because it is drawn at 20px in
+ * a toolbar and anything finer than the beetle's legs disappears there. The lens and the two reels
+ * are what make a rounded box read as a camera at that size - drop either and it is a television.
+ */
+function CameraMark() {
+  return (
+    <svg viewBox="0 0 100 100" className="tb-out-camera" aria-hidden="true">
+      <circle className="tb-out-reel" cx="34" cy="26" r="15" />
+      <circle className="tb-out-reel" cx="66" cy="26" r="15" />
+      <rect className="tb-out-body" x="12" y="40" width="62" height="42" rx="8" />
+      {/* The viewfinder wedge off the side, which is the silhouette people actually recognise. */}
+      <path className="tb-out-body" d="M76,52 L94,42 L94,80 L76,70 Z" />
+      <circle className="tb-out-lens" cx="36" cy="61" r="11" />
+    </svg>
   );
 }
 

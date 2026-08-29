@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { teamName, teamHex } from "../lib/teamColors";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
-import { TEXT_SIZE_OPTIONS, MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
+import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
 import { SourceRow } from "./SourceRow";
+// Lifted out when the OBS setup page grew the same four sliders - see components/OverlaySetting.
+import { OverlaySetting as Setting, textReadout } from "./OverlaySetting";
 import { OverlaySample } from "./OverlaySample";
 import type { DeepMark } from "../lib/deepWater";
 
@@ -27,76 +29,6 @@ interface Props {
  * is a bug waiting for the one render that sets them both.
  */
 type Audience = number | "caster";
-
-/**
- * One setting: what it is, where it stands, and what it changes.
- *
- * All three parts are here rather than left to each caller, because the box's whole failing was
- * that a streamer could not tell its controls apart. A bare track says nothing about what it does,
- * and the value it is at is the first thing you look for after dragging one.
- *
- * `--eb-fill` is the fraction of the track to paint up to the thumb; the styling behind it is in
- * index.css, along with the note on why a range input needs any of this.
- */
-function Setting({
-  label,
-  hint,
-  min,
-  max,
-  step,
-  value,
-  onChange,
-  readout,
-}: {
-  label: string;
-  hint: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (v: number) => void;
-  readout: string;
-}) {
-  return (
-    <div className="stack" style={{ gap: "0.25rem" }}>
-      <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-        <span style={{ fontSize: "0.78rem" }}>{label}</span>
-        <span className="muted" style={{ fontSize: "0.72rem" }}>
-          {readout}
-        </span>
-      </div>
-      <input
-        type="range"
-        className="eb-slider"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        aria-label={label}
-        style={{ ["--eb-fill" as string]: (value - min) / (max - min) }}
-      />
-      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        {hint}
-      </span>
-    </div>
-  );
-}
-
-/**
- * A text size, named.
- *
- * The named steps were the whole control once and are now the readout, which is the job they were
- * always best at: nobody needs "1.25" as a number, they need to know that where they have dragged
- * to is the one that is comfortable on a 1080p stream. The nearest step wins, so the name changes
- * as you drag past it rather than blinking out between the round values.
- */
-function textReadout(value: number): string {
-  const nearest = TEXT_SIZE_OPTIONS.reduce((best, o) =>
-    Math.abs(o.value - value) < Math.abs(best.value - value) ? o : best
-  );
-  return `${value.toFixed(2).replace(/0+$/, "").replace(/.$/, "")}x - ${nearest.label}`;
-}
 
 /**
  * The OBS sources, chosen by WHO IS STREAMING rather than by what each source does.
@@ -344,6 +276,25 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
       </span>
 
       {/*
+        Said at the top rather than at the bottom, because by the time somebody has copied the first
+        URL out of this box they have already committed to doing it the long way - and they will do
+        it again before the next match, and the one after that.
+
+        These URLs are not going anywhere. They name a room, which is exactly right for a one-off: a
+        co-stream of somebody else's match, an event screen, a scene built for one tournament. The
+        persistent version is the answer to the other case, which is most people most of the time.
+      */}
+      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+        These name <strong>this room</strong>, so you'd paste them in again next match. For a scene
+        you install once and never touch, see{" "}
+        <a href="#/streaming" target="_blank" rel="noreferrer">
+          OBS &amp; auto-marking
+        </a>{" "}
+        - it downloads a whole OBS scene whose sources follow you from match to match. (Opens in a
+        new tab, so it can't cost you this one.)
+      </span>
+
+      {/*
         The one question, asked once. Everything below is its answer - see the role-picker note at
         the top of the file. Shown whatever the room looks like, including a room containing only
         you: see crewOptions and the lobby paragraph.
@@ -405,6 +356,7 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
             emptyFade={isCaster ? 1 : emptyFade}
             textSize={textSize}
             alertMark={playing}
+            isCaster={isCaster}
           />
 
           {/*
@@ -459,7 +411,7 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
 
           <Setting
             label="Text size"
-            hint="Square names, coordinates, the clock and the key together. Text never overflows: a size that doesn't fit draws as large as it can."
+            hint="How much of each square its name fills, plus the clock and the key. The A-J and 1-10 labels aren't touched - they're sized by the board, so they grow when you zoom rather than when you drag this. Text never overflows: a size that doesn't fit draws as large as it can."
             min={MIN_TEXT_SIZE}
             max={MAX_TEXT_SIZE}
             step={0.05}

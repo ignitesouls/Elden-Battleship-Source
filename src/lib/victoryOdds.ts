@@ -588,3 +588,20 @@ export function oddsBands(
     return { team, polygon: [...upper, ...lower] };
   });
 }
+
+/**
+ * Whether a snapshot has anything honest to say yet.
+ *
+ * Two fleets and at least one shot between them. Before that the model has nothing to go on but the
+ * fleet sizes, and a 50/50 bar drawn with total confidence at the top of a match is the single most
+ * misleading thing any surface here could put on screen - the odds are worth least exactly when
+ * they look most authoritative.
+ *
+ * Lives here rather than in the component that draws it because it is a fact about the snapshot, and
+ * because every surface showing odds has to agree on the answer: the browser source and the
+ * spectator rail going blank at different moments would be two different claims about whether the
+ * model is ready.
+ */
+export function oddsWorthShowing(snapshot: OddsSnapshot | null): snapshot is OddsSnapshot {
+  return snapshot !== null && !snapshot.fleets.every((f) => f.shots === 0);
+}

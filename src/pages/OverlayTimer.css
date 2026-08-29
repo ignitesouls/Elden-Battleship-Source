@@ -16,6 +16,15 @@
   overflow: hidden;
 }
 
+/* What the bar centres itself in, and measures itself against. Its own box rather than the page's
+   frame, because the scorebug is mounted in two places now: filling a browser source, and filling a
+   slot in the OBS box's scene preview. Both just have to be a size. See components/ClockBar. */
+.ovt-fit {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 /* Centred on the source, then scaled about that centre. Absolute so the transform can't disturb
    any layout around it. */
 .ovt-bar {
@@ -75,25 +84,38 @@
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
+/**
+ * -- Why the scorebug's own rules hang off .ovt-fit and not .ovt ---------------------------------
+ *
+ * .ovt is the PAGE: a fixed, full-source transparent rectangle. .ovt-fit is the bar's own box, and
+ * it is what components/ClockBar renders - so it is the only ancestor present at both of the bar's
+ * mount points, the browser source and the scene preview in the OBS box.
+ *
+ * Scoped to .ovt these overrides simply did not apply in the preview, and the fleet cards fell back
+ * to their HUD sizes: nine-pixel hull silhouettes and small team names either side of a 4.6rem
+ * clock. The preview's whole claim is that it is the same drawing the source makes, so a rule the
+ * source gets and the preview doesn't is a rule in the wrong place.
+ */
+
 /* The fleet cards come from the HUD overlay, where they sit in a narrow column at HUD scale. Here
    they are the other half of a scorebug and are sized to match the clock beside them. */
-.ovt .ov-fleet {
+.ovt-fit .ov-fleet {
   background: rgba(6, 16, 24, 0.72);
   border-radius: 10px;
   padding: 0.5rem 0.9rem;
 }
 
-.ovt .ov-team-name {
+.ovt-fit .ov-team-name {
   font-size: 1.5rem;
 }
 
-.ovt .ov-afloat {
+.ovt-fit .ov-afloat {
   font-size: 1.3rem;
 }
 
 /* Hull silhouettes scale off one unit - see --ov-ship-unit in OverlayFleetStatus. Roughly twice
    HUD size, with the height and gap following so the row stays in proportion. */
-.ovt {
+.ovt-fit {
   --ov-ship-unit: 19px;
 }
 
@@ -105,12 +127,12 @@
  * right. Two fleets with identical ships looked like they had different fleets, which is precisely
  * the thing this element exists to let a viewer compare at a glance.
  */
-.ovt .ov-fleet-ships {
+.ovt-fit .ov-fleet-ships {
   gap: 0.5rem;
   flex-wrap: nowrap;
 }
 
-.ovt .ov-fleet-ship {
+.ovt-fit .ov-fleet-ship {
   height: 1.6rem;
 }
 
@@ -133,6 +155,21 @@
   align-items: center;
   justify-content: center;
   gap: 2rem;
+  /**
+   * Its own content width, never the bar's. This one line is load-bearing.
+   *
+   * The bar is a column with `align-items: stretch`, so without it the row is stretched to whatever
+   * the widest child of the bar happens to be - and with the odds on, that child is the band BELOW
+   * it, whose width is measured off this row. The band adds its own padding and border to that
+   * measurement, so the bar came out ~24px wider than the row, which stretched the row to match,
+   * which widened the band, and so on: the scorebug grew by a couple of dozen pixels every frame
+   * and fitScale divided by it, so a caster's clock shrank towards nothing for as long as the
+   * source was open. A player's clock never showed it, because it has no band to measure.
+   *
+   * Centring it breaks the cycle at its only real edge: the row is now content-sized, the band is
+   * free to be a little wider than it, and nothing downstream feeds back into the measurement.
+   */
+  align-self: center;
 }
 
 .ovt-odds {

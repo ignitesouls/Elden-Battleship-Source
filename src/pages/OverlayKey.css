@@ -17,6 +17,13 @@
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
+/* The box the strip centres in - see the matching note in OverlayTimer.css, and components/KeyStrip. */
+.ovk-fit {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 /* Centred in the source, then scaled about that centre. Absolute so the transform can't disturb
    any layout around it. nowrap is load-bearing: this is a strip, and a key that wraps to a second
    line is a key that has changed height on somebody's scene mid-match. */

@@ -143,6 +143,23 @@
   margin-left: 0.5rem;
 }
 
+/**
+ * The evaluation bar at the top of the rail.
+ *
+ * A fixed height rather than a share, because OddsPanel scales its contents to whatever box it is
+ * given: a percentage would make the bar's legibility depend on how tall the browser window happens
+ * to be, which is precisely what a caster glancing at it mid-sentence cannot afford. 7rem is enough
+ * for the title and a bar whose team names still read at rail width.
+ *
+ * `flex: none` so it never gives ground to the log below it - the log is the flexible one, and a
+ * bar that shrank as the feed filled would be at its least readable exactly when the match got
+ * interesting.
+ */
+.spectate-rail-odds {
+  flex: none;
+  height: 7rem;
+}
+
 .spectate-rail-rosters {
   flex: none;
   max-height: 45%;

@@ -22,7 +22,7 @@ export function Home() {
   const [recent, setRecent] = useState<MatchReportRow[]>([]);
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    void fetchRecentMatchReports(6).then((rows) => setRecent(rows as MatchReportRow[]));
+    void fetchRecentMatchReports(6, true).then((rows) => setRecent(rows as MatchReportRow[]));
   }, []);
 
   /**
@@ -315,7 +315,7 @@ function RecentRow({ row }: { row: MatchReportRow }) {
   const [copied, setCopied] = useState(false);
 
   function copy() {
-    navigator.clipboard?.writeText(row.report_text);
+    navigator.clipboard?.writeText(row.report_text ?? "");
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   }

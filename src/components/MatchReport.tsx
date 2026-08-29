@@ -6,6 +6,7 @@ import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import { finalFinds, finalMarks, bottleNote, type DeepHide, type DeepMark } from "../lib/deepWater";
 import { buildMatchReport, formatReportText } from "../lib/matchReport";
+import { paceLabel } from "../lib/squarePace";
 import { archiveMatch } from "../lib/archiveMatch";
 import { supabase } from "../lib/supabase";
 import { teamName, teamHex } from "../lib/teamColors";
@@ -233,6 +234,15 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                     <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Miss</th>
                     <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Sunk</th>
                     <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Acc.</th>
+                    {/* The only column here that is about how somebody PLAYS rather than how well
+                        they shoot - two captains with identical aim can be an hour apart over a
+                        match, and nothing else on this table would ever say so. */}
+                    <th
+                      style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
+                      title="Their typical square, start to finish: the median gap between their shots. Under fire-on-kill a shot IS a kill, so that gap is one boss."
+                    >
+                      Pace
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -253,6 +263,11 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                         </td>
                         <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
                           {Math.round(s.accuracy * 100)}%
+                        </td>
+                        {/* A dash rather than a number when they took too few squares for a median
+                            to mean anything - and on reports archived before this column existed. */}
+                        <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
+                          {s.pace != null ? paceLabel(s.pace) : "-"}
                         </td>
                       </tr>
                     ))}
@@ -280,6 +295,12 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                         <td style={cell}>{t.misses}</td>
                         <td style={cell}>{t.sunk}</td>
                         <td style={cell}>{t.shots > 0 ? Math.round((t.hits / t.shots) * 100) : 0}%</td>
+                        {/* Deliberately empty. Accuracy totals because hits and shots add up; a
+                            pace does not - a fleet's typical square is the median of everybody's
+                            gaps pooled, which is neither the sum nor the average of the three
+                            medians above it, and is not recoverable from them. Averaging them
+                            anyway would be the same mistake this row avoids for accuracy. */}
+                        <td style={cell}></td>
                       </tr>
                     );
                   })()}

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useBoxSize } from "../hooks/useBoxSize";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
-import { fetchOverlayFleet, type OverlayFleet as OwnFleet } from "../lib/overlayFleet";
+import { fetchOverlayFleet, fetchOverlayFleetByToken, type OverlayFleet as OwnFleet } from "../lib/overlayFleet";
 import { sunkCellOrientations } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom } from "../lib/challenges";
@@ -51,10 +51,20 @@ const SOURCE_SIZE = 400;
  * fleet this page can ever draw, which is what makes "show my ships" safe to offer as a plain
  * yes/no: the URL has no way of being pointed at somebody else's board.
  */
-export function OverlayFleet() {
-  const { code } = useParams<{ code: string }>();
-  const [params] = useSearchParams();
+export function OverlayFleet(props: OverlaySourceProps = {}) {
+  // The room and the query string come from the URL, or from the persistent stream route that has
+  // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
+  const { code, params } = useOverlaySource(props);
   const key = params.get("key") ?? "";
+  /**
+   * The persistent overlay's credential, when this source is one.
+   *
+   * Read straight off the query rather than passed down as a prop, so the two ways in stay symmetric:
+   * a room-coded URL carries `?key=` and a persistent one carries `?token=`, and this page picks
+   * whichever it was handed. The token is much the better of the two to have in a scene file - it
+   * cannot be redeemed for the seat. See fetchOverlayFleetByToken.
+   */
+  const token = params.get("token") ?? "";
   const opacity = readOpacity(params);
   /**
    * The coordinate gutter, off unless asked for.
@@ -81,6 +91,18 @@ export function OverlayFleet() {
   const [fleet, setFleet] = useState<OwnFleet | null | undefined>(undefined);
   const roomStatus = state.room?.status;
   useEffect(() => {
+    // The token is preferred when both are present, which in practice they never are. It resolves the
+    // room server-side as well as the player, so it keeps working across matches; the rejoin code is
+    // scoped to one room by construction and would go stale the moment its owner joined another.
+    if (token) {
+      let cancelled = false;
+      void fetchOverlayFleetByToken(token).then((f) => {
+        if (!cancelled) setFleet(f);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     if (!code || !key) {
       setFleet(null);
       return;
@@ -92,7 +114,10 @@ export function OverlayFleet() {
     return () => {
       cancelled = true;
     };
-  }, [code, key, roomStatus]);
+    // `roomStatus` is not read here and is not meant to be: it is in the list purely as the signal to
+    // re-fetch, because placements are replaced wholesale on a rematch. It does that job for the
+    // token path too, and the token path additionally re-runs when a new room resolves.
+  }, [code, key, token, roomStatus]);
 
   const [frameRef, frame] = useBoxSize<HTMLDivElement>();
 

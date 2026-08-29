@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useBattlePhaseName, usePauseInfo } from "../hooks/useBattlePhase";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
@@ -41,9 +41,10 @@ import "./OverlayAudio.css";
  * `?team=N` is therefore not a filter. It settles exactly one thing - which sting plays at the end -
  * and a source with no team gets the caster's answer to that question.
  */
-export function OverlayAudio() {
-  const { code } = useParams<{ code: string }>();
-  const [params] = useSearchParams();
+export function OverlayAudio(props: OverlaySourceProps = {}) {
+  // The room and the query string come from the URL, or from the persistent stream route that has
+  // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
+  const { code, params } = useOverlaySource(props);
   const state = useRoom(code);
 
   /**

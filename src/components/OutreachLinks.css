@@ -62,6 +62,18 @@
   color: #5865f2;
 }
 
+.tb-out-obs:hover,
+.tb-out-obs:focus-visible {
+  color: var(--accent-bright);
+}
+
+/* The camera's tally light comes on under the cursor - the one gesture that says "on air" without a
+   word, and the only motion this icon has. The reels and the body stay put. */
+.tb-out-obs:hover .tb-out-lens,
+.tb-out-obs:focus-visible .tb-out-lens {
+  fill: var(--danger);
+}
+
 /* Patches is a board marker, and board markers are drawn to be read against blue water - see the
    same trick in .deep-find-icon, which exists for exactly this reason. Off the grid he needs
    something to be a square for him or the pale dome sits on a dark panel as a smudge. */
@@ -140,6 +152,22 @@
   fill: #e3c7a4;
 }
 
+/* The camera, in the same palette as the beetle - the near-black stroke is what ties every drawing
+   in this bar to the board markers they came from. */
+.tb-out-body,
+.tb-out-reel {
+  fill: #46403a;
+  stroke: #2a1610;
+  stroke-width: 4;
+}
+
+.tb-out-lens {
+  fill: #8fb4c9;
+  stroke: #2a1610;
+  stroke-width: 4;
+  transition: fill 0.15s ease;
+}
+
 /* --- narrow screens ------------------------------------------------------
    .tb-label already goes at 900px with every other label in the bar, leaving three pictures with
    their tooltips. Below 620px the bar is carrying the wordmark, the way back to a room, an account
@@ -147,7 +175,9 @@
    drop and the bug report, the one that is worth most when something has gone wrong, stays. */
 @media (max-width: 620px) {
   .tb-out-hello,
-  .tb-out-discord {
+  .tb-out-discord,
+  /* Goes with the social two rather than with the bug report: nobody sets up OBS on a phone. */
+  .tb-out-obs {
     display: none;
   }
 }

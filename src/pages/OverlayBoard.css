@@ -146,18 +146,24 @@
  * with the board rather than with the viewport, which on a browser source means nothing). Floored
  * well above the app's, since the reason to zoom is legibility in the first place.
  *
- * --ovb-text applies to the ceiling as well as the middle term, or a streamer asking for larger text
- * would grow the names and leave the coordinates pinned at 44px - and on a zoomed board where half
- * the labels are off frame, the coordinates are the half of this that a viewer needs most.
+ * Pointedly NOT scaled by --ovb-text, which is the text-size slider.
+ *
+ * It was, on the argument that a streamer asking for larger text wants all of it larger. In practice
+ * the two are different questions. The slider is about how much of a SQUARE its name fills - that is
+ * what a streamer is looking at while they drag it, and what the desk's own control has always
+ * called it - whereas the gutter is chrome around the board whose size is set by how thick a track
+ * the board can afford. Tying them together meant reaching for bigger names and getting a gutter
+ * that ate the board to hold them, on a source where the board is the whole point.
+ *
+ * They still scale, just with the thing that actually governs them: --bg-cell-font, which is the
+ * real cell size. So zooming in grows the coordinates along with everything else, which is the case
+ * that mattered - on a zoomed board with half the labels off frame, the ones left are what a viewer
+ * needs most - and the slider leaves them alone.
  */
 .ovb-board .bg-coord {
   color: #f2f7fb;
   font-weight: 800;
-  font-size: clamp(
-    14px,
-    calc(var(--bg-cell-font, 11px) * 1.5 * var(--ovb-text, 1)),
-    calc(44px * var(--ovb-text, 1))
-  );
+  font-size: clamp(14px, calc(var(--bg-cell-font, 11px) * 1.5), 44px);
   letter-spacing: 0.04em;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
   /* The gutter tracks are `auto`, so this padding is what actually sets their thickness - without

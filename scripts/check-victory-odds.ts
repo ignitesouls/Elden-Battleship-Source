@@ -35,7 +35,7 @@ registerHooks({
   },
 })
 
-const { victoryOdds, fleetStates, oddsTimeline, totalHullCells, oddsLabel, oddsBands, LIVE_ROLLOUTS } =
+const { victoryOdds, fleetStates, oddsTimeline, totalHullCells, oddsLabel, oddsBands, oddsWorthShowing, LIVE_ROLLOUTS } =
   await import('../src/lib/victoryOdds.ts')
 
 let failures = 0
@@ -282,5 +282,21 @@ const crewOf = (counts: number[]) =>
   }
 }
 
+console.log('\nwhen the bar is worth drawing at all')
+// The eval bar is on two surfaces now - the browser source and the spectator rail - and both have
+// to go blank at the same moment. Two surfaces disagreeing about whether the model is ready would
+// be two different claims about how much the number is worth.
+{
+  const untouched = victoryOdds([{ ...fleet(0, 17, 0), shots: 0 }, { ...fleet(1, 17, 0), shots: 0 }], 10)
+  check('no shots fired yet is not worth drawing', oddsWorthShowing(untouched) === false)
+  check('nothing at all is not worth drawing', oddsWorthShowing(null) === false)
+
+  // One shot between them is the threshold: from there the model has evidence rather than just two
+  // fleet sizes, which is the whole distinction the predicate draws.
+  const opened = victoryOdds([{ ...fleet(0, 17, 1), shots: 1 }, { ...fleet(1, 17, 0), shots: 0 }], 10)
+  check('one shot fired IS worth drawing', oddsWorthShowing(opened) === true)
+}
+
 console.log(failures === 0 ? '\nAll victory-odds checks passed.' : `\n${failures} check(s) failed.`)
+
 process.exit(failures === 0 ? 0 : 1)

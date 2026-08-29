@@ -17,6 +17,7 @@ import {
 import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
 import { matchEpithet } from "../lib/matchName";
+import { paceLabel } from "../lib/squarePace";
 import { buildReplay } from "../lib/replay";
 import { MatchReplay } from "../components/MatchReplay";
 import { BalanceReadout } from "../components/BalanceReadout";
@@ -302,6 +303,12 @@ export function ArchivedMatch() {
                         <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Miss</th>
                         <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Sunk</th>
                         <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Acc.</th>
+                        <th
+                          style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
+                          title="Their typical square, start to finish: the median gap between their shots."
+                        >
+                          Pace
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -322,6 +329,12 @@ export function ArchivedMatch() {
                             </td>
                             <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
                               {Math.round((s.accuracy ?? 0) * 100)}%
+                            </td>
+                            {/* Every match filed before pace joined the scoreboard shows a dash
+                                here: the gaps it is measured from were never stored, only the
+                                tallies, so there is nothing to work it out from after the fact. */}
+                            <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
+                              {s.pace != null ? paceLabel(s.pace) : "-"}
                             </td>
                           </tr>
                         ))}

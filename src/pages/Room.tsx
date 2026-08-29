@@ -26,10 +26,15 @@ import { deepWater, deepMarks, type DeepHide } from "../lib/deepWater";
 import { TeamBox } from "../components/TeamBox";
 import { HostTakeover } from "../components/HostTakeover";
 import { formatRoomCode } from "../lib/roomCode";
-import { useBattlePhaseName } from "../hooks/useBattlePhase";
+import { useBattlePhaseName, useBattleClock } from "../hooks/useBattlePhase";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import { TeamPicker } from "../components/TeamPicker";
 import { SpectateWithCrew } from "../components/SpectateWithCrew";
+import { OddsPanel } from "../components/OddsPanel";
+import { useVictoryOdds } from "../hooks/useVictoryOdds";
+import type { OddsPoint, OddsSnapshot } from "../lib/victoryOdds";
+import { useStoredToggle } from "../hooks/useStoredToggle";
+import { formatDuration } from "../lib/matchTime";
 import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
@@ -466,6 +471,43 @@ type SpectatorMode = "attacks" | "all" | "crew" | number;
 /** Stable identity, so hiding the board does not re-render the whole spectator view. */
 const NO_CHALLENGES: Challenge[] = [];
 
+/**
+ * The eval bar, wrapped so that its clock ticks in here and nowhere else.
+ *
+ * The wrapper exists for one reason and it is not tidiness. useBattleClock re-renders its caller
+ * once a second, and the axis under the history line needs the match clock - so reading it up in
+ * SpectatorView would have repainted the entire page every second: both full boards, the log, and
+ * every roster. That is the exact cost useBattlePhaseName was introduced to avoid, and the reason
+ * useRoom says the clock was moved out of the top of the match tree.
+ *
+ * Down here the tick reaches one panel. The model itself stays up in SpectatorView, because
+ * useVictoryOdds is keyed on the shot count and so recomputes about once a minute rather than once
+ * a second - it is the clock that is expensive to place, not the odds.
+ */
+function SpectatorOdds({
+  attacks,
+  room,
+  snapshot,
+  points,
+  showGraph,
+}: {
+  attacks: Attack[];
+  room: RoomType;
+  snapshot: OddsSnapshot | null;
+  points: OddsPoint[];
+  showGraph: boolean;
+}) {
+  const phase = useBattleClock(attacks, room);
+  return (
+    <OddsPanel
+      snapshot={snapshot}
+      points={points}
+      elapsed={phase?.phase === "match" ? formatDuration(phase.matchElapsed) : "--:--"}
+      showGraph={showGraph}
+    />
+  );
+}
+
 function SpectatorView({
   room,
   activeTeamsList,
@@ -498,6 +540,34 @@ function SpectatorView({
   const [ridingWith, setRidingWith] = useState<number | null>(null);
   // Open by default: a caster who doesn't know the log and rosters are available can't ask for them.
   const [railOpen, setRailOpen] = useState(true);
+  /**
+   * The evaluation bar, in the rail.
+   *
+   * On by default and remembered, for the same reason the rail is: a watcher who doesn't know it's
+   * there can't ask for it. Stored rather than plain state because this is a preference about how
+   * somebody likes to watch, and re-deciding it every time they open a room is the kind of small
+   * friction that makes a feature feel like it is in the way.
+   *
+   * Safe to show HERE and nowhere else in the room. This whole component only mounts for a player
+   * whose team is null - a genuine spectator - so the rule the overlays keep holds: the odds are for
+   * people watching, never for somebody still playing, because a crew who can see their own chances
+   * swing is being told something about the board the match is supposed to make them work out.
+   */
+  const [oddsOn, setOddsOn] = useStoredToggle("eb_spectate_odds", true);
+
+  /**
+   * The model, run only while somebody is looking at it.
+   *
+   * `oddsOn` is passed twice on purpose - once as "draw the history line", once as "run at all".
+   * This is a Monte Carlo of ten thousand matches replayed across the whole log, so a spectator who
+   * has collapsed the panel must not still be paying for it once a minute for the rest of the
+   * match. See the `enabled` note in useVictoryOdds.
+   *
+   * The clock is read separately from the one in the bar because the axis under the history line is
+   * the match clock, and it is the only scale that line means anything on.
+   */
+  const oddsLive = railOpen && oddsOn;
+  const { snapshot, timeline } = useVictoryOdds(attacks, room, players, oddsLive, oddsLive);
 
   const { status, board_size: boardSize, ship_defs: shipDefs, winner_team: winnerTeam } = room;
   // The same squares the players are looking at. Derived from the room exactly as BattlePhase
@@ -641,11 +711,11 @@ function SpectatorView({
     ? ["crewFire", "crewFleet"]
     : shown.map(teamPanelId);
   const boardKey = boardPanelIds.join("|");
-  const panelIds = spectatorPanelIds(boardPanelIds, railOpen);
+  const panelIds = spectatorPanelIds(boardPanelIds, railOpen, oddsOn);
   const spectatorDefaults = useMemo(
-    () => defaultSpectatorLayout(boardPanelIds, railOpen),
+    () => defaultSpectatorLayout(boardPanelIds, railOpen, oddsOn),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [boardKey, railOpen]
+    [boardKey, railOpen, oddsOn]
   );
   const {
     layout,
@@ -833,6 +903,19 @@ function SpectatorView({
           {railOpen ? "Hide log" : "Log & rosters"}
         </button>
 
+        {/* Only offered while the rail is open, because the rail is what it lives in - a toggle for
+            a panel that has nowhere to be is a control that does nothing when pressed. */}
+        {railOpen && (
+          <button
+            onClick={() => setOddsOn(!oddsOn)}
+            style={{ borderColor: oddsOn ? "var(--accent)" : undefined }}
+            title="Each fleet's chance of winning, and the line that got them there."
+            aria-pressed={oddsOn}
+          >
+            Odds
+          </button>
+        )}
+
         {/* The fleets' own move/resize panels, on this page too. A caster's needs are less uniform
             than a player's - one is reading squares aloud off a single board, another is watching
             four fleets at once - so the arrangement being theirs matters more here, not less.
@@ -928,6 +1011,14 @@ function SpectatorView({
 
           {railOpen && (
             <>
+              {/* Its own panel, so a caster who wants the eval bar big can drag it big - which is
+                  the whole argument for the canvas. The history line comes with it here, because a
+                  panel somebody sized themselves has room for the reasoning as well as the number. */}
+              {oddsOn && (
+                <CanvasPanel {...panelProps("odds", "Odds of victory")} flush>
+                  <SpectatorOdds attacks={attacks} room={room} snapshot={snapshot} points={timeline} showGraph />
+                </CanvasPanel>
+              )}
               <CanvasPanel {...panelProps("log", "Battle log")} flush>
                 <AttackFeed
                   attacks={attacks}
@@ -1004,6 +1095,20 @@ function SpectatorView({
         */}
         {railOpen && (
           <aside className="spectate-rail">
+            {/* No history line in the fixed rail. The rail is a fixed narrow column, so the graph
+                would be bought entirely out of the battle log's height - and the bar alone IS the
+                reading. Anyone who wants the line can drag the panel out on the canvas. */}
+            {oddsOn && (
+              <div className="spectate-rail-odds">
+                <SpectatorOdds
+                  attacks={attacks}
+                  room={room}
+                  snapshot={snapshot}
+                  points={timeline}
+                  showGraph={false}
+                />
+              </div>
+            )}
             <AttackFeed
               attacks={attacks}
               players={players}

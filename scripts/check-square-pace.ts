@@ -29,6 +29,7 @@ registerHooks({
 
 const { squarePace, paceLabel, MIN_GAPS_FOR_PACE } = await import('../src/lib/squarePace.ts')
 const { MIN_GAP_SECONDS } = await import('../src/lib/recordBook.ts')
+const { buildPlayerStats } = await import('../src/lib/matchReport.ts')
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -150,6 +151,58 @@ const key = (who: string) => `name:${who.toLowerCase()}`
   check('a pace reads as a clock', paceLabel(154) === '2:34', paceLabel(154))
   check('under a minute keeps the leading zero', paceLabel(45) === '0:45', paceLabel(45))
   check('and a half second rounds rather than truncating', paceLabel(59.6) === '1:00', paceLabel(59.6))
+}
+
+// -- 9. the same rule on the post-match scoreboard --------------------------
+//
+// The scoreboard measures one night from the live attack log while the leaderboard measures a
+// career from the archive, and the two must not be able to drift: a crew reading their own recap
+// and then their own leaderboard row has to see the same measurement, not two that happen to
+// agree today. Both go through paceFromGaps, and these cases are here so that stays true.
+{
+  const base = Date.parse('2026-08-27T20:00:00.000Z')
+  const at = (min: number) => new Date(base + min * 60_000).toISOString()
+  /** One trigger-pull, in the shape groupIntoShots hands over. */
+  const shot = (min: number, i: number) => ({
+    key: `k${i}`,
+    at: at(min),
+    attackerTeam: 0,
+    who: 'Ada',
+    cellIndex: i,
+    rows: [{ attacker_player_id: 'ada', attacker_team: 0, cell_index: i, result: 'miss', created_at: at(min) }],
+  })
+  const players = [{ id: 'ada', nickname: 'Ada', team: 0 }]
+  // Newest first, which is the order groupIntoShots produces - and the order that would measure
+  // every gap in the match backwards if the scoreboard forgot to sort.
+  const fired = (mins: number[]) => mins.map(shot).reverse()
+  const paceOf = (mins: number[], room?: unknown) =>
+    buildPlayerStats(players as never, fired(mins) as never, room as never)[0].pace
+
+  // Gaps of 2, 3, 2, 4, 2 minutes.
+  const steady = [0, 2, 5, 7, 11, 13]
+  check('a match pace is the median gap', paceOf(steady) === 120, `${paceOf(steady)}s`)
+  check(
+    `${MIN_GAPS_FOR_PACE - 1} gaps is still not a pace on the scoreboard`,
+    paceOf([0, 2, 5, 7, 11]) === null,
+    `${paceOf([0, 2, 5, 7, 11])}`
+  )
+  // The duo bosses that fill two squares at once, in their live form: same instant, no fast square.
+  check(
+    'a duo boss does not become the fastest square of the night',
+    paceOf([...steady, 13]) === 120,
+    `${paceOf([...steady, 13])}s, under a ${MIN_GAP_SECONDS}s floor`
+  )
+
+  // A stopped clock is the room waiting, not a captain working. Twelve minutes of wall clock per
+  // square here, ten of them paused - the pace is the two minutes that were actually played.
+  const paused = {
+    pause_at: null,
+    resume_at: null,
+    pause_log: [[1, 11], [13, 23], [25, 35], [37, 47], [49, 59]].map(([a, u]) => ({ at: at(a), until: at(u) })),
+  }
+  const walls = [0, 12, 24, 36, 48, 60]
+  check('a pause is not billed to the captain', paceOf(walls, paused) === 120, `${paceOf(walls, paused)}s`)
+  check('and without one it would be', paceOf(walls) === 720, `${paceOf(walls)}s`)
 }
 
 console.log(failures === 0 ? '\nall square pace checks passed' : `\n${failures} square pace check(s) failed`)

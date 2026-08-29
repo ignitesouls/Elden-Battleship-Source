@@ -1,15 +1,71 @@
-import { BoardGrid, type CellVisual } from "./BoardGrid";
+import { BoardGrid, type CellVisual, type ShipOverlay } from "./BoardGrid";
 import { FindCard } from "./FindCard";
+import { ClockBar, type ClockFleet } from "./ClockBar";
+import { KeyStrip } from "./KeyStrip";
+import { legendItems } from "../lib/legend";
 import type { Region } from "../lib/challenges";
+import type { Challenge } from "../lib/squareSetFormat";
 import type { DeepMark } from "../lib/deepWater";
+import type { ShipDefinition } from "../types/battleship";
+import "../pages/OverlayFleet.css";
 import "../pages/OverlayTiers.css";
 import "../pages/OverlayBoard.css";
 import "./OverlaySample.css";
 
 /** The board's edge, in squares. Six is the smallest that still reads as a grid rather than a swatch. */
 const SIZE = 6;
-/** Rendered size. Sits inside a panel that can be a narrow column, so this is a ceiling, not a target. */
-const PX = 232;
+/**
+ * The board's size, as a share of the frame it sits in.
+ *
+ * A container unit rather than pixels, because the panel this box lives in is a different width in
+ * a lobby, in the match dock and on a phone - and a preview whose board was a fixed 232px would
+ * claim a different share of the frame in each of them, which is the one thing it must not get
+ * wrong. Half the width of a 16:9 frame is very nearly its full height, which is about what a
+ * 1000x1000 browser source occupies in a 1080p scene.
+ */
+const BOARD = "38cqw";
+
+/** The fleet panel, at the 400/1920 share a 400px source has of a 1080p scene. */
+const FLEET = "20.8cqw";
+
+/** A classic fleet, for the scorebug's hull rows. */
+const SHIPS: ShipDefinition[] = [
+  { name: "Carrier", size: 5 },
+  { name: "Battleship", size: 4 },
+  { name: "Cruiser", size: 3 },
+  { name: "Submarine", size: 3 },
+  { name: "Destroyer", size: 2 },
+];
+
+/**
+ * Two crews, mid-match, one of them losing.
+ *
+ * Deliberately uneven: a scorebug with every hull intact says nothing about what it looks like once
+ * it has something to report, and the wrecked hulls are the part a streamer is checking is legible.
+ */
+const FLEETS: ClockFleet[] = [
+  { team: 1, sunkHulls: [false, true, false, false, true] },
+  { team: 2, sunkHulls: [true, true, false, true, false] },
+];
+
+/** A swing, so the caster's band has a shape rather than a flat line. */
+const ODDS = {
+  teams: [1, 2],
+  odds: [0.68, 0.32],
+  points: [
+    { seconds: 0, odds: [0.5, 0.5] },
+    { seconds: 420, odds: [0.42, 0.58] },
+    { seconds: 900, odds: [0.55, 0.45] },
+    { seconds: 1320, odds: [0.68, 0.32] },
+  ],
+};
+
+/** The crew's own board: their hulls, and what has been thrown at them. */
+const FLEET_VISUALS: Record<number, CellVisual> = { 3: "miss", 9: "hit", 14: "miss", 26: "sunk", 32: "hit" };
+const FLEET_HULLS: ShipOverlay[] = [
+  { row: 1, col: 1, size: 3, horizontal: true, shipName: "Cruiser", colorHex: "#2f9ee0" },
+  { row: 4, col: 3, size: 2, horizontal: false, shipName: "Destroyer", colorHex: "#2f9ee0" },
+];
 
 /**
  * The squares, written out rather than generated.
@@ -83,13 +139,28 @@ export function OverlaySample({
   emptyFade,
   textSize,
   alertMark,
+  isCaster,
 }: {
   opacity: number;
   emptyFade: number;
   textSize: number;
   /** A find to hold over the board, for as long as the box says. Null the rest of the time. */
   alertMark?: DeepMark | null;
+  /** The desk's scene rather than a crew's: odds on the clock, and no fleet panel. */
+  isCaster: boolean;
 }) {
+  /**
+   * The legend, from the same function the real key strip is built from.
+   *
+   * Fabricated challenges rather than fabricated ITEMS: legendItems decides which regions appear,
+   * what they are called and what order they come in, and a preview that hand-rolled that list
+   * would be a second opinion about all three.
+   */
+  const legend = legendItems(
+    Object.values(SQUARES).map((sq) => ({ name: sq.label, region: sq.region }) as Challenge),
+    null
+  );
+
   return (
     <div className="ovp-wrap">
       <div
@@ -104,6 +175,24 @@ export function OverlaySample({
           backgroundImage: `url(${import.meta.env.BASE_URL}preview/footage.jpg)`,
         }}
       />
+
+      {/* The scorebug, across the top. Real one, real fit - see components/ClockBar. */}
+      <div className="ovp-clock">
+        <ClockBar
+          phaseLabel="Match"
+          clock="18:42"
+          fleets={FLEETS}
+          shipDefs={SHIPS}
+          highlightTeam={isCaster ? null : 1}
+          showFleets
+          // The band is a caster's instrument, so it appears on a caster's scene and nowhere else -
+          // which is the difference the box is otherwise only able to describe in words.
+          odds={isCaster ? ODDS : null}
+          opacity={opacity}
+          textSize={textSize}
+        />
+      </div>
+
       <div
         className="ovp-board ovb-board ovl-fade"
         style={{
@@ -121,8 +210,8 @@ export function OverlaySample({
           <BoardGrid
             boardSize={SIZE}
             cellVisual={(i) => VISUALS[i] ?? "empty"}
-            maxVh={`${PX}px`}
-            maxVw={`${PX}px`}
+            maxVh={BOARD}
+            maxVw={BOARD}
             textBoost={textSize}
             growText
             // The wreck, so a sunk hull has something to burn on - the three squares above.
@@ -139,6 +228,46 @@ export function OverlaySample({
             }}
           />
         </div>
+      </div>
+
+      {/* The crew's own fleet panel. Not on a caster's scene, because a caster has no fleet - the
+          source needs a rejoin code and only its owner has one. See OverlayFleet. */}
+      {!isCaster && (
+        <div className="ovp-fleet ovf-board ovl-fade">
+          <div
+            className="ovl-fade-stage"
+            style={{
+              ["--ovl-a-bg" as string]: opacity,
+              ["--ovl-a-empty" as string]: emptyFade,
+            }}
+          >
+            <BoardGrid
+              boardSize={SIZE}
+              cellVisual={(i) => FLEET_VISUALS[i] ?? "empty"}
+              maxVh={FLEET}
+              maxVw={FLEET}
+              // No names at this size - it wears the square's COLOUR instead, which is the whole
+              // reason that source exists. See pages/OverlayFleet.
+              ships={FLEET_HULLS}
+              cellTint={(i) => {
+                const sq = SQUARES[i];
+                return sq ? { region: sq.region } : null;
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* The colour key, along the bottom edge where it goes. */}
+      <div className="ovp-key">
+        <KeyStrip
+          items={legend.items}
+          heading={legend.heading}
+          showLabel
+          plate
+          opacity={opacity}
+          textSize={textSize}
+        />
       </div>
 
       {/* The real card, at preview scale - see .ovp-alert. Whoever it credits is invented, because

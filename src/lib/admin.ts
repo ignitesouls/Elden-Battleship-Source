@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { clearVoidedCache } from "./voidedMatches";
+import { clearArchiveCache } from "./profiles";
 
 export interface AdminRow {
   user_id: string;
@@ -156,8 +157,11 @@ export async function setMatchVoided(matchKey: string, voided: boolean): Promise
   }
 
   // The stats fetchers hold the voided list for the life of the page, so the next read would
-  // otherwise still be working from the list as it was before this click.
+  // otherwise still be working from the list as it was before this click. The feeds themselves are
+  // cached too, and they were filtered THROUGH that list - so dropping one without the other would
+  // leave a voided match counting until the feed cache happened to expire.
   clearVoidedCache();
+  clearArchiveCache();
 }
 
 export interface MatchParticipant {

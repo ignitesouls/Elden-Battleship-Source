@@ -13,6 +13,15 @@
   overflow: hidden;
 }
 
+/* What the panel centres itself in, and measures itself against. Its own box rather than the page's
+   frame, because the odds are mounted in two places now: filling a browser source, and filling a
+   panel on the spectator page. Both just have to be a size. See components/OddsPanel. */
+.ovo-fit {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .ovo-panel {
   position: absolute;
   left: 50%;

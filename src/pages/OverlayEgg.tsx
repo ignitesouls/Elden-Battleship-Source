@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, finalFinds, type DeepFindRow } from "../lib/deepWater";
@@ -52,9 +52,10 @@ import "./OverlayEgg.css";
  * There is deliberately no ?team=. Nothing here is anybody's secret - it is all derived from the
  * public shot log, exactly as the marks on the board are.
  */
-export function OverlayEgg() {
-  const { code } = useParams<{ code: string }>();
-  const [params] = useSearchParams();
+export function OverlayEgg(props: OverlaySourceProps = {}) {
+  // The room and the query string come from the URL, or from the persistent stream route that has
+  // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
+  const { code, params } = useOverlaySource(props);
   const state = useRoom(code);
 
   // Same opt-out every overlay route makes - see the note in pages/Overlay.

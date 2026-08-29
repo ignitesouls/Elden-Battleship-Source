@@ -11,6 +11,7 @@ import { OverlayFleet } from "./pages/OverlayFleet";
 import { OverlayEgg } from "./pages/OverlayEgg";
 import { OverlayOdds } from "./pages/OverlayOdds";
 import { CasterControl } from "./pages/CasterControl";
+import { StreamSource } from "./pages/StreamSource";
 import { TopBar } from "./components/TopBar";
 import { BuildStamp } from "./components/BuildStamp";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -35,6 +36,9 @@ const Almanac = lazy(() => import("./pages/Almanac").then((m) => ({ default: m.A
 const ArchivedMatch = lazy(() => import("./pages/ArchivedMatch").then((m) => ({ default: m.ArchivedMatch })));
 const Admin = lazy(() => import("./pages/Admin").then((m) => ({ default: m.Admin })));
 const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.Support })));
+// Read once, on the day somebody starts streaming, and never again - so it has no business being in
+// the bundle a player firing at a board downloads. It drags in the scene generator and the sample.
+const Streaming = lazy(() => import("./pages/Streaming").then((m) => ({ default: m.Streaming })));
 
 /**
  * Every route that is composited into OBS must show nothing but the match state, so they opt out
@@ -54,11 +58,23 @@ const OVERLAY_ROUTES = [
   "/overlay-audio/",
   // Draws nothing for most of a match, which is the same argument.
   "/overlay-egg/",
+  // Every persistent source, in one prefix. /stream/cast is the exception INSIDE that prefix - it is
+  // a page on a second monitor rather than a source in a scene - so it is subtracted below rather
+  // than the other six being listed one at a time.
+  "/stream/",
 ];
+
+/** The caster's desk, whichever door it was reached by, wants the top bar like any other page. */
+const CHROME_ANYWAY = ["/stream/cast"];
 
 function Chrome() {
   const { pathname } = useLocation();
-  if (OVERLAY_ROUTES.some((prefix) => pathname.startsWith(prefix))) return null;
+  // The subtraction, not a separate branch: /stream/cast has to end up with exactly the chrome
+  // /cast/:code already has, and a branch of its own is how the two quietly drift apart.
+  const bare =
+    OVERLAY_ROUTES.some((prefix) => pathname.startsWith(prefix)) &&
+    !CHROME_ANYWAY.some((prefix) => pathname.startsWith(prefix));
+  if (bare) return null;
   return (
     <>
       <TopBar />
@@ -99,6 +115,11 @@ function App() {
           {/* Empty until the water gives something up - see pages/OverlayEgg. */}
           <Route path="/overlay-egg/:code" element={<OverlayEgg />} />
           <Route path="/cast/:code" element={<CasterControl />} />
+          {/* The persistent sources: one route for every element above, told which room to draw by an
+              overlay token rather than by a room code in the path. Nothing new renders here - see
+              pages/StreamSource. `/stream/cast` shares the route and is the caster's desk, not a
+              browser source. */}
+          <Route path="/stream/:element" element={<StreamSource />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/player/:key" element={<PlayerStats />} />
           <Route path="/almanac" element={<Almanac />} />
@@ -112,6 +133,9 @@ function App() {
           {/* Reached from the footer on every page that has one, always in a new tab, so that
               reporting a bug never costs somebody the match they were reporting it about. */}
           <Route path="/support" element={<Support />} />
+          {/* The two things a streamer sets up once: the persistent OBS overlay, and auto-marking.
+              Reached from the top bar beside the bug report - see components/OutreachLinks. */}
+          <Route path="/streaming" element={<Streaming />} />
         </Routes>
         </Suspense>
       </ErrorBoundary>

@@ -6,6 +6,7 @@ import { pausedMsAt, pausedMsBefore, pauseWindows, type PauseFields } from "./ma
 import { shipCellIndices } from "./shipCells";
 import { deepWater, bottleNote, type DeepHide, type DeepWater } from "./deepWater";
 import { seedFrom, rng } from "./seededRandom";
+import { paceFromGaps, paceLabel } from "./squarePace";
 import type { Attack, Player, Room } from "../types/battleship";
 
 export interface PlayerStats {
@@ -18,6 +19,12 @@ export interface PlayerStats {
   misses: number;
   sunk: number;
   accuracy: number;
+  /**
+   * Median seconds from one of this captain's squares falling to the next, or null when they took
+   * too few for a middle value to mean anything. Optional because reports archived before pace was
+   * on the scoreboard carry no such number and never will - see the column in components/MatchReport.
+   */
+  pace?: number | null;
 }
 
 export interface Award {
@@ -57,9 +64,22 @@ export interface MatchReport {
  * chase needs: see lib/recordChase.
  *
  * Sorted as the scoreboard sorts: sunk, then hits, then accuracy.
+ *
+ * `pause` is only wanted for the pace, which is the one figure here measured in time rather than in
+ * shots: a gap spanning a stopped clock is the room waiting, not a captain working. Optional because
+ * the live callers that want a running tally have no use for a pace - and a null pace is a dash on
+ * screen, where a pace inflated by a twenty-minute break would be a wrong number wearing a right
+ * one's clothes.
  */
-export function buildPlayerStats(players: Player[], shots: FeedShot[]): PlayerStats[] {
+export function buildPlayerStats(
+  players: Player[],
+  shots: FeedShot[],
+  pause?: PauseFields | null
+): PlayerStats[] {
   const byPlayer = new Map<string, PlayerStats>();
+  /** Every gap between one captain's consecutive shots, in seconds on the match clock. */
+  const gaps = new Map<string, number[]>();
+  const previous = new Map<string, number>();
 
   // Seed from the roster first, so a player who never pulled the trigger still shows on the
   // scoreboard (as a row of zeroes) and can still be handed an award, rather than vanishing
@@ -75,14 +95,30 @@ export function buildPlayerStats(players: Player[], shots: FeedShot[]): PlayerSt
       misses: 0,
       sunk: 0,
       accuracy: 0,
+      pace: null,
     });
   }
 
-  for (const shot of shots) {
+  // Oldest first, because a gap is only a gap in order - groupIntoShots hands these over newest
+  // first, which would measure every one of them backwards. The tallies below don't care either way.
+  const inOrder = [...shots].sort((a, b) => matchMs(a.at, pause) - matchMs(b.at, pause));
+
+  for (const shot of inOrder) {
     // Rows for one shot share an attacker; group under the player when known, else the team,
     // so shots fired by someone who has since left the room still count toward their side.
     const row = shot.rows[0];
     const key = row.attacker_player_id ?? `team:${shot.attackerTeam}`;
+
+    // Where their previous square fell. A captain's first shot opens no gap: the time before it is
+    // the lobby and the placement phase, not work on a square.
+    const at = matchMs(shot.at, pause) / 1000;
+    const last = previous.get(key);
+    previous.set(key, at);
+    if (last !== undefined) {
+      const list = gaps.get(key);
+      if (list) list.push(at - last);
+      else gaps.set(key, [at - last]);
+    }
     let s = byPlayer.get(key);
     if (!s) {
       s = {
@@ -94,6 +130,7 @@ export function buildPlayerStats(players: Player[], shots: FeedShot[]): PlayerSt
         misses: 0,
         sunk: 0,
         accuracy: 0,
+        pace: null,
       };
       byPlayer.set(key, s);
     }
@@ -106,6 +143,10 @@ export function buildPlayerStats(players: Player[], shots: FeedShot[]): PlayerSt
     else if (shot.rows.some((r) => r.result === "miss")) s.misses++;
     s.sunk += shot.rows.filter((r) => r.result === "sunk").length;
   }
+
+  // Thresholds and the median itself live in lib/squarePace, so a captain's pace here and their
+  // pace on the leaderboard are the same measurement rather than two that happen to agree.
+  for (const [key, s] of byPlayer) s.pace = paceFromGaps(gaps.get(key) ?? []);
 
   const stats = [...byPlayer.values()];
   for (const s of stats) s.accuracy = s.shots > 0 ? s.hits / s.shots : 0;
@@ -128,7 +169,7 @@ export function buildMatchReport(
   bayleCell: number | null = null
 ): MatchReport {
   const shots = groupIntoShots(attacks, players);
-  const stats = buildPlayerStats(players, shots);
+  const stats = buildPlayerStats(players, shots, room);
   // Computed once and handed to both the honors and the recap's boards, which need the same answer:
   // an award naming a finder while the board it sits above marks a different square would be a bug
   // nobody could explain.
@@ -1588,14 +1629,19 @@ export function formatReportText(report: MatchReport, attacks: Attack[], boardSi
     if (!byTeam.has(s.team)) byTeam.set(s.team, []);
     byTeam.get(s.team)!.push(s);
   }
-  lines.push(`  ${"".padEnd(14)} ${"shots".padStart(5)} ${"hits".padStart(5)} ${"miss".padStart(5)} ${"sunk".padStart(5)} ${"acc".padStart(5)}`);
+  lines.push(
+    `  ${"".padEnd(14)} ${"shots".padStart(5)} ${"hits".padStart(5)} ${"miss".padStart(5)} ${"sunk".padStart(5)} ${"acc".padStart(5)} ${"pace".padStart(6)}`
+  );
   for (const [team, list] of [...byTeam.entries()].sort((a, b) => a[0] - b[0])) {
     lines.push(`  ${teamName(team)}`);
     for (const s of list) {
       lines.push(
         `    ${s.nickname.padEnd(14)} ${String(s.shots).padStart(3)} ${String(s.hits).padStart(5)} ` +
           `${String(s.misses).padStart(5)} ${String(s.sunk).padStart(5)} ` +
-          `${(Math.round(s.accuracy * 100) + "%").padStart(5)}`
+          `${(Math.round(s.accuracy * 100) + "%").padStart(5)} ` +
+          // Blank rather than a dash when there is no pace: this is the line people paste into
+          // Discord, and a column of dashes down a short match reads as broken rather than as absent.
+          `${(s.pace != null ? paceLabel(s.pace) : "").padStart(6)}`
       );
     }
     if (list.length > 1) {

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchMatchFleets, fetchMatchEvents, fetchParticipants, fetchProfiles, profileName, type Profile } from "../lib/profiles";
-import { fetchArchivedMatches, ARCHIVE_LIST_LIMIT, type ArchivedMatch } from "../lib/matchArchive";
+import { fetchArchivedMatches, ARCHIVE_LIST_LIMIT, type ArchivedMatchListing } from "../lib/matchArchive";
 import { buildScoutingReports } from "../lib/scouting";
 import { CaptainCards } from "../components/CaptainCards";
 import type { ParticipantRow } from "../lib/careerStats";
@@ -40,7 +40,7 @@ export function Almanac() {
   const [mode, setMode] = useState<"ships" | "shots">("ships");
   const [size, setSize] = useState<number | null>(null);
   const [setId, setSetId] = useState<SquareSetId | null>(null);
-  const [archived, setArchived] = useState<ArchivedMatch[]>([]);
+  const [archived, setArchived] = useState<ArchivedMatchListing[]>([]);
   const [view, setView] = useState<"patterns" | "captains">("patterns");
 
   useEffect(() => {
@@ -334,7 +334,7 @@ const HISTORY_PREVIEW = 12;
  * Costs no storage: match_reports has been written at the end of every match since the record
  * books existed, and this reads rows that were already sitting there.
  */
-function MatchHistory({ matches, capped }: { matches: ArchivedMatch[]; capped?: boolean }) {
+function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; capped?: boolean }) {
   const [showAll, setShowAll] = useState(false);
   if (matches.length === 0) return null;
 

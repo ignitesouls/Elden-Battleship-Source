@@ -40,7 +40,9 @@ no machine has to stay online.
 
 **Website.** Unchanged. Auto-fired shots are the same rows manual shots produce, so live updates,
 archiving, statistics and replay all work as-is. Its only contribution is minting the token, on the
-profile page.
+OBS & auto-marking page (`#/streaming`, in the top bar). It moved there from the profile page when
+the persistent stream overlay landed: that token is the same kind of thing - per-account, permanent,
+pasted into a program that is not this website - and both are set up on the same afternoon.
 
 ## Why the board doesn't need to be sent
 
@@ -127,7 +129,7 @@ data_file = "bosses.json"     # existing format, unchanged
 The file carries a lot more than this (`[common]`, `[input]`, `[style]`, `[timer]`), all of it the
 overlay's own business and none of it Battleship's.
 
-**How a player fills it in.** The profile page hands over the entire file with `url` and `token`
+**How a player fills it in.** The setup page hands over the entire file with `url` and `token`
 already filled, and the guide is four steps: get current Dionysus, open the file, `Ctrl+A` `Ctrl+V`,
 `Ctrl+S`. Whole file rather than the `[ingest]` table alone, because "replace exactly this section
 and don't leave the old one behind" is several instructions, and getting any of them wrong produces

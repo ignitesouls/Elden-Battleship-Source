@@ -44,7 +44,17 @@ export function AutoFireSetup() {
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
+  /**
+   * The four steps, open from the start.
+   *
+   * Collapsed was right when this panel was an aside on somebody's career page: they had come to
+   * look at their record, and a folder tree unfurling under it would have been in the way. It is
+   * wrong now that the panel's home is a page called "OBS & auto-marking" that people open for no
+   * other reason. Handing somebody a config file and hiding "where to put it" behind a toggle at the
+   * bottom is the whole setup failing quietly - they copy the token, look for somewhere to paste it,
+   * find nothing, and leave.
+   */
+  const [guideOpen, setGuideOpen] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -178,7 +188,7 @@ export function AutoFireSetup() {
         aria-expanded={guideOpen}
         style={{ fontSize: "0.74rem", alignSelf: "flex-start" }}
       >
-        {guideOpen ? "▾" : "▸"} How to set it up in game
+        {guideOpen ? "▾" : "▸"} How to set it up
       </button>
 
       {guideOpen && <SetupGuide />}
@@ -192,34 +202,40 @@ export function AutoFireSetup() {
  * The filename and the folder tree match a real Dionysus install rather than describing one
  * approximately, because the whole guide now rests on somebody finding one file. Anything vague
  * here is the whole thing failing.
+ *
+ * Every step is an imperative naming one action, and every body says only what the title cannot.
+ * Step 1 used to read "Auto-marking needs an up-to-date Dionysus. Check for updates first" under the
+ * title "Get the latest Dionysus" - three sentences to say one thing, and the body only repeated the
+ * heading. A numbered list is the one place prose can be cut hardest, because the numbers already
+ * carry the order and the titles already carry the actions.
  */
 function SetupGuide() {
   return (
     <div className="stack" style={{ gap: "0.7rem", paddingTop: "0.2rem" }}>
-      <Step n={1} title="Get the latest Dionysus">
-        <p style={body}>Auto-marking needs an up-to-date Dionysus. Check for updates first.</p>
+      <Step n={1} title="Update Dionysus">
+        <p style={body}>Auto-marking rides on the overlay Dionysus ships. An old install won't have it.</p>
       </Step>
 
       <Step n={2} title="Open the config file">
-        <p style={body}>It's in your Dionysus folder:</p>
+        <p style={body}>In your Dionysus folder:</p>
         <Pre>{`Dionysus\\
 └─ Resources\\
    └─ me3-v0.8.0\\
       └─ EROverlay\\
          └─ ${CONFIG_FILENAME}      <- open this one`}</Pre>
-        <p style={body}>Open it with Notepad.</p>
+        <p style={body}>Open it in Notepad.</p>
       </Step>
 
-      <Step n={3} title="Replace everything in it">
+      <Step n={3} title="Paste over everything">
         <p style={body}>
-          Press <strong>Copy config</strong> above. Click inside the file, press{" "}
+          Press <strong>Copy config</strong> above. Click in the file, press{" "}
           <code style={code}>Ctrl+A</code>, then <code style={code}>Ctrl+V</code>.
         </p>
       </Step>
 
       <Step n={4} title="Save">
         <p style={body}>
-          <code style={code}>Ctrl+S</code>. That's it. Bosses you kill in game now mark your squares.
+          <code style={code}>Ctrl+S</code>. That's it - bosses you kill now mark your squares.
         </p>
       </Step>
 

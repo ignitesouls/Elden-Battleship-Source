@@ -67,20 +67,34 @@ export function squarePace(events: MatchEventRow[]): Map<string, number> {
     previous.set(run, shot.seconds);
     if (before === undefined) continue;
 
-    const gap = shot.seconds - before;
-    if (gap < MIN_GAP_SECONDS) continue;
     const list = gaps.get(shot.key);
-    if (list) list.push(gap);
-    else gaps.set(shot.key, [gap]);
+    if (list) list.push(shot.seconds - before);
+    else gaps.set(shot.key, [shot.seconds - before]);
   }
 
   const out = new Map<string, number>();
   for (const [key, list] of gaps) {
-    if (list.length < MIN_GAPS_FOR_PACE) continue;
-    const mid = median(list);
-    if (mid !== null) out.set(key, mid);
+    const pace = paceFromGaps(list);
+    if (pace !== null) out.set(key, pace);
   }
   return out;
+}
+
+/**
+ * The rule itself, over raw gaps in seconds: drop the double-fires, insist on enough of what is
+ * left, take the middle one.
+ *
+ * Exported because a career's pace and a single match's pace have to be the same measurement. The
+ * post-match scoreboard reads a captain's pace off one night (lib/matchReport) while the leaderboard
+ * reads it off their whole archive; if those two ever computed it differently, a crew would watch
+ * their own recap disagree with their own leaderboard row and neither number would be trusted again.
+ * squarePace() above feeds this an archive, buildPlayerStats() feeds it one match, and the thresholds
+ * are applied in exactly one place either way.
+ */
+export function paceFromGaps(gaps: number[]): number | null {
+  // Below MIN_GAP_SECONDS is a duo boss or a banked kill, not a fast square - see recordBook.
+  const real = gaps.filter((gap) => gap >= MIN_GAP_SECONDS);
+  return real.length < MIN_GAPS_FOR_PACE ? null : median(real);
 }
 
 /** "2:34" - the same clock the record book reads timings in. */
