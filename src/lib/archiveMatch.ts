@@ -3,7 +3,7 @@ import { challengesForRoom, igonAnchor } from "./challenges";
 import { supabase } from "./supabase";
 import { bottleNote, type DeepHide } from "./deepWater";
 import { deepForArchive } from "./deepArchive";
-import { clearArchiveCache } from "./profiles";
+import { clearArchiveCache } from "./archiveCache";
 import type { Attack, Fleet, Player, Room } from "../types/battleship";
 
 /**

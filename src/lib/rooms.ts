@@ -1032,7 +1032,7 @@ export interface LiveBattle {
  * Deliberately `status = 'battle'` and nothing else. A lobby is somebody's room being arranged and
  * a placement phase is a match that hasn't opened yet - neither is a thing to walk in on, and
  * listing them would turn the front page into a directory of rooms to gatecrash. 'finished' is out
- * for the opposite reason: it's over, and the recap is already in "Recent battles" below.
+ * for the opposite reason: it's over, and the recap is reachable from the almanac.
  *
  * Two reads rather than a join, exactly as listRooms() does it for the admin: PostgREST can only
  * aggregate through a foreign-table select, and the counting is cheaper here than the round trip
@@ -1096,10 +1096,10 @@ export async function lookupRoom(code: string): Promise<{ code: string; status: 
 /**
  * What a list of recaps needs to draw a LINE for each one: who won, where, how long, how loud.
  *
- * Notably not `summary`, which is the biggest column in the archive and which neither caller reads -
- * the front page's "Recent battles" and the admin panel's match list both render from these eight
- * fields and nothing else. It was being fetched and thrown away on every visit to the busiest page
- * on the site.
+ * Notably not `summary` or `report_text`, the two biggest columns in the archive and the two the
+ * only caller does not read: the admin panel's match list renders from these eight fields and
+ * nothing else. `report_text` came down too while the front page carried a "Recent battles" panel
+ * with a Copy button per row - the panel is gone for egress, and the column went with it.
  */
 const REPORT_LINE_COLUMNS = "id,match_key,room_code,winner_team,duration,total_shots,finished_at,voided";
 
@@ -1107,22 +1107,18 @@ const REPORT_LINE_COLUMNS = "id,match_key,room_code,winner_team,duration,total_s
  * Reads the saved recaps. Writing them is the `archive_match` RPC's job now - see
  * lib/archiveMatch.ts - because the old client-side insert path let anyone forge records.
  *
- * `withReportText` is the one thing the two callers disagree about. The front page has a Copy button
- * per row that puts the prose recap on the clipboard, so it needs the text; the admin list has no
- * such button and was downloading a few hundred paragraphs to render a few hundred delete buttons.
- * It stays part of the fetch rather than being loaded on click, because a clipboard write has to
- * happen inside the user gesture that asked for it - an awaited fetch first is how that silently
- * stops working in Safari.
+ * The prose recap is no longer part of it. It used to be, for the front page's Copy button, loaded
+ * up front rather than on click because a clipboard write has to happen inside the user gesture
+ * that asked for it - an awaited fetch first is how that silently stops working in Safari. With
+ * that panel gone the only caller left is the admin list, which never showed the text, and a page
+ * wanting one recap in full reads it from lib/matchArchive.
  */
-export async function fetchRecentMatchReports(limit = 8, withReportText = false) {
-  // Two spelled-out calls rather than one built string: supabase-js parses the column list at the
-  // TYPE level, so a ternary hands it a union of two template literals and it resolves the lot to a
-  // ParserError. Keeping both literals costs a line and keeps the row type inferred.
-  const query = withReportText
-    ? supabase.from("match_reports").select(`${REPORT_LINE_COLUMNS},report_text` as const)
-    : supabase.from("match_reports").select(REPORT_LINE_COLUMNS);
-
-  const { data, error } = await query.order("finished_at", { ascending: false }).limit(limit);
+export async function fetchRecentMatchReports(limit = 8) {
+  const { data, error } = await supabase
+    .from("match_reports")
+    .select(REPORT_LINE_COLUMNS)
+    .order("finished_at", { ascending: false })
+    .limit(limit);
   if (error) return [];
   return data ?? [];
 }

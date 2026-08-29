@@ -1,11 +1,11 @@
 import { supabase } from "./supabase";
 import { canonicalSquareName } from "./squareSetFormat";
-import type { ParticipantRow } from "./careerStats";
+import { participantKey, type ParticipantRow } from "./careerStats";
 import { withoutVoided } from "./voidedMatches";
+import { cached, forget } from "./archiveCache";
 
 export interface Profile {
   id: string;
-  twitch_id: string | null;
   display_name: string;
   /** The player's own choice of name. Null means they've never set one - show display_name. */
   nickname: string | null;
@@ -52,8 +52,21 @@ export async function upsertProfile(input: {
   }
 }
 
+/**
+ * The four fields anything on the site actually draws a person with.
+ *
+ * Spelled out rather than left as a wildcard because the row has three more - `twitch_id`,
+ * `updated_at` and `created_at` - and nothing draws any of them. On a single profile that is noise;
+ * on fetchProfiles below, which asks for every account that has ever played, it was dead weight on
+ * every row, on three separate pages.
+ */
+const PROFILE_COLUMNS = "id,display_name,nickname,avatar_url";
+
+/** Namespaces the profile entries in the shared cache, so a rename can drop them alone. */
+const PROFILE_CACHE_PREFIX = "profiles:";
+
 export async function fetchProfile(id: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select().eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", id).maybeSingle();
   if (error || !data) return null;
   return data as Profile;
 }
@@ -74,14 +87,38 @@ export async function saveProfileNickname(id: string, nickname: string | null): 
     .update({ nickname, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
+  // The whole point of a rename is seeing it. Only the profile entries go - the archive feeds
+  // beside them in the cache have not changed, and re-reading those would cost more than the
+  // staleness this is fixing.
+  forget(PROFILE_CACHE_PREFIX);
 }
 
+/**
+ * Names and avatars for a set of accounts, cached like the feed that produced the set.
+ *
+ * Every caller passes the user ids off a stats feed, which means in practice every account that
+ * has ever played - and all three of them (Almanac, Leaderboard, PlayerStats) did it uncached while
+ * the participant rows they took the ids FROM were being cached around them. A visitor reading all
+ * three downloaded the same profile table three times.
+ *
+ * Keyed on the sorted ids, so the three pages agree on the key whenever they are working from the
+ * same feed - which, since that feed is itself cached, is the normal case. A page asking about a
+ * different set of people misses and reads, exactly as it should.
+ *
+ * Sorted rather than taken in argument order because the callers build their lists by mapping over
+ * rows, and two feeds in different orders describing the same people must not be two cache misses.
+ */
 export async function fetchProfiles(ids: string[]): Promise<Map<string, Profile>> {
-  const unique = [...new Set(ids.filter(Boolean))];
+  const unique = [...new Set(ids.filter(Boolean))].sort();
   if (unique.length === 0) return new Map();
-  const { data, error } = await supabase.from("profiles").select().in("id", unique);
-  if (error || !data) return new Map();
-  return new Map((data as Profile[]).map((p) => [p.id, p]));
+
+  const rows = await cached(`${PROFILE_CACHE_PREFIX}${unique.join(",")}`, async () => {
+    const { data, error } = await supabase.from("profiles").select(PROFILE_COLUMNS).in("id", unique);
+    if (error || !data) return [];
+    return data as Profile[];
+  });
+
+  return new Map(rows.map((p) => [p.id, p]));
 }
 
 /*
@@ -132,18 +169,35 @@ const PAGE_SIZE = 1000;
  * Stops on a short page, on an error (returning what it has - a partial book beats a blank one),
  * and at `limit`, which is the caller's ceiling rather than the server's.
  */
-async function fetchAllRows<T>(table: string, columns: string, limit: number): Promise<T[]> {
+async function fetchAllRows<T>(
+  table: string,
+  columns: string,
+  limit: number,
+  /**
+   * An optional `column = value` narrowing, applied server-side.
+   *
+   * The three whole-archive feeds pass nothing and read everything, as they always have. It exists
+   * for fetchPlayerEvents, which wants one person's shots and should not have to download the
+   * other ten thousand to find them.
+   */
+  match?: { column: string; value: string }
+): Promise<T[]> {
   const out: T[] = [];
 
   while (out.length < limit) {
     const size = Math.min(PAGE_SIZE, limit - out.length);
-    const { data, error } = await supabase
+    const base = supabase
       .from(table)
       .select(columns)
       .order("finished_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(out.length, out.length + size - 1);
+      .order("id", { ascending: false });
+    const { data, error } = await (match ? base.eq(match.column, match.value) : base).range(
+      out.length,
+      out.length + size - 1
+    );
 
+    // A filter naming a column the database does not have errors here rather than throwing, which
+    // is what lets fetchPlayerEvents treat an unapplied migration as an empty result and fall back.
     if (error || !data) break;
     out.push(...(data as T[]));
     if (data.length < size) break; // the last page, so there is nothing after it
@@ -187,54 +241,7 @@ const EVENT_COLUMNS =
 const PARTICIPANT_COLUMNS =
   "match_key,user_id,nickname,team,won,draw,shots,hits,misses,sunk,team_ships_lost,awards,room_code,finished_at,square_set";
 
-/**
- * How long a fetched feed is reused before it is read again.
- *
- * The archive is immutable apart from one event - a match ending - so the only thing a cache here
- * can get wrong is being a few minutes late to a match that has just been archived, and
- * `clearArchiveCache` covers the case where this tab is the one that archived it.
- *
- * What it buys is the whole reason it exists: Almanac, Leaderboard and PlayerStats each read the
- * same feeds on mount, so a visitor who looks at all three used to download the entire archive
- * three times over. Five minutes comfortably covers somebody clicking between them, and expires
- * well inside the pace matches actually finish at.
- */
-const ARCHIVE_CACHE_MS = 5 * 60 * 1000;
-
-const archiveCache = new Map<string, { at: number; rows: Promise<unknown[]> }>();
-
-/**
- * The cached read, or a fresh one.
- *
- * Caches the PROMISE rather than the rows, so the two fetches Leaderboard and PlayerStats kick off
- * in the same tick share one request instead of both missing and both going to the network - the
- * same reason fetchVoidedMatches holds a promise rather than a Set.
- *
- * A read that fails or comes back empty is evicted rather than kept, so a network blip costs one
- * page load rather than five minutes of a site that believes it has no history.
- */
-function cached<T>(key: string, read: () => Promise<T[]>): Promise<T[]> {
-  const hit = archiveCache.get(key);
-  if (hit && Date.now() - hit.at < ARCHIVE_CACHE_MS) return hit.rows as Promise<T[]>;
-
-  const rows = read().then(
-    (r) => {
-      if (r.length === 0) archiveCache.delete(key);
-      return r;
-    },
-    (e) => {
-      archiveCache.delete(key);
-      throw e;
-    }
-  );
-  archiveCache.set(key, { at: Date.now(), rows: rows as Promise<unknown[]> });
-  return rows;
-}
-
-/** Forgets every cached feed, so a tab that has just archived a match sees it in the stats. */
-export function clearArchiveCache(): void {
-  archiveCache.clear();
-}
+// The cache these three feeds share with the history list lives in lib/archiveCache.
 
 /** The room, seed and balancer permutation one match's squares were dealt from. */
 export interface BoardSource {
@@ -303,6 +310,59 @@ export async function fetchMatchEvents(limit = 50000) {
       };
     }) as never[];
   });
+}
+
+/**
+ * One player's shots, and the reason the career page is no longer the most expensive page here.
+ *
+ * -- What it replaces --------------------------------------------------------------------------
+ *
+ * fetchMatchEvents(), filtered in the browser. Every one of the five panels a career page draws -
+ * playerPace, squarePace, playerBestKills, playerKills and the match list - takes the player's key
+ * and reads only rows belonging to it, so the whole global log was being downloaded to be thrown
+ * away. `participant_key` is a generated column carrying exactly the fold participantKey applies,
+ * so the same narrowing now happens in Postgres - see the match_event_participant_key migration.
+ *
+ * -- The fallback, and why it is not paranoia ---------------------------------------------------
+ *
+ * An empty result falls back to the old whole-log read. Three different things produce one, and
+ * the fallback is right for all three:
+ *
+ *   the migration is not applied   PostgREST rejects the unknown column, fetchAllRows breaks out
+ *                                  with an error and returns nothing. So this file is safe to ship
+ *                                  ahead of the migration, and safe against a rollback.
+ *   the folds disagree             `btrim` is ASCII-only where JavaScript's `.trim()` is not. A
+ *                                  nickname with an exotic space folds differently in the two
+ *                                  places, and the visitor gets a correct page at the old price.
+ *   the player really has none     a captain who has never fired. The fallback costs one read and
+ *                                  finds nothing either, which is the honest answer.
+ *
+ * -- What it does NOT fetch ---------------------------------------------------------------------
+ *
+ * Board sources. fetchMatchEvents attaches room_id, board_seed and board_perm to every row for the
+ * Almanac's sake - a per-match read of its own, and the perms are the largest thing in it. Not one
+ * of the five career panels looks at them, so they are not fetched. A consumer that grows a need
+ * for them must say so here rather than discover them by accident.
+ */
+export async function fetchPlayerEvents(key: string, limit = 50000) {
+  const own = await cached(`events:${key}`, async () => {
+    const rows = await fetchAllRows<{ match_key: string; challenge_name?: string | null }>(
+      "match_events",
+      EVENT_COLUMNS,
+      limit,
+      { column: "participant_key", value: key }
+    );
+    // Same rename fold and same voided-match drop as the global feed, so the two describe a match
+    // identically and a career page cannot disagree with the Almanac about what happened in it.
+    return (await withoutVoided(rows)).map((r) => ({
+      ...r,
+      challenge_name: canonicalSquareName(r.challenge_name),
+    })) as never[];
+  });
+  if (own.length > 0) return own;
+
+  const all = (await fetchMatchEvents(limit)) as unknown as { user_id: string | null; nickname: string }[];
+  return all.filter((e) => participantKey(e) === key) as never[];
 }
 
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */

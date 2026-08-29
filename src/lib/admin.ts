@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { clearVoidedCache } from "./voidedMatches";
-import { clearArchiveCache } from "./profiles";
+import { clearArchiveCache } from "./archiveCache";
 
 export interface AdminRow {
   user_id: string;

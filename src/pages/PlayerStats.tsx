@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET } from "../lib/challenges";
-import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type Profile } from "../lib/profiles";
+import { fetchParticipants, fetchProfiles, fetchPlayerEvents, profileName, type Profile } from "../lib/profiles";
 import { playerPace, playerKills, playerBestKills, type MatchEventRow } from "../lib/almanac";
 import { LoadingScreen } from "../components/BrandMark";
 import { accountName, useAuthProfile } from "../hooks/useAuthProfile";
@@ -37,12 +37,16 @@ export function PlayerStats() {
 
   useEffect(() => {
     void (async () => {
-      const [data, evs] = await Promise.all([fetchParticipants(), fetchMatchEvents()]);
+      // Participants stay global: the head-to-head, teammate and nemesis panels are all about who
+      // ELSE was in those matches, so one player's rows cannot answer them. The shot log is the
+      // opposite - every panel fed by it reads this player and nobody else - so it asks for one
+      // player's worth and the other ten thousand rows never leave the database.
+      const [data, evs] = await Promise.all([fetchParticipants(), fetchPlayerEvents(playerKey)]);
       setAllRows(data);
       setEvents(evs as unknown as MatchEventRow[]);
       setProfiles(await fetchProfiles(data.map((r) => r.user_id).filter(Boolean) as string[]));
     })();
-  }, []);
+  }, [playerKey]);
 
   const shownSet = useMemo(() => {
     if (requestedSet && squareSet(requestedSet).id === requestedSet) return requestedSet;

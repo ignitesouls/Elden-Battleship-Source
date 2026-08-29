@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { createRoom, joinRoom, fetchRecentMatchReports, fetchLiveBattles, type LiveBattle } from "../lib/rooms";
+import { createRoom, joinRoom, fetchLiveBattles, type LiveBattle } from "../lib/rooms";
 import { serverNow } from "../lib/serverTime";
 import { getLastNickname, storeLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
@@ -8,9 +8,7 @@ import { isSupabaseConfigured } from "../lib/supabase";
 import { SiteFooter } from "../components/SiteFooter";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
-import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
-import type { MatchReportRow } from "../types/battleship";
 
 export function Home() {
   const navigate = useNavigate();
@@ -18,12 +16,6 @@ export function Home() {
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [recent, setRecent] = useState<MatchReportRow[]>([]);
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    void fetchRecentMatchReports(6, true).then((rows) => setRecent(rows as MatchReportRow[]));
-  }, []);
 
   /**
    * The matches being fought right now.
@@ -263,15 +255,6 @@ export function Home() {
         </div>
       )}
 
-      {recent.length > 0 && (
-        <div className="panel stack" style={{ gap: "0.45rem" }}>
-          <h3 style={{ margin: 0 }}>Recent battles</h3>
-          {recent.map((r) => (
-            <RecentRow key={r.id} row={r} />
-          ))}
-        </div>
-      )}
-
       <SiteFooter />
     </div>
   );
@@ -307,41 +290,6 @@ function LiveRow({ battle }: { battle: LiveBattle }) {
       >
         Watch
       </Link>
-    </div>
-  );
-}
-
-function RecentRow({ row }: { row: MatchReportRow }) {
-  const [copied, setCopied] = useState(false);
-
-  function copy() {
-    navigator.clipboard?.writeText(row.report_text ?? "");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  }
-
-  const when = new Date(row.finished_at).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  return (
-    <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.82rem" }}>
-      <span style={{ minWidth: 0, flex: 1 }}>
-        <strong style={{ color: row.winner_team !== null ? teamHex(row.winner_team) : "var(--text-dim)" }}>
-          {row.winner_team !== null ? teamName(row.winner_team) : "Draw"}
-        </strong>
-        <span className="muted">
-          {" "}
-          · {formatRoomCode(row.room_code)} · {row.duration ?? "--:--"} · {row.total_shots} shots
-        </span>
-        <div className="muted" style={{ fontSize: "0.7rem" }}>{when}</div>
-      </span>
-      <button onClick={copy} style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem" }}>
-        {copied ? "Copied" : "Copy"}
-      </button>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { cached } from "./archiveCache";
 import { deepFromAwards, type ArchivedDeep } from "./deepArchive";
 import { canonicalSquareName } from "./squareSetFormat";
 import type { Award, PlayerStats } from "./matchReport";
@@ -134,22 +135,37 @@ export interface ArchivedMatchListing {
  * that must NOT be done is dropping `summary` outright: the names would all silently fall through to
  * matchName's size-based fallback, and a list of "The Ten-Square Skirmish" repeated twelve times
  * looks like a working page rather than a broken one.
+ *
+ * -- Why it is cached -------------------------------------------------------------------------------
+ *
+ * Because it is the largest single read left on the public site, and the Almanac asks for it again
+ * on every mount - including the back button, which is exactly how somebody reads a history list:
+ * out to a recap, back, out to the next one. Each of those returns used to be another 78 KB.
+ *
+ * It shares lib/archiveCache with the three stats feeds rather than holding a cache of its own, so
+ * the five minutes and the clear-on-archive behaviour are the ones documented there - and a match
+ * archived by this tab still appears immediately, because archive_match clears the lot.
+ *
+ * Deliberately NOT filtered by `voided` even so - see the note on the stats feeds in lib/profiles.
+ * A voided match keeps its line in the history list.
  */
-export async function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<ArchivedMatchListing[]> {
-  const { data, error } = await supabase
-    .from("match_reports")
-    .select("match_key,room_code,winner_team,duration,total_shots,square_set,finished_at,stats:summary->stats,awards:summary->awards")
-    .order("finished_at", { ascending: false })
-    .limit(limit);
-  if (error || !data) return [];
+export function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<ArchivedMatchListing[]> {
+  return cached(`archive-list:${limit}`, async () => {
+    const { data, error } = await supabase
+      .from("match_reports")
+      .select("match_key,room_code,winner_team,duration,total_shots,square_set,finished_at,stats:summary->stats,awards:summary->awards")
+      .order("finished_at", { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
 
-  return (data as unknown as (Omit<ArchivedMatchListing, "summary"> & {
-    stats: PlayerStats[] | null;
-    awards: Award[] | null;
-  })[]).map(({ stats, awards, ...row }) => ({
-    ...row,
-    summary: { stats: stats ?? [], awards: awards ?? [] },
-  }));
+    return (data as unknown as (Omit<ArchivedMatchListing, "summary"> & {
+      stats: PlayerStats[] | null;
+      awards: Award[] | null;
+    })[]).map(({ stats, awards, ...row }) => ({
+      ...row,
+      summary: { stats: stats ?? [], awards: awards ?? [] },
+    }));
+  });
 }
 
 /**
