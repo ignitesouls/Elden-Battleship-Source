@@ -9,6 +9,7 @@ import { OverlayOdds } from "./OverlayOdds";
 import { OverlayAudio } from "./OverlayAudio";
 import { OverlayEgg } from "./OverlayEgg";
 import { CasterControl } from "./CasterControl";
+import { setEgressRoom } from "../lib/egressMeter";
 import type { StreamElement } from "../lib/streamOverlay";
 
 /**
@@ -130,6 +131,22 @@ export function StreamSource() {
     if (name === "fleet" && token) next.set("token", token);
     return next;
   }, [params, session?.team, name, token]);
+
+  /**
+   * Tell the byte meter which room this source ended up in.
+   *
+   * /stream/:element is the one route with no room code in the URL - that is the entire point of it,
+   * since a Browser Source URL that names a room goes stale the moment the match does. So the meter
+   * cannot read a room off the route here, and without this a persistent OBS scene would be the one
+   * set of tabs that never reported, while being the tabs most worth measuring: seven of them per
+   * streamer, each an independent realtime subscriber.
+   *
+   * The caster desk names itself, because it is a person at a second monitor rather than a source in
+   * a scene, and the two cost very different amounts.
+   */
+  useEffect(() => {
+    if (session?.roomCode) setEgressRoom(session.roomCode, name === "cast" ? "caster" : "overlay");
+  }, [session?.roomCode, name]);
 
   // The caster's desk, following them by token the same way their sources do. Not a browser source -
   // it is an ordinary page on a second monitor, so it keeps the app's chrome and is allowed to

@@ -79,6 +79,24 @@ const pendingTwitchCallback = captureTwitchCallback();
 // it can render the "not configured yet" message below. Fall back to a syntactically valid
 // placeholder so the client can exist but simply fail requests until real values are set.
 export const supabase = createClient(url || "https://placeholder.supabase.co", anonKey || "placeholder-anon-key", {
+  global: {
+    /**
+     * Look `fetch` up at call time instead of letting the client capture it.
+     *
+     * postgrest-js resolves a fetch ONCE, in its constructor - `fetch ?? globalThis.fetch` - and
+     * holds it for the life of the client. This module is imported before anything else in the app
+     * runs, so anything that wraps the global later, such as lib/egressMeter's byte counter, is
+     * relying on some layer in the stack having resolved lazily. Today supabase-js happens to hand
+     * PostgREST a closure of its own, so a late wrapper is in fact still seen; that is an accident
+     * of the current version rather than a promise, and it is not worth a silently unweighed site
+     * the next time the dependency is bumped.
+     *
+     * Passing our own one-line indirection makes the global the source of truth again, which is
+     * what a global is for. It costs a call frame per request and is not specific to the meter -
+     * anything that needs to see this client's HTTP, a retry shim or a latency probe, now can.
+     */
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  },
   realtime: {
     /**
      * Run realtime's keepalive in a Web Worker so a hidden tab keeps its connection.

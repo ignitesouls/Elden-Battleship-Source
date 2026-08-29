@@ -6,6 +6,7 @@ import { PlacementPhase } from "./room/PlacementPhase";
 import { BattlePhase } from "./room/BattlePhase";
 import { joinRoom, resetRoomToLobby, redeemRejoinCode, startBattle } from "../lib/rooms";
 import { activeTeams } from "../lib/battleshipLogic";
+import { setEgressRole } from "../lib/egressMeter";
 import { teamName, teamHex } from "../lib/teamColors";
 import {
   getLastNickname,
@@ -532,6 +533,16 @@ function SpectatorView({
   // The stage the boards are measured into. See Spectator.css for why this page measures rather
   // than capping boards in vh.
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
+
+  /**
+   * Correct the byte meter's guess about what this tab is.
+   *
+   * /room/:code is the same URL for a player and a spectator, so lib/egressMeter reads "player" off
+   * the route and cannot do better. This component only mounts for somebody whose team is null, so
+   * it is the one place that knows. Worth the two lines: spectators and overlays are where a match's
+   * realtime cost actually comes from, and a split that filed them all as players would say nothing.
+   */
+  useEffect(() => setEgressRole("spectator"), []);
 
   // Defaults to "attacks": shot results only, no ship positions. That's the mode that stays
   // honest if a spectator is also a player's second tab, so it shouldn't require opting in.
