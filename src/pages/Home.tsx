@@ -278,6 +278,12 @@ function LiveRow({ battle }: { battle: LiveBattle }) {
     <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.82rem" }}>
       <span style={{ minWidth: 0, flex: 1 }}>
         <strong>{formatRoomCode(battle.code)}</strong>
+        {/* Next to the code rather than down in the detail line: this is the one fact that decides
+            whether the row is worth clicking, and the detail line is where you look after you have
+            already decided. */}
+        {battle.practice && (
+          <span style={{ color: "var(--hit)", fontSize: "0.68rem", letterSpacing: "0.06em" }}> · PRACTICE</span>
+        )}
         <div className="muted" style={{ fontSize: "0.7rem" }}>
           {battle.fleets} fleet{battle.fleets === 1 ? "" : "s"} · {battle.players} aboard · opened {minutes}m ago
         </div>

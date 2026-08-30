@@ -334,6 +334,18 @@ Deno.serve(async (req) => {
       // Null on a board with no gap at all, which is a real outcome and not a missing value.
       aheadTeam: playedScore.aheadTeam,
       behindTeam: playedScore.behindTeam,
+      // Seconds. The third test, on the other end of every ship - how far apart the two fleets are
+      // on when their ships get FOUND rather than on when they get cleared. Stored separately for
+      // the same reason as the long-square gap, and with a sharper case: over the archive the two
+      // ends of a ship correlate at r = 0.192, so this number regularly disagrees with `played`
+      // about which board was lopsided and which side it favoured. See FIND_GAP_SECONDS.
+      findDealt: Math.round(result.findGapBefore),
+      findPlayed: Math.round(result.findGapAfter),
+      findLimit: result.findLimit,
+      // The fleet that stayed hidden longest at the worst find rank, and the one found soonest.
+      // Deliberately not assumed to agree with aheadTeam/behindTeam above - see scoreLayout.
+      findAheadTeam: playedScore.findAheadTeam,
+      findBehindTeam: playedScore.findBehindTeam,
       // Whole squares. The second test, on the cells the rank gap throws away - how many more
       // squares past the long-square line the worst-off fleet held, dealt and as played. Stored
       // beside the rank gap rather than folded into it because a board can pass one and fail the
@@ -367,7 +379,7 @@ Deno.serve(async (req) => {
       // never bound - the layout being played was chosen without reference to anyone's ships, and
       // anything higher is a board that would have been lopsided. On the small-crew profile the
       // tests bind on nearly every board and the median is around thirty, so what is worth watching
-      // there is `accepted` and `regionLow` instead: accepted false means no layout in 300 draws
+      // there is `accepted` and `regionLow` instead: accepted false means no layout in the whole budget
       // met the rules and this is the fairest of them.
       attempts: result.attempts,
       accepted: result.accepted,
@@ -375,6 +387,10 @@ Deno.serve(async (req) => {
       rankGapBefore: Math.round(result.rankGapBefore),
       rankGapAfter: Math.round(result.rankGapAfter),
       rankLimit: result.rankLimit,
+      // Seconds. The same comparison on when each fleet gets FOUND. See FIND_GAP_SECONDS.
+      findGapBefore: Math.round(result.findGapBefore),
+      findGapAfter: Math.round(result.findGapAfter),
+      findLimit: result.findLimit,
       // Whole squares, not seconds. See LONG_GAP in boardBalance.ts.
       longGapBefore: result.longGapBefore,
       longGapAfter: result.longGapAfter,

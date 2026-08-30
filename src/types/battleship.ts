@@ -88,6 +88,18 @@ export interface Room {
   resume_at?: string | null;
   /** Every pause that has already closed, oldest first. */
   pause_log?: PauseWindow[] | null;
+  /**
+   * Declared in the lobby: this match counts for nothing - see the practice_matches migration.
+   *
+   * Set by the host while the room is still in 'lobby' and refused by a trigger after that, so it
+   * is a decision made before anybody knows the result. archive_match copies it onto the match
+   * record and voids the match in the same insert; from there every stats reader on the site
+   * already skips it, because they all filter on `voided`.
+   *
+   * Optional like every column added after launch, and absent reads as a real match - which is the
+   * right way round for a flag whose whole job is to take a match OUT of the record.
+   */
+  practice?: boolean;
 }
 
 /** One stretch of stopped clock, written by the host once the window closes. */
@@ -264,6 +276,8 @@ export interface MatchReportRow {
   finished_at: string;
   /** Struck from every stat and record but still archived - see lib/voidedMatches. */
   voided?: boolean;
+  /** Voided because it was declared a practice match before it was played, and never reversible. */
+  practice?: boolean;
 }
 
 export interface TeamReady {

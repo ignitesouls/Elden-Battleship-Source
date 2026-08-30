@@ -226,6 +226,8 @@ export interface RoomSettings {
   ship_defs?: ShipDefinition[];
   prep_seconds?: number;
   square_set?: string;
+  /** Whether this match counts. Lobby only - a trigger refuses it once the room has left. */
+  practice?: boolean;
 }
 
 /**
@@ -249,6 +251,15 @@ export async function updateRoomSettings(roomId: string, settings: RoomSettings)
     throw new Error(
       "This project hasn't had the square-set migration applied yet, so the square set can't be " +
         "changed. Run supabase/migrations/20260729000000_square_set.sql in the SQL editor."
+    );
+  }
+  // Same courtesy for the practice flag, and the same reason: a host who ticks a box and gets
+  // "column rooms.practice does not exist" has been told what happened but not what to do, and the
+  // match itself is fine either way - it just counts.
+  if (/practice/i.test(error.message)) {
+    throw new Error(
+      "This project hasn't had the practice-match migration applied yet, so a match can't be set " +
+        "to practice. Run supabase/migrations/20260830040000_practice_matches.sql in the SQL editor."
     );
   }
   throw error;
@@ -1024,6 +1035,12 @@ export interface LiveBattle {
   fleets: number;
   /** When the room was opened. Not when the match started - see fetchLiveBattles. */
   created_at: string;
+  /**
+   * Whether this one counts. Carried onto the front page because the alternative is inviting a
+   * stranger to "Watch" what turns out to be a shakedown run, and there is nothing in the room to
+   * tell them so until they have already clicked.
+   */
+  practice?: boolean;
 }
 
 /**
@@ -1046,7 +1063,7 @@ export interface LiveBattle {
 export async function fetchLiveBattles(): Promise<LiveBattle[]> {
   const { data: rooms, error } = await supabase
     .from("rooms")
-    .select("id, code, created_at")
+    .select("id, code, created_at, practice")
     .eq("status", "battle")
     .order("created_at", { ascending: false });
   if (error || !rooms || rooms.length === 0) return [];
@@ -1069,6 +1086,7 @@ export async function fetchLiveBattles(): Promise<LiveBattle[]> {
     players: heads.get(r.id) ?? 0,
     fleets: crews.get(r.id)?.size ?? 0,
     created_at: r.created_at,
+    practice: r.practice ?? false,
   }));
 }
 
@@ -1097,11 +1115,15 @@ export async function lookupRoom(code: string): Promise<{ code: string; status: 
  * What a list of recaps needs to draw a LINE for each one: who won, where, how long, how loud.
  *
  * Notably not `summary` or `report_text`, the two biggest columns in the archive and the two the
- * only caller does not read: the admin panel's match list renders from these eight fields and
+ * only caller does not read: the admin panel's match list renders from these nine fields and
  * nothing else. `report_text` came down too while the front page carried a "Recent battles" panel
  * with a Copy button per row - the panel is gone for egress, and the column went with it.
+ *
+ * `practice` earns its place next to `voided` because the two look identical from here and are not:
+ * the panel's Void button can take back one of them and not the other, so it has to know which it
+ * is looking at before it offers.
  */
-const REPORT_LINE_COLUMNS = "id,match_key,room_code,winner_team,duration,total_shots,finished_at,voided";
+const REPORT_LINE_COLUMNS = "id,match_key,room_code,winner_team,duration,total_shots,finished_at,voided,practice";
 
 /**
  * Reads the saved recaps. Writing them is the `archive_match` RPC's job now - see

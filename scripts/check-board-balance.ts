@@ -26,9 +26,12 @@ import {
   regionFloorFor,
   longSquareCount,
   shipCostProfile,
+  shipFindProfile,
+  rankGapOf,
   rankGapDetail,
   scoreLayout,
   RANK_GAP_SECONDS,
+  FIND_GAP_SECONDS,
   LONG_GAP,
   LONG_SQUARE_SECONDS,
 } from '../src/lib/boardBalance.ts'
@@ -209,12 +212,26 @@ function fairness(cost: number[], perm: number[], fleets: Array<{ ships: number[
   return { gap, profiles }
 }
 
+/** The find gap, likewise recomputed here from the cheapest square on each hull. */
+function findFairness(cost: number[], perm: number[], fleets: Array<{ ships: number[][] }>) {
+  const profiles = fleets.map((f) =>
+    f.ships.map((s) => Math.min(...s.map((c) => cost[perm[c]]))).sort((a, b) => b - a)
+  )
+  const ranks = Math.min(...profiles.map((p) => p.length))
+  let gap = 0
+  for (let i = 0; i < ranks; i++) {
+    const at = profiles.map((p) => p[i])
+    gap = Math.max(gap, Math.max(...at) - Math.min(...at))
+  }
+  return { gap, profiles }
+}
+
 const identity = (n: number) => Array.from({ length: n }, (_, i) => i)
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1)
 
 /* ------------------------------------------------------------------------- */
 
-console.log(`Board balancer - rejection sampling, same-rank ship gap limit ${RANK_GAP_SECONDS}s
+console.log(`Board balancer - rejection sampling, rank gap ${RANK_GAP_SECONDS}s, find gap ${FIND_GAP_SECONDS}s
 `)
 
 // -- 1. Every board size and preset ------------------------------------------------------------
@@ -262,11 +279,19 @@ for (const boardSize of BOARD_SIZES) {
         `${boardSize}x${boardSize} ${preset} reports its own gap`,
         `said ${res.rankGapAfter.toFixed(3)}, actually ${actual.gap.toFixed(3)}`)
 
-      // Accepted means accepted: both tests, on the layout actually handed back.
+      const actualFind = findFairness(cost, res.perm, fleets)
+      check(Math.abs(actualFind.gap - res.findGapAfter) < 1e-9,
+        `${boardSize}x${boardSize} ${preset} reports its own find gap`,
+        `said ${res.findGapAfter.toFixed(3)}, actually ${actualFind.gap.toFixed(3)}`)
+
+      // Accepted means accepted: all three tests, on the layout actually handed back.
       if (res.accepted && res.balanced) {
         check(actual.gap <= res.rankLimit + 1e-9,
-          `${boardSize}x${boardSize} ${preset} accepted layout is inside both limits`,
+          `${boardSize}x${boardSize} ${preset} accepted layout is inside the rank limit`,
           `gap ${actual.gap.toFixed(0)}s / limit ${res.rankLimit}s`)
+        check(actualFind.gap <= res.findLimit + 1e-9,
+          `${boardSize}x${boardSize} ${preset} accepted layout is inside the find limit`,
+          `gap ${actualFind.gap.toFixed(0)}s / limit ${res.findLimit}s`)
       }
     }
     process.stdout.write(`  ${boardSize}x${boardSize} ${preset.padEnd(9)} worst ${sizeAttempts} attempt(s)\n`)
@@ -378,6 +403,141 @@ console.log('the long-square test (second test, on cells the rank gap discards)'
     )
   }
   console.log()
+}
+
+// -- 2c. The find test measures the other end of a ship -------------------------------------------
+//
+// The third test prices a ship at its CHEAPEST square - when the enemy first lands on it - where the
+// rank gap prices it at its dearest. Everything below is the case for it being a third test rather
+// than a restatement of the first, and the case for its threshold being 10:00 where the rank gap's
+// is 5:00.
+//
+// Three things have to hold, and the last one is the one that would rot quietly:
+//
+//   - the two profiles disagree. If a fleet's cheapest-square ordering tracked its slowest-square
+//     ordering, this would be the rank gap with extra steps.
+//   - the find gap is naturally WIDER than the rank gap on the same deals. That is the whole reason
+//     its limit is not five minutes, and if it ever stopped being true the limit should come down.
+//   - the test binds: it rejects layouts the other two accept.
+console.log('the find test (third test, on the cheapest square of each hull)')
+{
+  const TRIALS = 120
+  const rankLongOnly = { ...DEFAULT_RULES, findGapSeconds: Number.POSITIVE_INFINITY }
+  for (const boardSize of [8, 10, 12]) {
+    const cells = boardSize * boardSize
+    let wouldHaveShippedAndFails = 0
+    let accepted = 0
+    let worstDraws = 0
+    const rawRank: number[] = []
+    const rawFind: number[] = []
+
+    for (let trial = 0; trial < TRIALS; trial++) {
+      const cost = boardCost(`find-${boardSize}-${trial}`, cells)
+      const regions = boardRegions(`find-${boardSize}-${trial}`, cells)
+      const fleets = makeFleets(boardSize, 'Classic')
+      const id = identity(cells)
+      rawRank.push(fairness(cost, id, fleets).gap)
+      rawFind.push(findFairness(cost, id, fleets).gap)
+
+      // Same salt for both runs, so the two differ by the rule and not by the draw.
+      const salt = () => rng(seedFrom(`find-${boardSize}-${trial}:salt`))
+
+      const before = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: rankLongOnly })
+      if (before.accepted && findFairness(cost, before.perm, fleets).gap > FIND_GAP_SECONDS) {
+        wouldHaveShippedAndFails++
+      }
+
+      const res = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: DEFAULT_RULES })
+      worstDraws = Math.max(worstDraws, res.attempts)
+      if (res.accepted) {
+        accepted++
+        const gap = findFairness(cost, res.perm, fleets).gap
+        check(gap <= FIND_GAP_SECONDS, `an accepted ${boardSize}x${boardSize} board is inside the find limit`, `gap ${gap.toFixed(0)}s`)
+      }
+    }
+
+    // The reason the find limit is 10:00 and not 5:00, asserted rather than left in a comment. The
+    // minimum of a hull's cells has the whole low tail of the cost table to fall down where the
+    // maximum piles up against the top of it, so the same seconds are a harsher test here.
+    check(mean(rawFind) > mean(rawRank),
+      `${boardSize}x${boardSize}: the find gap is naturally wider than the rank gap`,
+      `find ${mean(rawFind).toFixed(0)}s vs rank ${mean(rawRank).toFixed(0)}s`)
+
+    // Same floor as the long-square test: one board in twenty is where it would be worth deleting.
+    check(wouldHaveShippedAndFails / TRIALS > 0.05,
+      `${boardSize}x${boardSize}: the find test rejects boards the other two accept`,
+      `${((wouldHaveShippedAndFails / TRIALS) * 100).toFixed(0)}%`)
+
+    // Every board has to actually FIND a layout. This is the property the threshold was chosen for
+    // - see FIND_GAP_SECONDS - and the one a tightening would break first, silently, by turning
+    // most boards into fallbacks that are no longer uniform samples of anything.
+    check(accepted === TRIALS,
+      `${boardSize}x${boardSize}: every board found a layout inside the draw budget`,
+      `${accepted}/${TRIALS} accepted, worst ${worstDraws} draws`)
+
+    console.log(
+      `  ${boardSize}x${boardSize}  raw gaps: rank ${(mean(rawRank) / 60).toFixed(1)}min, find ${(mean(rawFind) / 60).toFixed(1)}min` +
+      `   |   ${((wouldHaveShippedAndFails / TRIALS) * 100).toFixed(0)}% of layouts the other two shipped are now redrawn` +
+      `   |   ${accepted}/${TRIALS} accepted, worst ${worstDraws} draws`
+    )
+  }
+  console.log()
+}
+
+// -- 2d. min and max are read off the same hull ---------------------------------------------------
+//
+// The two profiles on one hand-built board, small enough to check by eye. If these ever came out
+// the same the third test would be costing redraws for nothing.
+console.log('find profile vs cost profile')
+{
+  //          cell:   0    1    2    3    4    5
+  const cost = [600, 3000, 2400, 2600, 2500, 2550]
+  const at = (c: number) => cost[c]
+
+  // One hull with a cheap cell and one expensive throughout - identical to the cost profile, since
+  // both are gated at 3000, and half an hour apart on the find profile.
+  const withACheapCell = [[0, 1]]
+  const expensiveThroughout = [[1, 2]]
+  check(
+    shipCostProfile(withACheapCell, at).join() === shipCostProfile(expensiveThroughout, at).join(),
+    'the cost profile cannot tell a hull with one cheap cell from one expensive throughout'
+  )
+  check(
+    shipFindProfile(withACheapCell, at)[0] < shipFindProfile(expensiveThroughout, at)[0],
+    'the find profile can'
+  )
+  check(shipFindProfile([[0, 1]], at)[0] === 600, 'a hull is found at its cheapest cell, not its dearest')
+  check(shipFindProfile([], at).length === 0, 'a fleet with no ships has no find profile')
+
+  // Sorted longest-first like the cost profile, so rankGapDetail compares the two the same way and
+  // rank 0 is the ship that stays hidden longest on both.
+  const profile = shipFindProfile([[0, 1], [2, 3], [4, 5]], at)
+  check(profile.join() === '2500,2400,600', 'the find profile is sorted longest-first', profile.join())
+
+  // Two fleets whose ships die at exactly the same times and are found half an hour apart. This is
+  // the board the third test exists for, and the rank gap reads it as perfectly even.
+  const a = [{ ships: [[0, 1]] }]
+  const b = [{ ships: [[1, 2]] }]
+  check(
+    rankGapOf([shipCostProfile(a[0].ships, at), shipCostProfile(b[0].ships, at)]) === 0,
+    'the rank gap calls these two fleets identical'
+  )
+  check(
+    rankGapOf([shipFindProfile(a[0].ships, at), shipFindProfile(b[0].ships, at)]) === 1800,
+    'the find gap calls them thirty minutes apart'
+  )
+
+  // And the sides are the other way round from the cost profile's, which is why scoreLayout swaps
+  // them rather than reusing aheadTeam. On the find profile a HIGH number is the advantage.
+  const score = scoreLayout(cost, [
+    { team: 7, ships: [[0, 1]] },
+    { team: 9, ships: [[1, 2]] },
+  ])
+  check(score.findGap === 1800, 'scoreLayout reports the find gap', String(score.findGap))
+  check(score.findAheadTeam === 9, 'the fleet found LATER is the one ahead on the find profile', String(score.findAheadTeam))
+  check(score.findBehindTeam === 7, 'and the one found sooner is behind', String(score.findBehindTeam))
+  check(score.rankGap === 0, 'while the rank gap still sees nothing at all', String(score.rankGap))
+  console.log('  cheapest square, sorted like the cost profile, and the sides run the other way\n')
 }
 
 // -- 3. Two salts, two boards --------------------------------------------------------------------
@@ -546,8 +706,16 @@ console.log('three and four teams')
     let worstFallbackGap = 0
     let worstFallbackLong = 0
     let fallbackNotBetter = 0
-    /** What the balancer's own fallback ranking minimises: distance from playable on both tests. */
-    const miss = (rank: number, long: number) => rank / RANK_GAP_SECONDS + long / LONG_GAP
+    /**
+     * What the balancer's own fallback ranking minimises: distance from playable on ALL THREE tests.
+     *
+     * It has to be the same objective, term for term. This measured two of the three for as long as
+     * there were only two, and a checker that scores a fallback on a different objective from the
+     * one that chose it will eventually call the better layout worse - which is exactly the failure
+     * the note below already records for the rank-gap-only version of this bar.
+     */
+    const miss = (rank: number, find: number, long: number) =>
+      rank / RANK_GAP_SECONDS + find / FIND_GAP_SECONDS + long / LONG_GAP
     for (let trial = 0; trial < trialsPerTeamCount; trial++) {
       const cost = boardCost(`multi-${teams}-${trial}`, cells)
       const regions = boardRegions(`multi-${teams}-${trial}`, cells)
@@ -556,20 +724,30 @@ console.log('three and four teams')
       worst = Math.max(worst, res.attempts)
       if (!res.accepted) unaccepted++
       const actual = fairness(cost, res.perm, fleets)
+      const actualFind = findFairness(cost, res.perm, fleets)
       const longs = fleets.map((f) => longSquareCount(f.ships, (c) => cost[res.perm[c]], LONG_SQUARE))
       const actualLong = Math.max(...longs) - Math.min(...longs)
-      check(!res.accepted || (actual.gap <= res.rankLimit + 1e-9 && actualLong <= res.longLimit),
-        `${teams} teams accepted inside both limits`)
+      check(
+        !res.accepted ||
+          (actual.gap <= res.rankLimit + 1e-9 &&
+            actualFind.gap <= res.findLimit + 1e-9 &&
+            actualLong <= res.longLimit),
+        `${teams} teams accepted inside all three limits`
+      )
       if (!res.accepted) {
         worstFallbackGap = Math.max(worstFallbackGap, actual.gap)
         worstFallbackLong = Math.max(worstFallbackLong, actualLong)
-        // The promise a fallback actually makes: the fairest of 300 draws, which must at minimum
+        // The promise a fallback actually makes: the fairest of the whole budget, which must at minimum
         // beat doing nothing. Measured on the combined miss because that is what it optimises - a
         // pure rank-gap bar would call a layout worse for trading four seconds of rank gap for a
         // whole long square, which is the trade the ranking is deliberately there to make.
         const dealtLongs = fleets.map((f) => longSquareCount(f.ships, (c) => cost[c], LONG_SQUARE))
-        const dealt = miss(fairness(cost, identity(cells), fleets).gap, Math.max(...dealtLongs) - Math.min(...dealtLongs))
-        if (miss(actual.gap, actualLong) >= dealt) fallbackNotBetter++
+        const dealt = miss(
+          fairness(cost, identity(cells), fleets).gap,
+          findFairness(cost, identity(cells), fleets).gap,
+          Math.max(...dealtLongs) - Math.min(...dealtLongs)
+        )
+        if (miss(actual.gap, actualFind.gap, actualLong) >= dealt) fallbackNotBetter++
       }
     }
     console.log(`  ${teams} teams on 12x12  worst ${worst} attempts, ${unaccepted} unaccepted` +
@@ -577,7 +755,7 @@ console.log('three and four teams')
     // Four fleets on one grid is the hardest configuration there is: the gap is a spread across all
     // of them, so every extra fleet is another way to be the outlier, and the tight thresholds do
     // occasionally exhaust the budget. That is allowed - what is not allowed is the fallback being
-    // bad. An exhausted search still plays the fairest of 300 draws, which is far tighter than the
+    // bad. An exhausted search still plays the fairest of the whole budget, which is far tighter than the
     // old limits would have ACCEPTED, so the floor under a failure is above the old ceiling.
     // KNOWN GAP rather than a passing state, and recorded here so it cannot be forgotten:
     // RANK_GAP_SECONDS was calibrated on TWO-team boards. The gap is a spread across all fleets, so
@@ -591,7 +769,7 @@ console.log('three and four teams')
     // was. Asserted at the fallback instead, which is the thing that actually gets played.
     //
     // Two assertions rather than one round number. "Inside a quarter of an hour" was the bar while
-    // the fallback minimised the rank gap alone; it now minimises both tests together, so a layout
+    // the fallback minimised the rank gap alone; it now minimises all three together, so a layout
     // can be sixteen seconds past that bar while being the better board, and a run did exactly that.
     // The bar that survives a change of ranking is the one that says the fallback beat the deal.
     check(fallbackNotBetter === 0,
@@ -679,15 +857,24 @@ console.log('thresholds')
 {
   const limits = limitsFor()
   check(limits.rankGap === RANK_GAP_SECONDS, 'the rank gap is the one in boardBalance')
+  check(limits.findGap === FIND_GAP_SECONDS, 'the find gap is the one in boardBalance')
   check(limits.longGap === LONG_GAP, 'the long-square gap is the one in boardBalance')
   // Pinned, because both numbers are the kind that drift upward one tolerance at a time. The rank
   // gap is a comparison between two individual SHIPS, so unlike the burden sums it replaced there
   // is nothing about a bigger fleet that should earn it more room.
   check(limitsFor({ ...DEFAULT_RULES, rankGapSeconds: 60 }).rankGap === 60, 'a profile can override the rank gap')
+  check(limitsFor({ ...DEFAULT_RULES, findGapSeconds: 60 }).findGap === 60, 'a profile can override the find gap')
   check(limitsFor({ ...DEFAULT_RULES, longGap: 0 }).longGap === 0, 'a profile can override the long-square gap')
   check(limits.rankGap === limitsFor(DEFAULT_RULES).rankGap, 'omitting the profile is the default one')
   check(LONG_SQUARE_SECONDS < 90 * 60, 'the long-square line sits below the cost model horizon')
-  console.log(`  rank gap ${limits.rankGap}s   long-square gap ${limits.longGap} square(s) past ${LONG_SQUARE_SECONDS}s\n`)
+  // Two separate fields, not one shared number. They are thresholds on two models fitted to two
+  // different events, and the day one is re-fitted is the day a shared field moves the other by
+  // accident - so overriding one has to leave the other exactly where it was.
+  check(limitsFor({ ...DEFAULT_RULES, rankGapSeconds: 60 }).findGap === FIND_GAP_SECONDS,
+    'overriding the rank gap leaves the find gap alone')
+  check(limitsFor({ ...DEFAULT_RULES, findGapSeconds: 60 }).rankGap === RANK_GAP_SECONDS,
+    'and the other way round')
+  console.log(`  rank gap ${limits.rankGap}s   find gap ${limits.findGap}s   long-square gap ${limits.longGap} square(s) past ${LONG_SQUARE_SECONDS}s\n`)
 }
 
 // -- 11. the small-crew profile ------------------------------------------------------------------

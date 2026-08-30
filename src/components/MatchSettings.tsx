@@ -60,6 +60,9 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
   const prepChoices = PREP_CHOICES.includes(prepSeconds)
     ? PREP_CHOICES
     : [...PREP_CHOICES, prepSeconds].sort((a, b) => a - b);
+  // Absent reads as a real match - see Room.practice. A room from before the migration, or a
+  // project that hasn't run it, is a room whose matches count, which is what they always did.
+  const practice = room.practice ?? false;
   const set = squareSet(room.square_set ?? DEFAULT_SQUARE_SET);
   // What the room is told it is playing. Identical to `set` except on a variant, which describes
   // itself as its parent because that is the only set anyone here chose - see squareSets.variantOf.
@@ -90,9 +93,14 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
     }
   }
 
-  const summary = `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label} · ${formatDuration(
-    prepSeconds
-  )} prep`;
+  // Practice leads rather than trailing the board size and the fleet, because it is the only one of
+  // these that changes what the match IS. Somebody skim-reading a collapsed settings row is reading
+  // the first thing in it, and "this one doesn't count" is the fact they most need off that glance.
+  const summary =
+    (practice ? "Practice · " : "") +
+    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label} · ${formatDuration(
+      prepSeconds
+    )} prep`;
 
   // Everyone sees the settings; only the host gets the buttons. A spectator or a player who
   // wandered in deserves to know what they're about to play without having to ask.
@@ -213,6 +221,35 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
               ))}
             </select>
           </Field>
+
+          {/* The one setting here that isn't about how the match plays.
+
+              Two buttons rather than a checkbox because everything else in this panel is a pair of
+              buttons showing you which one you're on, and a lone tickbox among them is the control
+              people don't see. It is also the shape that lets the OFF state say something: "Counts"
+              is worth printing, because the default being a real match is exactly the thing a host
+              who came here to run a test needs to have noticed.
+
+              Lobby only, and enforced server-side (see guard_room_practice) rather than merely
+              hidden here - a match that could be declared practice after the result is in would let
+              the host delete any game they lost. The panel is only rendered in the lobby anyway, so
+              the trigger is guarding against a stale tab, not against this code. */}
+          <Field label="Record">
+            <Choice active={!practice} busy={busy} onClick={() => void apply({ practice: false })}>
+              Counts
+            </Choice>
+            <Choice active={practice} busy={busy} onClick={() => void apply({ practice: true })}>
+              Practice
+            </Choice>
+          </Field>
+          <span
+            className="muted"
+            style={{ fontSize: "0.72rem", marginTop: "-0.35rem", color: practice ? "var(--hit)" : undefined }}
+          >
+            {practice
+              ? "Nothing from this match reaches the leaderboard, anyone's career, the record book or the boss stats. It still gets a full recap you can open afterwards. Settled now - it can't be changed once the match starts, or undone after."
+              : "A real match: every square, every win and every time counts. Switch to Practice for a test run or a demo, and none of it will."}
+          </span>
 
           {/* These sets are written for a 25-square bingo card. Dealt onto 144 cells there aren't
               enough distinct goals to keep every "only one of these" rule, so say so here rather

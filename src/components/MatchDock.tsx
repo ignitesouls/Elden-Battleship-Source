@@ -19,13 +19,16 @@ interface Props {
   roomId: string;
   roomCode: string;
   /**
-   * The whole room row, and the roster, for the pause controls alone.
+   * The whole room row, and the roster, for the pause controls - and now the practice flag.
    *
    * Everything else in here is handed the two or three fields it uses, which is the better shape and
    * the one to keep. The pause cannot take it: what it reads is three columns that change DURING a
    * match (pause_at, resume_at, pause_log - see lib/matchPause), and a decomposed copy would be a
    * snapshot this bar had no way to know had gone stale. Same for the roster, which carries who has
    * asked for a pause and who has readied up.
+   *
+   * `practice` is read off the same row rather than added as a prop of its own, since the row is
+   * already here and the flag cannot change once a match is running.
    */
   room: Room;
   players: Player[];
@@ -111,7 +114,7 @@ export function MatchDock({
         </button>
       )}
 
-      <MatchInfoBox roomCode={roomCode} seed={seed} rejoinCode={rejoinCode} inline />
+      <MatchInfoBox roomCode={roomCode} seed={seed} rejoinCode={rejoinCode} practice={room.practice} inline />
 
       {/* The overlay builder is a whole form, so in a bar it opens upward as a popover instead of
           shoving the bar open - see .match-dock-popover. */}

@@ -198,6 +198,14 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
         <span className="muted">
           Match time {report.duration} · {report.totalShots} shots fired
         </span>
+        {/* Inside the screenshot panel on purpose. This recap is what gets posted to Discord after a
+            match, and a practice run posted without the label is a result somebody will read as
+            real - then go looking for on the leaderboard. */}
+        {room.practice && (
+          <span style={{ color: "var(--hit)", fontSize: "0.82rem" }}>
+            <strong>Practice match</strong> - saved in full, counted in nothing.
+          </span>
+        )}
       </div>
 
       {report.awards.length > 0 && (

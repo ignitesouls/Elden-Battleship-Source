@@ -124,6 +124,22 @@
   color: var(--accent-bright);
 }
 
+/* Not a chip you press - it copies nothing and does nothing. It borrows the chip's shape so it sits
+   level with the room code beside it, and takes the hit colour so it reads as a state of the match
+   rather than another code to write down. */
+.match-info-practice {
+  display: flex;
+  align-items: baseline;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--hit);
+  border-radius: 4px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--hit);
+  white-space: nowrap;
+}
+
 /* Below the canvas breakpoint the bar is the only layout there is, so let it breathe over as many
    lines as it needs instead of trying to stay one line tall on a phone. */
 @media (max-width: 900px) {

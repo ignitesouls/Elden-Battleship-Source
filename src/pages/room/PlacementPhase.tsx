@@ -504,5 +504,5 @@ export function PlacementPhase({
 function SeedBox({ room }: { room: Room }) {
   // The room code rides along because it costs one line and answers the other question a late
   // arrival is being asked in voice chat. A room predating the seed migration simply shows the code.
-  return <MatchInfoBox roomCode={room.code} seed={room.seed} />;
+  return <MatchInfoBox roomCode={room.code} seed={room.seed} practice={room.practice} />;
 }

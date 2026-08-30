@@ -76,6 +76,34 @@ export interface MatchBalance {
   longRebalanced?: number;
   /** The long-square threshold this board was held to, in squares. */
   longLimit?: number;
+  /**
+   * The same board on the third fairness test, in seconds: how far apart the fleets were on when
+   * their ships get FOUND rather than on when they get cleared.
+   *
+   * A ship is found through its CHEAPEST square and cleared at its dearest, and over the archive
+   * those two ends of a hull correlate at r = 0.192 - so this is not a restatement of `played` and
+   * regularly disagrees with it about whether a board was even. See FIND_GAP_SECONDS in
+   * boardBalance.ts.
+   *
+   * Optional for the usual reason and one more: every match dealt before the third test shipped has
+   * a record without these, and a swept record only gains them once balance-stats has been re-run.
+   * Absent means unmeasured, never zero.
+   */
+  findDealt?: number;
+  findPlayed?: number;
+  /** Sweep only, and the counterpart to `rebalanced`. */
+  findRebalanced?: number;
+  /** The find-gap threshold this board was held to, in seconds. */
+  findLimit?: number;
+  /**
+   * Which fleet stayed hidden longest at the worst find rank, and which was found soonest.
+   *
+   * Not the same pair as aheadTeam/behindTeam, and deliberately stored apart from them: those name
+   * the sides of the gap on when ships DIE, and a board very often hands one edge to one team and
+   * the other edge to the other.
+   */
+  findAheadTeam?: number | null;
+  findBehindTeam?: number | null;
   /** Layouts drawn. 1 means the first fleet-blind draw passed and nothing was steered. */
   attempts?: number;
   /** False only when no draw in the whole budget met the rules and this was the fairest of them. */

@@ -259,10 +259,21 @@ export function ArchivedMatch() {
             reading of that is that the site lost them. Six words do that job. The line used to
             spend two more sentences telling the reader not to hoard shots, which is a rule the
             room already enforces and a scolding nobody opened a recap to read. */}
-        {report?.voided && (
-          <span style={{ color: "var(--danger)", fontSize: "0.82rem", maxWidth: "34rem" }}>
-            <strong>Voided</strong> - archived in full, counted in nothing.
+        {/* Both flags are true on a practice match - `practice` sets `voided` at archive time,
+            because voided is what the stats readers actually filter on. Only one line is printed,
+            and it is this one: "Voided" on a match nobody ever entered into the record would be an
+            accusation where there is nothing to accuse. */}
+        {report?.practice ? (
+          <span style={{ color: "var(--hit)", fontSize: "0.82rem", maxWidth: "34rem" }}>
+            <strong>Practice match</strong> - declared before it was played, archived in full,
+            counted in nothing.
           </span>
+        ) : (
+          report?.voided && (
+            <span style={{ color: "var(--danger)", fontSize: "0.82rem", maxWidth: "34rem" }}>
+              <strong>Voided</strong> - archived in full, counted in nothing.
+            </span>
+          )
         )}
       </div>
 

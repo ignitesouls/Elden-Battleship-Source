@@ -18,8 +18,8 @@
  * scripts/build-time-cost.mjs for where the numbers come from and why they are frozen between
  * seasons.
  *
- * A time can be compared against how long a match actually lasts, which is what both tests below
- * rest on. It also reads in units anyone can argue with: "their cheapest ship is gated 26 minutes
+ * A time can be compared against how long a match actually lasts, which is what every test below
+ * rests on. It also reads in units anyone can argue with: "their cheapest ship is gated 26 minutes
  * later than ours".
  *
  * -- Why it rejects rather than optimises --------------------------------------------------------
@@ -55,7 +55,7 @@
  * no cell, and it is far smaller than reading a lopsided board off the screen and knowing the match
  * was decided before anyone fired.
  *
- * -- Why there are two tests and not one ---------------------------------------------------------
+ * -- Why there are three tests and not one --------------------------------------------------------
  *
  * The rank gap prices a ship at its slowest square, which is right about when a ship SINKS and blind
  * to everything else about it. Seven ships on a 24-cell fleet is seven numbers out of twenty-four,
@@ -68,9 +68,24 @@
  * coarser question is the one this cost model can answer honestly. See LONG_GAP for the board that
  * made the case and for what the model's resolution actually is.
  *
- * Measured over 250 boards per configuration: two-team boards accept at every size, at a median of
- * 16 draws on a 10x10 and 20 on a 12x12 with both tests applied. The long-square test is what most
- * of that budget goes on, and it binds on about a fifth of the layouts the rank gap alone accepts.
+ * And a third test prices a ship at its CHEAPEST square instead of its slowest, because a ship has
+ * two moments that matter and those tests only ever measured one of them. A ship is FOUND the first
+ * time anything lands on it and CLEARED when the last of its cells has been fired at, and the whole
+ * middle of a match happens between those two events - the enemy knows where a hull is, works out
+ * which way it lies, and picks it apart. See FIND_GAP_SECONDS for the archive that says the two are
+ * nearly independent and for what a fleet that is fair on one and lopsided on the other plays like.
+ *
+ * What each test is worth, measured as the share of layouts it rejects that the OTHER tests would
+ * have shipped - which is the only question that says whether a test earns its redraws:
+ *
+ *     long-square   15% at 8x8, 18% at 10x10, 31% at 12x12
+ *     find gap      71% at 8x8, 72% at 10x10, 73% at 12x12
+ *
+ * The find gap is by a distance the most interventionist rule here, and that is a statement about
+ * how badly the first two tests were missing an entire half of a ship rather than about the
+ * threshold being severe - it sits at twice the rank gap's, for reasons under FIND_GAP_SECONDS.
+ * Two-team boards still accept at every size and every preset, with the worst of 150 boards taking
+ * 651 draws of a 900 budget.
  *
  * -- Why declumping is exempt from all that ------------------------------------------------------
  *
@@ -179,6 +194,13 @@ export const LONG_SQUARE_SECONDS = 80 * 60;
  * instead of 15 and boards that start failing to find any layout at all, which is a worse trade than
  * the board is worth.
  *
+ * FIND_GAP_SECONDS catches it. Not by tightening this - Ghostly Hull's long-square gap is 1, exactly
+ * on the line, and its rank gap is 3:58 inside a 5:00 limit - but by measuring the other end of every
+ * ship, where its two fleets are 20:31 apart against a 10:00 limit. The asymmetry that made that
+ * board unplayable was never about when ships DIED, which is why two tests that both price a hull at
+ * its slowest square could look at it and see nothing. Left standing above rather than rewritten,
+ * because the reasoning is still exactly right about what THIS test can and cannot do.
+ *
  * -- Why a count of whole squares, and not more seconds -------------------------------------------
  *
  * The rank gap already spends the precision this cost model has. Across 777 archived sunk ships, a
@@ -213,17 +235,25 @@ export const LONG_GAP = 1;
 /**
  * How many layouts to draw before giving up and playing the best one seen.
  *
- * 300 rather than the 60 this started at, because the tests above now bind on most boards instead of
- * almost none. Median draws are 7 on a 10x10 and 3 on a 12x12, but small boards work much harder -
- * a 7x7 runs to about 29 - and the cost of an extra draw is a shuffle and a declumping pass. If the
- * limit is ever actually reached the fallback is the fairest layout of the three hundred, which is
- * strictly better than the deal.
+ * 900, raised from 300 when the find test joined the other two. Each test is a separate hurdle on
+ * the same draw, so their acceptance rates multiply and a third one costs more budget than it looks
+ * like it should: a 10x10 that took a median of 15 draws on two tests takes 56 on three, and its
+ * worst board in sixty went to 295. Three hundred would have left that board playing an unaccepted
+ * layout, which is the one outcome worth spending milliseconds to avoid - see FIND_GAP_SECONDS for
+ * why a test that routinely falls back stops being a test.
  *
- * For scale: 300 spent draws is 413ms on a 10x10, and startBattle awaits
- * this. See BALANCE_TIMEOUT_MS in lib/rooms.ts, which has to be comfortably above that plus the
- * function's own cold start and its half-dozen queries.
+ * Nine hundred rather than a round thousand because it is where the measured worst case fits with
+ * room to spare rather than exactly: over sixty Classic boards per size the worst was 295 draws at
+ * 10x10 and 628 at 12x12, and a sweep of every board size against every fleet preset put the
+ * hardest of 150 boards at 651. If the limit is ever actually reached the fallback is the fairest
+ * layout of the nine hundred, which is strictly better than the deal.
+ *
+ * For scale: a draw costs 1.67ms on a 10x10, so a fully spent budget is about 1.5s and the ordinary
+ * deal is about 80ms. startBattle awaits this - see BALANCE_TIMEOUT_MS in lib/rooms.ts, which is
+ * 10s and has to stay comfortably above a full spend plus the function's own cold start and its
+ * half-dozen queries.
  */
-const MAX_ATTEMPTS = 300;
+const MAX_ATTEMPTS = 900;
 
 /**
  * How far apart two fleets' ships may be at the same rank, in seconds.
@@ -253,6 +283,87 @@ const MAX_ATTEMPTS = 300;
  * over.
  */
 export const RANK_GAP_SECONDS = 5 * 60;
+
+/**
+ * How far apart two fleets' ships may be at the same rank when priced by their CHEAPEST square.
+ *
+ * The third fairness number, and the one that measures how long a fleet takes to be FOUND rather
+ * than how long it takes to finish.
+ *
+ * -- Two moments, not one -------------------------------------------------------------------------
+ *
+ * A ship has two times that decide a match and RANK_GAP_SECONDS only ever knew about the second of
+ * them. It is found the first time anything lands on it, and cleared when the last of its cells has
+ * been fired at. Everything that makes the middle of a match - the enemy knowing there is a hull
+ * somewhere around D7, working out which way it lies, and spending shots picking it apart - happens
+ * between those two events. A fleet nobody can find for fifty minutes is playing a different game
+ * from one that gets found at twenty, however long both take to sink afterwards.
+ *
+ * The slowest square is the wrong instrument for that, because a ship is found through its EASIEST
+ * cell: whichever of its squares the enemy happens to reach first. One cheap square on a Carrier
+ * gives the whole hull away at that square's price, however cold the other four are. So find time is
+ * priced at the minimum exactly where clear time is priced at the maximum, and the two are the same
+ * measurement taken from opposite ends of the ship.
+ *
+ * -- Why this is not the rank gap in a hat --------------------------------------------------------
+ *
+ * Because the two ends barely move together. Over 2107 archived ships, a ship's cheapest square
+ * correlates with its slowest at r = 0.192, and the two sit a median of 30:42 apart. A fleet can be
+ * matched rank for rank on when its ships die and be half an hour apart on when they are found.
+ *
+ * Measured against what actually happened, over 2018 archived ships the enemy ever hit:
+ *
+ *                                       predicts FOUND      predicts CLEARED
+ *     cheapest square on the ship       r = 0.499           r = 0.233
+ *     slowest square on the ship        r = 0.157           r = 0.438
+ *
+ * Read the diagonal. Each end predicts its own moment and neither predicts the other's, which is
+ * both the argument for adding this test and the argument for it being min and not mean - the mean
+ * square comes in at r = 0.442 on find time, behind the minimum, because averaging a cold cell
+ * against a warm one describes a ship the enemy never has to fight.
+ *
+ * Worth noting where it lands relative to the model already shipping: the cheapest square predicts
+ * a find at r = 0.499 with a residual of 17:47, against the slowest square's r = 0.438 and 16:41 on
+ * a clear. This is the BETTER-supported of the two, not a speculative extension of the first.
+ *
+ * -- Why ten minutes and not five ------------------------------------------------------------------
+ *
+ * Symmetry with RANK_GAP_SECONDS would say five, and five is not reachable. The reason is worth
+ * writing down, because "make it match the other one" is the first thing anybody will suggest.
+ *
+ * A ship's cheapest square spreads WIDER than its slowest - sd 13:13 against 10:49 across the ship
+ * values on a 10x10, and a within-fleet top-to-bottom range of 30:03 against 24:32. The maximum of
+ * four or five cells piles up against the top of the cost table wherever it is drawn from; the
+ * minimum has the whole low tail to fall down. So the same number of seconds is a far harsher test
+ * on this profile than on the other one: over 600 raw 10x10 deals, 6.7% come in under a 5:00 rank
+ * gap and only 2.8% under a 5:00 find gap.
+ *
+ * And the three tests have to pass on the SAME draw, so their acceptance rates multiply. Measured on
+ * the budget that ships, over 60 boards per cell:
+ *
+ *     find limit    10x10 draws (median/p90/worst)    boards that ran out of draws
+ *      5:00           494 / 900 / 900                  37% at 10x10, 45% at 12x12
+ *      7:00           195 / 639 / 900                   5% at 10x10, 10% at 12x12
+ *     10:00            55 / 237 / 389                   none at any size
+ *
+ * Five minutes does not produce fairer boards. It produces boards that spend the whole budget and
+ * then play the fairest layout drawn anyway - a test that mostly falls back is not a test, and the
+ * fallback is not a uniform sample from the layouts that pass, which is the one property this whole
+ * design exists to keep.
+ *
+ * Ten is where the cost curve flattens with the guarantee intact: no board at any size fails to find
+ * an acceptable layout, the median 10x10 deal is 55 draws and about 80ms, and it still rejects
+ * roughly four raw deals in five - the median raw find gap is 14:27 and the p90 is 24:12.
+ *
+ * It is also inside the model's own noise, which is the argument that makes it honest rather than
+ * merely affordable. The cheapest square predicts a find with a residual of 17:47, so ten minutes is
+ * a little over half of one standard error - the same kind of claim as the rank gap's five against
+ * its 16:41, and the same reason both stop where they do instead of chasing seconds the cost table
+ * cannot resolve.
+ *
+ * See scripts/check-board-balance.ts, which measures the sweep above on every run.
+ */
+export const FIND_GAP_SECONDS = 10 * 60;
 
 /**
  * The scale clumping is measured at: every 3x3 patch of the grid.
@@ -286,6 +397,14 @@ const SAMPLE = 8;
 export interface BalanceRules {
   /** How far apart two fleets' ships may be at the same rank, in seconds. See RANK_GAP_SECONDS. */
   rankGapSeconds: number;
+  /**
+   * The same comparison on ships priced by their CHEAPEST square, in seconds. See FIND_GAP_SECONDS.
+   *
+   * A separate field rather than a share of rankGapSeconds, even though both currently sit at five
+   * minutes. They are thresholds on two different models fitted to two different events, and the
+   * day one of them is re-fitted and moves is the day a shared field would silently move the other.
+   */
+  findGapSeconds: number;
   /** What counts as a square the enemy probably cannot finish. See LONG_SQUARE_SECONDS. */
   longSquareSeconds: number;
   /** How many more of those one fleet may hold than another. See LONG_GAP. */
@@ -306,6 +425,7 @@ export interface BalanceRules {
 /** The tests every board is held to. A small-crew board adds a region floor on top. */
 export const DEFAULT_RULES: BalanceRules = {
   rankGapSeconds: RANK_GAP_SECONDS,
+  findGapSeconds: FIND_GAP_SECONDS,
   longSquareSeconds: LONG_SQUARE_SECONDS,
   longGap: LONG_GAP,
   maxAttempts: MAX_ATTEMPTS,
@@ -377,6 +497,17 @@ export interface BalanceResult {
   /** The threshold this board was held to, in seconds. */
   rankLimit: number;
   /**
+   * The same, on ships priced by their cheapest square: how long a fleet takes to be FOUND.
+   *
+   * Reported beside the rank gap rather than folded into it because the two measure opposite ends
+   * of the same ship and barely move together - see FIND_GAP_SECONDS. A board can be even on when
+   * ships die and lopsided on when they are found, and a single number would show neither.
+   */
+  findGapBefore: number;
+  findGapAfter: number;
+  /** The find-gap threshold this board was held to, in seconds. */
+  findLimit: number;
+  /**
    * How many more long squares the worst-off fleet held than the best-off, dealt and as played.
    *
    * Whole squares, not seconds - see LONG_GAP. Reported alongside the rank gap rather than folded
@@ -400,7 +531,7 @@ export interface BalanceResult {
    * case and the one where nothing about the fleets influenced the board at all.
    */
   attempts: number;
-  /** Whether the layout being returned passes both tests. False only if MAX_ATTEMPTS ran out. */
+  /** Whether the layout being returned passes all three tests. False only if MAX_ATTEMPTS ran out. */
   accepted: boolean;
   /** False when there was nothing to balance - one fleet, or no fleet with any ships. */
   balanced: boolean;
@@ -421,8 +552,10 @@ export interface BalanceResult {
  *
  * Exported because the checker asserts against it and the edge function reports it.
  */
-export function limitsFor(rules: BalanceRules = DEFAULT_RULES): { rankGap: number; longGap: number } {
-  return { rankGap: rules.rankGapSeconds, longGap: rules.longGap };
+export function limitsFor(
+  rules: BalanceRules = DEFAULT_RULES
+): { rankGap: number; findGap: number; longGap: number } {
+  return { rankGap: rules.rankGapSeconds, findGap: rules.findGapSeconds, longGap: rules.longGap };
 }
 
 /** Widest minus narrowest. Fewer than two values means there is no gap to speak of. */
@@ -496,6 +629,28 @@ export function normalizeFleetsWithTeams(
  */
 export function shipCostProfile(ships: number[][], costAt: (cell: number) => number): number[] {
   return ships.map((s) => Math.max(...s.map(costAt))).sort((a, b) => b - a);
+}
+
+/**
+ * A fleet's find profile: how long each of its ships takes to be FOUND, longest first.
+ *
+ * The same shape as shipCostProfile taken off the other end of the ship. A hull is found the first
+ * time anything lands on it, and the enemy gets there through whichever of its cells they reach
+ * soonest - so a ship is found at the price of its CHEAPEST square, exactly where it is cleared at
+ * the price of its dearest. One warm cell on a five-cell Carrier gives the whole hull away at that
+ * cell's price however cold the other four are.
+ *
+ * Sorted longest-first like the cost profile so the two read the same way and rankGapDetail can
+ * compare either: position 0 is the ship that stays hidden longest, and the bottom of the list is
+ * the ship that gets stumbled on first. That bottom rank is the one worth watching - it is a fleet's
+ * first contact, and a fleet found at 20 minutes has been under fire for half an hour before one
+ * found at 50 has been touched.
+ *
+ * `costAt` is a lookup for the same reason shipCostProfile's is: the redraw loop reads this through
+ * a permutation it is still changing.
+ */
+export function shipFindProfile(ships: number[][], costAt: (cell: number) => number): number[] {
+  return ships.map((s) => Math.min(...s.map(costAt))).sort((a, b) => b - a);
 }
 
 /**
@@ -597,19 +752,46 @@ export function scoreLayout(
   aheadTeam: number | null;
   /** Its opposite number: the team that held the dearest ship there. */
   behindTeam: number | null;
+  /** The widest same-rank gap on ships priced by their cheapest square. See shipFindProfile. */
+  findGap: number;
+  findProfiles: number[][];
+  /**
+   * The two ends of the find gap, as teams.
+   *
+   * Named separately from aheadTeam/behindTeam rather than assumed to agree with them, because on
+   * this cost model they routinely do not: the two profiles are built off opposite ends of the same
+   * ships and correlate at r = 0.192. The fleet that gets found first and the fleet whose ships die
+   * first are frequently the same side and frequently not, and a recap that printed one label for
+   * both would be inventing the agreement.
+   *
+   * `findAheadTeam` is the fleet that stayed hidden longer at the worst rank - the one holding the
+   * DEARER cheapest-square there, since on this profile a high number is the advantage.
+   */
+  findAheadTeam: number | null;
+  findBehindTeam: number | null;
   longCounts: number[];
   longGap: number;
 } {
   const active = normalizeFleetsWithTeams(fleets, cost.length);
   const profiles = active.map((f) => shipCostProfile(f.ships, (c) => cost[c]));
+  const findProfiles = active.map((f) => shipFindProfile(f.ships, (c) => cost[c]));
   const longCounts = active.map((f) => longSquareCount(f.ships, (c) => cost[c], longSquareSeconds));
   const detail = rankGapDetail(profiles);
+  const findDetail = rankGapDetail(findProfiles);
   return {
     rankGap: detail.gap,
     profiles,
     teams: active.map((f) => f.team),
     aheadTeam: detail.ahead === null ? null : active[detail.ahead].team,
     behindTeam: detail.behind === null ? null : active[detail.behind].team,
+    findGap: findDetail.gap,
+    findProfiles,
+    // rankGapDetail names the ends by cost - `ahead` holds the cheaper ship - and on the cost
+    // profile the cheaper ship is the one that dies sooner, so `ahead` is the fleet with the head
+    // start. On the find profile the cheaper ship is the one that gets FOUND sooner, which is the
+    // disadvantage, so the two ends swap meaning and are swapped here rather than at the reader.
+    findAheadTeam: findDetail.behind === null ? null : active[findDetail.behind].team,
+    findBehindTeam: findDetail.ahead === null ? null : active[findDetail.ahead].team,
     longCounts,
     longGap: spread(longCounts),
   };
@@ -645,10 +827,13 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     return out;
   };
 
-  const { rankGap: rankLimit, longGap: longLimit } = limitsFor(rules);
+  const { rankGap: rankLimit, findGap: findLimit, longGap: longLimit } = limitsFor(rules);
 
   /** See shipCostProfile. Read through `perm`, which the redraw loop is still changing. */
   const profileOf = (ships: number[][]) => shipCostProfile(ships, (c) => cost[perm[c]]);
+
+  /** The same, off the other end of each ship. See shipFindProfile. */
+  const findProfileOf = (ships: number[][]) => shipFindProfile(ships, (c) => cost[perm[c]]);
 
   /** All the fairness measures for the layout `perm` currently describes. */
   const measure = () => {
@@ -656,6 +841,9 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
     // Rank by rank, and see rankGapOf for why that rather than any single summary.
     const worstRank = rankGapOf(profiles);
+
+    // The third test, on when each fleet gets FOUND rather than cleared. See FIND_GAP_SECONDS.
+    const worstFind = rankGapOf(active.map(findProfileOf));
 
     // The second test, on the cells the profile above throws away. See LONG_GAP.
     const longCounts = active.map((ships) =>
@@ -676,7 +864,7 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       if (low === Infinity) low = null;
     }
 
-    return { rankGap: worstRank, longGap: worstLong, profiles, regionLow: low };
+    return { rankGap: worstRank, findGap: worstFind, longGap: worstLong, profiles, regionLow: low };
   };
 
   const before = measure();
@@ -767,6 +955,9 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       rankGapBefore: before.rankGap,
       rankGapAfter: before.rankGap,
       rankLimit,
+      findGapBefore: before.findGap,
+      findGapAfter: before.findGap,
+      findLimit,
       longGapBefore: before.longGap,
       longGapAfter: before.longGap,
       longLimit,
@@ -864,6 +1055,7 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
   // accepted one an unbiased draw from the layouts that pass rather than a walk toward the line.
   let best: number[] | null = null;
   let bestGap = Infinity;
+  let bestFind = Infinity;
   let bestLong = Infinity;
   let bestLow: number | null = floor ? -1 : null;
   let bestClump = clumpBefore;
@@ -882,9 +1074,16 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
     const now = measure();
     const floorMet = !floor || (now.regionLow ?? 0) >= floor.min;
-    if (!canBalance || (now.rankGap <= rankLimit && now.longGap <= longLimit && floorMet)) {
+    if (
+      !canBalance ||
+      (now.rankGap <= rankLimit &&
+        now.findGap <= findLimit &&
+        now.longGap <= longLimit &&
+        floorMet)
+    ) {
       best = perm.slice();
       bestGap = now.rankGap;
+      bestFind = now.findGap;
       bestLong = now.longGap;
       bestLow = now.regionLow;
       bestClump = declumping ? crowding : null;
@@ -892,32 +1091,35 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       break;
     }
     // Keep the fairest layout seen, in case every attempt is spent. Ranked by the region floor
-    // first, then by how far the layout misses the two tests COMBINED.
+    // first, then by how far the layout misses all three tests COMBINED.
     //
     // The floor leads because a board dealt too few DLC squares can never satisfy it by any
     // permutation, so the fallback should at least hand each fleet as many as exist before arguing
     // about anything else.
     //
-    // The two fairness measures are then summed as fractions of their own limits, rather than one
-    // being consulted before the other. Ordering them lexicographically was the first thing tried
+    // The three fairness measures are then summed as fractions of their own limits, rather than one
+    // being consulted before the others. Ordering them lexicographically was the first thing tried
     // and it is wrong at exactly the moment this code runs: with the long-square count leading, a
     // four-team board fell back to a layout that was one square better on a test it had already
-    // failed and eighteen minutes worse on the other. Neither measure outranks the other once both
-    // are already blown - what matters is total distance from playable, and a fraction of the limit
-    // is the only unit the two share.
+    // failed and eighteen minutes worse on the other. No measure outranks another once all are
+    // already blown - what matters is total distance from playable, and a fraction of the limit is
+    // the only unit the three share.
     const low = now.regionLow ?? 0;
-    // Both terms fall back to the raw measure when their limit is zero, which is only reachable
+    // Every term falls back to the raw measure when its limit is zero, which is only reachable
     // through a hand-built profile but would otherwise divide by it and rank every candidate equally
     // infinite - leaving the fallback as whichever layout happened to be drawn first.
-    const missOf = (rank: number, long: number) =>
-      (rankLimit > 0 ? rank / rankLimit : rank) + (longLimit > 0 ? long / longLimit : long);
+    const missOf = (rank: number, find: number, long: number) =>
+      (rankLimit > 0 ? rank / rankLimit : rank) +
+      (findLimit > 0 ? find / findLimit : find) +
+      (longLimit > 0 ? long / longLimit : long);
     const better =
       floor && low !== (bestLow ?? 0)
         ? low > (bestLow ?? 0)
-        : missOf(now.rankGap, now.longGap) < missOf(bestGap, bestLong);
+        : missOf(now.rankGap, now.findGap, now.longGap) < missOf(bestGap, bestFind, bestLong);
     if (better) {
       best = perm.slice();
       bestGap = now.rankGap;
+      bestFind = now.findGap;
       bestLong = now.longGap;
       bestLow = now.regionLow;
       bestClump = declumping ? crowding : null;
@@ -932,6 +1134,9 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     rankGapBefore: before.rankGap,
     rankGapAfter: bestGap,
     rankLimit,
+    findGapBefore: before.findGap,
+    findGapAfter: bestFind,
+    findLimit,
     longGapBefore: before.longGap,
     longGapAfter: bestLong,
     longLimit,

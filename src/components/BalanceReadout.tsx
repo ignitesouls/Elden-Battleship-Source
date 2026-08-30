@@ -24,7 +24,9 @@ import { teamHex, teamName } from "../lib/teamColors";
  * a bare ordinal reads as a score on this match rather than a place among every board ever dealt.
  * Not the size of that field, though. One more line sits under the bars saying what a gap IS,
  * which direction is good, and - once the record carries it - which fleet the gap was in favour of,
- * because two durations with no unit named read as match times. It once
+ * because two durations with no unit named read as match times. A second such line names the FIND
+ * gap, which is the same comparison off the other end of every ship and frequently favours the
+ * other side; it stays a line rather than becoming a second chart. It once
  * carried paragraphs explaining what a square's cost is, how the ranks are matched up, and what the
  * shuffle bought, and read like a lecture nobody asked for. A caster can say any of that on air in
  * a sentence; the recap does not need to say it every time.
@@ -88,6 +90,21 @@ export function BalanceReadout({
    */
   const ahead = typeof balance.aheadTeam === "number" ? balance.aheadTeam : null;
 
+  /**
+   * The other half of the board, when the record carries it: how far apart the fleets were on being
+   * FOUND rather than on being finished off.
+   *
+   * One line rather than a second pair of bars, and that restraint is the point. It is a different
+   * measurement off the other end of every ship, not a stage of the same one, so putting it in the
+   * before/after bars would read as a third column of the same story. A caster can make more of it
+   * in a sentence than a chart can.
+   *
+   * Absent on every record dealt before the find test shipped, which is most of the archive - so it
+   * simply does not render, the same way the direction did not before the sweep filled it in.
+   */
+  const findGap = typeof balance.findPlayed === "number" ? balance.findPlayed : null;
+  const hidden = typeof balance.findAheadTeam === "number" ? balance.findAheadTeam : null;
+
   // Both bars scale against the wider of the two, so the shorter one reads as a fraction of the
   // longer at a glance. Against a fixed ceiling every ordinary board would be two short stubs.
   const scale = Math.max(balance.dealt, balance.played, 1);
@@ -135,6 +152,18 @@ export function BalanceReadout({
             </>
           )}
         </span>
+        {findGap !== null && (
+          <span className="muted" style={{ fontSize: "0.7rem" }}>
+            {hidden === null ? (
+              <>One fleet stayed hidden {gapLabel(findGap)} longer before its ships were found.</>
+            ) : (
+              <>
+                <strong style={{ color: teamHex(hidden) }}>{teamName(hidden)}</strong> stayed hidden{" "}
+                {gapLabel(findGap)} longer before their ships were found.
+              </>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );

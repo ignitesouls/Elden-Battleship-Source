@@ -112,7 +112,11 @@ export function AdminPanel({ matches, onChanged }: Props) {
                 {/* The list is otherwise unchanged by voiding, so without this the button below is
                     the only thing on the page that knows, and it reads as an offer rather than a
                     state. */}
-                {m.voided && <strong style={{ color: "var(--danger)" }}> · VOIDED</strong>}
+                {m.practice ? (
+                  <strong style={{ color: "var(--hit)" }}> · PRACTICE</strong>
+                ) : (
+                  m.voided && <strong style={{ color: "var(--danger)" }}> · VOIDED</strong>
+                )}
               </span>
               {/* Opens the crew list for this match. Deleting a whole game because one name on it
                   shouldn't be there wipes everybody else's record of it too, so the finer tool sits
@@ -139,8 +143,17 @@ export function AdminPanel({ matches, onChanged }: Props) {
                   them. That is the right tool for a match whose shots were real but whose clock is
                   not - deleting it would throw away true results to be rid of false ones. */}
               <button
-                disabled={busy}
-                style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none" }}
+                // A practice match cannot be restored, and the database will refuse it (see
+                // guard_practice_record). Disabled rather than left to raise: the point of declaring
+                // a match practice BEFORE it is played is that the declaration cannot be revised
+                // once the result is in, and a button that offers and then fails says the opposite.
+                disabled={busy || m.practice}
+                title={
+                  m.practice
+                    ? "Declared a practice match before it was played. That can't be taken back."
+                    : undefined
+                }
+                style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none", opacity: m.practice ? 0.4 : undefined }}
                 onClick={() =>
                   void run(async () => {
                     await setMatchVoided(m.match_key, !m.voided);

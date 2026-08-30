@@ -52,6 +52,12 @@ export interface ArchivedMatch {
    * match and cannot find its squares anywhere in their record learns why on the page itself.
    */
   voided?: boolean;
+  /**
+   * Voided because it was declared practice before it was played - see the practice_matches
+   * migration. Read for the same one reason `voided` is: so the recap can say which of the two it
+   * was, because "never a contest" and "this contest was thrown out" are not the same page.
+   */
+  practice?: boolean;
 }
 
 export interface ArchivedFleet {
@@ -113,6 +119,16 @@ export interface ArchivedMatchListing {
   finished_at: string;
   /** Only the two blocks `matchName` reads. The finds and the prose stay on the server. */
   summary: { stats?: PlayerStats[]; awards?: Award[] } | null;
+  /**
+   * Whether this was a practice match. One boolean per row, and worth it: the history list is where
+   * a practice run sits next to real matches looking exactly like one of them, and it is the list
+   * somebody scrolls to work out what happened on a given night.
+   *
+   * `voided` is deliberately NOT fetched alongside it. The list has never marked a voided match and
+   * that stays true - voiding is a judgement about one match, which its own page explains, while
+   * practice is what a row IS.
+   */
+  practice?: boolean;
 }
 
 /**
@@ -153,7 +169,7 @@ export function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<Archiv
   return cached(`archive-list:${limit}`, async () => {
     const { data, error } = await supabase
       .from("match_reports")
-      .select("match_key,room_code,winner_team,duration,total_shots,square_set,finished_at,stats:summary->stats,awards:summary->awards")
+      .select("match_key,room_code,winner_team,duration,total_shots,square_set,finished_at,practice,stats:summary->stats,awards:summary->awards")
       .order("finished_at", { ascending: false })
       .limit(limit);
     if (error || !data) return [];
@@ -185,7 +201,7 @@ export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatc
   const [report, fleets, events] = await Promise.all([
     supabase
       .from("match_reports")
-      .select("match_key,room_code,winner_team,duration,total_shots,summary,report_text,square_set,finished_at,balance,voided")
+      .select("match_key,room_code,winner_team,duration,total_shots,summary,report_text,square_set,finished_at,balance,voided,practice")
       .eq("match_key", matchKey)
       .maybeSingle(),
     supabase

@@ -20,7 +20,8 @@
  * The first version scored the whole archive in one request and was killed with a 546: Supabase caps
  * CPU per invocation at around two seconds, and this does the most expensive thing in the codebase.
  * Scoring one match means a full `balanceBoard` run - rejection sampling, up to MAX_ATTEMPTS draws,
- * about 400ms on a 10x10 - so four matches is already the whole budget and seventy is hopeless.
+ * which is about 1.5s on a 10x10 since the find test tripled the budget - so ONE hard match can be
+ * the whole allowance and seventy is hopeless.
  *
  * Hence two modes. `index` lists what could be scored, which is cheap. `score` takes a handful of
  * match keys and does only those, fetching only their events. The client walks the index in small
@@ -32,7 +33,7 @@
  *
  * -- What a row measures --------------------------------------------------------------------------
  *
- * Three gaps per match, all in seconds, all the rank-by-rank measure the balancer accepts on:
+ * Three boards per match, each measured three ways:
  *
  *   dealt       the raw seeded deal, before anything touched it
  *   played      the board as the match was actually played, archived perm applied
@@ -41,6 +42,12 @@
  * `dealt` against `played` says what the balancer of the day actually achieved. `dealt` against
  * `rebalanced` says what today's balancer would achieve on the same material. The second is the only
  * honest before/after, because it holds the deal fixed and changes nothing but the balancer.
+ *
+ * Each of those three is reported on all three of the balancer's tests, because they do not agree
+ * and a single number would hide it: `dealt/played/rebalanced` in seconds on the rank gap (when
+ * ships are CLEARED), `find*` in seconds on the find gap (when they are FOUND), and `long*` in whole
+ * squares. A ship's two ends correlate at r = 0.192 over the archive, so a board can be even by one
+ * and lopsided by another - and frequently in favour of opposite sides.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
@@ -51,6 +58,7 @@ import {
   DEFAULT_RULES,
   smallCrewFloor,
   RANK_GAP_SECONDS,
+  FIND_GAP_SECONDS,
 } from '../../../src/lib/boardBalance.ts'
 import { effectiveCosts } from '../../../src/lib/prereqCost.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
@@ -66,11 +74,17 @@ const corsHeaders = {
 /**
  * The most matches one `score` call will accept.
  *
- * Four full balanceBoard runs is already about the CPU budget, so this is a ceiling and not a
- * target - the client normally asks for fewer, and drops to one after a 546. Refused rather than
- * silently truncated: a caller that asked for thirty and got three would quietly skip the rest.
+ * Two now, down from six, because MAX_ATTEMPTS tripled when the find test joined the other two: a
+ * fully spent budget is about 1.5s of balanceBoard on a 10x10 against a CPU allowance of roughly
+ * two seconds, so a single hard board can now use the whole invocation on its own. Six was a
+ * ceiling that only the 546 backoff ever stopped anyone reaching; two is a ceiling that reflects
+ * what one call can actually finish.
+ *
+ * Still a ceiling and not a target - the client asks for fewer and drops to one after a 546.
+ * Refused rather than silently truncated: a caller that asked for thirty and got two would quietly
+ * skip the rest.
  */
-const MAX_SLICE = 6
+const MAX_SLICE = 2
 
 const DEFAULT_SET = 'bosses'
 // Declared WITHOUT `region`, exactly as balance-board declares it. buildFlatBoard passes the very
@@ -161,6 +175,13 @@ interface ScoredMatch {
   longDealt: number
   longPlayed: number
   longRebalanced: number
+  /**
+   * The same three boards on the third test: how far apart the fleets were on when their ships get
+   * FOUND rather than on when they get cleared. Seconds. See FIND_GAP_SECONDS.
+   */
+  findDealt: number
+  findPlayed: number
+  findRebalanced: number
   /** How many fleets held at least one ship gated longer than the match actually lasted. */
   strandedFleets: number
   /**
@@ -174,6 +195,15 @@ interface ScoredMatch {
    */
   aheadTeam: number | null
   behindTeam: number | null
+  /**
+   * The two ends of the FIND gap, which are not the two ends of the rank gap.
+   *
+   * Kept apart rather than assumed to agree: the two profiles are read off opposite ends of the
+   * same ships and correlate at r = 0.192 over the archive, so the fleet that dies first and the
+   * fleet that gets found first are routinely different sides. See scoreLayout.
+   */
+  findAheadTeam: number | null
+  findBehindTeam: number | null
 }
 
 Deno.serve(async (req) => {
@@ -241,6 +271,9 @@ Deno.serve(async (req) => {
       return jsonResponse({
         matchKeys: [...keys],
         rankLimitSeconds: RANK_GAP_SECONDS,
+        // Its own number, not the rank one. Ten minutes against five - see FIND_GAP_SECONDS for why
+        // the same seconds are a harsher test on a hull's cheapest square than on its dearest.
+        findLimitSeconds: FIND_GAP_SECONDS,
         maxSlice: MAX_SLICE,
       })
     }
@@ -437,9 +470,14 @@ Deno.serve(async (req) => {
         longDealt: dealtScore.longGap,
         longPlayed: played.longGap,
         longRebalanced: redraw.longGapAfter,
+        findDealt: dealtScore.findGap,
+        findPlayed: played.findGap,
+        findRebalanced: redraw.findGapAfter,
         strandedFleets,
         aheadTeam: played.aheadTeam,
         behindTeam: played.behindTeam,
+        findAheadTeam: played.findAheadTeam,
+        findBehindTeam: played.findBehindTeam,
       })
     }
 
@@ -474,6 +512,12 @@ Deno.serve(async (req) => {
               longDealt: m.longDealt,
               longPlayed: m.longPlayed,
               longRebalanced: m.longRebalanced,
+              // The same three on the third test, in seconds. See FIND_GAP_SECONDS.
+              findDealt: Math.round(m.findDealt),
+              findPlayed: Math.round(m.findPlayed),
+              findRebalanced: Math.round(m.findRebalanced),
+              findAheadTeam: m.findAheadTeam,
+              findBehindTeam: m.findBehindTeam,
               stranded: m.strandedFleets,
               teams: m.teams,
               hadPerm: m.hadPerm,
@@ -535,7 +579,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({ scored, rejected, persisted, directed, rankLimitSeconds: RANK_GAP_SECONDS })
+    return jsonResponse({
+      scored,
+      rejected,
+      persisted,
+      directed,
+      rankLimitSeconds: RANK_GAP_SECONDS,
+      findLimitSeconds: FIND_GAP_SECONDS,
+    })
   } catch (e) {
     return jsonResponse({ error: 'failed', detail: (e as Error).message }, 500)
   }

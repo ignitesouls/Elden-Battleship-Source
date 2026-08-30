@@ -7,7 +7,19 @@ interface Props {
   rejoinCode?: string | null;
   /** Flat chips on one line, for the dock along the bottom of the match screen. */
   inline?: boolean;
+  /**
+   * Whether this match counts for nothing - see Room.practice.
+   *
+   * It rides along here because this box is the one thing on screen for the whole match, in every
+   * phase and in both layouts, and a practice match has to keep saying so. The lobby announces it
+   * once in the settings panel, which is a screen people are on for about forty seconds; nobody who
+   * joined late, or who is spectating, or who came back from a tab, ever saw that.
+   */
+  practice?: boolean;
 }
+
+/** What the marker says, in the two places it is drawn. Kept in one place so they cannot drift. */
+const PRACTICE_HINT = "Practice match - nothing here reaches the leaderboard, careers or records.";
 
 /** The rejoin code's warning, which the bar form has no room to print. Kept here so both say it. */
 const REJOIN_HINT =
@@ -28,7 +40,7 @@ const REJOIN_HINT =
  * because it binds the row to a durable identity; the code is the fallback for everyone else, and
  * it has to be somewhere you'll be sitting for the next twenty minutes.
  */
-export function MatchInfoBox({ roomCode, seed, rejoinCode, inline }: Props) {
+export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
 
   function copy(label: string, value: string) {
@@ -64,6 +76,13 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline }: Props) {
 
     return (
       <div className="match-info-inline">
+        {/* First in the row, ahead of the room code: it is the one thing here that changes what the
+            next hour is worth, and a bar is read left to right. */}
+        {practice && (
+          <span className="match-info-practice" title={PRACTICE_HINT}>
+            Practice
+          </span>
+        )}
         {chip("room", "Room", formatRoomCode(roomCode), true)}
         {seed && chip("seed", "Seed", seed, false)}
         {rejoinCode && chip("rejoin", "Rejoin", rejoinCode, true, REJOIN_HINT)}
@@ -88,6 +107,11 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline }: Props) {
 
   return (
     <div className="panel stack" style={{ gap: "0.3rem", padding: "0.5rem 0.6rem" }}>
+      {/* The card form has room for the whole sentence, so it prints it rather than leaning on a
+          tooltip nobody hovers. Above the room code for the same reason it leads the bar. */}
+      {practice && (
+        <span style={{ fontSize: "0.68rem", lineHeight: 1.3, color: "var(--hit)" }}>{PRACTICE_HINT}</span>
+      )}
       <div style={row}>
         <span className="muted" style={{ fontSize: "0.7rem" }}>Room</span>
         <code style={value}>{formatRoomCode(roomCode)}</code>

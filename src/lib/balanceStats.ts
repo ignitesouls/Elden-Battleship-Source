@@ -26,6 +26,13 @@ export interface ScoredMatch {
   dealt: number;
   played: number;
   rebalanced: number;
+  /**
+   * The same three boards on the find test: how far apart the fleets were on when their ships get
+   * FOUND rather than on when they get cleared. Seconds. See FIND_GAP_SECONDS in boardBalance.ts.
+   */
+  findDealt: number;
+  findPlayed: number;
+  findRebalanced: number;
   strandedFleets: number;
 }
 
@@ -50,6 +57,15 @@ export interface GapSet {
 export interface BalanceStats {
   generatedAt: string;
   rankLimitSeconds: number;
+  /**
+   * The find test's own threshold, which is NOT the rank limit and must not be printed as it.
+   *
+   * Ten minutes against the rank gap's five, because a hull's cheapest square spreads wider than its
+   * slowest and the same seconds are a harsher test on that end - see FIND_GAP_SECONDS. Sent from
+   * the function like the rank limit rather than hardcoded here, for the same reason: the browser
+   * holds no part of the cost model.
+   */
+  findLimitSeconds: number;
   counts: {
     matchesInArchive: number;
     scored: number;
@@ -58,6 +74,8 @@ export interface BalanceStats {
   };
   duration: Summary | null;
   overall: { dealt: Summary | null; played: Summary | null; rebalanced: Summary | null };
+  /** The same three, on the find test. Summarised against findLimitSeconds, not the rank limit. */
+  overallFind: { dealt: Summary | null; played: Summary | null; rebalanced: Summary | null };
   balancerOfTheDay: {
     balanced: { matches: number; played: Summary | null };
     unbalanced: { matches: number; played: Summary | null };
@@ -73,10 +91,13 @@ export interface BalanceStats {
  * Matches asked for per request.
  *
  * Scoring one match is a full rejection-sampling run - the most expensive thing in the codebase, and
- * Supabase allows about two seconds of CPU per invocation. Three is comfortably inside that; the
- * first version of this asked for all seventy at once and was killed with a 546.
+ * Supabase allows about two seconds of CPU per invocation. One now, down from three: the balancer's
+ * draw budget tripled when the find test shipped, so a single hard board can spend about 1.5s of
+ * that allowance by itself and asking for three is asking to be killed. The first version of this
+ * asked for all seventy at once and was killed with a 546; three was killed rather less often, and
+ * one is the honest number now. See MAX_SLICE in the function, which refuses more than two.
  */
-const SLICE = 3;
+const SLICE = 1;
 
 /** A slice that still fails after backing off all the way to one match is a real failure. */
 const MIN_SLICE = 1;
@@ -161,11 +182,18 @@ export async function sweepBalanceStats(
   | { ok: true; stats: BalanceStats; persisted: number; directed: number }
   | { ok: false; reason: string }
 > {
-  const index = await invoke<{ matchKeys: string[]; rankLimitSeconds: number }>({ mode: "index" });
+  const index = await invoke<{
+    matchKeys: string[];
+    rankLimitSeconds: number;
+    findLimitSeconds?: number;
+  }>({ mode: "index" });
   if (!index.ok) return { ok: false, reason: index.reason };
 
   const keys = index.data.matchKeys;
   const rankLimitSeconds = index.data.rankLimitSeconds;
+  // Falls back to the rank limit only so an older deployed function does not blank the column. The
+  // two are different numbers and a reader who sees them equal should suspect a stale function.
+  const findLimitSeconds = index.data.findLimitSeconds ?? rankLimitSeconds;
   const scored: ScoredMatch[] = [];
   const rejected: Record<string, number> = {};
 
@@ -211,7 +239,7 @@ export async function sweepBalanceStats(
 
   return {
     ok: true,
-    stats: aggregate(scored, rejected, keys.length, rankLimitSeconds),
+    stats: aggregate(scored, rejected, keys.length, rankLimitSeconds, findLimitSeconds),
     persisted,
     directed,
   };
@@ -244,10 +272,16 @@ function aggregate(
   scored: ScoredMatch[],
   rejected: Record<string, number>,
   matchesInArchive: number,
-  limit: number
+  limit: number,
+  findLimit: number
 ): BalanceStats {
   const gaps = (pick: (m: ScoredMatch) => number, rows: ScoredMatch[] = scored) =>
     describe(rows.map(pick), limit);
+  // Its own limit, not the rank one. `overLimit` means "share of boards this test would have
+  // rejected", so summarising find gaps against a 5:00 line would report a rejection rate for a
+  // rule that does not exist and make the find test look four times as interventionist as it is.
+  const findGaps = (pick: (m: ScoredMatch) => number, rows: ScoredMatch[] = scored) =>
+    describe(rows.map(pick), findLimit);
 
   const groupBy = (keyOf: (m: ScoredMatch) => string | number): Record<string, GapSet> => {
     const buckets = new Map<string, ScoredMatch[]>();
@@ -274,6 +308,7 @@ function aggregate(
   return {
     generatedAt: new Date().toISOString(),
     rankLimitSeconds: limit,
+    findLimitSeconds: findLimit,
     counts: { matchesInArchive, scored: scored.length, rejected },
     duration: describe(
       scored.map((m) => m.durationSec),
@@ -283,6 +318,11 @@ function aggregate(
       dealt: gaps((m) => m.dealt),
       played: gaps((m) => m.played),
       rebalanced: gaps((m) => m.rebalanced),
+    },
+    overallFind: {
+      dealt: findGaps((m) => m.findDealt),
+      played: findGaps((m) => m.findPlayed),
+      rebalanced: findGaps((m) => m.findRebalanced),
     },
     balancerOfTheDay: {
       balanced: { matches: withPerm.length, played: gaps((m) => m.played, withPerm) },

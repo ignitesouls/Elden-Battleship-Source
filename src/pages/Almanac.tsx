@@ -383,6 +383,15 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
               ) : (
                 <span style={{ color: teamHex(m.winner_team) }}>{teamName(m.winner_team)} won</span>
               )}
+              {/* Beside the result rather than replacing it, because a practice match still HAD a
+                  result and the row is still worth reading. What the tag adds is why you won't find
+                  that result anywhere else. */}
+              {m.practice && (
+                <span style={{ color: "var(--hit)", fontSize: "0.68rem", letterSpacing: "0.06em" }}>
+                  {" "}
+                  · PRACTICE
+                </span>
+              )}
               <div className="muted" style={{ fontSize: "0.68rem" }}>
                 {when.toLocaleDateString()} {when.toLocaleTimeString()}
               </div>

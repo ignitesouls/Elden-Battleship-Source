@@ -701,7 +701,7 @@ export function BattlePhase({
       <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />
       {/* Last item in the right-hand column, so it sits bottom-right of the match screen -
           in view for the whole game, which is the point (see MatchInfoBox). */}
-      <MatchInfoBox roomCode={room.code} seed={room.seed} rejoinCode={rejoinCode} />
+      <MatchInfoBox roomCode={room.code} seed={room.seed} rejoinCode={rejoinCode} practice={room.practice} />
     </>
   );
 

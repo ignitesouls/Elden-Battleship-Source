@@ -127,6 +127,8 @@ function reasonText(reason: string): string {
 function Report({ stats }: { stats: Stats }) {
   const { counts, overall, balancerOfTheDay, stranded } = stats;
   const limit = stats.rankLimitSeconds;
+  // Its own line, not the rank one. See FIND_GAP_SECONDS for why the two differ by a factor of two.
+  const findLimit = stats.findLimitSeconds;
   const rejectedTotal = Object.values(counts.rejected).reduce((a, b) => a + b, 0);
 
   return (
@@ -135,8 +137,8 @@ function Report({ stats }: { stats: Stats }) {
         {counts.scored} of {counts.matchesInArchive} matches scored
         {rejectedTotal > 0 && ` - ${rejectedTotal} skipped`}
         {stats.duration && ` - median match ${mmss(stats.duration.median)}`}
-        {" - threshold "}
-        {mmss(limit)}
+        {" - thresholds "}
+        {mmss(limit)} rank / {mmss(findLimit)} find
       </span>
 
       {/* The headline: same deal, three balancers. */}
@@ -159,6 +161,34 @@ function Report({ stats }: { stats: Stats }) {
             <Row label="Dealt" s={overall.dealt} />
             <Row label="Played" s={overall.played} />
             <Row label="Rebalanced" s={overall.rebalanced} strong />
+          </tbody>
+        </table>
+      </Section>
+
+      {/*
+        The other end of every ship. Its own table rather than three more rows in the one above,
+        because it is measured against its own threshold - ten minutes, not five - and stacking two
+        different limits under one "Over 5:00" column would silently misreport both.
+      */}
+      <Section
+        title="Find gap"
+        note="The same boards on when ships get FOUND rather than on when they get cleared - a hull is found through its cheapest square and cleared at its dearest. Over the archive the two ends of a ship correlate at r = 0.19, so this is not the table above said twice."
+      >
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <Th>&nbsp;</Th>
+              <Th right>Mean</Th>
+              <Th right>Median</Th>
+              <Th right>p90</Th>
+              <Th right>Worst</Th>
+              <Th right>Over {mmss(findLimit)}</Th>
+            </tr>
+          </thead>
+          <tbody>
+            <Row label="Dealt" s={stats.overallFind.dealt} />
+            <Row label="Played" s={stats.overallFind.played} />
+            <Row label="Rebalanced" s={stats.overallFind.rebalanced} strong />
           </tbody>
         </table>
       </Section>

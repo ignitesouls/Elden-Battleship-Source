@@ -21,8 +21,11 @@ as a static site to GitHub Pages.
 
 1. **Home.** Create a room, or join with the room's word-pair code.
 2. **Lobby.** Players pick a fleet (up to nine, by colour). The host chooses the board size
-   (5x5 up to 14x14, capped by how many squares the set holds), the fleet preset, and which
-   square set the board is dealt from.
+   (5x5 up to 14x14, capped by how many squares the set holds), the fleet preset, which
+   square set the board is dealt from, and whether the match counts — set it to **Practice**
+   for a test run or a demo and nothing from it reaches the leaderboard, anyone's career or
+   the record book. That is settled in the lobby and cannot be changed once the match starts,
+   or undone afterwards.
 3. **Placement.** Place each ship, or hit Randomize, then confirm.
 4. **Battle.** A countdown, then fire. Real-time rather than turn-based.
 5. **Last fleet afloat wins.** The host can start another match in the same room.
