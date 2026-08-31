@@ -7,6 +7,7 @@ import {
   type GapSet,
   type SweepProgress,
   type Summary,
+  SLICE,
 } from "../lib/balanceStats";
 
 /**
@@ -36,29 +37,18 @@ export function BalanceStats() {
    * backfill being complete, not the write having failed.
    */
   const [persisted, setPersisted] = useState<number | null>(null);
-  /**
-   * Records that already had a fairness number and gained only the side it was in favour of.
-   *
-   * Counted apart from the backfill above because it is a different write with a different rule:
-   * the backfill refuses to touch an existing record, and this one deliberately adds a single field
-   * to records the backfill is barred from. Reported separately so a run that filled no gaps but
-   * named forty sides does not read as having done nothing.
-   */
-  const [directed, setDirected] = useState<number | null>(null);
 
   const run = async () => {
     setBusy(true);
     setError(null);
     setProgress(null);
     setPersisted(null);
-    setDirected(null);
     const res = await sweepBalanceStats(setProgress);
     setBusy(false);
     setProgress(null);
     if (res.ok) {
       setStats(res.stats);
       setPersisted(res.persisted);
-      setDirected(res.directed);
     } else setError(reasonText(res.reason));
   };
 
@@ -87,8 +77,11 @@ export function BalanceStats() {
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {progress
             ? `Scored ${progress.done} of ${progress.total} matches` +
-              // Only said once it has had to narrow - see the 546 handling in the sweep.
-              (progress.slice < 3 ? ` - narrowed to ${progress.slice} per request` : "")
+              // Only said once it has actually narrowed, which is against the slice the walk STARTED
+              // on rather than a literal. That literal was 3, and outlived the SLICE it was copied
+              // from - once SLICE dropped to 1 the condition was true on every clean sweep, so a run
+              // that never hit a 546 still reported having been narrowed.
+              (progress.slice < SLICE ? ` - narrowed to ${progress.slice} per request` : "")
             : "Listing the archive..."}
         </span>
       )}
@@ -98,12 +91,6 @@ export function BalanceStats() {
           {persisted === 0
             ? "Every scored match already had a fairness record on its recap."
             : `Backfilled ${persisted} ${persisted === 1 ? "recap" : "recaps"} that had no fairness record.`}
-        </span>
-      )}
-
-      {directed !== null && directed > 0 && !busy && (
-        <span className="muted" style={{ fontSize: "0.76rem" }}>
-          {`Named which team was ahead on ${directed} ${directed === 1 ? "recap" : "recaps"} that had a fairness record without one.`}
         </span>
       )}
 

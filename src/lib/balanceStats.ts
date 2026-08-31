@@ -97,7 +97,7 @@ export interface BalanceStats {
  * asked for all seventy at once and was killed with a 546; three was killed rather less often, and
  * one is the honest number now. See MAX_SLICE in the function, which refuses more than two.
  */
-const SLICE = 1;
+export const SLICE = 1;
 
 /** A slice that still fails after backing off all the way to one match is a real failure. */
 const MIN_SLICE = 1;
@@ -164,8 +164,6 @@ export interface SweepProgress {
   slice: number;
   /** Archived matches given a fairness record they did not have. See sweepBalanceStats. */
   persisted: number;
-  /** Existing records that gained only a direction. See the merge pass in balance-stats. */
-  directed: number;
 }
 
 /**
@@ -179,7 +177,7 @@ export async function sweepBalanceStats(
   onProgress?: (p: SweepProgress) => void,
   persist = true
 ): Promise<
-  | { ok: true; stats: BalanceStats; persisted: number; directed: number }
+  | { ok: true; stats: BalanceStats; persisted: number }
   | { ok: false; reason: string }
 > {
   const index = await invoke<{
@@ -200,28 +198,26 @@ export async function sweepBalanceStats(
   let slice = SLICE;
   let at = 0;
   let persisted = 0;
-  let directed = 0;
   while (at < keys.length) {
     const take = keys.slice(at, at + slice);
     const res = await invoke<{
       scored: ScoredMatch[];
       rejected: Record<string, number>;
       persisted?: number;
-      directed?: number;
     }>({ matchKeys: take, persist });
 
     if (!res.ok) {
       // 546 is the CPU kill. Narrowing is the only useful response; anything else is a real error.
       if (res.status === 546 && slice > MIN_SLICE) {
         slice = Math.max(MIN_SLICE, Math.floor(slice / 2));
-        onProgress?.({ done: at, total: keys.length, slice, persisted, directed });
+        onProgress?.({ done: at, total: keys.length, slice, persisted });
         continue;
       }
       if (res.status === 546) {
         // Already down to one and still over budget: record it and move past.
         rejected.too_expensive_to_score = (rejected.too_expensive_to_score ?? 0) + take.length;
         at += take.length;
-        onProgress?.({ done: at, total: keys.length, slice, persisted, directed });
+        onProgress?.({ done: at, total: keys.length, slice, persisted });
         continue;
       }
       return { ok: false, reason: res.reason };
@@ -229,19 +225,17 @@ export async function sweepBalanceStats(
 
     scored.push(...res.data.scored);
     persisted += res.data.persisted ?? 0;
-    directed += res.data.directed ?? 0;
     for (const [why, n] of Object.entries(res.data.rejected ?? {})) {
       rejected[why] = (rejected[why] ?? 0) + n;
     }
     at += take.length;
-    onProgress?.({ done: at, total: keys.length, slice, persisted, directed });
+    onProgress?.({ done: at, total: keys.length, slice, persisted });
   }
 
   return {
     ok: true,
     stats: aggregate(scored, rejected, keys.length, rankLimitSeconds, findLimitSeconds),
     persisted,
-    directed,
   };
 }
 

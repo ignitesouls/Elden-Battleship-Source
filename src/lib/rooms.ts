@@ -1145,4 +1145,19 @@ export async function fetchRecentMatchReports(limit = 8) {
   return data ?? [];
 }
 
+/**
+ * How many recaps exist, without reading one.
+ *
+ * `head: true` sends no rows at all - the answer comes back in a Content-Range header - which is
+ * the point. The admin list is paged now, and the only thing it still needs to know about the
+ * matches it did NOT load is how many there are; fetching them to count them would undo the paging.
+ */
+export async function countMatchReports(): Promise<number> {
+  const { count, error } = await supabase
+    .from("match_reports")
+    .select("id", { count: "exact", head: true });
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export type { Room, Player, Fleet };

@@ -10,6 +10,9 @@ import {
 import { formatRoomCode } from "../lib/roomCode";
 import type { MatchReportRow } from "../types/battleship";
 
+/** Rows per page, matching the archived-match list this panel sits under. */
+const PAGE = 25;
+
 /**
  * What each match cost in bytes.
  *
@@ -36,22 +39,37 @@ import type { MatchReportRow } from "../types/battleship";
  */
 export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
   const [rooms, setRooms] = useState<RoomEgress[] | null>(null);
+  /** How many rows to ask for. Raised by "Show more", in step with the match list above. */
+  const [limit, setLimit] = useState(PAGE);
   const [open, setOpen] = useState<string | null>(null);
   const [billed, setBilled] = useState<Record<string, BilledEgress | string>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void (async () => setRooms(await listRoomEgress()))();
-  }, []);
+    void (async () => setRooms(await listRoomEgress(limit)))();
+  }, [limit]);
+
+  // No count query behind this. A short page is proof there is nothing more; a full one only means
+  // there might be, and offering a button that turns out to add nothing is a smaller cost than a
+  // round trip on every visit to find out.
+  const maybeMore = rooms !== null && rooms.length >= limit;
 
   async function askBilled(row: RoomEgress) {
     const key = row.room_code ?? "";
     const match = matchForRoom(row, matches);
     if (!match) {
+      // The match list above is paged, so "no match" has two meanings and they need different
+      // answers: this room may predate what has been loaded rather than have no match at all.
+      // Saying the wrong one sends an admin looking for a bug in the join.
+      const oldestLoaded = matches.length
+        ? new Date(matches[matches.length - 1].finished_at).getTime()
+        : null;
+      const notLoadedYet = oldestLoaded !== null && new Date(row.last_seen).getTime() < oldestLoaded;
       setBilled((b) => ({
         ...b,
-        [key]:
-          "No archived match lines up with these samples. A room that was opened and abandoned still spends bytes, but there is no window to ask Supabase about.",
+        [key]: notLoadedYet
+          ? "This room is older than the matches loaded above. Press Show more on the archived list, then ask again."
+          : "No archived match lines up with these samples. A room that was opened and abandoned still spends bytes, but there is no window to ask Supabase about.",
       }));
       return;
     }
@@ -87,7 +105,7 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
         <button
           disabled={busy}
           style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem" }}
-          onClick={() => void (async () => setRooms(await listRoomEgress()))()}
+          onClick={() => void (async () => setRooms(await listRoomEgress(limit)))()}
         >
           Refresh
         </button>
@@ -217,6 +235,16 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
           </div>
         );
       })}
+
+      {maybeMore && (
+        <button
+          disabled={busy}
+          style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", alignSelf: "center" }}
+          onClick={() => setLimit((n) => n + PAGE)}
+        >
+          Show more
+        </button>
+      )}
 
       <span className="muted" style={{ fontSize: "0.7rem" }}>
         Samples are dropped after thirty days. The billed half needs EGRESS_MANAGEMENT_TOKEN set as

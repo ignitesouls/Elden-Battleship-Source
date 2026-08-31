@@ -30,7 +30,20 @@ import { teamName, teamHex } from "../lib/teamColors";
 import type { MatchReportRow } from "../types/battleship";
 
 interface Props {
+  /** The page of matches that has been loaded, newest first - not necessarily all of them. */
   matches: MatchReportRow[];
+  /** How many matches exist in total, loaded or not. Null while that count is still in flight. */
+  total?: number | null;
+  /** Loads the next page. Absent once everything is loaded, which is what hides the button. */
+  onShowMore?: () => void;
+  loadingMore?: boolean;
+  /**
+   * Bumped by the page whenever something was actually changed. The room list, the grant list and
+   * the orphan count hang off this rather than off `matches`, because `matches` also changes when
+   * a page is merely loaded - and countOrphans reads three whole tables to answer, which is not a
+   * thing to redo because somebody asked to see twenty-five more rows.
+   */
+  revision?: number;
   /** Called after anything is deleted so the page can re-read its data. */
   onChanged: () => void;
 }
@@ -42,7 +55,7 @@ interface Props {
  * panel never flashes into view for an ordinary visitor. The real enforcement is RLS; this only
  * decides whether to offer controls that would otherwise fail.
  */
-export function AdminPanel({ matches, onChanged }: Props) {
+export function AdminPanel({ matches, total = null, onShowMore, loadingMore, revision = 0, onChanged }: Props) {
   const { isAdmin, isOwner, loading } = useAdminStatus();
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
@@ -63,7 +76,7 @@ export function AdminPanel({ matches, onChanged }: Props) {
     listAdmins().then(setAdmins).catch(() => setAdmins([]));
     listRooms().then(setRooms).catch(() => setRooms([]));
     countOrphans().then(setOrphans).catch(() => setOrphans(0));
-  }, [isAdmin, matches]);
+  }, [isAdmin, revision]);
 
   if (loading || !isAdmin) return null;
 
@@ -82,6 +95,9 @@ export function AdminPanel({ matches, onChanged }: Props) {
     }
   }
 
+  /** What the wipe would actually destroy: the whole archive, not the page being shown. */
+  const wipeCount = total !== null ? total : matches.length;
+
   return (
     <div className="panel stack" style={{ gap: "0.7rem", borderColor: "var(--danger)", width: "100%" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
@@ -95,7 +111,12 @@ export function AdminPanel({ matches, onChanged }: Props) {
 
       {/* -- Records -- */}
       <div className="stack" style={{ gap: "0.35rem" }}>
-        <strong style={{ fontSize: "0.82rem" }}>Archived matches ({matches.length})</strong>
+        {/* Both numbers, when they differ: the second is what exists, the first is what the buttons
+            below can currently reach. One number alone would read as the whole archive. */}
+        <strong style={{ fontSize: "0.82rem" }}>
+          Archived matches (
+          {total !== null && total > matches.length ? `${matches.length} of ${total}` : matches.length})
+        </strong>
         {matches.length === 0 && <span className="muted" style={{ fontSize: "0.78rem" }}>Nothing on record.</span>}
         {matches.map((m) => (
           <div key={m.id} className="stack" style={{ gap: "0.25rem" }}>
@@ -227,6 +248,20 @@ export function AdminPanel({ matches, onChanged }: Props) {
             )}
           </div>
         ))}
+
+        {/* Sits inside the list rather than under it, so it reads as the end of these rows and not
+            as another record-book control alongside the wipe. */}
+        {onShowMore && (
+          <button
+            disabled={busy || loadingMore}
+            style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", alignSelf: "center" }}
+            onClick={onShowMore}
+          >
+            {loadingMore
+              ? "Loading..."
+              : `Show more${total !== null ? ` (${total - matches.length} older)` : ""}`}
+          </button>
+        )}
       </div>
 
       {/* Orphans: rows in the satellite tables whose parent report is gone. Surfaced separately
@@ -270,14 +305,16 @@ export function AdminPanel({ matches, onChanged }: Props) {
       {/* -- Wipe everything --
           Gated behind typing the word rather than a confirm() dialog: this clears every career
           record on the site with no undo and no backup, and a button you can hit by reflex is the
-          wrong shape for that. */}
+          wrong shape for that. The count in it is the whole archive rather than the loaded page:
+          this erases matches that are not on the screen, and saying "25 matches" while wiping two
+          hundred would be a lie told at the one moment it matters most. */}
       {(matches.length > 0 || orphans > 0) && (
         <div className="stack" style={{ gap: "0.3rem" }}>
           {/* Offered when there are orphans even with zero matches - that combination is exactly
               the state where the list above looks empty but the leaderboard doesn't. */}
           <span className="muted" style={{ fontSize: "0.72rem" }}>
             Type <code>WIPE</code> to erase every record row
-            {matches.length > 0 ? ` (${matches.length} match${matches.length === 1 ? "" : "es"})` : ""}. This cannot
+            {wipeCount > 0 ? ` (${wipeCount} match${wipeCount === 1 ? "" : "es"})` : ""}. This cannot
             be undone.
           </span>
           <div className="row" style={{ gap: "0.4rem" }}>

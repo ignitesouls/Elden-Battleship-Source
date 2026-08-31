@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  fetchFairnessGaps,
-  fairnessOf,
-  fairnessBand,
-  gapLabel,
-  ordinal,
-  type MatchBalance,
-} from "../lib/matchBalance";
-import { teamHex, teamName } from "../lib/teamColors";
+import { fetchFairnessGaps, fairnessOf, ordinal, type MatchBalance } from "../lib/matchBalance";
 
 /**
  * How fair the board was, on the recap.
@@ -18,27 +10,37 @@ import { teamHex, teamName } from "../lib/teamColors";
  * out as. It reads the number the balancer recorded at the moment it dealt the board; nothing is
  * computed here and no square is ever priced in a browser.
  *
- * -- Three numbers and two lines ------------------------------------------------------------------
+ * -- One number ------------------------------------------------------------------------------------
  *
- * The percentile and the two gaps, under a single line naming what the percentile is a rank against:
- * a bare ordinal reads as a score on this match rather than a place among every board ever dealt.
- * Not the size of that field, though. One more line sits under the bars saying what a gap IS,
- * which direction is good, and - once the record carries it - which fleet the gap was in favour of,
- * because two durations with no unit named read as match times. A second such line names the FIND
- * gap, which is the same comparison off the other end of every ship and frequently favours the
- * other side; it stays a line rather than becoming a second chart. It once
- * carried paragraphs explaining what a square's cost is, how the ranks are matched up, and what the
- * shuffle bought, and read like a lecture nobody asked for. A caster can say any of that on air in
- * a sentence; the recap does not need to say it every time.
+ * A percentile and the line saying what it is a rank against. That is the whole panel.
  *
- * -- Naming the fleet that was ahead ---------------------------------------------------------------
+ * It used to carry two bars - the gap before shuffling and after - a band chip reading "Even" or
+ * "Slight edge", a line naming the fleet that came out ahead, and a second line for the find gap.
+ * Five elements, of which THREE were the same number: the played gap drawn as a bar, banded into a
+ * word, and ranked into a percentile. One fact wearing three hats reads as noise, and the bars were
+ * the worst of it - two bare durations with no unit named, which a reader takes for match times.
  *
- * The gap is a spread, so for a long time this panel could not say whose edge it was: the number
- * measured how wide, never which side. The balancer knew - it finds the worst rank and takes the
- * difference between the cheapest and dearest ship there - and dropped the answer a line later.
- * It records `aheadTeam` now, and the sweep writes it onto older records that have a gap and no
- * side. Anything older still than THAT falls back to the unnamed sentence rather than guessing, and
- * `topCost` remains no help: its order comes from a fleet query, not from the team numbers.
+ * What the cut is really about: none of those numbers is a duration anybody experienced. A rank gap
+ * is the widest same-rank spread between two sorted profiles, so "3:30" is not three and a half
+ * minutes of anything that happened - it is a distance between two orderings. Printing it beside a
+ * clock invites exactly the wrong reading, and no amount of caption fixes that. A percentile makes
+ * no such promise: it says where this board sits among every board, which is a claim a rank actually
+ * supports.
+ *
+ * So the panel says the one thing it can say honestly and stops. A caster who wants the detail has
+ * the whole record - both gaps, both directions, the long-square count - in the balance report, and
+ * can say it on air in a sentence.
+ *
+ * -- What the percentile ranks ---------------------------------------------------------------------
+ *
+ * `played`, the rank gap: how far apart the two fleets were on when their ships get CLEARED. NOT the
+ * find gap and not the long-square count, because those are not in the column this ranks against -
+ * see fetchFairnessGaps, which reads one field off every archived record.
+ *
+ * Worth knowing while reading the word "fairness" above it, since the balancer now holds boards to
+ * three tests and this ranks on one of them. Widening it means backfilling the other two across the
+ * whole archive first, or the denominator is a mix of boards scored different ways - which would be
+ * a worse number than a narrow one.
  */
 export function BalanceReadout({
   balance,
@@ -52,8 +54,7 @@ export function BalanceReadout({
    *
    * Fetched here rather than passed in, so both recaps - the live one and the permanent one - get
    * this by rendering the component and nothing else. It is one narrow column off a table both pages
-   * already read, and it is deliberately not awaited before the rest of the panel draws: the gaps
-   * are the whole story and the percentile is the gloss on it.
+   * already read.
    */
   const [gaps, setGaps] = useState<number[] | null>(null);
 
@@ -75,48 +76,10 @@ export function BalanceReadout({
   if (!balance) return null;
 
   const fairness = gaps ? fairnessOf(balance.played, gaps) : null;
-  const band = fairnessBand(balance.played, balance.limit);
-  // False only on a swept record for a room the balancer never touched. A deal-time record exists
-  // BECAUSE the balancer ran, so an absent flag means it ran.
-  const unbalanced = balance.hadPerm === false;
-
-  /**
-   * The fleet the gap was in favour of, when the record knows.
-   *
-   * Three states, and they are not the same: a number is a named side, null is a board measured
-   * dead even, and absent is a record written before any of this was kept. Only the first names a
-   * fleet - the other two fall back to the sentence that describes the gap without taking a side,
-   * because "nobody was ahead" and "nobody wrote down who was ahead" both come out as no name.
-   */
-  const ahead = typeof balance.aheadTeam === "number" ? balance.aheadTeam : null;
-
-  /**
-   * The other half of the board, when the record carries it: how far apart the fleets were on being
-   * FOUND rather than on being finished off.
-   *
-   * One line rather than a second pair of bars, and that restraint is the point. It is a different
-   * measurement off the other end of every ship, not a stage of the same one, so putting it in the
-   * before/after bars would read as a third column of the same story. A caster can make more of it
-   * in a sentence than a chart can.
-   *
-   * Absent on every record dealt before the find test shipped, which is most of the archive - so it
-   * simply does not render, the same way the direction did not before the sweep filled it in.
-   */
-  const findGap = typeof balance.findPlayed === "number" ? balance.findPlayed : null;
-  const hidden = typeof balance.findAheadTeam === "number" ? balance.findAheadTeam : null;
-
-  // Both bars scale against the wider of the two, so the shorter one reads as a fraction of the
-  // longer at a glance. Against a fixed ceiling every ordinary board would be two short stubs.
-  const scale = Math.max(balance.dealt, balance.played, 1);
 
   return (
     <div className="panel stack" style={{ gap: "0.45rem", width }}>
-      <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", alignItems: "baseline" }}>
-        <h3 style={{ margin: 0 }}>Board fairness</h3>
-        <span style={{ color: band.color, fontSize: "0.78rem", fontWeight: 600, letterSpacing: "0.04em" }}>
-          {band.label}
-        </span>
-      </div>
+      <h3 style={{ margin: 0 }}>Board fairness</h3>
 
       {fairness ? (
         <div className="stack" style={{ gap: "0.1rem" }}>
@@ -132,79 +95,6 @@ export function BalanceReadout({
           {gaps === null ? "Ranking this board..." : "Nothing to rank this against yet."}
         </span>
       )}
-
-      <div className="stack" style={{ gap: "0.3rem", marginTop: "0.1rem" }}>
-        <GapBar label="Before shuffling" seconds={balance.dealt} scale={scale} tone="var(--text-dim)" />
-        <GapBar
-          label={unbalanced ? "Never shuffled" : "As played"}
-          seconds={balance.played}
-          scale={scale}
-          tone={band.color}
-        />
-        <span className="muted" style={{ fontSize: "0.7rem", marginTop: "0.1rem" }}>
-          {ahead === null ? (
-            "The head start the luckiest fleet held. Lower is fairer."
-          ) : (
-            <>
-              The head start{" "}
-              <strong style={{ color: teamHex(ahead) }}>{teamName(ahead)}</strong> held. Lower is
-              fairer.
-            </>
-          )}
-        </span>
-        {findGap !== null && (
-          <span className="muted" style={{ fontSize: "0.7rem" }}>
-            {hidden === null ? (
-              <>One fleet stayed hidden {gapLabel(findGap)} longer before its ships were found.</>
-            ) : (
-              <>
-                <strong style={{ color: teamHex(hidden) }}>{teamName(hidden)}</strong> stayed hidden{" "}
-                {gapLabel(findGap)} longer before their ships were found.
-              </>
-            )}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** One measure as a labelled bar. The number is the point; the bar is what makes two comparable. */
-function GapBar({
-  label,
-  seconds,
-  scale,
-  tone,
-}: {
-  label: string;
-  seconds: number;
-  scale: number;
-  tone: string;
-}) {
-  return (
-    <div className="row" style={{ gap: "0.5rem", alignItems: "center", fontSize: "0.78rem" }}>
-      <span className="muted" style={{ flex: "0 0 8.5rem" }}>{label}</span>
-      <div
-        style={{
-          flex: 1,
-          minWidth: "3rem",
-          height: "0.5rem",
-          borderRadius: 3,
-          background: "var(--cell)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${Math.max(2, Math.round((seconds / scale) * 100))}%`,
-            height: "100%",
-            background: tone,
-          }}
-        />
-      </div>
-      <strong style={{ fontVariantNumeric: "tabular-nums", minWidth: "3rem", textAlign: "right" }}>
-        {gapLabel(seconds)}
-      </strong>
     </div>
   );
 }

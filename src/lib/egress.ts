@@ -54,7 +54,7 @@ export interface BilledEgress {
  * Admin-only by RLS on the underlying table, so this returns an empty list rather than an error for
  * anyone else - the same shape the rest of lib/admin uses.
  */
-export async function listRoomEgress(limit = 40): Promise<RoomEgress[]> {
+export async function listRoomEgress(limit = 25): Promise<RoomEgress[]> {
   const { data, error } = await supabase
     .from("egress_by_room")
     .select(

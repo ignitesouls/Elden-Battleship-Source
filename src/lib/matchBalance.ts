@@ -26,6 +26,19 @@ import { supabase } from "./supabase";
  *
  * Everything optional is optional because one source has it and the other does not. Nothing here is
  * ever assumed present.
+ *
+ * -- Written but not rendered ----------------------------------------------------------------------
+ *
+ * `played` is the only field any player-facing surface reads: BalanceReadout ranks it into a
+ * percentile and shows nothing else. Everything below it - `limit`, both gap directions, the
+ * long-square counts, the find gap - is written, archived, and read only by the admin sweep or by a
+ * person looking at the raw record.
+ *
+ * That is deliberate and they are NOT dead weight to be trimmed. A stored field costs a line in the
+ * writer; deleting one loses the data permanently for every match played afterwards, and it cannot
+ * be reconstructed for a board whose cost table has since moved. `limit` is the sharpest case - it
+ * is the only thing that says which rule a given record's gap was judged against, so without it an
+ * old `played` cannot be read at all once a threshold changes.
  */
 export interface MatchBalance {
   v: number;
@@ -112,7 +125,7 @@ export interface MatchBalance {
   clumpBefore?: number;
   clumpAfter?: number;
   regionLow?: number | null;
-  /** Per fleet, the slowest square gating its slowest ship. Seconds. See strandedFleets. */
+  /** Per fleet, the slowest square gating its slowest ship. Seconds. */
   topCost?: number[];
   /** Sweep only: fleets already found to be stranded, against that match's real duration. */
   stranded?: number;
@@ -126,22 +139,6 @@ export function asMatchBalance(value: unknown): MatchBalance | null {
   const b = value as Partial<MatchBalance>;
   if (typeof b.dealt !== "number" || typeof b.played !== "number") return null;
   return b as MatchBalance;
-}
-
-/**
- * How many fleets were holding a ship that could not have been sunk in the time the match ran.
- *
- * The asymmetry that makes a match unwinnable rather than merely long: one fleet stranded and the
- * other not means one side was never going to finish the job, whatever they did. Worth more than the
- * gap on its own, because a wide gap between two fleets who both had time is only a wide gap.
- *
- * Computed here rather than stored, because it needs the match duration and the duration does not
- * exist yet when the board is dealt. A swept record already carries the answer and is trusted.
- */
-export function strandedFleets(balance: MatchBalance, durationSeconds: number | null): number | null {
-  if (typeof balance.stranded === "number") return balance.stranded;
-  if (!balance.topCost?.length || durationSeconds === null || durationSeconds <= 0) return null;
-  return balance.topCost.filter((c) => c > durationSeconds).length;
 }
 
 /**
@@ -206,43 +203,4 @@ export function ordinal(n: number): string {
     default:
       return `${n}th`;
   }
-}
-
-/**
- * What to call a gap in words, against the threshold the balancer holds boards to.
- *
- * The bands are the balancer's own limit and half of it, not round numbers picked to read well: the
- * limit is the line a board has to be under to be accepted at all, so "over the line" means exactly
- * that and not "worse than I would like".
- */
-export function fairnessBand(played: number, limit: number | undefined): {
-  label: string;
-  color: string;
-} {
-  const line = limit && limit > 0 ? limit : 300;
-  if (played <= line / 2) return { label: "Even", color: "var(--hit)" };
-  if (played <= line) return { label: "Slight edge", color: "var(--accent)" };
-  return { label: "Lopsided", color: "var(--sunk)" };
-}
-
-/**
- * Seconds out of an archived duration string.
- *
- * The archive writes `mm:ss` below an hour and `h:mm:ss` above it - see duration_text in the
- * duration_past_an_hour migration - and `--:--` for a match whose start marker never landed.
- */
-export function durationSeconds(duration: string | null | undefined): number | null {
-  if (!duration) return null;
-  const parts = duration.split(":");
-  if (parts.some((p) => !/^\d+$/.test(p))) return null;
-  const nums = parts.map(Number);
-  if (nums.length === 2) return nums[0] * 60 + nums[1];
-  if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2];
-  return null;
-}
-
-/** "6:20" - the same clock every other duration on the site is written in. */
-export function gapLabel(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }

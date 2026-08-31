@@ -419,15 +419,31 @@ export interface LiveRoom {
   players: number;
 }
 
-/** Live rooms with their occupancy, for the admin's room list. */
-export async function listRooms(): Promise<LiveRoom[]> {
+/**
+ * Live rooms with their occupancy, for the admin's room list.
+ *
+ * The limit is a backstop rather than paging: the site allows fifteen rooms open at once, so it
+ * only bites if that cap is ever broken, and a list that quietly stopped at twenty-five would still
+ * be showing every room there is.
+ *
+ * The occupancy count asks only about the rooms being listed. It used to read the room_id of every
+ * player row on the site to count fifteen rooms' worth - a whole table fetched to answer a question
+ * about a page of it.
+ */
+export async function listRooms(limit = 25): Promise<LiveRoom[]> {
   const { data: rooms, error } = await supabase
     .from("rooms")
     .select("id, code, status, created_at")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(limit);
   if (error) throw error;
 
-  const { data: players } = await supabase.from("players").select("room_id");
+  const ids = (rooms ?? []).map((r) => r.id);
+  // Skipped when there are no rooms: an `.in()` on an empty list is a round trip that can only
+  // come back empty.
+  const { data: players } = ids.length
+    ? await supabase.from("players").select("room_id").in("room_id", ids)
+    : { data: [] as { room_id: string }[] };
   const counts = new Map<string, number>();
   for (const p of players ?? []) counts.set(p.room_id, (counts.get(p.room_id) ?? 0) + 1);
 
@@ -501,17 +517,21 @@ const RECORD_TABLES = ["match_events", "match_fleets", "match_participants", "ma
  * match_reports, so an orphan is invisible in the UI while still counting toward the leaderboard,
  * which aggregates match_participants directly. One turned up in the wild - a row carrying a real
  * user_id but no parent report showed up as a 999-shot career with nothing to click delete on.
+ *
+ * Asked of Postgres rather than answered in the browser. This used to fetch the match_key of every
+ * row in all three tables and diff them here - match_events is a row per shot ever fired, so it was
+ * tens of thousands of rows downloaded on every visit to /admin to arrive at one integer. The panel
+ * runs it unprompted, precisely because an orphan announces itself nowhere else, so it is the one
+ * read on the page that could not be made cheaper by loading less of it.
+ *
+ * See admin_count_orphans in 20260831000000_count_orphans.sql. It raises rather than returning zero
+ * for a non-admin, and the callers here treat any failure as zero - which is the same thing the
+ * panel would show anyway.
  */
 export async function countOrphans(): Promise<number> {
-  const { data: reports } = await supabase.from("match_reports").select("match_key");
-  const keys = new Set((reports ?? []).map((r) => r.match_key as string));
-
-  let total = 0;
-  for (const table of ["match_participants", "match_fleets", "match_events"] as const) {
-    const { data } = await supabase.from(table).select("match_key");
-    total += (data ?? []).filter((r) => !keys.has(r.match_key as string)).length;
-  }
-  return total;
+  const { data, error } = await supabase.rpc("admin_count_orphans");
+  if (error) throw error;
+  return (data as number) ?? 0;
 }
 
 export async function deleteOrphans(): Promise<number> {
