@@ -71,6 +71,10 @@ OBS's mixer can treat it as one - tick **Control audio via OBS** in its properti
 a fader and a mute button like any other input. `?vol=0.5` sets the level it starts at, for a
 scene where that is easier than the fader. It plays every crew's finds to both audiences, which
 is what the Board source already draws; `?team=N` decides only which sting closes the match.
+`?deep=0` drops the finds - whales, the Dutchman, tentacles, bottles, Alexander and Igon, and the
+third-sail sting that rides on her - and keeps the shots, the horns and the closing sting, for a
+desk that would rather announce a whale than be interrupted by one. The site's own top bar carries
+the same switch for anyone playing or spectating in a tab.
 
 The Fleet source is the small board a player already has beside their fire board: no square
 names, because at that size they don't survive an encoder - each square wears its challenge

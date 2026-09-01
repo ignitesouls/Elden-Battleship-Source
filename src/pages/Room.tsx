@@ -23,7 +23,7 @@ import { MatchReport } from "../components/MatchReport";
 import { sunkCellOrientations, eliminatedTeamsFromAttacks, sunkHullFlags } from "../lib/battleshipLogic";
 import { AttackFeed } from "../components/AttackFeed";
 import { groupIntoShots } from "../lib/attackFeed";
-import { deepWater, deepMarks, type DeepHide } from "../lib/deepWater";
+import { deepWater, deepMarks, fatesConfirmed, type DeepHide } from "../lib/deepWater";
 import { TeamBox } from "../components/TeamBox";
 import { HostTakeover } from "../components/HostTakeover";
 import { formatRoomCode } from "../lib/roomCode";
@@ -606,11 +606,13 @@ function SpectatorView({
     [room, attacks, players, deepHides]
   );
   const deepCells = useMemo(() => deepMarks(deep), [deep]);
+  /** Somebody's third sail, which is Fates Confirmed as it happens rather than at the recap. */
+  const fates = useMemo(() => fatesConfirmed(deep), [deep]);
 
   // Every shot in the room is audible from here - see useSpectatorSfx for why it's one sound per shot
   // rather than per attack row, and why the whale needs `deepCells` to be heard at all. Sits below the
   // memo it reads rather than at the top of the component, which would be a use-before-declaration.
-  useSpectatorSfx(attacks, true, deepCells);
+  useSpectatorSfx(attacks, true, deepCells, fates);
 
   const overShoulder = view === "crew" && ridingWith !== null;
   const shown = view === "attacks" || view === "all" ? activeTeamsList : typeof view === "number" ? [view] : [];

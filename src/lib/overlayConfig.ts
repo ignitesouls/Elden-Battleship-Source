@@ -152,7 +152,7 @@ data_file="bosses.json"
 #  {igt}   = In-game time
 #  {shards}= Number of messmer's kindling shards acquired
 #  {runes} = Number of great runes acquired
-display_text = "IGT: {igt}$nBosses: {kills}/{total}$nGreat Runes: {runes}$nDeaths: {deaths}"
+display_text = "IGT: {igt}$nDeaths: {deaths}"
 show_ingest_tally = true
 
 [timer]

@@ -24,7 +24,8 @@ import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout
 import { challengesForRoom, rowSquareSet, igonAnchor, type Challenge } from "../../lib/challenges";
 import { squaresRevealed } from "../../lib/overlayReveal";
 import { groupIntoShots } from "../../lib/attackFeed";
-import { deepWater, deepMarks, bottleNote, type DeepHide, type DeepMark } from "../../lib/deepWater";
+import { deepWater, deepMarks, bottleNote, sightingsBy, type DeepHide, type DeepMark } from "../../lib/deepWater";
+import { FATES_DELAY_MS } from "../../hooks/useSpectatorSfx";
 import { buildPlayerStats } from "../../lib/matchReport";
 import { buildRecordBook, type RecordEntry } from "../../lib/recordBook";
 import { recordChases, liveTallies } from "../../lib/recordChase";
@@ -217,6 +218,21 @@ export function BattlePhase({
    * "one more than last render" can't tell a tentacle from the sleeper waking.
    */
   const announced = useRef<Set<string> | null>(null);
+  /**
+   * The third-fate chord's pending timer, so leaving the board takes it with you.
+   *
+   * The only cue here that is scheduled rather than played, because it goes in UNDER the Dutchman's
+   * bell (see the dutchman branch below). Without this it would ring out of a page that has already
+   * gone - a real one, since the shot that lands somebody's third sail is often the one that ends
+   * their match.
+   */
+  const fatesTimer = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (fatesTimer.current !== null) clearTimeout(fatesTimer.current);
+      fatesTimer.current = null;
+    };
+  }, []);
   useEffect(() => {
     /**
      * Keyed on the square AND what is on it.
@@ -276,8 +292,29 @@ export function BattlePhase({
       playSfx("awaken");
       setToast("Something enormous has woken up beneath the board.");
     } else if (kind === "dutchman") {
-      playSfx("whale");
-      const sightings = deep.dutchman.length;
+      playSfx("dutchman");
+      /**
+       * This finder's own tally, not `deep.dutchman.length`.
+       *
+       * `deep` is built from the public log and holds every crew's sightings, while this board is
+       * only ever shown its own - so the old count could tell somebody their first sail was their
+       * third, and the movement in it was a rival crew's shot being reported. See sightingsBy.
+       */
+      const sightings = found ? sightingsBy(deep, found) : 0;
+      /**
+       * The third, which is Fates Confirmed earned - announced here rather than waiting for the recap.
+       *
+       * Behind the bell rather than after it, so the two read as one event. Same delay the spectator
+       * and overlay sources use; the constant lives in useSpectatorSfx, which is where the queue
+       * that has to leave room for it lives too.
+       */
+      if (sightings > 0 && sightings % 3 === 0) {
+        if (fatesTimer.current !== null) clearTimeout(fatesTimer.current);
+        fatesTimer.current = window.setTimeout(() => {
+          fatesTimer.current = null;
+          playSfx("fates");
+        }, FATES_DELAY_MS);
+      }
       setToast(
         (mine ? `A sail at ${where}, and nothing under it.` : `${found?.who} sighted the Dutchman at ${where}.`) +
           (sightings > 1 ? ` That is ${sightings} sightings now.` : " She is already gone.")

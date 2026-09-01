@@ -557,7 +557,7 @@ const HONORS: Honor[] = [
       ),
   },
   {
-    title: "Thrice-Cursed",
+    title: "Fates Confirmed",
     emoji: "👻",
     guaranteed: true,
     /**
@@ -938,7 +938,7 @@ const HONORS: Honor[] = [
    * sinking anything, condemned to sail and never make port. It was deleted when an actual Dutchman
    * started appearing in the water: two unrelated things under one name, one a marker a player can
    * see and the other a scoring quirk they can't, is how a recap becomes unreadable. Its 👻 went to
-   * Thrice-Cursed. Nothing replaces it here, because the tier already covers that gunner three ways -
+   * Fates Confirmed. Nothing replaces it here, because the tier already covers that gunner three ways -
    * Coup de Grace names whoever kept taking those kills off them, and Master Gunner and Sharpest Eye
    * both catch someone landing hits.
    */

@@ -38,8 +38,18 @@ registerHooks({
 })
 
 const { groupIntoShots, outcomeText } = await import('../src/lib/attackFeed.ts')
-const { deepWater, deepMarks, finalMarks, finalFinds, tentacleCount, hidesExtras, bottleNote, BOTTLE_NOTE_COUNT } =
-  await import('../src/lib/deepWater.ts')
+const {
+  deepWater,
+  deepMarks,
+  finalMarks,
+  finalFinds,
+  fatesConfirmed,
+  sightingsBy,
+  tentacleCount,
+  hidesExtras,
+  bottleNote,
+  BOTTLE_NOTE_COUNT,
+} = await import('../src/lib/deepWater.ts')
 const { deepForArchive } = await import('../src/lib/deepArchive.ts')
 const { BAYLE_SQUARES, IGON_UNVEILED, igonUnveiled } = await import('../src/lib/squareSetFormat.ts')
 
@@ -221,6 +231,112 @@ console.log('\n-- what a client makes of the rows it can read ------------------
   check(
     'each crew credited with their own find',
     jars.alexander[0].found.attackerTeam === 0 && jars.alexander[1].found.attackerTeam === 1
+  )
+}
+
+console.log("\n-- somebody's third sail -------------------------------------------------\n")
+
+/**
+ * Fates Confirmed, announced as it happens instead of at the recap (fatesConfirmed, sightingsBy).
+ *
+ * The whole value of this is that a sting the stream hears is a title the recap will then hand out,
+ * and the only way that holds is if the tally is counted the way matchReport counts it: PER PERSON,
+ * keyed on the player id, falling back to the team for somebody who has left. Every case below is a
+ * way of getting that wrong that would still look right in a two-player test - three crewmates with
+ * one sighting each, two fleets adding up to three between them, two departed players merged into
+ * one - and each of them would fire the rarest sound in the game at a match where nobody earned it.
+ *
+ * Three squares are hers (asserted against the migration further down), so a single person tops out
+ * at three and this can fire at most once for them. The modulo is what keeps it honest if that ever
+ * changes.
+ */
+{
+  const r = room()
+  const SAILS = [7, 19, 31]
+  const hides = SAILS.map((c) => hide(c, 'dutchman'))
+
+  /** One sighting, by a named shooter. `fire` ties the player to the team; here they come apart. */
+  function sail(cell: number, team: number, playerId: string | null): Attack[] {
+    clock += 5000
+    const at = new Date(clock).toISOString()
+    return [1, 2].map((defender) => ({
+      id: `a${seq++}`,
+      room_id: 'room-1',
+      cell_index: cell,
+      attacker_team: team,
+      defender_team: defender,
+      attacker_player_id: playerId,
+      result: 'miss' as AttackResult,
+      sunk_ship_name: null,
+      sunk_ship_size: null,
+      sunk_start_row: null,
+      sunk_start_col: null,
+      sunk_horizontal: null,
+      created_at: at,
+      resolved_at: at,
+    }))
+  }
+
+  // -- one person, all three --------------------------------------------------
+  const alone = deep(r, SAILS.flatMap((c) => sail(c, 0, 'p0')), hides)
+  const aloneFates = fatesConfirmed(alone)
+  check('three sightings by one person confirms on the third', aloneFates.has(31))
+  check('and on the third only', aloneFates.size === 1 && !aloneFates.has(7) && !aloneFates.has(19))
+  check(
+    'the running total counts up for that person',
+    alone.dutchman.map((d) => sightingsBy(alone, d)).join(',') === '1,2,3'
+  )
+
+  // -- one crew, three people -------------------------------------------------
+  /**
+   * The case that rules out counting per crew. It is three sails for the fleet and one apiece for
+   * the people in it, so the recap hands out no Fates Confirmed and neither may this.
+   */
+  const crew = deep(
+    r,
+    [sail(7, 0, 'p0'), sail(19, 0, 'p0-b'), sail(31, 0, 'p0-c')].flat(),
+    hides
+  )
+  check('three crewmates with one each confirms nothing', fatesConfirmed(crew).size === 0)
+  check('and each of them is on one', crew.dutchman.every((d) => sightingsBy(crew, d) === 1))
+
+  // -- two fleets, three sails between them -----------------------------------
+  /**
+   * The case that rules out counting match-wide, which is the cheap version of this - deep.dutchman
+   * is already the whole room's sightings, so length % 3 would have fired here off rival fleets'
+   * shots. A find is never assembled out of somebody else's play.
+   */
+  const split = deep(r, [sail(7, 0, 'p0'), sail(19, 0, 'p0'), sail(31, 1, 'p1')].flat(), hides)
+  check('two fleets adding to three confirms nothing', fatesConfirmed(split).size === 0)
+  check('though the water still holds all three sightings', split.dutchman.length === 3)
+
+  // -- the count a toast may quote --------------------------------------------
+  /**
+   * deep.dutchman.length is every crew's sightings and a player is shown only their own, so a board
+   * quoting it would tell somebody their first sail was their second - off one they were never
+   * allowed to see. That the number moves at all is a rival crew's shot, reported.
+   */
+  const rival = deep(r, [sail(7, 0, 'p0'), sail(19, 1, 'p1')].flat(), hides)
+  check('a finder is told their own count, not the room total', sightingsBy(rival, rival.dutchman[0]) === 1)
+  check('even though the room has seen more', rival.dutchman.length === 2)
+
+  // -- whoever has left the room ----------------------------------------------
+  /**
+   * matchReport credits a departed player's finds to their fleet, so this has to as well or it would
+   * announce a third the recap then declines to award.
+   */
+  const gone = deep(r, SAILS.flatMap((c) => sail(c, 0, null)), hides)
+  check('a departed crew still confirms, credited to the fleet', fatesConfirmed(gone).has(31))
+
+  /** ...and two departed players on different fleets are two people, not one. */
+  const goneApart = deep(r, [sail(7, 0, null), sail(19, 0, null), sail(31, 1, null)].flat(), hides)
+  check('two fleets of departed players do not merge', fatesConfirmed(goneApart).size === 0)
+
+  // -- nothing to confirm ------------------------------------------------------
+  check('an empty sea confirms nothing', fatesConfirmed(deep(r, [], hides)).size === 0)
+  check(
+    'and a sighting that is not in this water has no honest count',
+    sightingsBy(deep(r, [], hides), alone.dutchman[2]) === 0
   )
 }
 

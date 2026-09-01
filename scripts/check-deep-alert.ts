@@ -131,6 +131,18 @@ console.log("\ntwo of the SAME find in one tick");
   // four times, and the second crew still has their square marked on every board.
   const tick = freshDeepEvents([find(1, "bottle", "blue"), find(2, "bottle", "red")], seen);
   ok("collapses to one, keeping the later", tick.fresh.length === 1 && tick.fresh[0] === "red");
+
+  /**
+   * The one case where that costs something worth naming: two sightings landing together, of which
+   * only one is somebody's third. The chord rides on the sighting (see useSpectatorSfx), so if the
+   * collapse keeps the other one the third goes unannounced live.
+   *
+   * Left alone deliberately. It needs two crews sighting her inside a single realtime tick, the
+   * recap still hands out Fates Confirmed either way, and the alternative is keying the collapse on
+   * the square - which is the change that would announce a wake four times over.
+   */
+  const sails = freshDeepEvents([find(7, "dutchman", "third"), find(19, "dutchman", "ordinary")], new Set());
+  ok("two sightings in one tick still collapse", sails.fresh.length === 1);
 }
 
 console.log("\nan empty sea");

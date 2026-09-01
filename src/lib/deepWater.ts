@@ -652,6 +652,86 @@ export function finalMarks(deep: DeepWater): Map<number, DeepMark> {
   return deepMarks(deep);
 }
 
+/**
+ * The squares where somebody's THIRD sighting of the Dutchman landed.
+ *
+ * The moment Fates Confirmed is earned, worked out live instead of at the recap - the one honor in
+ * the water that is reached by degrees rather than all at once, and so the only one that can be
+ * announced while the match is still running.
+ *
+ * -- Per person, and why that is the only shape that works ----------------------------------------
+ *
+ * Counted by FINDER, keyed exactly as matchReport's `finder` keys it - the player id, falling back
+ * to the team for somebody who has since left the room. That is not a detail: the whole value of
+ * this is that anything it announces is a title the recap will then hand out, and a tally that
+ * counted differently would give a stream a sting with no honor behind it.
+ *
+ * Per CREW was the obvious alternative and is wrong for that reason. Three crewmates with one
+ * sighting each is three-for-the-fleet and nothing at all for any of them, so it would fire into a
+ * match where nobody is Fates Confirmed. Per MATCH is worse again: it assembles the moment out of
+ * rival fleets' shots, which is the thing a find is never allowed to be.
+ *
+ * -- Why modulo, when three is the ceiling ---------------------------------------------------------
+ *
+ * Three squares are the Dutchman's and a sighting is once per crew per square (see meetOnce), so a
+ * single person tops out at three and this can fire at most once for them. The modulo is not
+ * reaching for a sixth that cannot happen - it is what keeps this honest if a board ever hides more
+ * of her, which is a one-line change in the migration and would otherwise silently stop announcing
+ * anything past the first three.
+ *
+ * Returns squares rather than finds because that is what the callers can act on: the sound queue and
+ * the alert both key on the cell, and neither of them knows who fired anything.
+ */
+export function fatesConfirmed(deep: DeepWater): Set<number> {
+  const out = new Set<number>();
+  // deep.dutchman is chronological - the walk builds it in shot order - so counting forwards lands
+  // the mark on the sighting that actually WAS the third, not on whichever square sorts last.
+  for (const [sighting, n] of walkSightings(deep)) {
+    if (n % 3 === 0) out.add(sighting.cellIndex);
+  }
+  return out;
+}
+
+/**
+ * How many times the person who fired THIS sighting had seen her, counting it.
+ *
+ * What a toast beside the sail should say, and it is not `deep.dutchman.length`. That number is
+ * every crew's sightings, and a player is shown only their own crew's - so quoting it tells
+ * somebody their first sail is their third, off two they were never allowed to see. Which is worse
+ * than confusing: a count that moves without a mark appearing is a rival crew's shot, reported.
+ *
+ * Returns 0 for a sighting that is not in this water at all, which is a caller mistake rather than
+ * a state - there is no honest number to give for it.
+ */
+export function sightingsBy(deep: DeepWater, sighting: DeepFind): number {
+  for (const [seen, n] of walkSightings(deep)) {
+    if (seen === sighting) return n;
+  }
+  return 0;
+}
+
+/** Sightings in order, each with its finder's running total. The one place the tally rule lives. */
+function* walkSightings(deep: DeepWater): Generator<[DutchmanSighting, number]> {
+  const byFinder = new Map<string, number>();
+  for (const sighting of deep.dutchman) {
+    const key = finderKey(sighting);
+    const n = (byFinder.get(key) ?? 0) + 1;
+    byFinder.set(key, n);
+    yield [sighting, n];
+  }
+}
+
+/**
+ * Who a find is credited to, keyed exactly as matchReport's `finder` keys it.
+ *
+ * The fallback to the team is not a tidy-up for a missing id: a player who has left the room is
+ * credited to their fleet by the recap, so anything counting alongside the recap has to agree, or
+ * it will announce a third that no honor follows.
+ */
+function finderKey(found: DeepFind): string {
+  return found.playerId ?? `team:${found.attackerTeam}`;
+}
+
 /** One find, resolved to the marker its square ends the match drawn with. */
 export interface DeepFindRow {
   find: DeepFind;

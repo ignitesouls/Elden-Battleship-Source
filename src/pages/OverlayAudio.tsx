@@ -4,9 +4,9 @@ import { useRoom } from "../hooks/useRoom";
 import { useBattlePhaseName, usePauseInfo } from "../hooks/useBattlePhase";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
 import { groupIntoShots } from "../lib/attackFeed";
-import { deepWater, deepMarks } from "../lib/deepWater";
+import { deepWater, deepMarks, fatesConfirmed } from "../lib/deepWater";
 import { igonAnchor } from "../lib/challenges";
-import { playSfx, setVolumeOverride, onAudioBlocked, primeAudio } from "../lib/sfx";
+import { playSfx, setVolumeOverride, setDeepOverride, onAudioBlocked, primeAudio } from "../lib/sfx";
 import "./OverlayAudio.css";
 
 /**
@@ -64,6 +64,28 @@ export function OverlayAudio(props: OverlaySourceProps = {}) {
   }, [vol]);
 
   /**
+   * Whether the finds are audible, from the URL - the same arrangement the level uses, and for the
+   * same reason: this page renders no top bar, and the browser it runs in has nobody sitting at it
+   * to click the toggle that lives there.
+   *
+   * Unset leaves them playing, which is the only defensible default here: the finds are most of why
+   * this source exists at all - see the header - so a source that quietly dropped them would be the
+   * failure this page's autoplay probe was written to prevent, arriving by a different door.
+   * `?deep=0` is for the scene where the room's shots ride under a caster who would rather announce
+   * a whale than be interrupted by one.
+   *
+   * Cleared on unmount like the level, so one source can never redefine another's default in an OBS
+   * install where every browser source shares a profile.
+   */
+  const deepParam = params.get("deep");
+  useEffect(() => {
+    setDeepOverride(
+      deepParam === null || deepParam === "" ? null : deepParam !== "0" && deepParam !== "false"
+    );
+    return () => setDeepOverride(null);
+  }, [deepParam]);
+
+  /**
    * Whether the browser will let us make a noise at all.
    *
    * OBS normally starts its browser with autoplay allowed, so this is usually settled before
@@ -115,10 +137,18 @@ export function OverlayAudio(props: OverlaySourceProps = {}) {
     [room, attacks, players, deepHides]
   );
   const deepCells = useMemo(() => (deep ? deepMarks(deep) : undefined), [deep]);
+  /**
+   * The sightings that were somebody's third, so the chord goes in behind the bell.
+   *
+   * Every crew's, like everything else this source announces. A find belongs to the sea rather than
+   * to a fleet, and the honor behind this one is per person anyway - so there is nothing here that
+   * would be improved by holding one crew's back.
+   */
+  const fates = useMemo(() => (deep ? fatesConfirmed(deep) : undefined), [deep]);
 
   // Every shot in the room, one sound per trigger-pull, plus whatever the water gives up. This is
   // the same hook the spectator's seat uses and for the same reason - see useSpectatorSfx.
-  useSpectatorSfx(attacks, true, deepCells);
+  useSpectatorSfx(attacks, true, deepCells, fates);
 
   /**
    * The horns, the pause chime and the final sting - everything that is about the MATCH rather than

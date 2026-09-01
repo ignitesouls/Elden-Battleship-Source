@@ -230,6 +230,12 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
    * mute button that can be ridden mid-match - and a number baked into the link would be a second
    * volume control that the fader silently overrules. Better to ship no opinion and let the mixer
    * hold the only one.
+   *
+   * `?deep=0` is the other thing it will read and the other thing this box declines to write: it
+   * silences the finds and leaves the shots, which is a call about what the broadcast is FOR rather
+   * than a setting with a right answer, and the default here has to be the one that makes the source
+   * worth adding. A desk that wants it types it; see pages/OverlayAudio, and the top bar's own
+   * toggle for the tab version of the same choice.
    */
   const audioQuery = new URLSearchParams();
   if (crew !== null) audioQuery.set("team", String(crew));

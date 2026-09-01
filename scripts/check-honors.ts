@@ -779,7 +779,7 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
       return buildMatchReport(r, [ada, bo], log.attacks, hides)
     })()
     check('Sighted the Dutchman goes to the first sail', holder(once, 'Sighted the Dutchman') === 'Ada', holder(once, 'Sighted the Dutchman') ?? '-')
-    check('and one sighting is not yet a curse', !titles(once).includes('Thrice-Cursed'))
+    check('and one sighting is not yet a curse', !titles(once).includes('Fates Confirmed'))
 
     const thrice = (() => {
       const log = new Log()
@@ -787,8 +787,8 @@ const awarded = (report: { awards: Array<{ title: string; nickname: string }> },
       for (const c of sails) log.shot(ada, 1, c, 'miss')
       return buildMatchReport(r, [ada, bo], log.attacks, hides)
     })()
-    check('three sightings is Thrice-Cursed', holder(thrice, 'Thrice-Cursed') === 'Ada', holder(thrice, 'Thrice-Cursed') ?? '-')
-    check('and it counts them', detailOf(thrice, 'Thrice-Cursed').includes('3'), detailOf(thrice, 'Thrice-Cursed'))
+    check('three sightings is Fates Confirmed', holder(thrice, 'Fates Confirmed') === 'Ada', holder(thrice, 'Fates Confirmed') ?? '-')
+    check('and it counts them', detailOf(thrice, 'Fates Confirmed').includes('3'), detailOf(thrice, 'Fates Confirmed'))
     // Singular, and its owner already holds the rarer title - so it goes unawarded rather than down.
     check('the lesser sighting does not also go out', !given(thrice).includes('Sighted the Dutchman'), given(thrice).join(', '))
   }

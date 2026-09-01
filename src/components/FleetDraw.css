@@ -1,0 +1,364 @@
+/**
+ * The fleet draw.
+ *
+ * Deliberately its own visual world rather than the lobby's: this is a thing
+ * the room watches together, often on a projector or a stream, so it takes the
+ * whole viewport and commits to a night sea instead of trying to sit politely
+ * inside the page.
+ */
+
+.fd-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: #060f16;
+  overflow: hidden;
+}
+
+.fd-modal.presenting {
+  padding: 0;
+  gap: 0;
+}
+
+.fd-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 320px;
+  border: 1px solid rgba(198, 222, 232, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+  background: #0a1824;
+}
+
+.fd-modal.presenting .fd-stage {
+  border: 0;
+  border-radius: 0;
+}
+
+.fd-sea {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The only thing marking a side is a rule in its own colour. No labels and no
+   counts - the caster says whose side is whose. */
+.fd-zones {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: fd-lit 1400ms ease both;
+}
+
+@keyframes fd-lit {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fd-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(6, 15, 22, 0), rgba(6, 15, 22, 0.4));
+  border-left: 1px solid rgba(198, 222, 232, 0.07);
+}
+
+.fd-zone:first-child { border-left: 0; }
+
+.fd-zone-rule {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 22px;
+  height: 2px;
+  opacity: 0.5;
+}
+
+.fd-modal.presenting .fd-zone-rule { top: 30px; }
+
+/* ---- ships ---- */
+
+.fd-ship {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.fd-bob {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  animation: fd-bob 3.8s ease-in-out infinite alternate;
+}
+
+@keyframes fd-bob {
+  from { transform: translateY(-2px) rotate(-1.6deg); }
+  to { transform: translateY(2px) rotate(1.6deg); }
+}
+
+/* The ONLY node that flips, so a nameplate never comes out mirrored. */
+.fd-hull {
+  transform: scaleX(var(--face, 1));
+  transition: transform 650ms ease;
+}
+
+.fd-ship[data-face="-1"] .fd-hull { --face: -1; }
+.fd-ship[data-face="1"] .fd-hull { --face: 1; }
+
+.fd-hull svg {
+  display: block;
+  height: 62px;
+  width: auto;
+  overflow: visible;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55));
+}
+
+.fd-modal.presenting .fd-hull svg { height: 92px; }
+
+.fd-hull { fill: #6b4a33; stroke: #2b1c13; stroke-width: 2.2; stroke-linejoin: round; }
+.fd-castle { fill: #5b3f2c; stroke: #2b1c13; stroke-width: 2; stroke-linejoin: round; }
+.fd-spar { fill: none; stroke: #3f2c1e; stroke-width: 2.4; stroke-linecap: round; }
+.fd-rig { fill: none; stroke: rgba(40, 28, 19, 0.7); stroke-width: 1.1; stroke-linecap: round; }
+.fd-port { fill: #1d1310; }
+
+/* Canvas stays canvas until she moors. The colour IS the reveal, so nothing
+   may leak it early - not the sails, not the flag, not the nameplate. The
+   lobby hex is cut with cream because at full strength the purple and the
+   green both go muddy against dark water. */
+.fd-sail,
+.fd-sail-lee,
+.fd-flag {
+  fill: color-mix(in srgb, var(--sail, #e8dcc2) 72%, #f2e9d6);
+  stroke: #23303a;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  transition: fill 900ms ease;
+}
+
+.fd-sail-lee { filter: brightness(0.84); }
+.fd-flag { stroke: none; }
+
+.fd-plate {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #dce9ec;
+  background: rgba(6, 15, 22, 0.82);
+  border: 1px solid rgba(198, 222, 232, 0.07);
+  padding: 0 7px;
+  border-radius: 2px;
+  max-width: 152px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 900ms ease;
+}
+
+.fd-modal.presenting .fd-plate { font-size: 18px; max-width: 220px; }
+.fd-ship[data-moored="1"] .fd-plate { border-color: var(--sail); }
+
+/* ---- what the water says back ---- */
+
+.fd-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #dce9ec;
+  background: rgba(6, 15, 22, 0.9);
+  border: 1px solid rgba(198, 222, 232, 0.14);
+  border-radius: 3px;
+  padding: 5px 11px;
+  max-width: 260px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 50;
+  animation: fd-pop 260ms cubic-bezier(0.2, 1.4, 0.4, 1), fd-fade 700ms ease 2500ms both;
+}
+
+.fd-bubble.note { border-color: rgba(126, 206, 190, 0.6); }
+
+.fd-bubble.shout {
+  border-color: #c9a55f;
+  color: #c9a55f;
+  font-size: 19px;
+  letter-spacing: 0.12em;
+}
+
+.fd-bubble.ghost {
+  border-color: rgba(196, 242, 226, 0.7);
+  color: #cdf3e6;
+  font-style: italic;
+}
+
+.fd-modal.presenting .fd-bubble { font-size: 19px; }
+.fd-modal.presenting .fd-bubble.shout { font-size: 25px; }
+
+@keyframes fd-pop {
+  from { opacity: 0; transform: translate(-50%, -80%) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+}
+
+@keyframes fd-fade {
+  to { opacity: 0; transform: translate(-50%, -140%); }
+}
+
+/* ---- controls ---- */
+
+.fd-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  z-index: 40;
+  opacity: 0.4;
+  transition: opacity 200ms ease;
+}
+
+.fd-stage:hover .fd-bar,
+.fd-bar:focus-within { opacity: 1; }
+
+.fd-status {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8ea5b1;
+  background: rgba(6, 15, 22, 0.7);
+  border: 1px solid rgba(198, 222, 232, 0.07);
+  border-radius: 2px;
+  padding: 6px 12px;
+}
+
+.fd-act {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 10px 20px;
+  border-radius: 2px;
+  border: 1px solid #c9a55f;
+  background: #c9a55f;
+  color: #101a12;
+  cursor: pointer;
+  transition: background 180ms ease, opacity 180ms ease;
+}
+
+.fd-act:hover:not(:disabled) { background: #dcb972; }
+.fd-act.ghost {
+  background: transparent;
+  color: #8ea5b1;
+  border-color: rgba(198, 222, 232, 0.14);
+}
+.fd-act.ghost:hover:not(:disabled) { background: rgba(198, 222, 232, 0.06); color: #dce9ec; }
+.fd-act:disabled { opacity: 0.36; cursor: not-allowed; }
+
+.fd-controls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.fd-field { display: flex; flex-direction: column; gap: 7px; }
+.fd-grow { flex: 1 1 320px; min-width: 0; }
+
+.fd-label {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #5f7784;
+}
+
+.fd-seg {
+  display: inline-flex;
+  border: 1px solid rgba(198, 222, 232, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fd-seg button {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border: 0;
+  border-left: 1px solid rgba(198, 222, 232, 0.14);
+  background: transparent;
+  color: #8ea5b1;
+  cursor: pointer;
+}
+
+.fd-seg button:first-child { border-left: 0; }
+.fd-seg button[aria-pressed="true"] { background: #c9a55f; color: #101a12; }
+.fd-seg button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.fd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+.fd-chip {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(198, 222, 232, 0.14);
+  background: transparent;
+  color: #5f7784;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fd-chip[aria-pressed="true"] {
+  color: #dce9ec;
+  border-color: #c9a55f;
+  background: rgba(201, 165, 95, 0.13);
+}
+
+.fd-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: #5f7784;
+}
+
+.fd-act:focus-visible,
+.fd-chip:focus-visible,
+.fd-seg button:focus-visible {
+  outline: 2px solid #c9a55f;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fd-bob { animation: none; }
+  .fd-hull, .fd-sail, .fd-sail-lee, .fd-flag, .fd-plate, .fd-zones { transition: none; animation: none; }
+  /* The bubble still needs to appear and is still removed on a timer; it just
+     arrives without the pop and leaves without the drift. */
+  .fd-bubble { animation: none; }
+}

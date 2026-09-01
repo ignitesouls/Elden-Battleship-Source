@@ -1,4 +1,5 @@
 /** Small per-cell result markers, drawn in place of a flat hit/miss/sunk background wash. */
+import { useId } from "react";
 import type { DeepMark } from "../lib/deepWater";
 
 /**
@@ -236,28 +237,106 @@ export function TentacleMark({ awake }: { awake?: boolean }) {
  *
  * He also fades in and out rather than sitting still. Every other marker here asserts a fact; this is
  * the only one that should look unsure it is there.
+ *
+ * -- The first second of him ------------------------------------------------------------------------
+ *
+ * He arrives as one bit per pixel - black and white, dithered, no greys - and resolves into the
+ * sea-green over the same 1.1s his fade already ran for. A second copy of the rigging sits on top
+ * under a threshold filter and dissolves off it; underneath, the ordinary ship has been there the
+ * whole time.
+ *
+ * Which is a joke, and it is also the only treatment that does not contradict the paragraph above.
+ * A hard 1-bit ship ASSERTS - it is the most certain-looking thing that could be done to a drawing -
+ * so it is confined to the arrival and never to the resting state. He turns up as a recorded moment
+ * and then goes back to being unsure he is there.
+ *
+ * It costs one extra copy of the rigging per sighting, on at most three squares a match, and is worth
+ * more in pages/OverlayEgg than on the board: the alert mounts this same component at several hundred
+ * pixels, where the dither is unmistakable, and the entry animation is exactly the alert's cue.
  */
 export function DutchmanMark() {
+  // Every mark on a board defines this filter, and duplicate ids in one document resolve to whichever
+  // came first - which breaks the moment that one unmounts. React hands out a unique one per instance.
+  const uid = useId();
+  const oneBit = `dutchman-1bit-${uid}`;
+
+  const rigging = (
+    <>
+      {/* Wake, trailing off astern - the only thing saying he is under way. */}
+      <path className="dutchman-wake" d="M4,80 C14,78 24,79 32,81" />
+      <path className="dutchman-wake" d="M2,86 C12,84 22,85 28,87" />
+      <path className="dutchman-spar" d="M32,66 L32,16 M52,66 L52,6 M70,66 L70,20" />
+      <path className="dutchman-spar" d="M20,20 L44,20 M38,12 L66,12 M60,24 L80,24" />
+      <path className="dutchman-sail" d="M21,21 L43,21 L42,41 L38,34 L34,43 L29,33 L25,42 L22,33 Z" />
+      <path className="dutchman-sail" d="M39,13 L65,13 L64,37 L59,29 L54,40 L48,30 L43,39 L40,29 Z" />
+      <path className="dutchman-sail" d="M61,25 L79,25 L78,43 L74,36 L70,45 L65,35 L62,43 Z" />
+      <path className="dutchman-rip" d="M31,24 L34,31 M50,17 L47,25 M57,20 L60,27 M69,29 L72,35" />
+      <path className="dutchman-hull" d="M8,66 L93,66 C91,78 79,86 51,86 C25,86 12,78 8,66 Z" />
+      {/* Stern castle and bowsprit: the two shapes that stop a hull reading as a banana. */}
+      <path className="dutchman-hull" d="M8,66 L8,53 L22,53 L22,66 Z" />
+      <path className="dutchman-spar" d="M91,64 L100,55" />
+      <path className="dutchman-rip" d="M30,68 L30,80 M46,68 L46,83 M62,68 L62,81" />
+      {/* Stern lamp, still lit after all this time. */}
+      <circle className="dutchman-lamp" cx="15" cy="47" r="3" />
+    </>
+  );
+
   return (
     <svg viewBox="0 0 100 100" className="dutchman-mark" aria-hidden="true">
+      <defs>
+        {/**
+         * Luminance, plus grain, cut hard down the middle: no greys survive.
+         *
+         * The grain is what makes it a DITHER rather than a posterisation. feTurbulence renders in
+         * user units, and the viewBox is 100 wide however big the square is - so the dots scale with
+         * the drawing. In the alert at several hundred pixels they are the chunky Macintosh pattern
+         * this is quoting; in a 20px board square they fall under a pixel and quietly become a
+         * slightly ragged threshold, which is the right answer at that size and needs no second code
+         * path to get it.
+         *
+         * The three numbers worth touching, if this wants tuning: baseFrequency is how coarse the
+         * dots are, k3 is how much grain rides on the image, and k4 is where the cut falls - more
+         * negative is a darker ship.
+         */}
+        <filter id={oneBit} x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+          <feColorMatrix in="SourceGraphic" type="saturate" values="0" result="grey" />
+          {/* Alpha forced to 1, so this is used as a VALUE and never smears the ship's silhouette. */}
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="4" result="raw" />
+          <feColorMatrix
+            in="raw"
+            type="matrix"
+            values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1"
+            result="grain"
+          />
+          <feComposite in="grey" in2="grain" operator="arithmetic" k1="0" k2="1" k3="0.45" k4="-0.24" result="mixed" />
+          {/* Two steps per channel is the whole point. Alpha is flattened here and put back below. */}
+          <feComponentTransfer in="mixed" result="bits">
+            <feFuncR type="discrete" tableValues="0 1" />
+            <feFuncG type="discrete" tableValues="0 1" />
+            <feFuncB type="discrete" tableValues="0 1" />
+            <feFuncA type="linear" slope="0" intercept="1" />
+          </feComponentTransfer>
+          {/**
+           * The silhouette, opened right up.
+           *
+           * He is drawn translucent on purpose - fill-opacity 0.22 on the hull, 0.26 on the sails -
+           * and a 1-bit copy at those levels is just the green ship with grit on it. The slope makes
+           * the arriving copy solid without touching the one underneath, which stays as it was.
+           */}
+          <feComponentTransfer in="SourceGraphic" result="solid">
+            <feFuncA type="linear" slope="5" intercept="0" />
+          </feComponentTransfer>
+          <feComposite in="bits" in2="solid" operator="in" />
+        </filter>
+      </defs>
       <ellipse className="dutchman-aura" cx="50" cy="52" rx="46" ry="40" />
-      <g className="dutchman-body">
-        {/* Wake, trailing off astern - the only thing saying he is under way. */}
-        <path className="dutchman-wake" d="M4,80 C14,78 24,79 32,81" />
-        <path className="dutchman-wake" d="M2,86 C12,84 22,85 28,87" />
-        <path className="dutchman-spar" d="M32,66 L32,16 M52,66 L52,6 M70,66 L70,20" />
-        <path className="dutchman-spar" d="M20,20 L44,20 M38,12 L66,12 M60,24 L80,24" />
-        <path className="dutchman-sail" d="M21,21 L43,21 L42,41 L38,34 L34,43 L29,33 L25,42 L22,33 Z" />
-        <path className="dutchman-sail" d="M39,13 L65,13 L64,37 L59,29 L54,40 L48,30 L43,39 L40,29 Z" />
-        <path className="dutchman-sail" d="M61,25 L79,25 L78,43 L74,36 L70,45 L65,35 L62,43 Z" />
-        <path className="dutchman-rip" d="M31,24 L34,31 M50,17 L47,25 M57,20 L60,27 M69,29 L72,35" />
-        <path className="dutchman-hull" d="M8,66 L93,66 C91,78 79,86 51,86 C25,86 12,78 8,66 Z" />
-        {/* Stern castle and bowsprit: the two shapes that stop a hull reading as a banana. */}
-        <path className="dutchman-hull" d="M8,66 L8,53 L22,53 L22,66 Z" />
-        <path className="dutchman-spar" d="M91,64 L100,55" />
-        <path className="dutchman-rip" d="M30,68 L30,80 M46,68 L46,83 M62,68 L62,81" />
-        {/* Stern lamp, still lit after all this time. */}
-        <circle className="dutchman-lamp" cx="15" cy="47" r="3" />
+      <g className="dutchman-body">{rigging}</g>
+      {/* The arriving copy. Its own wrapper because the fade and the drift are both opacity, and one
+          element cannot run two animations on the same property - see BoardGrid.css. */}
+      <g className="dutchman-1bit">
+        <g className="dutchman-body" filter={`url(#${oneBit})`}>
+          {rigging}
+        </g>
       </g>
     </svg>
   );

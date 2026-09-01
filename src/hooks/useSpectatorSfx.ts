@@ -7,18 +7,21 @@ import type { Attack } from "../types/battleship";
 /**
  * What each find sounds like.
  *
- * Two of them borrow rather than owning a file: the ghost ship takes the whale call, because a
- * mournful horn out of the fog is the same register and Laboon already established that two
- * creatures may share one, and Patches takes the tentacle sound, since hearing the dread and
- * getting HIM is the joke. Alexander uses one file for both his states, which is the same argument
- * the tentacle and the sleeper make.
+ * Two of them borrow rather than owning a file: Laboon takes the whale call, because two creatures
+ * in the same register may share one, and Patches takes the tentacle sound, since hearing the dread
+ * and getting HIM is the joke. Alexander uses one file for both his states, which is the same
+ * argument the tentacle and the sleeper make.
+ *
+ * The Dutchman borrowed the whale too, until she got her bell. The register was right and the
+ * reasoning still reads, but a whale call is an animal making a noise, and the entire point of that
+ * ship is that there is nobody aboard to make one - see lib/sfx.
  */
 const SOUND = {
   whale: "whale",
   laboon: "whale",
   tentacle: "tentacle",
   sleeper: "awaken",
-  dutchman: "whale",
+  dutchman: "dutchman",
   patches: "tentacle",
   bottle: "bottle",
   jar: "jar",
@@ -37,6 +40,26 @@ const SOUND = {
  * and short enough that a second find still feels like part of the same moment.
  */
 const SFX_GAP_MS = 1500;
+
+/**
+ * How far behind a sighting the third-fate sting arrives.
+ *
+ * Under the Dutchman's bell rather than after it. Her cue is 3.8s of swell, two tolls at 0.18 and
+ * 1.32, and a long tail; 1.2s puts the sting over the top of the second toll, so what a listener
+ * hears is one event that resolves rather than a find and then an announcement about it.
+ */
+export const FATES_DELAY_MS = 1200;
+
+/**
+ * The gap owed to whatever is queued BEHIND a sighting that carries the sting.
+ *
+ * The ordinary gap is measured from one sting to the next, and this one is 6.3s that starts after
+ * the sighting has already begun - so the usual 1500 would drop the next find straight onto the
+ * front of it. This protects the ARRIVAL and not the whole file: waiting out all 7.5s would stall
+ * the queue on a board where other things are still being found, and a tail is allowed to be played
+ * over. The 3.8s Dutchman bell is already treated that way by the ordinary gap.
+ */
+const FATES_GAP_MS = FATES_DELAY_MS + 3000;
 
 /**
  * Sound for someone watching rather than playing.
@@ -60,11 +83,15 @@ const SFX_GAP_MS = 1500;
  * @param deepCells what has been found in the water, if the caller knows (see lib/deepWater). Passing
  * it is what lets a whale sing on a spectator's screen: the shot that found it is a miss against every
  * fleet, so from `attacks` alone the rarest moment in a match sounds like the dullest one.
+ * @param fates squares where a sighting was somebody's THIRD - lib/deepWater's fatesConfirmed. Squares
+ * rather than people because that is all this hook has: `deepCells` is a map of marks, and who fired
+ * anything was thrown away several layers up. Omit it and sightings simply sound like sightings.
  */
 export function useSpectatorSfx(
   attacks: Attack[],
   enabled = true,
-  deepCells?: ReadonlyMap<number, DeepMark>
+  deepCells?: ReadonlyMap<number, DeepMark>,
+  fates?: ReadonlySet<number>
 ): void {
   const seen = useRef(new Set<string>());
   const primed = useRef(false);
@@ -112,8 +139,30 @@ export function useSpectatorSfx(
    * information. Two crews turning up two different things a second apart is rare, and it is
    * exactly the moment a stream should be making a noise about both.
    */
-  const waiting = useRef<DeepMark[]>([]);
+  /**
+   * The square travels with the mark, which it did not used to.
+   *
+   * A queue of marks alone was enough while every find of a kind sounded the same. It stopped being
+   * enough with the third-fate chord: two sightings in one match are the same mark on different
+   * squares, and only one of them is anybody's third.
+   */
+  const waiting = useRef<Array<{ cell: number; mark: DeepMark }>>([]);
   const timer = useRef<number | null>(null);
+  /**
+   * The chord's own timer, held separately from the queue's.
+   *
+   * It has to be: the queue moves on while this is still pending, so a single ref would be
+   * overwritten by the next find and the chord would never be cancelled on unmount.
+   */
+  const fatesTimer = useRef<number | null>(null);
+  /**
+   * The live set, read at the moment a sighting is played rather than captured when it was queued.
+   *
+   * `pump` is a stable callback and the set arrives as a prop, so closing over it would freeze
+   * whatever was passed on the first render - which is an empty match, every time.
+   */
+  const fatesRef = useRef<ReadonlySet<number> | undefined>(fates);
+  fatesRef.current = fates;
 
   const pump = useCallback(() => {
     const next = waiting.current.shift();
@@ -121,15 +170,29 @@ export function useSpectatorSfx(
       timer.current = null;
       return;
     }
-    playSfx(SOUND[next]);
-    timer.current = window.setTimeout(pump, SFX_GAP_MS);
+    playSfx(SOUND[next.mark]);
+
+    // Somebody's third sail. The chord goes in behind the bell rather than after it - see
+    // FATES_DELAY_MS - and whatever is queued behind waits for it.
+    const confirmed = next.mark === "dutchman" && (fatesRef.current?.has(next.cell) ?? false);
+    if (confirmed) {
+      if (fatesTimer.current !== null) clearTimeout(fatesTimer.current);
+      fatesTimer.current = window.setTimeout(() => {
+        fatesTimer.current = null;
+        playSfx("fates");
+      }, FATES_DELAY_MS);
+    }
+
+    timer.current = window.setTimeout(pump, confirmed ? FATES_GAP_MS : SFX_GAP_MS);
   }, []);
 
   // A queue that outlived its page would go on playing into a closed tab.
   useEffect(() => {
     return () => {
       if (timer.current !== null) clearTimeout(timer.current);
+      if (fatesTimer.current !== null) clearTimeout(fatesTimer.current);
       timer.current = null;
+      fatesTimer.current = null;
       waiting.current = [];
     };
   }, []);
@@ -139,7 +202,7 @@ export function useSpectatorSfx(
     // Priming, the wake collapse and the headline ordering all live in lib/deepQueue, shared with
     // the alert source so the sound and the picture can never disagree about what just happened.
     const { fresh, keys } = freshDeepEvents(
-      [...deepCells].map(([cell, mark]) => ({ cell, mark, item: mark })),
+      [...deepCells].map(([cell, mark]) => ({ cell, mark, item: { cell, mark } })),
       heardDeep.current
     );
     heardDeep.current = keys;

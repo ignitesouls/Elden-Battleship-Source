@@ -13,7 +13,9 @@
  *   * a re-reported kill is skipped instead of firing twice - the property that lets the mod send
  *     full state every tick without an acknowledgement protocol
  *   * the kill time is honoured but clamped, so timing records can't be backdated
- *   * the tally matches what the scoreboard would say
+ *   * the tally matches what the scoreboard would say, including that a shot which sinks a hull
+ *     counts as a hit - `sunk` is a separate verdict from `hit` and a tally that tests only for
+ *     the latter files every kill shot as a miss
  *   * every refusal path refuses: unknown token, no live match, wrong square set
  *
  * Board derivation deliberately imports the app's real buildFlatBoard and seededRandom rather than
@@ -209,7 +211,7 @@ try {
   check('landed on the derived cell', first.body.fired?.[0]?.cell === cell, `got ${first.body.fired?.[0]?.cell}`)
   check(
     'shot was resolved, not left pending',
-    first.body.fired?.[0]?.result === 'hit' || first.body.fired?.[0]?.result === 'miss',
+    ['hit', 'miss', 'sunk'].includes(first.body.fired?.[0]?.result),
     `result=${first.body.fired?.[0]?.result}`
   )
 
@@ -264,7 +266,7 @@ try {
     (sq, i) => i > cell && sq?.tooltip && bossFlags[sq.tooltip] !== undefined
   )
   const ancient = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  await post({ token, kills: [{ flag: bossFlags[board[cell2].tooltip!], at: ancient }] })
+  const backdated = await post({ token, kills: [{ flag: bossFlags[board[cell2].tooltip!], at: ancient }] })
   const { data: clampedRow } = await alpha.client
     .from('attacks')
     .select('created_at')
@@ -274,6 +276,89 @@ try {
     .single()
   const drift = Date.now() - new Date(clampedRow!.created_at as string).getTime()
   check('an hour-old kill time is clamped, not accepted', drift < 30_000, `${Math.round(drift / 1000)}s old`)
+
+  /* --- a sinking shot is still a hit --------------------------------------------------------- */
+
+  // The regression this exists for: resolve_attack answers `sunk`, not `hit`, for the shot that
+  // finishes a hull, so a tally testing for `hit` alone files every kill shot as a miss. It shows up
+  // as an overlay that disagrees with the scoreboard about the same match, and only once something
+  // has actually sunk - which is exactly why every check above passed while it was broken. The two
+  // shots fired here are the first in this script that connect with anything at all.
+  //
+  // Cells come from fleetRows(), not a second copy of the layout, so if the placement helper moves
+  // its ships this test moves with them. Shortest hull on the board = fewest shots to sink.
+  const hullIndex = SHIPS.reduce((best, s, i) => (s.size < SHIPS[best].size ? i : best), 0)
+  const hull = fleetRows(2).placements[hullIndex]
+  const hullCells = Array.from(
+    { length: SHIPS[hullIndex].size },
+    (_, i) => hull.startRow * BOARD + hull.startCol + i
+  )
+  const hullFlags = hullCells
+    .map((c) => {
+      const t = board[c]?.tooltip
+      // A tooltip sitting on two cells would fire two shots from one flag and break the arithmetic
+      // below. It cannot happen with 206 squares over 100 cells, but a smaller set would.
+      if (!t || board.filter((sq) => sq?.tooltip === t).length !== 1) return undefined
+      return bossFlags[t]
+    })
+    .filter((f): f is number => f !== undefined)
+  check(
+    `${SHIPS[hullIndex].name} occupies flagged cells ${hullCells.join(', ')}`,
+    hullFlags.length === hullCells.length,
+    `${hullFlags.length}/${hullCells.length} usable - setup problem, not an endpoint bug`
+  )
+
+  if (hullFlags.length === hullCells.length) {
+    const before = backdated.body.tally
+    const fires: Awaited<ReturnType<typeof post>>[] = []
+    for (const f of hullFlags) fires.push(await post({ token, kills: [{ flag: f }] }))
+    const sank = fires[fires.length - 1]
+
+    check(
+      'every hull cell fired one square',
+      fires.every((r) => r.body.fired?.length === 1),
+      fires.map((r) => r.body.fired?.length).join(', ')
+    )
+    check(
+      'the shot that finishes a hull reports sunk',
+      sank.body.fired?.[0]?.result === 'sunk',
+      `result=${sank.body.fired?.[0]?.result}`
+    )
+
+    // Asked of the table rather than the response, so a verdict invented by the endpoint and never
+    // written down would still fail.
+    const { data: sunkRow } = await alpha.client
+      .from('attacks')
+      .select('result')
+      .eq('room_id', roomId)
+      .eq('cell_index', hullCells[hullCells.length - 1])
+      .limit(1)
+      .single()
+    check('and the row it wrote says sunk too', sunkRow?.result === 'sunk', `result=${sunkRow?.result}`)
+
+    // The guard proper. Every one of these shots connected, so hits must move by all of them - with
+    // the sink miscounted it moves by one fewer and the last one turns up as a miss instead.
+    const after = sank.body.tally
+    check(
+      'a sinking shot counts as a hit in the tally',
+      after?.hits - before?.hits === hullCells.length,
+      `hits ${before?.hits} -> ${after?.hits} over ${hullCells.length} connecting shots`
+    )
+    check(
+      'and does not land in the miss column',
+      after?.misses === before?.misses,
+      `misses ${before?.misses} -> ${after?.misses}`
+    )
+    // Anchored to the hit count the sink SHOULD have produced, not to the one that came back.
+    // Recomputing accuracy from the endpoint's own `hits` only proves it can divide: that version of
+    // this check sat here reporting "25% from 1/4" while the two above it were failing.
+    const owed = Math.round(((before?.hits + hullCells.length) / after?.shots) * 100)
+    check(
+      'accuracy is computed over the sink as well',
+      after?.accuracy === owed,
+      `${after?.accuracy}% from ${after?.hits}/${after?.shots}, owed ${owed}%`
+    )
+  }
 
   /* --- refusals ------------------------------------------------------------------------------ */
 

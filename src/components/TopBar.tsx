@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useActiveRoom } from "../hooks/useActiveRoom";
 import { formatRoomCode } from "../lib/roomCode";
-import { getVolume, setVolume } from "../lib/sfx";
+import { getVolume, setVolume, isDeepSfx, setDeepSfx } from "../lib/sfx";
 import { isColorblindMode, setColorblindMode } from "../lib/teamColors";
 import { isTwitchLoginConfigured, signInWithTwitch, signOut } from "../lib/supabase";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
@@ -61,6 +61,7 @@ export function TopBar() {
   // Remembers the level you were at so unmuting restores it instead of guessing a default.
   const [premuteVolume, setPremuteVolume] = useState(() => (getVolume() > 0 ? getVolume() : 0.7));
   const [colorblind, setColorblind] = useState(isColorblindMode);
+  const [deep, setDeep] = useState(isDeepSfx);
 
   const muted = volume === 0;
   // The slider works in whole percent, and the CSS fill is driven off the SAME rounded number -
@@ -82,6 +83,12 @@ export function TopBar() {
     const next = !colorblind;
     setColorblindMode(next);
     setColorblind(next);
+  }
+
+  function toggleDeep() {
+    const next = !deep;
+    setDeepSfx(next);
+    setDeep(next);
   }
 
   return (
@@ -233,6 +240,34 @@ export function TopBar() {
           // a percent.
           style={{ ["--eb-fill" as string]: volumePercent / 100 }}
         />
+        {/* Subordinate to the speaker, and placed AFTER the slider rather than between the two, so
+            the mute and its own track stay welded together - see the note on the slider above.
+
+            It only ever takes away. Turning it off leaves every shot, horn and closing sting exactly
+            as they were and silences what the water gives up, which on a board where Igon has been
+            found is fifteen seconds of shouting per crew that fires at his square. The master
+            toggle still covers both kinds, so this is never the reason the app is silent.
+
+            "The Deep" rather than "easter eggs" because that is what the recap panel, the record
+            books and the stream's find alert already call these; a bar that invented a second name
+            for them would be the only place in the app using it.
+
+            The octopus stays put in both states instead of swapping for a crossed-out glyph, since
+            it is the only thing naming WHICH sounds this governs once TopBar.css hides the label -
+            it greys out instead, and the title says the rest. */}
+        <button
+          onClick={toggleDeep}
+          aria-pressed={!deep}
+          className={`tb-item${deep ? " tb-on" : " tb-deep-off"}`}
+          title={
+            deep
+              ? "Turn off the Deep's sounds - whales, the Dutchman, tentacles, bottles, Alexander and Igon. Shots, horns and the final sting are unaffected."
+              : "Turn the Deep's sounds back on - whales, the Dutchman, tentacles, bottles, Alexander and Igon"
+          }
+        >
+          <span className="tb-emoji">🐙</span>
+          <span className="tb-label">Deep sounds {deep ? "on" : "off"}</span>
+        </button>
       </div>
     </div>
   );

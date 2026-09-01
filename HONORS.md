@@ -62,7 +62,7 @@ rungs of each hunt still cascade, so two crewmates on three tentacles each take 
 | 2 | 🦑 | **High Priest of R'lyeh** | Found every one of Cthulhu's tentacles alone and woke the sleeper. | Ranked |
 | 3 | 🌀 | **Woke the Sleeper** | Landed the last tentacle, whoever else did the digging. | Singular |
 | 4 | 🐉 | **Tormented No Longer** | Killed Bayle carrying one of Igon’s fingers, and put his grudge to rest. | Singular |
-| 5 | 👻 | **Thrice-Cursed** | Sighted the Flying Dutchman 3 or more times in one match. | Ranked |
+| 5 | 👻 | **Fates Confirmed** | Sighted the Flying Dutchman 3 or more times in one match. | Ranked |
 | 6 | 🔮 | **Acolyte of the Sleeper** | Found 3 tentacles, short of the full set. | Ranked |
 | 7 | 💪 | **Potfriend** | Shot Alexander loose from the shallows he was wedged in. | Singular |
 | 8 | 🐳 | **Wrong Whale** | Put a cannonball into Laboon, who did not mind. | Ranked |
@@ -163,6 +163,31 @@ Four new creatures, six new titles, and one deletion. All of it rides the machin
 `deepWater.ts` — a square per creature, rolled out of the open water when the fleets are confirmed
 and found by firing at it — so none of it needs an honor-specific column or table.
 
+### Fates Confirmed is the only one you hear coming
+
+Every other title on this list is settled at the recap, because every other title is only true once
+the match has stopped: a ranked honor can be taken off you by somebody's next shot, and a singular
+one is about a moment nobody can name until there are no more moments. Fates Confirmed is the
+exception. It is reached by degrees rather than all at once, and the instant somebody's third sail
+goes up it cannot be lost, cannot be outranked within its own hunt, and cannot be taken by anyone
+else. So it is announced live: a sting goes in 1.2 seconds behind the Dutchman's bell, under her
+rather than after her, on the player's own board and on both spectator sources.
+
+**The tally is per person, keyed exactly as `finder` keys it in matchReport.ts** — the player id,
+falling back to the fleet for somebody who has left the room. That is the whole discipline of it, and
+it is the reason `fatesConfirmed` lives in deepWater.ts instead of being counted at each of the three
+places that make a noise. Three crewmates with one sighting each is three sails for the fleet and
+nothing for any of them; two fleets with two and one between them is not a third at all. Either would
+fire the rarest sound in the game into a match where this table hands out nothing, and a cue the
+recap then contradicts is worse than no cue.
+
+It is not a second way to earn the title and it awards nothing by itself. The recap is still the only
+thing that hands out honors, and the checks that pin the tally down are in
+[scripts/check-deep-water.ts](scripts/check-deep-water.ts) rather than check-honors.ts for that
+reason. One case runs the other way: if two crews sight her inside the same realtime tick, the
+announce queue collapses them to a single event and the sting can be the half that is dropped. The
+title still lands at the recap. **A missing sting is never a missing honor.**
+
 ### The old Flying Dutchman honor is gone
 
 There used to be a shooting honor called **The Flying Dutchman**, holding 👻: 3+ hits and 6+ shots
@@ -172,7 +197,7 @@ marker a player can see and the other a scoring quirk they can't, is the kind of
 a recap unreadable: a player who saw the ghost ship would go looking for the ghost-ship honor and find
 one describing their accuracy.
 
-It was **deleted rather than renamed**, and the 👻 it was holding went to Thrice-Cursed. Nothing
+It was **deleted rather than renamed**, and the 👻 it was holding went to Fates Confirmed. Nothing
 replaces it in the shooting tier. The gunner who wounds and never finishes is already covered there —
 **Coup de Grace** names the player who kept taking those kills off them, and **Master Gunner** and
 **Sharpest Eye** both catch someone landing hits — so the slot was carrying a distinction the tier

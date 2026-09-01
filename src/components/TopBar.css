@@ -171,6 +171,15 @@ button.tb-item {
   color: var(--text);
 }
 
+/* The off state of the Deep toggle. The colorblind toggle marks its ON state because that is the
+   notable one there; here the default is on, so it is being switched OFF that wants saying - and
+   saying it on the emoji is what keeps it legible under 900px, where the label is gone and dim-vs-
+   bright text alone is too fine a distinction to spot in a fixed bar. */
+.tb-deep-off .tb-emoji {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
 .tb-colorblind-on {
   border-color: var(--accent);
   color: var(--accent);

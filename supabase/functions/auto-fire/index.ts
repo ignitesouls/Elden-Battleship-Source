@@ -138,13 +138,21 @@ function boardIndex(
   return byTooltip
 }
 
+/** The two verdicts the site counts as connecting - `sunk` is a hit that also finished a hull. */
+const CONNECTED = new Set(['hit', 'sunk'])
+
 /**
  * The player's running score for this match, in the website's own terms.
  *
  * One shot counts once no matter how many boards it landed on, and counts as a hit if it connected
- * with any of them - the definition buildPlayerStats() uses and archive_match() records. Computed
- * here rather than tallied by the client so that manually-clicked squares are included, so there is
- * no reset to detect between matches, and so the number can never disagree with the scoreboard.
+ * with any of them - the definition buildPlayerStats() uses and archive_match() records. Connecting
+ * means `hit` OR `sunk`: resolve_attack returns `sunk` for the shot that finishes a hull, so
+ * counting only `hit` filed every kill shot as a miss and made the overlay's accuracy read lower
+ * than the scoreboard's for the same match.
+ *
+ * Computed here rather than tallied by the client so that manually-clicked squares are included, so
+ * there is no reset to detect between matches, and so the number can never disagree with the
+ * scoreboard.
  */
 async function tallyFor(
   admin: SupabaseClient,
@@ -161,7 +169,7 @@ async function tallyFor(
   const connected = new Map<number, boolean>()
   for (const row of data ?? []) {
     const was = connected.get(row.cell_index) ?? false
-    connected.set(row.cell_index, was || row.result === 'hit')
+    connected.set(row.cell_index, was || CONNECTED.has(row.result))
   }
 
   const shots = connected.size
@@ -315,9 +323,12 @@ Deno.serve(async (req) => {
         let verdict: string | null = null
         for (const row of inserted ?? []) {
           const { data: result } = await admin.rpc('resolve_attack', { p_attack_id: row.id })
-          // One shot, one verdict: a hit against any fleet makes the shot a hit, matching how the
-          // scoreboard and the archive both count it.
-          if (result === 'hit') verdict = 'hit'
+          // One shot, one verdict: connecting with any fleet makes the shot a hit, matching how the
+          // scoreboard and the archive both count it. `sunk` is the strongest verdict and wins over
+          // a plain `hit`; without that a shot that sank a ship on one board and missed another
+          // reported as a miss whenever the missing fleet resolved first.
+          if (result === 'sunk') verdict = 'sunk'
+          else if (result === 'hit' && verdict !== 'sunk') verdict = 'hit'
           else if (verdict === null) verdict = result as string | null
         }
 

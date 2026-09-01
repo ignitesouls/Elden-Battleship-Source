@@ -7,6 +7,7 @@ import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { MatchSettings } from "../../components/MatchSettings";
 import { TeamPicker } from "../../components/TeamPicker";
+import { FleetDraw } from "../../components/FleetDraw";
 import { BrandMark } from "../../components/BrandMark";
 import { activeTeams, captainOf } from "../../lib/battleshipLogic";
 import { formatRoomCode } from "../../lib/roomCode";
@@ -27,6 +28,12 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
   const [copied, setCopied] = useState(false);
   const [copiedSpectate, setCopiedSpectate] = useState(false);
   const [copiedSeed, setCopiedSeed] = useState(false);
+  /**
+   * The host opens the draw; it then appears for the whole room, because the
+   * broadcast that carries a draw also opens it for anyone who has this lobby
+   * on screen. See FleetDraw.
+   */
+  const [drawOpen, setDrawOpen] = useState(false);
 
   async function handleReroll() {
     setBusy(true);
@@ -405,6 +412,25 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
       )}
 
       {error && <div className="error-text">{error}</div>}
+
+      {/**
+       * The draw is opened by the host and appears for everybody, so the
+       * button is host-only but the component is mounted for the whole room -
+       * see FleetDraw for how a draw reaches the people who did not press it.
+       */}
+      {myPlayer.is_host && (
+        <button className="secondary" onClick={() => setDrawOpen(true)} disabled={players.length < 2}>
+          Draw teams at sea
+        </button>
+      )}
+
+      <FleetDraw
+        roomId={room.id}
+        players={players}
+        isHost={myPlayer.is_host}
+        open={drawOpen}
+        onOpenChange={setDrawOpen}
+      />
 
       {myPlayer.is_host ? (
         <button className="primary" disabled={busy || !canStart} onClick={handleStart}>

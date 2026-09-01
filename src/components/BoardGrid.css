@@ -1005,6 +1005,27 @@
   100% { opacity: 1; transform: translateX(0); }
 }
 
+/**
+ * The first second of him: one bit per pixel, dithered, dissolving into the sea-green underneath.
+ *
+ * See HitMarkers.DutchmanMark for the filter that makes it monochrome and for why this is confined
+ * to the arrival - a hard 1-bit ship is the most certain-looking thing on the board, and certainty
+ * is the one quality this marker is not allowed to keep.
+ *
+ * It holds most of its weight through the first two thirds and then goes quickly. A linear fade
+ * spends the whole second as a muddy half-and-half of two ships, which reads as a rendering fault
+ * rather than as one thing becoming another.
+ */
+.dutchman-1bit {
+  animation: dutchman-1bit 1.1s ease-out 1 forwards;
+}
+
+@keyframes dutchman-1bit {
+  0% { opacity: 1; }
+  62% { opacity: 0.88; }
+  100% { opacity: 0; }
+}
+
 @keyframes dutchman-drift {
   0%, 100% { transform: translateY(0) rotate(-2deg); opacity: 0.86; }
   50% { transform: translateY(-2px) rotate(2deg); opacity: 0.62; }
@@ -1623,6 +1644,13 @@
   .whale-bubble,
   .sunk-smoke {
     opacity: 0.4;
+  }
+
+  /* The Dutchman's 1-bit arrival is nothing BUT an animation: it exists to dissolve, and with the
+     animation off it would sit on top of him for the rest of the match. Taken out of the render
+     rather than hidden, so the threshold filter underneath is never evaluated either. */
+  .dutchman-1bit {
+    display: none;
   }
 }
 
