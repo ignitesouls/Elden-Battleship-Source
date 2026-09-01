@@ -16,7 +16,16 @@
  *   3. Different seeds give different draws, which sounds too obvious to test
  *      until a refactor accidentally makes the rng stateless.
  */
-import { assignTeams, makeRng, planDraw, MAX_TEAMS, MIN_TEAMS } from "../src/lib/fleetDraw.ts";
+import {
+  assignTeams,
+  drawLengthMs,
+  makeRng,
+  planDraw,
+  DRIFT_MS,
+  MAX_TEAMS,
+  MIN_TEAMS,
+  OPEN_MS,
+} from "../src/lib/fleetDraw.ts";
 
 let failures = 0;
 
@@ -97,24 +106,44 @@ check(
 );
 
 check(
-  "including the order ships commit in",
-  a.ships.every((s, i) => s.commitAt === b.ships[i].commitAt),
+  "including the order the maelstrom takes them in",
+  a.ships.every((s, i) => s.pullAt === b.ships[i].pullAt),
 );
 
 check(
-  "and every ship commits inside the drift window",
-  a.ships.every((s) => s.commitAt >= 3000 && s.commitAt <= 3000 + 28_000),
-  `latest ${Math.round(Math.max(...a.ships.map((s) => s.commitAt)))}ms`,
+  "and nobody is taken before the funnel has opened",
+  a.ships.every((s) => s.pullAt >= OPEN_MS),
+  `earliest ${Math.round(Math.min(...a.ships.map((s) => s.pullAt)))}ms`,
 );
 
-check(
-  "and no ship feints after she has committed",
-  a.ships.every((s) => s.feints.every((f) => f.at < s.commitAt)),
-);
+/**
+ * One at a time is the entire staging. If the jitter on pullAt could ever
+ * exceed the gap between two places in the queue, two ships would go down
+ * together and the draw would read as the sea eating the fleet at random.
+ */
+for (const [n, t] of [[2, 2], [5, 2], [12, 3], [18, 6], [30, 6]] as const) {
+  const plan = planDraw(20250901, n, t);
+  const times = plan.ships.map((s) => s.pullAt).sort((x, y) => x - y);
+  let closest = Infinity;
+  for (let i = 1; i < times.length; i++) closest = Math.min(closest, times[i] - times[i - 1]);
+  check(
+    `${n} ships into ${t} teams go down one at a time`,
+    n === 1 || closest > 0,
+    `closest pair ${Math.round(closest)}ms apart`,
+  );
+
+  // A draw nobody will sit through is a draw the host stops using.
+  const total = drawLengthMs(plan);
+  check(
+    `  and the whole draw fits in a sensible window`,
+    total <= DRIFT_MS + 12_000,
+    `${(total / 1000).toFixed(1)}s`,
+  );
+}
 
 check(
-  "and every feint runs at a team that exists",
-  a.ships.every((s) => s.feints.every((f) => f.zone >= 0 && f.zone < a.teams)),
+  "every ship is under the water before she is thrown out of it",
+  a.ships.every((s) => s.descentMs > 0 && s.underMs > 0 && s.flingMs > 0),
 );
 
 /* ---- 3. different seeds, different draws -------------------------------- */

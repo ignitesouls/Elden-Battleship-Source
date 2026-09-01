@@ -41,6 +41,15 @@ const CITY: [number, number, number, number, string][] = [
 
 const GOLD_TRIM = "rgba(216, 174, 98, 0.55)";
 
+/**
+ * The sea is seen at a slight angle, so every circle drawn ON it is this
+ * flat. One number, used by the funnel and by anything that has to sit in it.
+ */
+export const SQUASH = 0.42;
+
+/** One sea, one direction: arms, foam and hulls all turn this way. */
+export const SWIRL = -1;
+
 export type PropKind = "bottle" | "tentacle" | "patches" | "dutchman";
 
 export interface PropHit {
@@ -50,12 +59,27 @@ export interface PropHit {
   y: number;
 }
 
+/** The eye of the maelstrom, in stage px. */
+export interface Vortex {
+  cx: number;
+  cy: number;
+  /** Radius across the water. Down the screen it is r * SQUASH. */
+  r: number;
+}
+
 export interface Scene {
   resize(): void;
   draw(ms: number): void;
   setPresenting(on: boolean): void;
   /** Where the waterline sits, in px, for laying ships out on the water. */
   horizon(): number;
+  /**
+   * 0 is calm water and 1 is the funnel fully open. Eased inside the scene,
+   * so the caller can flip it and let the sea take its own time about it.
+   */
+  setVortex(power: number): void;
+  /** Where the funnel is, so ships and berths can be placed around it. */
+  vortex(): Vortex;
   /** Consumes the topmost prop under the point, if there is one. */
   hitTest(x: number, y: number): PropHit | null;
 }
@@ -79,6 +103,128 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     return seed / 4294967296;
   }
 
+  /* ---- the maelstrom ----------------------------------------------------- */
+
+  let vorWant = 0;
+  let vorPower = 0;
+  let vorPhase = 0;
+  let lastMs = 0;
+
+  /**
+   * Foam riding the wall of the funnel. Weather, like the props: every viewer
+   * gets their own, because nothing about where a speck of foam sits is part
+   * of the result.
+   */
+  const flecks: { a: number; r: number; s: number }[] = [];
+
+  function seedFlecks(): void {
+    flecks.length = 0;
+    const n = Math.round(Math.min(120, Math.max(50, W / 12)));
+    for (let i = 0; i < n; i++) {
+      flecks.push({
+        a: Math.random() * Math.PI * 2,
+        r: Math.random(),
+        s: 0.5 + Math.random(),
+      });
+    }
+  }
+
+  /**
+   * Where the funnel opens.
+   *
+   * High on the water rather than dead centre, for two reasons that happen to
+   * agree: it leaves the near half of the stage clear for berths, where the
+   * nameplates are readable, and it puts the eye in the Erdtree's own light
+   * path - so the thing that swallows the fleet also swallows the reflection.
+   */
+  function vortexGeom(): Vortex {
+    return {
+      cx: W * 0.5,
+      cy: hz + (H - hz) * 0.3,
+      r: Math.min(W * 0.13, (H - hz) * 0.26),
+    };
+  }
+
+  function drawVortex(t: number, dt: number): void {
+    if (vorPower < 0.004) return;
+    const p = vorPower;
+    const { cx, cy, r: R } = vortexGeom();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, SQUASH);
+
+    // The basin: water falling away into something with no bottom.
+    const g = ctx.createRadialGradient(0, 0, R * 0.04, 0, 0, R);
+    g.addColorStop(0, `rgba(1, 5, 8, ${(0.97 * p).toFixed(3)})`);
+    g.addColorStop(0.34, `rgba(4, 17, 26, ${(0.86 * p).toFixed(3)})`);
+    g.addColorStop(0.72, `rgba(9, 32, 45, ${(0.5 * p).toFixed(3)})`);
+    g.addColorStop(1, "rgba(12, 42, 58, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Spiral arms. Uniform rotation with a fixed twist, so the funnel turns
+    // forever without winding itself into a knot.
+    const ARMS = 5;
+    const TWIST = 5.2;
+    for (let a = 0; a < ARMS; a++) {
+      ctx.beginPath();
+      for (let i = 0; i <= 54; i++) {
+        const u = i / 54;
+        const rr = R * (0.07 + 0.95 * u);
+        const ang = vorPhase + (a * Math.PI * 2) / ARMS + (1 - u) * TWIST;
+        const x = Math.cos(ang) * rr;
+        const y = Math.sin(ang) * rr;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineCap = "round";
+      ctx.strokeStyle = `rgba(196, 226, 238, ${(0.17 * p).toFixed(3)})`;
+      ctx.lineWidth = R * 0.055;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(232, 246, 252, ${(0.13 * p).toFixed(3)})`;
+      ctx.lineWidth = R * 0.014;
+      ctx.stroke();
+    }
+
+    for (const f of flecks) {
+      f.a += dt * (0.5 + 1.5 / (f.r + 0.22)) * p * -SWIRL;
+      f.r -= dt * 0.1 * p * (0.4 + (1 - f.r));
+      if (f.r < 0.05) {
+        f.r = 0.85 + Math.random() * 0.3;
+        f.a = Math.random() * Math.PI * 2;
+      }
+      const rr = f.r * R;
+      const alpha = Math.max(0, Math.min(0.7, p * (1 - Math.abs(f.r - 0.55)) * 0.9));
+      if (alpha <= 0.01) continue;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#dff0f7";
+      ctx.beginPath();
+      ctx.arc(Math.cos(f.a) * rr, Math.sin(f.a) * rr, f.s * (0.4 + f.r) * (R / 90), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(216, 174, 98, ${(0.2 * p).toFixed(3)})`;
+    ctx.lineWidth = R * 0.02;
+    ctx.stroke();
+
+    // The eye itself, breathing slightly so it never reads as a printed hole.
+    ctx.beginPath();
+    ctx.arc(0, 0, R * (0.13 + Math.sin(t * 0.04) * 0.012), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 0, 0, ${(0.92 * p).toFixed(3)})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(207, 230, 239, ${(0.3 * p).toFixed(3)})`;
+    ctx.lineWidth = R * 0.012;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   function resize(): void {
     const r = host.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -88,6 +234,7 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     hz = H * 0.24;
+    seedFlecks();
   }
 
   /* ---- the far shore ---------------------------------------------------- */
@@ -259,8 +406,8 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     ctx.closePath();
     ctx.fill();
 
-    // the spear, driven through and standing clear on both sides. The only
-    // gold thing out here, so it carries the eye.
+    // The Bolt of Gransax, driven through him and standing clear on both
+    // sides. The only gold thing out here, so it carries the eye.
     const sx0 = x - h * 0.34;
     const sy0 = groundY + h * 0.2;
     const sx1 = x + h * 0.42;
@@ -268,8 +415,9 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     const sl = Math.hypot(sx1 - sx0, sy1 - sy0);
     const ux = (sx1 - sx0) / sl;
     const uy = (sy1 - sy0) / sl;
-    const nx = -uy * h * 0.015;
-    const ny = ux * h * 0.015;
+    const half = h * 0.015;
+    const nx = -uy * half;
+    const ny = ux * half;
 
     ctx.beginPath();
     ctx.moveTo(sx0 + nx, sy0 + ny);
@@ -280,12 +428,36 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     ctx.fillStyle = "rgba(196, 164, 106, 0.9)";
     ctx.fill();
 
+    // The twist. The Bolt is not a plain shaft - it is wound, and that spiral
+    // is the whole reason it reads as a named weapon rather than a stick. Two
+    // strands a half-turn apart, so the crossings look like a wrap.
+    ctx.lineCap = "round";
+    for (const phase of [0, Math.PI]) {
+      ctx.beginPath();
+      const turns = 7;
+      for (let i = 0; i <= 60; i++) {
+        const u = i / 60;
+        const swing = Math.sin(u * turns * Math.PI * 2 + phase);
+        // narrow toward the point, the way a real winding tightens
+        const amp = half * 2.1 * (1 - u * 0.45);
+        const px = sx0 + ux * sl * u - uy * swing * amp;
+        const py = sy0 + uy * sl * u + ux * swing * amp;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = "rgba(238, 214, 150, 0.85)";
+      ctx.lineWidth = Math.max(1, h * 0.012);
+      ctx.stroke();
+    }
+
+    // leaf-shaped head, past the winding
     ctx.beginPath();
     ctx.moveTo(sx1 + ux * h * 0.16, sy1 + uy * h * 0.16);
     ctx.lineTo(sx1 + nx * 3.4, sy1 + ny * 3.4);
     ctx.lineTo(sx1 - ux * h * 0.07, sy1 - uy * h * 0.07);
     ctx.lineTo(sx1 - nx * 3.4, sy1 - ny * 3.4);
     ctx.closePath();
+    ctx.fillStyle = "rgba(212, 184, 122, 0.95)";
     ctx.fill();
   }
 
@@ -458,8 +630,21 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
       }
     }
 
+    /**
+     * Gransax faces the city, not the sea.
+     *
+     * He died attacking Leyndell, so a dragon on the right of the skyline has
+     * to be looking LEFT - turned the other way he reads as having landed
+     * beside it and gone to sleep. Everything in gransax() is drawn bow-right,
+     * so the whole thing is mirrored about his own position rather than having
+     * every coordinate in there negated.
+     */
     const gx = cx + ridgeW(0) * 0.52;
-    gransax(gx, ridgeY(0, gx), cityH);
+    ctx.save();
+    ctx.translate(gx, 0);
+    ctx.scale(-1, 1);
+    gransax(0, ridgeY(0, gx), cityH);
+    ctx.restore();
 
     // viaduct, following the near ridge
     const vW = ridgeW(0) * 0.7;
@@ -889,6 +1074,14 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
 
   function draw(ms: number): void {
     const t = ms / 16.666;
+    const dt = lastMs === 0 ? 0.016 : Math.min((ms - lastMs) / 1000, 0.05);
+    lastMs = ms;
+
+    // The funnel opens and closes over about a second either way, so the sea
+    // is never seen to blink a hole into existence.
+    vorPower += (vorWant - vorPower) * Math.min(1, dt * 1.6);
+    vorPhase += dt * 0.85 * SWIRL * (0.35 + vorPower);
+
     ctx.clearRect(0, 0, W, H);
 
     const sky = ctx.createLinearGradient(0, 0, 0, hz);
@@ -938,6 +1131,11 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
     band(0, t);
     band(1, t);
 
+    // The funnel goes in with the props, between the far and near swell: the
+    // near waves then cut across its lower rim, which is what puts it IN the
+    // water instead of on top of it.
+    drawVortex(t, dt);
+
     // Props sit between the far and near swell, so the front waves cut across
     // their bases and they read as being IN the water rather than on it.
     const now = ms / 1000;
@@ -960,6 +1158,10 @@ export function createScene(canvas: HTMLCanvasElement, host: HTMLElement): Scene
       presenting = on;
     },
     horizon: () => hz,
+    setVortex: (power: number) => {
+      vorWant = Math.max(0, Math.min(1, power));
+    },
+    vortex: vortexGeom,
     hitTest,
   };
 }

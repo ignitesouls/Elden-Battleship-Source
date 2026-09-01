@@ -105,16 +105,34 @@
   to { transform: translateY(2px) rotate(1.6deg); }
 }
 
-/* The ONLY node that flips, so a nameplate never comes out mirrored. */
-.fd-hull {
+/**
+ * Lean and size, written every frame by the draw loop.
+ *
+ * Its own node because .fd-bob below owns a keyframe animation on transform,
+ * and an element can only have one - putting the funnel's rotation there
+ * would cancel the bob, or the bob would stamp on the rotation, depending on
+ * which won the cascade that frame.
+ */
+.fd-spin {
+  transform-origin: 50% 60%;
+  will-change: transform;
+}
+
+/* The ONLY node that flips, so a nameplate never comes out mirrored.
+
+   Named -hullwrap and NOT -hull: the hull PATH inside the svg is .fd-hull
+   too, and when both shared a name a turning ship mirrored twice - once
+   correctly on the wrapper, then again on the hull alone, which threw the
+   hull off sideways and left the sails behind. */
+.fd-hullwrap {
   transform: scaleX(var(--face, 1));
   transition: transform 650ms ease;
 }
 
-.fd-ship[data-face="-1"] .fd-hull { --face: -1; }
-.fd-ship[data-face="1"] .fd-hull { --face: 1; }
+.fd-ship[data-face="-1"] .fd-hullwrap { --face: -1; }
+.fd-ship[data-face="1"] .fd-hullwrap { --face: 1; }
 
-.fd-hull svg {
+.fd-hullwrap svg {
   display: block;
   height: 62px;
   width: auto;
@@ -122,7 +140,7 @@
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.55));
 }
 
-.fd-modal.presenting .fd-hull svg { height: 92px; }
+.fd-modal.presenting .fd-hullwrap svg { height: 92px; }
 
 .fd-hull { fill: #6b4a33; stroke: #2b1c13; stroke-width: 2.2; stroke-linejoin: round; }
 .fd-castle { fill: #5b3f2c; stroke: #2b1c13; stroke-width: 2; stroke-linejoin: round; }
@@ -161,6 +179,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Down with her, and back when she is thrown clear: a nameplate riding a
+     hull the size of a coin at the bottom of a funnel is illegible anyway,
+     and reading it as it lands is the payoff. */
+  opacity: var(--plate, 1);
   transition: border-color 900ms ease;
 }
 
@@ -357,7 +379,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .fd-bob { animation: none; }
-  .fd-hull, .fd-sail, .fd-sail-lee, .fd-flag, .fd-plate, .fd-zones { transition: none; animation: none; }
+  .fd-hullwrap, .fd-sail, .fd-sail-lee, .fd-flag, .fd-plate, .fd-zones { transition: none; animation: none; }
+  /* The funnel still turns - it is the result being told, not decoration -
+     but nothing here adds a second motion on top of it. */
+  .fd-spin { will-change: auto; }
   /* The bubble still needs to appear and is still removed on a timer; it just
      arrives without the pop and leaves without the drift. */
   .fd-bubble { animation: none; }

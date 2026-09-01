@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { createScene, type PropKind, type Scene } from "../lib/fleetDrawScene";
+import { createScene, SQUASH, SWIRL, type PropKind, type Scene } from "../lib/fleetDrawScene";
 import { rigShape } from "../lib/fleetDrawRigs";
 import {
-  DRIFT_MS,
   MAX_TEAMS,
   MIN_TEAMS,
+  DRAW_TEAM_COLORS,
+  DRAW_VERSION,
+  estimateDrawMs,
   isDrawMessage,
+  isStaleDrawMessage,
   newSeed,
   planDraw,
   type DrawMessage,
@@ -42,7 +45,7 @@ const BERTH_ASPECT = 1.5;
 const RAGGED_COST = 0.18;
 const MAX_FILES = 4;
 
-type Mode = "wander" | "feint" | "commit" | "moored";
+type Mode = "wander" | "descend" | "under" | "fling" | "moored";
 
 /** What washes up in a bottle. Nothing here is a hint; they are all jokes. */
 const BOTTLE_NOTES = [
@@ -73,9 +76,19 @@ interface Ship {
   target: { x: number; y: number };
   berth: { x: number; y: number } | null;
   anchor: { x: number; y: number } | null;
-  feintAt: number;
-  nextFeint: number;
   wanderSeed: number;
+  /** Seconds spent in the current scripted mode. */
+  t: number;
+  /** Where on the funnel she was caught, in the eye's own polar frame. */
+  a0: number;
+  r0: number;
+  /** Control point for the arc back out. */
+  cp: { x: number; y: number };
+  /** How far over she is leaning, and how small the funnel has made her. */
+  tilt: number;
+  scale: number;
+  alpha: number;
+  plate: number;
 }
 
 /**
@@ -134,7 +147,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
     (m: DrawMessage) => {
       setDraw({ plan: planDraw(m.seed, m.names.length, m.teams), names: m.names, startedAt: performance.now() });
       setTeams(m.teams);
-      setStatus("Drawn. Watch them find their side.");
+      setStatus("The sea opens amidships.");
       onOpenChange(true);
       // The horn the room already knows as "something is about to happen" -
       // it opens the firing phase, and this is the same kind of moment.
@@ -148,6 +161,13 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       .channel(`fleet-draw-${roomId}`, { config: { broadcast: { self: false } } })
       .on("broadcast", { event: "draw" }, ({ payload }) => {
         if (isDrawMessage(payload)) applyMessage(payload);
+        // A real draw from a build that tells it differently. Replaying it
+        // here would show the right teams to the wrong picture, so say what
+        // is wrong instead - a reload is the whole fix, this being a static
+        // site with no state to migrate.
+        else if (isStaleDrawMessage(payload)) {
+          setStatus("That draw came from a different version. Both of you reload the page.");
+        }
       })
       .subscribe();
     channelRef.current = ch;
@@ -159,7 +179,13 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
 
   const startDraw = useCallback(() => {
     if (!isHost || sailing.length < 2 || sailing.length < teams) return;
-    const message: DrawMessage = { seed: newSeed(), teams, names: sailing, startedAt: Date.now() };
+    const message: DrawMessage = {
+      v: DRAW_VERSION,
+      seed: newSeed(),
+      teams,
+      names: sailing,
+      startedAt: Date.now(),
+    };
     void channelRef.current?.send({ type: "broadcast", event: "draw", payload: message });
     applyMessage(message);
   }, [isHost, sailing, teams, applyMessage]);
@@ -301,9 +327,22 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
     };
     measure();
 
+    /**
+     * A ship the funnel has already taken by the time the fleet is built.
+     *
+     * This effect re-runs on every resize and on going full screen, which
+     * rebuilds every ship from scratch. Replaying the descent from there
+     * would drop the whole fleet back down a funnel the room watched minutes
+     * ago - and all at once, since they are all past their pullAt. She is put
+     * straight in her berth instead, the same way the old script put a ship
+     * past her commit straight onto her side.
+     */
+    const alreadyTaken = (plan: DrawPlan["ships"][number] | undefined): boolean =>
+      draw !== null && plan !== undefined && performance.now() - draw.startedAt >= plan.pullAt;
+
     const ships: Ship[] = names.map((name, i) => {
       const plan = draw?.plan.ships[i];
-      const rng = rand(((plan?.commitAt ?? i * 7919) * 1000) | 0);
+      const rng = rand(((plan?.pullAt ?? i * 7919) * 1000) | 0);
       const sx = plan ? plan.start.x : rng();
       const sy = plan ? plan.start.y : rng();
       return {
@@ -315,13 +354,19 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
         vx: 0,
         vy: 0,
         face: plan?.face ?? 1,
-        mode: "wander",
+        mode: alreadyTaken(plan) ? "moored" : "wander",
         target: { x: 0, y: 0 },
         berth: null,
         anchor: null,
-        feintAt: 0,
-        nextFeint: 0,
         wanderSeed: (i * 2654435761) >>> 0,
+        t: 0,
+        a0: 0,
+        r0: 0,
+        cp: { x: 0, y: 0 },
+        tilt: 0,
+        scale: 1,
+        alpha: 1,
+        plate: 1,
       };
     });
 
@@ -345,7 +390,14 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       const zoneW = geom.w / teams;
       const zx0 = zoneW * teamIdx;
       const padX = 14;
-      const top = Math.max(presenting ? 118 : 88, scene.horizon() + shipPx * 0.6);
+      // Clear of the funnel: berths are in the near half of the water, which
+      // is where a nameplate is readable anyway.
+      const vor = scene.vortex();
+      const top = Math.max(
+        presenting ? 118 : 88,
+        scene.horizon() + shipPx * 0.6,
+        vor.cy + vor.r * SQUASH + shipPx * 0.45,
+      );
       const bot = geom.h - shipPx * 0.6;
       const span = bot - top;
       const innerW = zoneW - padX * 2;
@@ -403,9 +455,10 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
           s.anchor = { ...s.berth };
           s.x = s.berth.x;
           s.y = s.berth.y;
-        } else if (s.mode === "commit") {
-          s.target = s.berth;
         }
+        // A ship the funnel currently holds needs nothing here: she is flown
+        // from the eye to wherever her berth has just moved to, and reads the
+        // new one on the frame she lands.
       });
     };
     assignBerths();
@@ -417,6 +470,11 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       const dt = last === 0 ? 0.016 : Math.min((ms - last) / 1000, 0.05);
       last = ms;
 
+      // The funnel is open for exactly as long as it has work to do: from the
+      // moment the draw lands until the last hull is in her berth.
+      const settled = draw !== null && ships.every((s) => s.mode === "moored");
+      scene.setVortex(draw !== null && !settled ? 1 : 0);
+
       scene.draw(ms);
 
       const elapsed = draw === null ? -1 : ms - draw.startedAt;
@@ -424,30 +482,93 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       for (let i = 0; i < ships.length; i++) {
         const s = ships[i];
         const plan = draw?.plan.ships[i];
+        // Set once the funnel is flying her, so the steering below leaves her
+        // alone - but she still reaches the node write at the bottom.
+        let scripted = false;
 
+        /**
+         * The maelstrom, in four scripted beats.
+         *
+         * All four are driven off the plan's own clock rather than off where
+         * the ship has got to, so every viewer sees the same ship taken at
+         * the same moment even though she is crossing a different number of
+         * pixels to get there.
+         */
         if (plan !== undefined && elapsed >= 0 && s.mode !== "moored") {
-          if (elapsed >= plan.commitAt && s.mode !== "commit") {
-            s.mode = "commit";
-            if (s.berth !== null) s.target = s.berth;
-          } else if (s.mode === "feint") {
-            if (Math.hypot(s.target.x - s.x, s.target.y - s.y) < 74 || ms > s.feintAt + 3400) {
-              // Haul away from the side she just ran at, so the turn reads as
-              // a decision rather than a bounce.
-              s.mode = "wander";
-              pickWander(s, i);
+          const vor = scene.vortex();
+
+          if (s.mode === "wander" && elapsed >= plan.pullAt) {
+            // Caught. Remember where on the funnel she was, in the eye's own
+            // frame, and spiral in from exactly there.
+            const dx0 = s.x - vor.cx;
+            const dy0 = (s.y - vor.cy) / SQUASH;
+            s.a0 = Math.atan2(dy0, dx0);
+            s.r0 = Math.max(Math.hypot(dx0, dy0), vor.r * 0.35);
+            s.mode = "descend";
+            s.t = 0;
+            s.plate = 0;
+          }
+
+          if (s.mode === "descend") {
+            s.t += dt;
+            const u = Math.min(1, s.t / (plan.descentMs / 1000));
+            // Radius falls away faster than linearly and the turn accelerates
+            // as it tightens, which is what a funnel does to anything in it.
+            const rr = s.r0 * (1 - u * u);
+            const ang = s.a0 + SWIRL * plan.turns * Math.PI * 2 * Math.pow(u, 1.45);
+            s.x = vor.cx + Math.cos(ang) * rr;
+            s.y = vor.cy + Math.sin(ang) * rr * SQUASH;
+            s.vx = 0;
+            s.vy = 0;
+            s.scale = 1 - 0.78 * Math.pow(u, 1.2);
+            s.tilt = SWIRL * -46 * Math.pow(u, 1.3);
+            s.alpha = u < 0.72 ? 1 : 1 - (u - 0.72) / 0.28;
+            s.face = Math.cos(ang + SWIRL * (Math.PI / 2)) >= 0 ? 1 : -1;
+            if (u >= 1) {
+              s.mode = "under";
+              s.t = 0;
+              s.alpha = 0;
             }
-          } else if (s.mode === "wander") {
-            const next = plan.feints.find((f) => f.at > s.nextFeint && f.at <= elapsed);
-            if (next !== undefined) {
-              s.nextFeint = next.at;
-              s.mode = "feint";
-              s.feintAt = ms;
-              const zoneW = geom.w / teams;
-              s.target = {
-                x: zoneW * (next.zone + 0.5),
-                y: geom.top + (geom.bottom - geom.top) * 0.5,
+            scripted = true;
+          } else if (s.mode === "under") {
+            s.t += dt;
+            if (s.t >= plan.underMs / 1000) {
+              const b = s.berth ?? { x: vor.cx, y: geom.bottom };
+              // Up and over, then down into the berth - a real arc rather
+              // than a slide, so being thrown reads as being thrown.
+              s.cp = {
+                x: vor.cx + (b.x - vor.cx) * 0.55,
+                y: Math.min(vor.cy, b.y) - Math.max(70, Math.abs(b.x - vor.cx) * 0.34),
               };
+              s.mode = "fling";
+              s.t = 0;
+              s.face = b.x >= vor.cx ? 1 : -1;
             }
+            scripted = true;
+          } else if (s.mode === "fling" && s.berth !== null) {
+            s.t += dt;
+            const u = Math.min(1, s.t / (plan.flingMs / 1000));
+            const k = 1 - Math.pow(1 - u, 2.2);
+            const v = 1 - k;
+            s.x = v * v * vor.cx + 2 * v * k * s.cp.x + k * k * s.berth.x;
+            s.y = v * v * vor.cy + 2 * v * k * s.cp.y + k * k * s.berth.y;
+            s.scale = 0.2 + 0.8 * Math.min(1, k * 1.5) + Math.sin(Math.PI * k) * 0.1;
+            s.alpha = Math.min(1, k * 4);
+            s.tilt = SWIRL * 34 * (1 - k);
+            s.plate = k > 0.7 ? (k - 0.7) / 0.3 : 0;
+            if (u >= 1) {
+              s.mode = "moored";
+              s.anchor = { ...s.berth };
+              s.x = s.berth.x;
+              s.y = s.berth.y;
+              s.vx = 0;
+              s.vy = 0;
+              s.scale = 1;
+              s.tilt = 0;
+              s.alpha = 1;
+              s.plate = 1;
+            }
+            scripted = true;
           }
         }
 
@@ -461,69 +582,84 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
           };
         }
 
-        const base = s.mode === "commit" ? 96 : s.mode === "feint" ? 82 : s.mode === "moored" ? 16 : 24;
-        let speed = base * speedScale;
+        if (!scripted) {
+          const speed = (s.mode === "moored" ? 16 : 24) * speedScale;
 
-        const dx = s.target.x - s.x;
-        const dy = s.target.y - s.y;
-        const dist = Math.hypot(dx, dy) || 1;
+          const dx = s.target.x - s.x;
+          const dy = s.target.y - s.y;
+          const dist = Math.hypot(dx, dy) || 1;
 
-        if (s.mode === "commit" && dist < 3) {
-          s.x = s.target.x;
-          s.y = s.target.y;
-          s.mode = "moored";
-          s.anchor = { x: s.x, y: s.y };
-          continue;
-        }
-        if (s.mode === "wander" && dist < 18) pickWander(s, i);
-        if (s.mode === "commit" && dist < 100) speed *= Math.max(0.16, dist / 100);
+          if (s.mode === "wander" && dist < 18) pickWander(s, i);
 
-        const turn = s.mode === "commit" ? 1.9 : s.mode === "feint" ? 1.5 : s.mode === "moored" ? 0.5 : 0.8;
-        s.vx += ((dx / dist) * speed - s.vx) * Math.min(1, turn * dt);
-        s.vy += ((dy / dist) * speed - s.vy) * Math.min(1, turn * dt);
+          const turn = s.mode === "moored" ? 0.5 : 0.8;
+          s.vx += ((dx / dist) * speed - s.vx) * Math.min(1, turn * dt);
+          s.vy += ((dy / dist) * speed - s.vy) * Math.min(1, turn * dt);
 
-        // Keep wandering ships out of each other's nameplates. Feinting and
-        // committed ships are exempt, which is what lets them cut close.
-        if (s.mode === "wander") {
-          for (let j = 0; j < ships.length; j++) {
-            if (j === i || ships[j].mode !== "wander") continue;
-            const ox = s.x - ships[j].x;
-            const oy = s.y - ships[j].y;
-            const d2 = ox * ox + oy * oy;
-            if (d2 > 1 && d2 < sep * sep) {
-              const d1 = Math.sqrt(d2);
-              const push = (sep - d1) * 0.75;
-              s.vx += (ox / d1) * push * dt;
-              s.vy += (oy / d1) * push * dt * 1.15;
+          // Keep wandering ships out of each other's nameplates.
+          if (s.mode === "wander") {
+            for (let j = 0; j < ships.length; j++) {
+              if (j === i || ships[j].mode !== "wander") continue;
+              const ox = s.x - ships[j].x;
+              const oy = s.y - ships[j].y;
+              const d2 = ox * ox + oy * oy;
+              if (d2 > 1 && d2 < sep * sep) {
+                const d1 = Math.sqrt(d2);
+                const push = (sep - d1) * 0.75;
+                s.vx += (ox / d1) * push * dt;
+                s.vy += (oy / d1) * push * dt * 1.15;
+              }
             }
           }
-        }
 
-        s.x += s.vx * dt;
-        s.y += s.vy * dt;
+          // Everything still on the water leans toward an open funnel. Not
+          // enough to drag her in - the plan decides who goes and when - just
+          // enough that the ships waiting their turn are visibly in trouble.
+          if (s.mode === "wander" && draw !== null) {
+            const vor = scene.vortex();
+            const px = vor.cx - s.x;
+            const py = (vor.cy - s.y) / SQUASH;
+            const pd = Math.max(Math.hypot(px, py), vor.r * 0.8);
+            const pull = 1800 / pd;
+            s.vx += ((px / pd) * pull + (-py / pd) * pull * 0.85 * SWIRL) * dt;
+            s.vy += ((py / pd) * pull + (px / pd) * pull * 0.85 * SWIRL) * dt * SQUASH;
+          }
 
-        // Only ships out looking are penned in. A berth can sit outside the
-        // wander box, and clamping would strand a ship just short of it.
-        if (s.mode === "wander" || s.mode === "feint") {
-          if (s.x < geom.left) { s.x = geom.left; s.vx = Math.abs(s.vx); }
-          if (s.x > geom.right) { s.x = geom.right; s.vx = -Math.abs(s.vx); }
-          if (s.y < geom.top) { s.y = geom.top; s.vy = Math.abs(s.vy); }
-          if (s.y > geom.bottom) { s.y = geom.bottom; s.vy = -Math.abs(s.vy); }
-        }
+          s.x += s.vx * dt;
+          s.y += s.vy * dt;
 
-        if (s.mode !== "moored") {
-          if (s.vx > 6) s.face = 1;
-          else if (s.vx < -6) s.face = -1;
+          // Only ships out looking are penned in. A berth can sit outside the
+          // wander box, and clamping would strand a ship just short of it.
+          if (s.mode === "wander") {
+            if (s.x < geom.left) { s.x = geom.left; s.vx = Math.abs(s.vx); }
+            if (s.x > geom.right) { s.x = geom.right; s.vx = -Math.abs(s.vx); }
+            if (s.y < geom.top) { s.y = geom.top; s.vy = Math.abs(s.vy); }
+            if (s.y > geom.bottom) { s.y = geom.bottom; s.vy = -Math.abs(s.vy); }
+          }
+
+          if (s.mode !== "moored") {
+            if (s.vx > 6) s.face = 1;
+            else if (s.vx < -6) s.face = -1;
+          }
         }
 
         const node = shipRefs.current[i];
         if (node) {
           node.style.transform = `translate(calc(${s.x.toFixed(1)}px - 50%), calc(${s.y.toFixed(1)}px - 50%))`;
-          node.style.zIndex = String(Math.round(s.y));
+          // Anything the funnel has hold of goes UNDER the ships still on the
+          // water, whatever its y says - it is below the surface.
+          node.style.zIndex = String(s.scale < 1 ? 0 : Math.round(s.y));
           node.dataset.face = String(s.face);
+          node.style.opacity = s.alpha.toFixed(3);
+          // Lean and size go on their own node: .fd-bob owns a keyframe
+          // animation and a second transform here would cancel it.
+          const spin = node.firstElementChild as HTMLElement | null;
+          if (spin !== null) {
+            spin.style.transform = `rotate(${s.tilt.toFixed(2)}deg) scale(${s.scale.toFixed(3)})`;
+          }
+          node.style.setProperty("--plate", s.plate.toFixed(2));
           if (s.mode === "moored") {
             node.dataset.moored = "1";
-            node.style.setProperty("--sail", teamHex(s.team));
+            node.style.setProperty("--sail", teamHex(DRAW_TEAM_COLORS[s.team]));
           }
         }
       }
@@ -584,7 +720,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
                 className="fd-zone"
                 style={{ left: `${(100 / teams) * i}%`, width: `${100 / teams}%` }}
               >
-                <span className="fd-zone-rule" style={{ background: teamHex(i) }} />
+                <span className="fd-zone-rule" style={{ background: teamHex(DRAW_TEAM_COLORS[i]) }} />
               </div>
             ))}
           </div>
@@ -600,15 +736,17 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
                 shipRefs.current[i] = el;
               }}
             >
-              <div className="fd-bob" style={{ animationDelay: `-${(i * 0.41).toFixed(2)}s` }}>
-                <div className="fd-hull">
-                  <svg viewBox={shape.viewBox} aria-hidden="true">
-                    {shape.parts.map((p, k) => (
-                      <path key={k} className={`fd-${p.cls}`} d={p.d} />
-                    ))}
-                  </svg>
+              <div className="fd-spin">
+                <div className="fd-bob" style={{ animationDelay: `-${(i * 0.41).toFixed(2)}s` }}>
+                  <div className="fd-hullwrap">
+                    <svg viewBox={shape.viewBox} aria-hidden="true">
+                      {shape.parts.map((p, k) => (
+                        <path key={k} className={`fd-${p.cls}`} d={p.d} />
+                      ))}
+                    </svg>
+                  </div>
+                  <div className="fd-plate" title={name}>{name}</div>
                 </div>
-                <div className="fd-plate" title={name}>{name}</div>
               </div>
             </div>
           );
@@ -675,9 +813,9 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
 
           <p className="fd-note">
             {draw === null
-              ? `Drawn teams are shown here only — nobody is moved. Read them out and let the room pick. Takes about ${Math.round(DRIFT_MS / 1000)}s.`
+              ? `Drawn teams are shown here only — nobody is moved. Read them out and let the room pick. Takes about ${Math.round(estimateDrawMs(sailing.length) / 1000)}s.`
               : `Standing draw: ${Array.from({ length: teams }, (_, t) =>
-                  `${teamName(t)} ${draw.plan.assignment.filter((a) => a === t).length}`,
+                  `${teamName(DRAW_TEAM_COLORS[t])} ${draw.plan.assignment.filter((a) => a === t).length}`,
                 ).join(" · ")}`}
           </p>
         </div>
