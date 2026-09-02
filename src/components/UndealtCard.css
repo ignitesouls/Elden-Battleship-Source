@@ -1,0 +1,109 @@
+/*
+ * Sits over the fire board's top-left corner rather than beside it. The board is the thing this is
+ * about - "these are the squares that aren't in front of you" - and a card parked in the sidebar
+ * would be one more panel to find rather than an annotation on the board it describes.
+ *
+ * Absolute against .bg-wrap, which is why that rule carries position: relative. Both layouts get it
+ * for free that way: on the canvas the card rides inside the board panel and moves when the player
+ * drags it, and in the fixed layout it pins to the same corner of the same board.
+ */
+.undealt {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  z-index: 3;
+  max-width: min(22rem, 62%);
+  /* The board underneath is the game. This must never be able to grow past a bit over half of it,
+     hence the cap above and the scroll below rather than a card that sizes to its list. */
+  max-height: 62%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+}
+
+.undealt-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.undealt-title {
+  font-size: 0.66rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+
+/* Takes the slack so the close button sits hard against the right edge whatever the title's width. */
+.undealt-sub {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.62rem;
+  color: var(--text-dim);
+}
+
+.undealt-close {
+  flex: none;
+  padding: 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.undealt-close:hover {
+  color: var(--accent-bright);
+  border-color: var(--panel-border);
+}
+
+/* The list is the only part that scrolls, so the heading and the count stay put while it does. */
+.undealt-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem 0.5rem 0.4rem;
+  list-style: none;
+}
+
+.undealt-item {
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/*
+ * What is left once the card is dismissed. Deliberately the same corner the card occupied, so
+ * reopening puts it back where it was rather than somewhere new.
+ */
+.undealt-tab {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  z-index: 3;
+  padding: 0.12rem 0.4rem;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.undealt-tab:hover {
+  opacity: 1;
+  color: var(--accent-bright);
+  border-color: var(--accent);
+}

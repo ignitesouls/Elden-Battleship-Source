@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { shipArtUrl } from "../lib/shipArt";
 import type { Region } from "../lib/challenges";
@@ -59,6 +59,19 @@ export interface ShipOverlay {
 
 interface BoardGridProps {
   boardSize: number;
+  /**
+   * Something the board carries in its own corners: drawn over the wrap, above the grid, and
+   * moving with the board wherever the board goes.
+   *
+   * A slot rather than a named prop for each thing, because what belongs here is whatever is
+   * ABOUT this board specifically - the undealt-squares card is the first - and the board has no
+   * business knowing what any of it is. Positioning is the caller's, against .bg-wrap.
+   *
+   * Why here at all and not beside the board in the page: the match screen draws this board in two
+   * layouts, one of which is a canvas the player drags panels around, and a card positioned by the
+   * page would come unstuck from the board the moment it moved.
+   */
+  overlay?: ReactNode;
   cellVisual: (index: number) => CellVisual;
   onCellClick?: (index: number) => void;
   onCellHover?: (index: number) => void;
@@ -275,6 +288,7 @@ function ringPaint(colors: string[]): string {
 
 export function BoardGrid({
   boardSize,
+  overlay,
   cellVisual,
   onCellClick,
   onCellHover,
@@ -898,6 +912,7 @@ export function BoardGrid({
 
   return (
     <div className={`bg-wrap${fill ? " bg-wrap-fill" : ""}`}>
+      {overlay}
       {label && <div className="bg-label">{label}</div>}
       <div className={`bg-grid-scroll${fill ? " bg-grid-scroll-fill" : ""}`}>
         <div

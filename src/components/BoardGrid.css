@@ -4,6 +4,10 @@
   gap: 0.3rem;
   align-items: center;
   max-width: 100%;
+  /* Anchor for `overlay` - cards a board carries in its own corners rather than beside it. The
+     grid is already position: relative and is the wrong box anyway: it clips, and it doesn't
+     include the label. Nothing else here is positioned, so this is inert for every other board. */
+  position: relative;
 }
 
 .bg-label {

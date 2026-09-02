@@ -22,6 +22,9 @@ import { HostTakeover } from "../../components/HostTakeover";
 import { useMatchLayout } from "../../hooks/useMatchLayout";
 import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout";
 import { challengesForRoom, rowSquareSet, igonAnchor, type Challenge } from "../../lib/challenges";
+import { squarePool, squareSet } from "../../lib/challenges";
+import { undealtOffered, undealtSquares } from "../../lib/undealt";
+import { UndealtCard } from "../../components/UndealtCard";
 import { squaresRevealed } from "../../lib/overlayReveal";
 import { groupIntoShots } from "../../lib/attackFeed";
 import { deepWater, deepMarks, bottleNote, sightingsBy, type DeepHide, type DeepMark } from "../../lib/deepWater";
@@ -134,6 +137,33 @@ export function BattlePhase({
    * pointed at reveal the board on the same beat. See lib/overlayReveal.ts.
    */
   const challenges = squaresRevealed(room.status, battlePhase) ? dealtChallenges : NO_CHALLENGES;
+
+  /**
+   * The squares the deal left in the pack, for the card over the fire board's corner.
+   *
+   * Gated on the same `challenges` the board is, and that is the point of deriving it from that
+   * rather than from `room` directly: naming what is NOT on the board is naming a slice of the
+   * board, and doing it during the randomization window would hand both crews a read on the deal
+   * before the deal is allowed to be visible. Empty list in, empty list out.
+   *
+   * Only asked at all on boards close enough to their set to have a short answer - see
+   * undealtOffered, which is why nothing here has to defend against an 85-item card.
+   */
+  const undealt = useMemo(
+    () =>
+      challenges.length > 0 && undealtOffered(boardSize, room.square_set)
+        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed)
+        : NO_CHALLENGES,
+    [challenges, boardSize, room.id, room.square_set, room.seed]
+  );
+
+  /**
+   * Open on arrival, and per match rather than per browser - see the note on UndealtCard for why
+   * this is deliberately not a stored preference. Held here rather than inside the card because
+   * the fire board is built twice, once for each layout, and state inside the card would reopen
+   * itself every time somebody switched between them.
+   */
+  const [undealtOpen, setUndealtOpen] = useState(true);
 
   const { marks, toggle: toggleMark, clear: clearPencilMarks } = usePencilMarks(room.code);
 
@@ -589,6 +619,17 @@ export function BattlePhase({
     <BoardGrid
       boardSize={boardSize}
       cellVisual={fireGridVisual}
+      // On the hunting board and nowhere else. It is a statement about the pack these squares were
+      // dealt from, and the fleet board carries no names to be missing from.
+      overlay={
+        <UndealtCard
+          squares={undealt}
+          pool={squarePool(squareSet(room.square_set))}
+          open={undealtOpen}
+          onOpen={() => setUndealtOpen(true)}
+          onClose={() => setUndealtOpen(false)}
+        />
+      }
       onCellClick={handleFire}
       // The one board where a slipped click costs something that can't be given back. Placement
       // deliberately doesn't get this - a misplaced ship can just be picked up again.

@@ -16,10 +16,31 @@ import { applyBoardPerm } from "./boardBalance";
 export type { Challenge, SquareSetId, Region };
 export { SQUARE_SETS, SQUARE_SET_LIST, DEFAULT_SQUARE_SET, squareSet } from "./squareSets";
 export { rowSquareSet, busiestSquareSet } from "./squareSets";
-export { displaySquareSet, squareSetVariants, bossSetForRoster, retargetBossSet } from "./squareSets";
+export { displaySquareSet, squareSetVariants } from "./squareSets";
 export { squarePool, maxBoardSize, clampBoardSize } from "./squareSets";
 export { REGION_ORDER, REGION_LABELS, colorKeyFor } from "./squareSets";
 export type { SquareSetDef, ColorLegendEntry } from "./squareSets";
+
+/**
+ * The PRNG a room's deal runs from.
+ *
+ * Exported, and its own function, because two things now have to agree about it exactly: the deal
+ * itself, and lib/undealt.ts, which answers what the deal LEFT OUT. A second copy of this
+ * three-line seeding would be a copy that can drift, and a drifted seed there is not a crash - it
+ * is a card confidently naming ten bosses that are in fact sitting on the board.
+ *
+ * The default set seeds from the bare room id, exactly as it did before square sets existed; see
+ * challengesForRoom for why that exception can never be tidied away.
+ */
+export function dealSeed(
+  roomId: string,
+  setId: SquareSetId | null | undefined,
+  seed?: string | null
+): () => number {
+  const set = squareSet(setId);
+  const base = set.id === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${set.id}`;
+  return rng(seedFrom(seed ? `${base}:${seed}` : base));
+}
 
 /**
  * The board's challenges, derived purely from the room id and its chosen square set.
@@ -65,8 +86,7 @@ export function challengesForRoom(
   perm?: number[] | null
 ): Challenge[] {
   const set = squareSet(setId);
-  const base = set.id === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${set.id}`;
-  const next = rng(seedFrom(seed ? `${base}:${seed}` : base));
+  const next = dealSeed(roomId, setId, seed);
   const dealt =
     set.format === "bingo"
       ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors)
