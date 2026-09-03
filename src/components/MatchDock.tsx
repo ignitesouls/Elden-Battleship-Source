@@ -6,6 +6,7 @@ import { PauseControls } from "./PauseControls";
 import { LeaveMatchButton } from "./LeaveMatchButton";
 import { FireHoldSelect } from "./FireHoldSelect";
 import { AutoFireStatus } from "./AutoFireStatus";
+import { UndealtToggle } from "./UndealtCard";
 import { NOTE_HINT } from "../hooks/usePencilMarks";
 import { AUTO_RULE_HINT } from "../lib/deduction";
 import type { Challenge } from "../lib/challenges";
@@ -44,6 +45,15 @@ interface Props {
   /** Whether the board is crossing out squares nothing can be hiding in. See lib/deduction. */
   autoRule: boolean;
   onToggleAutoRule: () => void;
+  /**
+   * The floating card naming what the deal left in the pack, and its switch.
+   *
+   * Zero on almost every board - the list is only offered where a board nearly exhausts its set
+   * (see undealtOffered) - and the button removes itself rather than the dock having to test for it.
+   */
+  undealtCount: number;
+  undealtOpen: boolean;
+  onToggleUndealt: () => void;
   /** How long a square must be held before it fires, in ms. Never zero - see lib/fireHold. */
   holdMs: number;
   onChangeHoldMs: (ms: number) => void;
@@ -79,6 +89,9 @@ export function MatchDock({
   onClearMarks,
   autoRule,
   onToggleAutoRule,
+  undealtCount,
+  undealtOpen,
+  onToggleUndealt,
   holdMs,
   onChangeHoldMs,
 }: Props) {
@@ -101,6 +114,15 @@ export function MatchDock({
       >
         {autoRule ? "✕ Dead water shown" : "✕ Show dead water"}
       </button>
+
+      {/* Next to the dead-water toggle because the two are the same kind of thing: what the board is
+          telling this player beyond the squares themselves. Renders nothing on most boards. */}
+      <UndealtToggle
+        count={undealtCount}
+        open={undealtOpen}
+        onToggle={onToggleUndealt}
+        className="match-dock-btn"
+      />
 
       <FireHoldSelect value={holdMs} onChange={onChangeHoldMs} />
 

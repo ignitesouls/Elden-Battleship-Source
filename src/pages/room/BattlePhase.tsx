@@ -24,7 +24,7 @@ import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout
 import { challengesForRoom, rowSquareSet, igonAnchor, type Challenge } from "../../lib/challenges";
 import { squarePool, squareSet } from "../../lib/challenges";
 import { undealtOffered, undealtSquares } from "../../lib/undealt";
-import { UndealtCard } from "../../components/UndealtCard";
+import { UndealtCard, UndealtToggle } from "../../components/UndealtCard";
 import { squaresRevealed } from "../../lib/overlayReveal";
 import { groupIntoShots } from "../../lib/attackFeed";
 import { deepWater, deepMarks, bottleNote, sightingsBy, type DeepHide, type DeepMark } from "../../lib/deepWater";
@@ -159,9 +159,9 @@ export function BattlePhase({
 
   /**
    * Open on arrival, and per match rather than per browser - see the note on UndealtCard for why
-   * this is deliberately not a stored preference. Held here rather than inside the card because
-   * the fire board is built twice, once for each layout, and state inside the card would reopen
-   * itself every time somebody switched between them.
+   * this is deliberately not a stored preference, while WHERE the card sits is. Held here rather
+   * than inside the card because the switch for it lives in the dock and the sidebar, which are a
+   * long way from the card in the tree.
    */
   const [undealtOpen, setUndealtOpen] = useState(true);
 
@@ -619,17 +619,6 @@ export function BattlePhase({
     <BoardGrid
       boardSize={boardSize}
       cellVisual={fireGridVisual}
-      // On the hunting board and nowhere else. It is a statement about the pack these squares were
-      // dealt from, and the fleet board carries no names to be missing from.
-      overlay={
-        <UndealtCard
-          squares={undealt}
-          pool={squarePool(squareSet(room.square_set))}
-          open={undealtOpen}
-          onOpen={() => setUndealtOpen(true)}
-          onClose={() => setUndealtOpen(false)}
-        />
-      }
       onCellClick={handleFire}
       // The one board where a slipped click costs something that can't be given back. Placement
       // deliberately doesn't get this - a misplaced ship can just be picked up again.
@@ -759,6 +748,15 @@ export function BattlePhase({
       >
         {autoRule ? "✕ Dead water shown" : "✕ Show dead water"}
       </button>
+      {/* Beside the dead-water toggle because they are the same kind of thing: what this player is
+          being told about the board. Renders nothing at all on a board with a cell for every square
+          in its set - see undealtOffered. */}
+      <UndealtToggle
+        count={undealt.length}
+        open={undealtOpen}
+        onToggle={() => setUndealtOpen(!undealtOpen)}
+        style={{ fontSize: "0.78rem" }}
+      />
       {/* Same control as the dock's, because the fixed layout has no dock and this is not a setting
           anyone should have to switch layouts to reach. */}
       <FireHoldSelect value={fireHoldMs} onChange={setFireHoldMs} />
@@ -799,6 +797,18 @@ export function BattlePhase({
           toast lives: a hit toast is a thing that happened and can be glanced at, this is a thing
           being asked of you. Returns null for the whole of almost every match. */}
       <PauseBanner room={room} players={players} myPlayerId={myPlayerId} isHost={isHost} />
+
+      {/* Rendered once for the whole screen rather than once per board, and portalled out of here
+          to the body - it is fixed to the viewport now, so where it sits in the tree decides
+          nothing except that both layouts get exactly one of it. Null for most matches: the list is
+          only offered on boards close enough to exhaust their set (see undealtOffered). */}
+      <UndealtCard
+        squares={undealt}
+        pool={squarePool(squareSet(room.square_set))}
+        open={undealtOpen}
+        onClose={() => setUndealtOpen(false)}
+      />
+
       {error && <div className="error-text">{error}</div>}
 
       {/* Counters that aren't reaching the database. Worth a line on screen: the numbers still
@@ -918,6 +928,9 @@ export function BattlePhase({
             onClearMarks={clearMarks}
             autoRule={autoRule}
             onToggleAutoRule={() => setAutoRule(!autoRule)}
+            undealtCount={undealt.length}
+            undealtOpen={undealtOpen}
+            onToggleUndealt={() => setUndealtOpen(!undealtOpen)}
             holdMs={fireHoldMs}
             onChangeHoldMs={setFireHoldMs}
           />

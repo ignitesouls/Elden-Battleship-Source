@@ -1,21 +1,24 @@
 /*
- * Sits over the fire board's top-left corner rather than beside it. The board is the thing this is
- * about - "these are the squares that aren't in front of you" - and a card parked in the sidebar
- * would be one more panel to find rather than an annotation on the board it describes.
+ * A floating window over the whole page, not a card pinned inside the board.
  *
- * Absolute against .bg-wrap, which is why that rule carries position: relative. Both layouts get it
- * for free that way: on the canvas the card rides inside the board panel and moves when the player
- * drags it, and in the fixed layout it pins to the same corner of the same board.
+ * It used to be absolute against .bg-wrap, which put it over the fire board's top-left corner. That
+ * read well and covered a dozen of the very squares it was being read against - see the note in
+ * UndealtCard.tsx. Fixed to the viewport and portalled to <body>, it can be dragged clear of the
+ * board entirely, and one card serves both layouts and the spectator page instead of one per board.
+ *
+ * left/top come from the component as vw/vh, so the arrangement survives a window resize.
  */
 .undealt {
-  position: absolute;
-  top: 0.4rem;
-  left: 0.4rem;
-  z-index: 3;
-  max-width: min(22rem, 62%);
-  /* The board underneath is the game. This must never be able to grow past a bit over half of it,
-     hence the cap above and the scroll below rather than a card that sizes to its list. */
-  max-height: 62%;
+  position: fixed;
+  /* Above every panel on both canvases (they stack from 1) and above the dock, but below the top
+     bar, the pause banner and the connection banner at 30-40, and below the board's tooltip at 50 -
+     a square's name has to stay readable over anything parked on top of the board. */
+  z-index: 25;
+  width: max-content;
+  max-width: min(22rem, 60vw);
+  /* The board underneath is the game. This must never be able to grow past a bit over half the
+     screen, hence the cap and the scroll below rather than a card that sizes to its list. */
+  max-height: 60vh;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--panel-border);
@@ -24,6 +27,11 @@
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
 }
 
+/*
+ * The drag handle. A dedicated bar rather than the whole card, for the reason CanvasPanel gives:
+ * the body is a list somebody may want to select text out of, and a card you can grab anywhere
+ * turns every attempt to do that into a move.
+ */
 .undealt-head {
   flex: none;
   display: flex;
@@ -31,6 +39,13 @@
   gap: 0.4rem;
   padding: 0.3rem 0.4rem 0.25rem 0.5rem;
   border-bottom: 1px solid var(--panel-border);
+  cursor: grab;
+  user-select: none;
+  touch-action: none; /* stop the browser claiming the gesture as a scroll before we see it */
+}
+
+.undealt-head:active {
+  cursor: grabbing;
 }
 
 .undealt-title {
@@ -80,30 +95,4 @@
   font-size: 0.68rem;
   line-height: 1.45;
   color: var(--text);
-}
-
-/*
- * What is left once the card is dismissed. Deliberately the same corner the card occupied, so
- * reopening puts it back where it was rather than somewhere new.
- */
-.undealt-tab {
-  position: absolute;
-  top: 0.4rem;
-  left: 0.4rem;
-  z-index: 3;
-  padding: 0.12rem 0.4rem;
-  font-size: 0.62rem;
-  line-height: 1.4;
-  color: var(--text-dim);
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  cursor: pointer;
-  opacity: 0.75;
-}
-
-.undealt-tab:hover {
-  opacity: 1;
-  color: var(--accent-bright);
-  border-color: var(--accent);
 }

@@ -39,8 +39,10 @@ import { formatDuration } from "../lib/matchTime";
 import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
-import { challengesForRoom, igonAnchor } from "../lib/challenges";
+import { challengesForRoom, igonAnchor, squarePool, squareSet } from "../lib/challenges";
 import type { Challenge } from "../lib/challenges";
+import { undealtOffered, undealtSquares } from "../lib/undealt";
+import { UndealtCard, UndealtToggle } from "../components/UndealtCard";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { playSfx } from "../lib/sfx";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
@@ -593,6 +595,33 @@ function SpectatorView({
   // be calling a board that is still being dealt. See lib/overlayReveal.ts.
   const battlePhase = useBattlePhaseName(attacks, room);
   const challenges = squaresRevealed(room.status, battlePhase) ? dealtChallenges : NO_CHALLENGES;
+
+  /**
+   * The squares the deal left in the pack, for the caster - the same list the crews have.
+   *
+   * One list for the page rather than one per board on show: the deal is the ROOM's, read out of a
+   * single shuffle keyed on the room, so every fleet is hunting the same 196 of 206 and there is no
+   * such thing as a per-fleet answer. See undealtSquares.
+   *
+   * Gated on `challenges` rather than on the room directly, exactly as BattlePhase gates it: naming
+   * what is not on the board is naming a slice of the board, and a spectator reading it out during
+   * the randomization window would be calling a deal the crews cannot see yet.
+   */
+  const undealt = useMemo(
+    () =>
+      challenges.length > 0 && undealtOffered(boardSize, room.square_set)
+        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed)
+        : NO_CHALLENGES,
+    [challenges, boardSize, room.id, room.square_set, room.seed]
+  );
+
+  /**
+   * Open on arrival, and per match rather than remembered - see the note on UndealtCard. Where the
+   * card SITS is remembered, and is shared with the match screen: a caster who has parked it in a
+   * corner they like should find it there whichever page they open.
+   */
+  const [undealtOpen, setUndealtOpen] = useState(true);
+
   /**
    * Everything in the water, for the caster (see lib/deepWater.ts).
    *
@@ -798,6 +827,16 @@ function SpectatorView({
           the boards on a player's screen, and null for the whole of almost every match. */}
       <PauseBanner room={room} players={players} myPlayerId={myPlayer.id} isHost={myPlayer.is_host} />
 
+      {/* Portalled to the body and fixed to the viewport, so it floats clear of whichever boards the
+          caster has on show and can be dragged wherever it suits the shot. One for the page, since
+          the deal is the room's - see the memo above. */}
+      <UndealtCard
+        squares={undealt}
+        pool={squarePool(squareSet(room.square_set))}
+        open={undealtOpen}
+        onClose={() => setUndealtOpen(false)}
+      />
+
       {/*
         One bar holding everything that isn't a board.
 
@@ -915,6 +954,15 @@ function SpectatorView({
         >
           {railOpen ? "Hide log" : "Log & rosters"}
         </button>
+
+        {/* The crews' own card, on this page too. A caster is the person most likely to be asked
+            "is Malenia even in this one?" on air, and the one least able to answer it by scanning a
+            board they didn't build. Renders nothing on a board that isn't near its set's ceiling. */}
+        <UndealtToggle
+          count={undealt.length}
+          open={undealtOpen}
+          onToggle={() => setUndealtOpen(!undealtOpen)}
+        />
 
         {/* Only offered while the rail is open, because the rail is what it lives in - a toggle for
             a panel that has nowhere to be is a control that does nothing when pressed. */}
