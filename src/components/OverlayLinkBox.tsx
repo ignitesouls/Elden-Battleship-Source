@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { teamName, teamHex } from "../lib/teamColors";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
+import { MAX_LAP, MAX_SPOT } from "../lib/overlayCamera";
 import { SourceRow } from "./SourceRow";
 // Lifted out when the OBS setup page grew the same four sliders - see components/OverlaySetting.
 import { OverlaySetting as Setting, textReadout } from "./OverlaySetting";
@@ -92,6 +93,16 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   /** How long the find alert holds a find. */
   const [alertSecs, setAlertSecs] = useState(DEFAULT_ALERT_SECS);
   /**
+   * The two ways a crew's board can aim itself, both off by default. Seconds, and 0 means off.
+   *
+   * Off is the right default even though the moving board is more readable, because this is a
+   * source somebody has already placed in a scene: a board that started panning on its own after an
+   * update would be a change to a stream its owner had already framed and approved. It is offered,
+   * not applied. See lib/overlayCamera.
+   */
+  const [lapSecs, setLapSecs] = useState(0);
+  const [spotSecs, setSpotSecs] = useState(0);
+  /**
    * A find held over the preview, while the streamer is looking at it.
    *
    * The one setting with nothing to show for itself: every other slider changes a picture that is
@@ -161,6 +172,20 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   // The crew's own board is the one place the unfired-square setting means anything - see the
   // Setting for it below, and readEmptyFade for why a caster's board never takes one.
   if (emptyFade < 1) fireQuery.set("empty", emptyFade.toFixed(2));
+  /**
+   * The self-aiming camera, on the crew's own board and nowhere else in this box.
+   *
+   * The caster's board is left out on purpose, and not because it can't: it takes the same camera
+   * off the control page's Auto-pilot switch, which is where a caster can also take the wheel back
+   * mid-lap. Writing it into their URL would PIN the source and disconnect the very desk they were
+   * about to drive it from - the same trap the transparency and text sliders are kept away from it
+   * for. See casterBoardUrl.
+   */
+  if (lapSecs > 0) {
+    fireQuery.set("autopan", "1");
+    fireQuery.set("lap", String(lapSecs));
+  }
+  if (spotSecs > 0) fireQuery.set("spotlight", String(spotSecs));
   const fireUrl = url("overlay-board", withScene(fireQuery));
 
   /**
@@ -413,6 +438,35 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
                     : `${Math.round(emptyFade * 100)}%`
               }
             />
+          )}
+
+          {/* Crews only, like the fade above it, and for a related reason: it writes itself into
+              the Fire board's URL, and the only board in the caster's list that a URL may safely
+              pin is the unattended one. A caster gets the same camera as a switch on their control
+              page, where it can be handed back mid-sentence. */}
+          {!isCaster && (
+            <>
+              <Setting
+                label="Auto-pan"
+                hint="Zooms to 2x and walks the four quadrants clockwise, holding still on each one long enough to read it. A whole board at stream resolution is names nobody can make out; a quarter of it is legible, and this is how the other three quarters still get seen."
+                min={0}
+                max={MAX_LAP}
+                step={40}
+                value={lapSecs}
+                onChange={setLapSecs}
+                readout={lapSecs === 0 ? "off" : `${Math.floor(lapSecs / 60)}:${String(lapSecs % 60).padStart(2, "0")} a lap`}
+              />
+              <Setting
+                label="Spotlight new squares"
+                hint="Each square you mark takes the camera for this long, ringed in white. With auto-pan on it only moves as far as that square's quadrant and the lap carries on from there, so a busy exchange doesn't throw your viewers around the board."
+                min={0}
+                max={MAX_SPOT}
+                step={2}
+                value={spotSecs}
+                onChange={setSpotSecs}
+                readout={spotSecs === 0 ? "off" : `${spotSecs}s`}
+              />
+            </>
           )}
 
           <Setting

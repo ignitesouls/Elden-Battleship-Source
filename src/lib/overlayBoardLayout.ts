@@ -22,6 +22,23 @@
 export const SOURCE_SIZE = 1000;
 
 /**
+ * Zoom bounds. 1 fits the whole board; 2 shows a quarter of it.
+ *
+ * Capped at 2 deliberately, down from 6. Past 2x a board is a handful of squares and the pan gets
+ * twitchy - a small movement of the caster's hand throws a viewer clear across the board, and the
+ * thing they were reading is gone before they finished it. 2x is about where the square names stop
+ * being the reason to zoom, so it's the useful end of the range rather than an arbitrary limit.
+ *
+ * Here rather than in lib/overlayCast, where they used to live and from where they are still
+ * re-exported, because they are an input to `placeBoard` above: at MAX_ZOOM the clamp in there is
+ * what makes the four quadrant centres reachable and the four corners of the pannable box the same
+ * four points, which is the whole geometry the self-aiming camera is built on. Two facts that have
+ * to agree belong in one file - and this one is pure, so both can be asserted.
+ */
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 2;
+
+/**
  * Where the board sits so its (centre) point is in the middle of the frame.
  *
  * Smaller than the frame on an axis means centre it; larger means pan, clamped so an edge can never

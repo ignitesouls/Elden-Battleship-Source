@@ -30,6 +30,9 @@ export const DEFAULT_VIEW: CastView = {
   markerTeams: null,
   spot: null,
   text: 1,
+  // Nobody has let go of the wheel. A source falling back to this default aims where it is told,
+  // which is what every board did before the camera existed - see lib/overlayCamera.
+  motion: null,
 };
 
 /**

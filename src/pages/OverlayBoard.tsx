@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
@@ -20,6 +20,8 @@ import {
   readEmptyFade,
   type CastView,
 } from "../lib/overlayCast";
+import { newestMarked, readMotion, type CastMotion } from "../lib/overlayCamera";
+import { useBoardCamera } from "../hooks/useBoardCamera";
 import { readTextSize, OVERLAY_MAX_FONT } from "../lib/overlayText";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { markedAttacks, spotSet } from "../lib/overlayMarkers";
@@ -46,6 +48,12 @@ import "./OverlayBoard.css";
  *     ?text=1.5          square names and coordinates drawn half again as large
  *     ?key=ABC123        draw the owner's OWN hulls - see the fleet fetch below
  *     ?pin=1             every fleet, but still pinned - see below
+ *     ?autopan=1&lap=160      aims itself: a slow clockwise lap of the four quadrants
+ *     ?spotlight=6            takes the camera to each square as it is marked, for six seconds
+ *
+ * The last two are the answer to "framed once" not being enough. A board framed on the whole grid
+ * is unreadable at stream resolution and a board framed on a quarter of it is blind to the other
+ * three - so it moves, on its own, with nobody at a desk. See lib/overlayCamera.
  *
  * `pin` exists because "all fleets, unattended" and "whatever the caster is doing" would otherwise
  * be the same URL (no parameters at all), and they are opposite intentions.
@@ -63,7 +71,11 @@ function pinnedView(params: URLSearchParams): CastView | null {
   // it is drawn, which no controller sends and nobody else has an opinion about. Including it would
   // mean a caster who typed ?text= onto their own source had silently pinned it and lost their
   // control page - a setting about legibility must not be able to disconnect anything.
-  const keys = ["pin", "team", "fire", "zoom", "cx", "cy", "names", "coords", "opacity", "key"];
+  //
+  // `autopan` and `spotlight` ARE in it, unlike `text`, and for the opposite reason: they say where
+  // the board is looking, which is exactly the thing a controller would otherwise be deciding. A
+  // source that aims itself and also takes a caster's aim would be two hands on one wheel.
+  const keys = ["pin", "team", "fire", "zoom", "cx", "cy", "names", "coords", "opacity", "key", "autopan", "spotlight"];
   if (!keys.some((k) => params.get(k) !== null)) return null;
 
   const num = (key: string, fallback: number, lo: number, hi: number) => {
@@ -212,7 +224,17 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   const room = state.room;
   // Drives the reveal gate below: names hold until the board has finished being dealt.
   const battlePhase = useBattlePhaseName(state.attacks, room);
-  if (!room) return null;
+
+  /**
+   * Everything from here to the camera is derived BEFORE the "no room yet" guard, and deliberately.
+   *
+   * None of it needs a room - it is the view, the fleets on screen and the shots that get to draw a
+   * result - and the camera below is a hook, so it cannot sit after a `return null`. The alternative
+   * was splitting this page in two purely to satisfy the rules of hooks, which would have moved
+   * three hundred lines to hide one guard.
+   *
+   * The things that DO need a room are still after it, and still say `room.` rather than `room?.`.
+   */
 
   // A URL that pins the view outranks the channel entirely - see pinnedView. Nothing is "stale"
   // in that case either: there is no controller to have gone quiet.
@@ -231,15 +253,8 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   const askedText = params.get("text");
   const drawnText = askedText !== null && askedText !== "" ? textSize : (view.text ?? 1);
   const stale = !pinned && cast !== null && Date.now() - cast.at > STALE_AFTER_MS;
-  if (!view.visible) return null;
 
-  const boardSize = room.board_size;
-  // Blank water until the shooting starts, exactly as the players' own placement board is - see
-  // lib/overlayReveal.ts. A captain must not be able to read the squares off their own source
-  // while they still have hulls in hand.
-  const revealed = squaresRevealed(room.status, battlePhase);
   const teams = activeTeams(state.players);
-  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
   const shown = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
 
   /**
@@ -272,6 +287,61 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   // so the two cannot drift - see lib/overlayMarkers, which is also where the attacker/defender
   // distinction is spelled out. A pinned source inherits DEFAULT_VIEW here, i.e. every marker.
   const marked = markedAttacks(relevant, view);
+
+  /**
+   * The board aiming itself - see lib/overlayCamera.
+   *
+   * Two ways in, and they cannot both be live. A pinned source reads its own URL; a caster-driven
+   * one takes the settings off the frame, which is the desk saying "let go of the wheel". Either
+   * way the camera runs HERE, on the source, rather than being published a position at a time.
+   *
+   * `since` for a pinned source is its own mount. Two sources in one scene will therefore lap
+   * slightly out of step if they were added minutes apart, which is fine - they are different
+   * boards - and the alternative is inventing a shared origin no URL can carry. A caster's sources
+   * DO share one, because the desk sends it.
+   */
+  const mountedAt = useRef(Date.now());
+  const urlMotion = pinned ? readMotion(params, mountedAt.current) : null;
+  const motion: CastMotion | null = pinned ? urlMotion : (view.motion ?? null);
+  const camera = useBoardCamera({
+    motion,
+    // Where it rests between spotlights, and what it resets to: the framing this source was set up
+    // with, or the one the caster is holding. Never a position this feature chose for itself.
+    base: { zoom: view.zoom, cx: view.cx, cy: view.cy },
+    boardSize: room?.board_size ?? 0,
+    // From `marked`, not the whole log: the camera follows the shots this board is drawing. A
+    // caster who has filtered markers to one fleet gets a camera that agrees with the picture.
+    newest: newestMarked(marked),
+    frame,
+    stage,
+  });
+
+  /**
+   * The stage element, which two things need: useBoxSize measures it, and the camera writes the pan
+   * onto it sixty times a second.
+   *
+   * Composed with useCallback rather than an inline arrow, because React re-attaches a ref whose
+   * identity changed - and a fresh function every render would tear down and rebuild the
+   * ResizeObserver on every render of the page.
+   */
+  const { attach: attachCamera } = camera;
+  const setStage = useCallback(
+    (el: HTMLDivElement | null) => {
+      stageRef(el);
+      attachCamera(el);
+    },
+    [stageRef, attachCamera]
+  );
+
+  if (!room) return null;
+  if (!view.visible) return null;
+
+  const boardSize = room.board_size;
+  // Blank water until the shooting starts, exactly as the players' own placement board is - see
+  // lib/overlayReveal.ts. A captain must not be able to read the squares off their own source
+  // while they still have hulls in hand.
+  const revealed = squaresRevealed(room.status, battlePhase);
+  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
   // From `marked`: wreckage is a result like any other, and a hull sunk by a fleet whose markers
   // are hidden must not leave its ship drawn across the board.
   const sunkCells = sunkCellOrientations(marked, boardSize);
@@ -386,7 +456,9 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   // square, so a wide source simply leaves margin either side at 1x - see the size note on the
   // control page.
   const fit = frame.w > 0 ? Math.min(frame.w, frame.h) : SOURCE_SIZE;
-  const boardPx = Math.round(fit * view.zoom);
+  // The camera's zoom when it has the wheel. It is the one part of the framing React still owns:
+  // zoom here is a real cell size, so it is a re-layout rather than a number in a style.
+  const boardPx = Math.round(fit * (camera.running ? camera.zoom : view.zoom));
 
   return (
     <div
@@ -415,11 +487,16 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
 
           `?? 1` because a frame from a controller predating this field carries no opacity at all. */}
       <div
-        className="ovb-stage ovl-fade-stage"
-        ref={stageRef}
+        className={`ovb-stage ovl-fade-stage${camera.running ? " ovb-motion" : ""}`}
+        ref={setStage}
         style={{
-          left: placeBoard(stage.w, frame.w, view.cx),
-          top: placeBoard(stage.h, frame.h, view.cy),
+          // Absent, not merely ignored, while the camera is running. React clears a property it
+          // has rendered before, so leaving these in the object would have it wipe the camera's
+          // pan on every re-render and snap the board to the corner for a frame. See
+          // hooks/useBoardCamera, which writes them straight onto this element instead.
+          ...(camera.running
+            ? null
+            : { left: placeBoard(stage.w, frame.w, view.cx), top: placeBoard(stage.h, frame.h, view.cy) }),
           ["--ovl-a-bg" as string]: view.opacity ?? 1,
           // Thins the squares nobody has fired at, and nothing else - see readEmptyFade. Off the
           // URL rather than the cast frame: it is a player's setting for a player's own source, and
@@ -436,12 +513,19 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
           // cannot say whose shot a square was is only half a board, and it is not a setting anybody
           // would want to reach for mid-match. See attackerTeamsByCell.
           firedBy={firedBy}
-          // What the caster is pointing at. Never set on a pinned source: it arrives on the cast
-          // frame only, so a player's own board can't be lit up by somebody else's desk.
-          spotCells={spotSet(view)}
+          // What the caster is pointing at - or, when the board is aiming itself, the square that
+          // was just marked. Only one of the two can be live: a source running its own camera has
+          // taken the wheel, and a desk pointing at one square while the board is holding on
+          // another would be the two of them arguing on stream.
+          spotCells={camera.running ? new Set(camera.spotCells) : spotSet(view)}
           // Whose shot, or whose hull. Undefined leaves the light white, which is what a caster
           // simply pointing at a square should look like.
-          spotColor={view.spotColor ?? undefined}
+          //
+          // White for the self-aiming spotlight too, deliberately. A caster's light is a gesture
+          // and the colour says whose moment it is; this one fires on EVERY mark, so a ring that
+          // changed colour a hundred times a match would be reading as an attribution - a job the
+          // firedBy rings already do, underneath it, without moving.
+          spotColor={camera.running ? undefined : (view.spotColor ?? undefined)}
           // Drawn the moment any of it is found - see lib/deepWater.ts. This source needs no frame
           // from the desk to know: the finds are in the public log, so it works them out for itself
           // and they appear on stream by themselves.
@@ -490,6 +574,20 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
           {Math.round(stage.h)} · want {boardPx} · zoom {view.zoom.toFixed(2)} · offset{" "}
           {Math.round(placeBoard(stage.w, frame.w, view.cx))},{Math.round(placeBoard(stage.h, frame.h, view.cy))} ·
           centre {view.cx.toFixed(2)},{view.cy.toFixed(2)}
+          {/*
+            The camera, when it has the wheel. The offsets on the line above are the RESTING framing
+            and stop describing the picture the moment this appears - which is the confusion worth
+            naming, because a self-aiming board mid-dwell looks identical to one that was never
+            moving. `lap` and `spot` are the settings that actually reached the source, so a control
+            that isn't arriving says so here rather than looking like a broken camera.
+          */}
+          {camera.running && motion && (
+            <div>
+              camera: {motion.pan ? `lap ${motion.lap}s` : "no lap"} ·{" "}
+              {motion.spot > 0 ? `spotlight ${motion.spot}s` : "no spotlight"} · zoom {camera.zoom.toFixed(2)} · lit{" "}
+              {camera.spotCells.length}
+            </div>
+          )}
           {/*
             The water, on its own line, because it answers a different question from the sizing
             numbers above it and gets asked when nothing looks wrong at all.

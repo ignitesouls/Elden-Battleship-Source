@@ -22,6 +22,8 @@ import { squaresRevealed } from "../lib/overlayReveal";
 import { OVERLAY_MAX_FONT, MIN_TEXT_SIZE } from "../lib/overlayText";
 import { markedAttacks, spotSet } from "../lib/overlayMarkers";
 import { castPresets, type Preset, PRESET_SLOTS } from "../lib/castPresets";
+import { newestMarked, DEFAULT_LAP, MIN_LAP, MAX_LAP, type CameraPoint } from "../lib/overlayCamera";
+import { useBoardCamera } from "../hooks/useBoardCamera";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import {
   useCastPublisher,
@@ -185,6 +187,19 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
    */
   const punchRef = useRef<{ back: Preset; timer: ReturnType<typeof setTimeout> } | null>(null);
   /**
+   * How long one clockwise lap takes, when the caster lets the board aim itself.
+   *
+   * Kept out of `view` so it survives switching auto-pilot off and back on - the lap itself lives
+   * on the view (see `view.motion`) because it has to reach the sources, but the SETTING is desk
+   * furniture, like the punch sliders above it.
+   */
+  const [lapSecs, setLapSecs] = useState(DEFAULT_LAP);
+  /** Where the auto-pilot's camera is right now, so `dropMotion` can hand the view over from it. */
+  const camPoint = useRef<CameraPoint | null>(null);
+  const takePoint = useCallback((at: CameraPoint) => {
+    camPoint.current = at;
+  }, []);
+  /**
    * The latest view and punch settings, for the callbacks that must not be rebuilt when they change.
    *
    * `punchTo` is called from an effect that fires on every new shot. If it depended on the zoom
@@ -217,6 +232,28 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     if (!punchRef.current) return;
     clearTimeout(punchRef.current.timer);
     punchRef.current = null;
+  }, []);
+
+  /**
+   * Take the wheel back from the auto-pilot.
+   *
+   * Called by every manual aim - the pad, the presets, a drag, the zoom - for the same reason those
+   * already drop `follow` and any pending punch: a caster reaching for the aim has decided where the
+   * board should be looking, and a lap that carried on regardless would slide it off again seconds
+   * later. There is one camera and only one hand can be on it.
+   *
+   * It hands the framing over rather than dropping it: the view ADOPTS wherever the lap had got to,
+   * so the board does not jump. Without that, the sources would fall back to `view.cx/cy/zoom` -
+   * which is wherever the desk was resting before the auto-pilot was engaged, quite possibly the
+   * other side of the board - and every takeover would be a visible cut on stream at the exact
+   * moment a caster was trying to point at something.
+   */
+  const dropMotion = useCallback(() => {
+    setView((v) => {
+      if (!v.motion) return v;
+      const at = camPoint.current;
+      return at ? { ...v, motion: null, zoom: at.zoom, cx: at.cx, cy: at.cy } : { ...v, motion: null };
+    });
   }, []);
 
   /** The four saved framings for this room - see lib/castPresets. */
@@ -317,6 +354,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     // and on `cancelPunch`, which drops the pending restore rather than fighting them for the view.
     setFollow(false);
     cancelPunch();
+    dropMotion();
     setView((v) => {
       const step = mode === "jump" ? (1 - 1 / v.zoom) / 4 : 0.06 / v.zoom;
       return {
@@ -325,13 +363,14 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
         cy: Math.min(1, Math.max(0, v.cy + dy * step)),
       };
     });
-  }, [cancelPunch]);
+  }, [cancelPunch, dropMotion]);
 
   const recentre = useCallback(() => {
     setFollow(false);
     cancelPunch();
+    dropMotion();
     setView((v) => ({ ...v, cx: 0.5, cy: 0.5 }));
-  }, [cancelPunch]);
+  }, [cancelPunch, dropMotion]);
 
   /**
    * The four framing slots. Saving overwrites, recalling restores zoom and centre together.
@@ -363,11 +402,13 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     (slot: number) => {
       const p = presets[slot];
       if (!p) return;
-      // Recalling is the caster aiming, so it takes the view off follow like any other manual move.
+      // Recalling is the caster aiming, so it takes the view off follow - and off the auto-pilot -
+      // like any other manual move.
       setFollow(false);
+      dropMotion();
       setView((v) => ({ ...v, zoom: p.zoom, cx: p.cx, cy: p.cy }));
     },
-    [presets]
+    [presets, dropMotion]
   );
 
   /**
@@ -383,6 +424,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
    */
   const punchTo = useCallback((cells: number[], color: string | null, boardCells: number) => {
     if (cells.length === 0 || boardCells <= 0) return;
+    // A punch is the desk taking the camera, so it takes it off the auto-pilot too - otherwise the
+    // lap would keep panning while a punch sat waiting to restore a framing nobody was on. The
+    // follow checkbox is disabled while the lap runs, so the only way in here is by hand.
+    dropMotion();
     const mean = (of: (cell: number) => number) => cells.reduce((sum, c) => sum + of(c), 0) / cells.length;
     const cx = (mean((c) => c % boardCells) + 0.5) / boardCells;
     const cy = (mean((c) => Math.floor(c / boardCells)) + 0.5) / boardCells;
@@ -407,8 +452,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
       cy,
       spot: cells,
       spotColor: color,
+      // Belt and braces with the dropMotion above: a punch and a lap cannot both be aiming.
+      motion: null,
     }));
-  }, []);
+  }, [dropMotion]);
 
   /**
    * The newest resolved shot, as a cell index - what "follow the action" follows.
@@ -574,6 +621,65 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     return () => window.removeEventListener("keydown", onKey);
   }, [panBy, recentre, recallPreset]);
 
+  /**
+   * Whose board, whose shots - derived here rather than below the "no such room" card, because the
+   * auto-pilot's camera is a hook and cannot sit after a return.
+   *
+   * None of the three needs a room: they are the fleets on screen and the shots allowed to draw a
+   * result on them. Everything that DOES need one is still below the guard.
+   */
+  const shownTeams = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
+  const relevant = state.attacks.filter((a) => shownTeams.includes(a.defender_team));
+  // Only the shots allowed to draw a result - see lib/overlayMarkers for the two toggles and for
+  // why the attacker/defender distinction is the easy one to get backwards.
+  const marked = markedAttacks(relevant, view);
+
+  /**
+   * The monitor's own copy of the auto-pilot.
+   *
+   * Not a preview OF the camera - the same camera, from the same module, off the same settings and
+   * the same shot log. That is the monitor's whole claim (see the note on the viewport below), and
+   * it is why lib/overlayCamera is pure and takes its clock as an argument: two machines running
+   * these functions land on the same framing without either telling the other where it is.
+   */
+  const camera = useBoardCamera({
+    motion: view.motion ?? null,
+    base: { zoom: view.zoom, cx: view.cx, cy: view.cy },
+    boardSize: room?.board_size ?? 0,
+    newest: newestMarked(marked),
+    // The monitor emulates a source of exactly this size - which is what makes it honest.
+    frame: { w: SOURCE_SIZE, h: SOURCE_SIZE },
+    stage,
+    onPoint: takePoint,
+  });
+  const { attach: attachCamera } = camera;
+  const setStage = useCallback(
+    (el: HTMLDivElement | null) => {
+      stageRef(el);
+      attachCamera(el);
+    },
+    [stageRef, attachCamera]
+  );
+
+  /**
+   * Keep the engaged lap's settings current.
+   *
+   * The lap lives on the view because it has to reach the sources; the sliders are desk state. This
+   * is the one join between them, and it is an effect rather than four call sites so that a setting
+   * changed while the auto-pilot is running cannot be one that only takes effect next time.
+   *
+   * `since` is deliberately untouched: rewriting it would restart the lap at the north-west corner
+   * every time the caster nudged a slider, which is a cut to the far side of the board.
+   */
+  useEffect(() => {
+    setView((v) => {
+      if (!v.motion) return v;
+      const spot = punchOn ? punchSecs : 0;
+      if (v.motion.lap === lapSecs && v.motion.spot === spot) return v;
+      return { ...v, motion: { ...v.motion, lap: lapSecs, spot } };
+    });
+  }, [lapSecs, punchOn, punchSecs]);
+
   if (!room) {
     return (
       <div className="panel stack" style={{ width: "min(460px, 100%)" }}>
@@ -602,8 +708,6 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
    */
   const shipsMissing = view.mode !== "results" && fleets.length === 0;
 
-  const shownTeams = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
-
   // Exactly the derivation the source makes - see the notes in OverlayBoard for the merge rule.
   const ships: ShipOverlay[] = shownTeams.flatMap((team) => {
     const fleet = fleets.find((f) => f.team === team);
@@ -617,7 +721,6 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     }));
   });
 
-  const relevant = state.attacks.filter((a) => shownTeams.includes(a.defender_team));
   /**
    * The attribution rings - the same derivation the source makes, from the same shots.
    *
@@ -631,9 +734,6 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   const firedBy = new Map(
     [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
   );
-  // Only the shots allowed to draw a result - see lib/overlayMarkers for the two toggles and for
-  // why the attacker/defender distinction is the easy one to get backwards.
-  const marked = markedAttacks(relevant, view);
   // From `marked`, not `relevant`. A hull sunk by a fleet whose markers are hidden must not leave
   // its wreckage on the board - the sunk cells are a result like any other, and they are also what
   // `cellVisuals` applies last and lets win outright.
@@ -642,7 +742,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   // have to merge a square the same way. See lib/cellVisuals.
   const visuals = cellVisuals(marked, sunkCells);
   const cellVisual = (index: number): CellVisual => visuals.get(index) ?? "empty";
-  const spotCells = spotSet(view);
+  // The caster's light, or the auto-pilot's - never both. See the same merge on the source.
+  const spotCells = camera.running ? new Set(camera.spotCells) : spotSet(view);
 
   /** Squares carrying a hit, in one pass, for the hull tallies below. */
   const struck = new Set<number>();
@@ -696,7 +797,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     (view.spot?.length ?? 0) === cells.length && cells.every((c) => view.spot?.includes(c));
 
   // Identical to the source's own sizing, because the monitor IS the source at display scale.
-  const boardPx = Math.round(SOURCE_SIZE * view.zoom);
+  // The auto-pilot's zoom when it is running, exactly as the source resolves it.
+  const boardPx = Math.round(SOURCE_SIZE * (camera.running ? camera.zoom : view.zoom));
 
   /**
    * The monitor's on-screen side: the largest square the deck will hold.
@@ -740,6 +842,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     // punch restore - see `follow` and `cancelPunch`.
     setFollow(false);
     cancelPunch();
+    dropMotion();
     // Preview px -> the source's logical px -> a fraction of the whole board.
     //
     // `previewPx`, NOT a constant. This is what converts the pointer's travel in screen pixels into
@@ -869,6 +972,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               if (!spotting || !from) return;
               if (Math.abs(e.clientX - from.x) > CLICK_SLOP || Math.abs(e.clientY - from.y) > CLICK_SLOP) return;
               const cell = cellAtPoint(root, e.clientX, e.clientY);
+              // Pointing at a square is the caster's own light, and the auto-pilot's spotlight is
+              // the only one on screen while it runs - so this takes the wheel back rather than
+              // setting a `spot` nothing would draw. Silently doing nothing is the worse failure.
+              dropMotion();
               setView((v) => {
                 // Clicking the lit square again puts the light out, which is the gesture everyone
                 // tries first and the only way to clear it without reaching for another control.
@@ -885,6 +992,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               // 0.1 a notch over a range that is now only 1x to 2x - a quarter-step would be a
               // quarter of the whole range, which is a jump rather than a zoom.
               const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.zoom + (e.deltaY < 0 ? 0.1 : -0.1)));
+              // Zooming is aiming: it decides what is in frame, so it takes the wheel back.
+              dropMotion();
               set({ zoom: Math.round(next * 100) / 100 });
             }}
             title="Drag to slide the stream view · wheel to zoom · 1-9 to step (4 presses edge to edge) · arrows to nudge"
@@ -912,11 +1021,18 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               }}
             >
               <div
-                className="ovb-stage ovl-fade-stage"
-                ref={stageRef}
+                className={`ovb-stage ovl-fade-stage${camera.running ? " ovb-motion" : ""}`}
+                ref={setStage}
                 style={{
-                  left: placeBoard(stage.w, SOURCE_SIZE, view.cx),
-                  top: placeBoard(stage.h, SOURCE_SIZE, view.cy),
+                  // Left out entirely while the auto-pilot has the wheel - React would otherwise
+                  // clear the camera's own writes on its next render. Same arrangement as the
+                  // source; see hooks/useBoardCamera.
+                  ...(camera.running
+                    ? null
+                    : {
+                        left: placeBoard(stage.w, SOURCE_SIZE, view.cx),
+                        top: placeBoard(stage.h, SOURCE_SIZE, view.cy),
+                      }),
                   // The monitor has to show the fade too, or the caster is judging legibility
                   // against a board that is more solid than the one on stream. Same variable the
                   // source sets, so the monitor gets the three tiers rather than a flat fade - see
@@ -933,7 +1049,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   firedBy={firedBy}
                   deepCells={deepCells}
                   spotCells={spotCells}
-                  spotColor={view.spotColor ?? undefined}
+                  spotColor={camera.running ? undefined : (view.spotColor ?? undefined)}
                   // Matches the source exactly - the monitor has to BE the frame, not resemble it.
                   //
                   // These three were missing, and that was a real fault rather than an omission:
@@ -995,11 +1111,18 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             Drag to slide · wheel to zoom · <strong>1-9</strong> (numpad or top row) step in 8
             directions, 4 presses edge to edge, 5 recentres · arrows nudge. On stream:{" "}
             <strong>
-              {zoomed ? `${view.zoom.toFixed(1)}x around ${cellLabel(centreCell, boardSize)}` : "the whole board"}
+              {/* While the auto-pilot has the wheel, cx/cy are only where the board RESTS - naming
+                  a square off them would be the readout describing a framing nobody is looking at.
+                  What is true either way is that the desk is not the thing aiming. */}
+              {camera.running
+                ? "the board is aiming itself"
+                : zoomed
+                  ? `${view.zoom.toFixed(1)}x around ${cellLabel(centreCell, boardSize)}`
+                  : "the whole board"}
             </strong>
             {/* The square under the crosshair, named in full - a caster reads this out, and the
                 board itself only ever shows the shortened form. */}
-            {zoomed && challenges[centreCell] && <> - {challenges[centreCell].name}</>}
+            {!camera.running && zoomed && challenges[centreCell] && <> - {challenges[centreCell].name}</>}
           </span>
         </div>
 
@@ -1173,16 +1296,88 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
           </section>
 
           {/*
+            The auto-pilot: a board that reads itself out while nobody is driving it.
+
+            For the parts of a broadcast where the desk is not the interesting thing - a break, a
+            pre-match lobby, a co-stream, or simply a caster who wants both hands free. At 1x the
+            whole board is on stream and none of it is legible; at 2x a quarter of it is legible and
+            the other three quarters are gone. The lap is the answer to having to choose.
+
+            Engaging it is the one control here that does NOT drop `follow` and the punch: the lap
+            USES the punch settings for its own spotlight (see the effect that keeps them in step),
+            so switching it on while follow is armed is a caster asking for both, and gets both.
+            Every other aim control takes the wheel straight back - see dropMotion.
+          */}
+          <section>
+            <h3>Auto-pilot</h3>
+            <label className="cast-check">
+              <input
+                type="checkbox"
+                checked={Boolean(view.motion)}
+                onChange={(e) => {
+                  if (!e.target.checked) {
+                    dropMotion();
+                    return;
+                  }
+                  // Follow would be a second thing steering. The lap does its own following.
+                  setFollow(false);
+                  cancelPunch();
+                  set({
+                    motion: { pan: true, lap: lapSecs, spot: punchOn ? punchSecs : 0, since: Date.now() },
+                  });
+                }}
+              />
+              <span>Let the board pan itself, clockwise</span>
+            </label>
+            {view.motion && (
+              <>
+                <div className="cast-row">
+                  <input
+                    type="range"
+                    min={MIN_LAP}
+                    max={MAX_LAP}
+                    step={10}
+                    value={lapSecs}
+                    className="eb-slider"
+                    style={{ ["--eb-fill" as string]: (lapSecs - MIN_LAP) / (MAX_LAP - MIN_LAP) }}
+                    onChange={(e) => setLapSecs(Number(e.target.value))}
+                    title="How long one full lap of the four quadrants takes"
+                  />
+                  <span className="cast-zoom-value">
+                    {Math.floor(lapSecs / 60)}:{String(lapSecs % 60).padStart(2, "0")}
+                  </span>
+                </div>
+                <p className="cast-note muted">
+                  2x on each quadrant in turn, holding still long enough to read it before moving
+                  on. {punchOn
+                    ? `Each new shot pulls it to that square's quadrant for ${punchSecs}s, then the lap carries on from there.`
+                    : "Punch in is off, so shots don't interrupt it."}{" "}
+                  Touching the aim, the zoom or a preset takes the wheel back where it stands.
+                </p>
+              </>
+            )}
+          </section>
+
+          {/*
             Follow the action. Off by default and it yields to the hand - see the note on `follow`.
           */}
           <section>
             <h3>Follow the action</h3>
             <label className="cast-check">
-              <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={follow}
+                // The lap already follows the action, in its own way and without the twitch. Two
+                // things steering one camera is the failure this whole handover is shaped around.
+                disabled={Boolean(view.motion)}
+                onChange={(e) => setFollow(e.target.checked)}
+              />
               <span>Swing to the newest shot</span>
             </label>
             <p className="cast-note muted">
-              {punchOn
+              {view.motion
+                ? "The auto-pilot is doing the following. Switch it off to swing the camera yourself."
+                : punchOn
                 ? "Each shot takes the camera and holds it, lit in the firing fleet's colour."
                 : view.zoom <= MIN_ZOOM
                   ? "Nothing to follow at 1x - the whole board is already in frame. Zoom in first."

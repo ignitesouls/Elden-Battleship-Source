@@ -46,6 +46,19 @@
 }
 
 /**
+ * A board aiming itself has no gaps to fill, so it gets no transition at all.
+ *
+ * Everything above is about frames arriving ten times a second over a rate-limited channel. The
+ * self-aiming camera produces a position every animation frame with its own easing already applied
+ * (see lib/overlayCamera), so this transition would be a second smoothing layered on the first -
+ * and a lagging one, which is worse than none: the board would trail its own camera by 140ms and
+ * arrive at each quadrant after the dwell had already started.
+ */
+.ovb-stage.ovb-motion {
+  transition: none;
+}
+
+/**
  * Let the board overflow the source. THIS is what made zoom and pan look broken.
  *
  * BoardGrid wraps its grid in two boxes that both refuse to exceed their container:

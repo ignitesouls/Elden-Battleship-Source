@@ -3,6 +3,10 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { ShipPlacement } from "../types/battleship";
 import { castSendKind, frameKey } from "./castFrame";
+// Type-only, so this file gains no runtime dependency on the camera - which matters, because the
+// camera must stay runnable outside a browser and this one never can. Same arrangement, and the
+// same reason, as castFrame's import of these types - see the note at the top of that file.
+import type { CastMotion } from "./overlayCamera";
 
 // The frame's pure half lives in castFrame.ts so it can be run outside a browser and asserted -
 // see the note there. Re-exported so callers keep importing the cast protocol from one place.
@@ -130,6 +134,20 @@ export interface CastView {
    * behaviour - the old behaviour is not something anyone was choosing.
    */
   text?: number;
+  /**
+   * The board aiming itself: a clockwise lap of the quadrants, interrupted by each new mark.
+   *
+   * The SETTINGS travel, never the position. A lap publishes nothing while it runs - both ends work
+   * out where the camera is from these four numbers and their own clock, which is the only version
+   * that doesn't put a full frame on the wire every 110ms for the length of a broadcast. See
+   * lib/overlayCamera for the arithmetic both ends share.
+   *
+   * Present means the source has the wheel and `zoom`/`cx`/`cy` above are only where it RESTS. Null
+   * or absent means the caster is aiming, which is what every control on the aim pad sets it back
+   * to - see the handover note on the control page. Two hands on one wheel is the failure this
+   * field is shaped to make impossible.
+   */
+  motion?: CastMotion | null;
 }
 
 /**
@@ -216,15 +234,17 @@ export interface CastMessage {
 }
 
 /**
- * Zoom bounds. 1 fits the whole board; 2 shows a quarter of it.
+ * Zoom bounds, re-exported from where the framing arithmetic lives.
  *
- * Capped at 2 deliberately, down from 6. Past 2x a board is a handful of squares and the pan gets
- * twitchy - a small movement of the caster's hand throws a viewer clear across the board, and the
- * thing they were reading is gone before they finished it. 2x is about where the square names stop
- * being the reason to zoom, so it's the useful end of the range rather than an arbitrary limit.
+ * They moved to lib/overlayBoardLayout when the self-aiming camera needed them: that module is pure
+ * and this one is not - it imports React and the supabase client, so nothing that imports it can be
+ * run outside a browser, which put the bounds out of reach of both lib/overlayCamera and the check
+ * script that asserts it. Same split, and the same reason, as castFrame.ts.
+ *
+ * Still exported here because this is where every caller looks for them, and a cap on a zoom is
+ * part of the cast protocol as much as it is part of the layout.
  */
-export const MIN_ZOOM = 1;
-export const MAX_ZOOM = 2;
+export { MIN_ZOOM, MAX_ZOOM } from "./overlayBoardLayout";
 
 const STATE_EVENT = "cast-state";
 const HELLO_EVENT = "cast-hello";
