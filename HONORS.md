@@ -148,8 +148,8 @@ It takes a crew of three, and that floor is not decoration. The claim is that no
 closed out a hull, and in a duel there is nobody else - so the title was unconditional for whoever won,
 and all four times it was ever awarded were crews of one. The last of those went to a fleet that a bug
 had wiped off the board mid-battle, so its owner could not be hit, could not be sunk, and could not
-lose. Three is the same line bossSetForRoster already draws between a small room and a full one, and
-those four titles were taken back off the record when the floor landed.
+lose. Three is the same line the boss board's small-crew cut is drawn at, and those four titles were taken
+back off the record when the floor landed.
 
 **Ishmael** is the opposite end of the same match — "and I only am escaped alone to tell thee". It is
 one claim per wrecked fleet rather than a cascade: a crewmate who did less is a worse survivor than

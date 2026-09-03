@@ -27,18 +27,32 @@ interface BaseSet {
    */
   tooltipReplacesName?: boolean;
   /**
-   * The set this one is a smaller cut of, for sets nobody picks by name.
+   * The set this one is a smaller cut of.
    *
    * A variant is a real set everywhere it has to be one - it has its own id in `rooms.square_set`,
    * its own seeded deal, and its own row in the archive - but it is not a separate BOARD as far as
-   * anyone reading the site is concerned. So it never appears in a picker or a records tab, and
-   * everything that groups matches by board folds it back into its parent. See displaySquareSet.
+   * anyone reading the site is concerned. So it never appears in the set picker or a records tab,
+   * and everything that groups matches by board folds it back into its parent: two cuts of the boss
+   * board are the same board with a different number of squares dealt from it. See displaySquareSet.
+   *
+   * The host still chooses between the cuts - in a second row that appears once the parent set is
+   * picked, not as another entry in the list of sets. See cutLabel.
    *
    * The alternative - one set id whose contents depend on the room - was the thing to avoid: the
    * board would stop being a pure function of what the database stores, and the Almanac, the
    * overlays and both Edge Functions all rebuild boards from exactly that.
    */
   variantOf?: string;
+  /**
+   * This cut's button, for a set that comes in more than one. Absent on a set that has no cuts,
+   * which is how the lobby knows not to draw the row at all.
+   *
+   * The parent carries one too: it is a cut like any other from the host's side - the whole board -
+   * and `label` can't do the job, because every cut of a set shares the set's label by design.
+   */
+  cutLabel?: string;
+  /** The label over that row of buttons. On the parent only, since the row belongs to the set. */
+  cutsLabel?: string;
 }
 
 interface FlatSet extends BaseSet {
@@ -84,10 +98,11 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     // This set's names are board-sized handles - "LG Tree Sent", "BOFA" - and its tooltips are the
     // squares in full: "Tree Sentinel - Church of Elleh". So the tooltip is the whole hover.
     tooltipReplacesName: true,
+    cutsLabel: "Boss board",
+    cutLabel: "All bosses",
   },
   /**
-   * The boss board as it is dealt for small crews: the same set with its 42 longest squares taken
-   * out, leaving 164.
+   * The boss board with its 42 longest squares taken out, leaving 164.
    *
    * What comes out is the far end of the game - Bayle, Consort Radahn, Messmer, the Jagged Peak
    * climb, Mohg in the Dynasty - plus the scattered Night's Cavalrys and Deathbirds that cost a
@@ -95,20 +110,29 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
    * team keeps working; one or two players cannot, so on a small crew they are squares that sit
    * there all match and quietly decide it by never being touched.
    *
-   * Nobody picks this. The lobby has one "Bosses" button and this is what it means when every team
-   * is one or two players - see bossSetForRoster and the sync in LobbyPhase. It is hidden rather
-   * than offered because it is not a different board to play, it is the same board sized to the
-   * room, and a second entry in the picker would make it a decision players have to have opinions
-   * about.
+   * The host picks this, from the cut row under "Bosses" - it is not dealt by the roster. It used
+   * to be: every team having one or two players moved the room onto this set on its own, and the
+   * room moved back off it the moment a third player took a side. That read the room right most of
+   * the time and was still the wrong shape, because a duo who wanted the whole map could not have
+   * it and had no way to see why the two biggest board sizes had gone. So the roster now decides
+   * nothing and this is an offer, with the full board the default it always was.
+   *
+   * Still a variant rather than a set of its own: it shares the boss board's records, its Almanac
+   * tab and its "Bosses" name everywhere those are read. The cut row is the only place the two are
+   * told apart. See variantOf.
    */
   "bosses-2v2": {
     id: "bosses-2v2",
     label: "Bosses",
-    blurb: "The boss board, minus the squares a crew of one or two can never get to.",
+    blurb:
+      "The boss board minus its 42 longest squares - Bayle, Consort Radahn, Messmer, the Jagged " +
+      "Peak climb, Mohg in the Dynasty, and the Night's Cavalrys and Deathbirds that cost a detour " +
+      "and settle nothing. Worth taking when one or two guns can't be spared for the far end of the map.",
     format: "flat",
     data: bossData2v2 as Challenge[],
     tooltipReplacesName: true,
     variantOf: "bosses",
+    cutLabel: "Small crew",
   },
   objectives: {
     id: "objectives",
@@ -195,56 +219,13 @@ export function displaySquareSet(id: string | null | undefined): SquareSetId {
  * For readers that have folded a variant into its parent and then need the real board back - the
  * Almanac's square census being the one that matters, since it rebuilds each match's full board to
  * find the squares nobody fired at. They try these in turn and keep whichever reproduces the log.
+ *
+ * Also what the lobby's cut row is built from, which is why the parent comes first: the full board
+ * is the leftmost button and the default.
  */
 export function squareSetVariants(id: string | null | undefined): SquareSetId[] {
   const parent = displaySquareSet(id);
   return [parent, ...Object.values(SQUARE_SETS).filter((s) => s.variantOf === parent).map((s) => s.id)];
-}
-
-/**
- * Which cut of the boss board a room's roster calls for.
- *
- * One or two players on every team gets the trimmed set; three or more on any team gets the full
- * one. The rule reads the biggest team rather than the total, because what decides whether the far
- * end of the map is reachable is how many people one team can spare - a 2v2 and a 1v1 are the same
- * problem, and a 3v3 is not.
- *
- * Spectators (`team === null`) are not players and never count. A lobby with nobody on a team yet
- * has no roster to read and gets the full set, which is the default - though the sync in
- * retargetBossSet declines to ACT on that, since an empty roster is not evidence of anything.
- */
-export function bossSetForRoster(players: Array<{ team: number | null }>): SquareSetId {
-  const sizes = new Map<number, number>();
-  for (const p of players) {
-    if (p.team === null || p.team === undefined) continue;
-    sizes.set(p.team, (sizes.get(p.team) ?? 0) + 1);
-  }
-  if (sizes.size === 0) return DEFAULT_SQUARE_SET;
-  const biggest = Math.max(...sizes.values());
-  return biggest <= 2 ? "bosses-2v2" : DEFAULT_SQUARE_SET;
-}
-
-/**
- * Keeps a room on the right cut of the boss board as people arrive and leave, or null if it is
- * already there.
- *
- * Only ever moves a room BETWEEN the boss sets. A room on an objectives set has been deliberately
- * put there and must stay. That is the whole guard: without it, a full lobby switching to
- * Objectives would be dragged back to the boss board by its own roster.
- *
- * A lobby with nobody on a team yet is left alone rather than sent to the default. Everyone being
- * on no team is a state a room passes THROUGH - it is how a freshly made room starts and what a
- * shuffle of fleets looks like halfway - and reading it as "this is a big-crew match" would re-deal
- * the board twice for a room that never changed its mind.
- */
-export function retargetBossSet(
-  current: string | null | undefined,
-  players: Array<{ team: number | null }>
-): SquareSetId | null {
-  if (displaySquareSet(current) !== DEFAULT_SQUARE_SET) return null;
-  if (!players.some((p) => p.team !== null && p.team !== undefined)) return null;
-  const want = bossSetForRoster(players);
-  return want === (current ?? DEFAULT_SQUARE_SET) ? null : want;
 }
 
 /**
@@ -285,9 +266,9 @@ export function squarePool(set: SquareSetDef): number {
  * every host every size meant the small sets quietly doubled up squares to fill the big boards.
  *
  * Answered for the set a room is ACTUALLY on, which matters most for the boss board, since that is
- * two sets wearing one button - the full 206 and the 164-square small-crew cut, whose ceilings are
- * 14 and 12. So a room's ceiling moves when its roster moves it between them, and the lobby brings
- * the board size down with it; see clampBoardSize and the sync in LobbyPhase.
+ * two sets wearing one name - the full 206 and the 164-square small-crew cut, whose ceilings are 14
+ * and 12. So a room's ceiling moves when the host takes the other cut, and the lobby brings the
+ * board size down with it in the same write; see clampBoardSize.
  */
 export function maxBoardSize(set: SquareSetDef): number {
   return largestBoardFor(squarePool(set), BOARD_SIZES);
@@ -297,9 +278,9 @@ export function maxBoardSize(set: SquareSetDef): number {
  * A board size held to what a set can carry: itself, or the set's ceiling when it is over.
  *
  * The single place both directions of the problem are settled, since a room goes out of range two
- * ways - the host picks a smaller set while sitting on a big board, or the roster shrinks and takes
- * the boss board's small-crew cut with it. Never raises a size. A host who chose 8x8 means 8x8, and
- * a bigger set is not a reason to redecide that for them.
+ * ways - the host picks a smaller set while sitting on a big board, or takes the boss board's
+ * small-crew cut, whose ceiling is two sizes lower. Never raises a size. A host who chose 8x8 means
+ * 8x8, and a bigger set is not a reason to redecide that for them.
  */
 export function clampBoardSize(boardSize: number, setId: string | null | undefined): number {
   return Math.min(boardSize, maxBoardSize(squareSet(setId)));

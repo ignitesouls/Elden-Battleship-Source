@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed, updateRoomSettings } from "../../lib/rooms";
-import { retargetBossSet, clampBoardSize } from "../../lib/challenges";
-import { fleetFor, presetNameOf, DEFAULT_FLEET_PRESET } from "../../types/battleship";
+import { useState } from "react";
+import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed } from "../../lib/rooms";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
@@ -46,54 +44,6 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
       setBusy(false);
     }
   }
-
-  /**
-   * Keeps a boss room on the cut of the board its roster calls for, as people arrive and leave.
-   *
-   * The rule is in retargetBossSet; this is only the thing that applies it. It has to be reactive
-   * rather than settled when the host picks "Bosses", because the host usually picks before anybody
-   * has joined - a room set up for a 2v2 and then filled to a 3v3 has to end up on the full board
-   * without the host thinking about it, which is the entire point of the roster deciding.
-   *
-   * The lobby is the only safe place for it. Every reader downstream - the Almanac, the overlays,
-   * both Edge Functions - rebuilds boards from `square_set`, so changing it re-deals the squares;
-   * doing that during placement would rename the board under players who had already laid out a
-   * fleet on it, and after firing opens it would be a different match. In the lobby nobody has
-   * committed to anything yet.
-   *
-   * The host alone writes, though the RLS policy would let any player in the room: four clients
-   * agreeing on the same value would still be four writes and four re-deals for one roster change.
-   * A host who has wandered off leaves the room on whatever it last had, which is a stale setting
-   * and not a wrong board - the host has to come back to start the match anyway.
-   */
-  const syncing = useRef(false);
-  useEffect(() => {
-    if (!myPlayer.is_host) return;
-    const want = retargetBossSet(room.square_set, players);
-    if (want === null || syncing.current) return;
-    // The small-crew cut is 164 squares against the full board's 206, so it stops two sizes lower.
-    // A room that was set to 13x13 or 14x14 as a 3v3 and then emptied to a 2v2 has to come down
-    // with the set or it deals the same boss in two cells - and it comes down in this write rather
-    // than a second one, because the board between the two writes is exactly that broken board.
-    const size = clampBoardSize(room.board_size, want);
-    syncing.current = true;
-    void updateRoomSettings(room.id, {
-      square_set: want,
-      ...(size === room.board_size
-        ? {}
-        : {
-            board_size: size,
-            ship_defs: fleetFor(size, presetNameOf(room.ship_defs, room.board_size) ?? DEFAULT_FLEET_PRESET),
-          }),
-    })
-      // Deliberately silent. This is a correction nobody asked for, so a failed one is not an error
-      // to put in front of the host - the room stays on the set it had, which is a playable board,
-      // and the next roster change tries again.
-      .catch(() => {})
-      .finally(() => {
-        syncing.current = false;
-      });
-  }, [myPlayer.is_host, room.id, room.square_set, room.board_size, room.ship_defs, players]);
 
   // Still needed for the live/away dot beside each name. The takeover's own copy of this moved into
   // HostTakeover, which needs it on the match screens too.
@@ -318,7 +268,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       {/* Above the team picker: what you're playing decides which fleet you want to be on, and
           the host usually sets it before anyone picks. */}
-      <MatchSettings room={room} players={players} isHost={myPlayer.is_host} onError={setError} />
+      <MatchSettings room={room} isHost={myPlayer.is_host} onError={setError} />
 
       <TeamPicker
         room={room}

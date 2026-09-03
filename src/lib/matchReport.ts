@@ -430,9 +430,10 @@ interface Honor {
  * have taken a killing blow, so beating the other fleet at all wins the rarest thing on this list -
  * which is what SALTYLANTERN handed out, to a player whose own fleet was never on the board.
  *
- * Three is the same line the rest of the app already draws between a small room and a full one:
- * bossSetForRoster switches a room off the 2v2 cut of the boss board when a crew reaches three, so
- * "3v3 or bigger" already means something specific here and this is that. Measured on the SWEEPER'S
+ * Three is the same line the boss board's small-crew cut is drawn at - what that cut takes out is
+ * the 42 squares one or two players can never be spared for - so "3v3 or bigger" already means
+ * something specific here and this is that. Which cut a room plays is the host's pick rather than
+ * the roster's now, and that moves nothing about where this line falls. Measured on the SWEEPER'S
  * OWN crew rather than on the room, because that is the crew the claim is about - a lone gunner
  * facing a six-strong fleet has still beaten nobody to the punch.
  */

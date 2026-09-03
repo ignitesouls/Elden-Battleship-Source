@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { updateRoomSettings } from "../lib/rooms";
 import { formatDuration } from "../lib/matchTime";
-import { SQUARE_SET_LIST, squareSet, displaySquareSet, bossSetForRoster, DEFAULT_SQUARE_SET } from "../lib/challenges";
+import { SQUARE_SET_LIST, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET } from "../lib/challenges";
 import { squarePool, maxBoardSize, clampBoardSize } from "../lib/challenges";
 import { strictFill } from "../lib/squareSetFormat";
 import { BOARD_SIZES, FLEET_PRESETS, DEFAULT_FLEET_PRESET, fleetFor, presetNameOf } from "../types/battleship";
-import type { Room, Player } from "../types/battleship";
+import type { Room } from "../types/battleship";
 
 /**
  * Preparation lengths the host can pick, every minute from none up to ten.
@@ -29,8 +29,6 @@ function prepLabel(seconds: number): string {
 
 interface Props {
   room: Room;
-  /** The lobby's roster, which decides which cut of the boss board "Bosses" means. */
-  players: Player[];
   isHost: boolean;
   onError: (message: string | null) => void;
 }
@@ -44,7 +42,7 @@ interface Props {
  * starts, which is also the last moment changing them is safe: after placement begins, the board
  * size is baked into fleets that players have already laid out.
  */
-export function MatchSettings({ room, players, isHost, onError }: Props) {
+export function MatchSettings({ room, isHost, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -68,6 +66,14 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
   // itself as its parent because that is the only set anyone here chose - see squareSets.variantOf.
   const shownSet = squareSet(displaySquareSet(set.id));
 
+  /**
+   * The cuts the chosen set comes in, parent first - two for the boss board, none for everything
+   * else, which is how the row below knows whether to exist. See SquareSetDef.cutLabel.
+   */
+  const cuts = squareSetVariants(shownSet.id)
+    .map((id) => squareSet(id))
+    .filter((c) => c.cutLabel);
+
   const shipCells = shipDefs.reduce((n, s) => n + s.size, 0);
 
   // The biggest board this set can deal without repeating a square. Read off `set` and not the set
@@ -80,6 +86,25 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
   // meaningful for the authored sets - a flat list of bosses has no such rules.
   const cleanFill = set.format === "bingo" ? strictFill(set.data, cells) : cells;
   const shortfall = Math.max(0, cells - cleanFill);
+
+  /**
+   * Puts the room on a set - or on another cut of the one it is already on, which is the same write
+   * either way, since a cut is a set as far as the database is concerned.
+   *
+   * A set with a lower ceiling drags the board down to it in the SAME write, fleet and all. Two
+   * writes would deal one board that repeats squares in between, and leaving the size alone would
+   * deal that board for the whole match - which is what happened before this, invisibly, whenever a
+   * host on a big board tried the smallest set.
+   */
+  function chooseSet(id: string) {
+    const size = clampBoardSize(boardSize, id);
+    void apply({
+      square_set: id,
+      ...(size === boardSize
+        ? {}
+        : { board_size: size, ship_defs: fleetFor(size, preset ?? DEFAULT_FLEET_PRESET) }),
+    });
+  }
 
   async function apply(patch: Parameters<typeof updateRoomSettings>[1]) {
     setBusy(true);
@@ -96,9 +121,14 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
   // Practice leads rather than trailing the board size and the fleet, because it is the only one of
   // these that changes what the match IS. Somebody skim-reading a collapsed settings row is reading
   // the first thing in it, and "this one doesn't count" is the fact they most need off that glance.
+  // A cut the host went out of their way to take is named here; the full board isn't, because it is
+  // what "Bosses" has always meant and a suffix on the default would only ask to be read. Worth the
+  // words at all because this line is what the rest of the lobby reads instead of opening the
+  // panel, and "which board are we actually playing" is now a thing somebody chose.
+  const cutSuffix = set.id !== shownSet.id && set.cutLabel ? ` - ${set.cutLabel.toLowerCase()}` : "";
   const summary =
     (practice ? "Practice · " : "") +
-    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label} · ${formatDuration(
+    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label}${cutSuffix} · ${formatDuration(
       prepSeconds
     )} prep`;
 
@@ -172,39 +202,46 @@ export function MatchSettings({ room, players, isHost, onError }: Props) {
             {shipDefs.map((s) => `${s.name} (${s.size})`).join(" · ")}
           </span>
 
-          {/* One button per set a person can choose. The boss button is the one that does not write
-              its own id: which cut of the boss board it means is the roster's answer, not the
-              host's, and picking it here rather than in the click handler alone is what makes it
-              land right when the host chooses Bosses before anyone has joined - the sync in
-              LobbyPhase then follows the roster from there. */}
+          {/* One button per set a person can choose. A set that comes in cuts is one button here
+              and picks its full board; which cut is the row below, because the cuts are the same
+              board and putting them in this row would mean two buttons reading "Bosses". */}
           <Field label="Squares">
             {SQUARE_SET_LIST.map((s) => (
               <Choice
                 key={s.id}
                 active={displaySquareSet(set.id) === s.id}
                 busy={busy}
-                onClick={() => {
-                  const target = s.id === DEFAULT_SQUARE_SET ? bossSetForRoster(players) : s.id;
-                  // A set with a lower ceiling drags the board down to it in the SAME write, fleet
-                  // and all. Two writes would deal one board that repeats squares in between, and
-                  // leaving the size alone would deal that board for the whole match - which is
-                  // what happened before this, invisibly, whenever a host on a big board tried the
-                  // smallest set.
-                  const size = clampBoardSize(boardSize, target);
-                  void apply({
-                    square_set: target,
-                    ...(size === boardSize
-                      ? {}
-                      : { board_size: size, ship_defs: fleetFor(size, preset ?? DEFAULT_FLEET_PRESET) }),
-                  });
-                }}
+                onClick={() => chooseSet(s.id)}
               >
                 {s.label}
               </Choice>
             ))}
           </Field>
+
+          {/* How much of that board to play, for the one set that offers a choice.
+
+              This used to be the roster's call and not the host's: every team having one or two
+              players moved a boss room onto the small-crew cut by itself, and a third player
+              arriving moved it back. It got the common case right and left no way to disagree with
+              it - a duo who wanted the whole map, DLC and all, could not have it, and the two board
+              sizes that went away with the cut went away unexplained. So the choice is here, on
+              every roster, with the full board the default it always was. A 4v4 that wants a
+              shorter match can take the short board too; nothing about the cut is really about how
+              many people are in the room, only about how far they can be sent.
+
+              The caption is the ACTIVE cut's own blurb, which is why the set-level blurb this row
+              replaced isn't also printed: on a set with cuts, what you are playing is the cut. */}
+          {cuts.length > 1 && (
+            <Field label={shownSet.cutsLabel ?? "Squares dealt"}>
+              {cuts.map((c) => (
+                <Choice key={c.id} active={set.id === c.id} busy={busy} onClick={() => chooseSet(c.id)}>
+                  {c.cutLabel} - {squarePool(c)}
+                </Choice>
+              ))}
+            </Field>
+          )}
           <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
-            {shownSet.blurb}
+            {cuts.length > 1 ? set.blurb : shownSet.blurb}
           </span>
 
           <Field label="Preparation time before firing opens (minutes)">
