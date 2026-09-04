@@ -179,6 +179,11 @@ ok("a thinned board writes empty onto the board", /[?&]empty=0\.30/.test(board.u
 // writing them would be a URL that lies about what it does.
 const audio = tuned.find((e) => e.source.id === "audio")!;
 ok("the audio source takes no look settings", !/[?&](opacity|text|empty|secs)=/.test(audio.url));
+// The small fire board trades square names for square colours, so a text size written onto it would
+// be a setting with nothing to act on - and, worse, a URL that claims the source draws names.
+const small = tuned.find((e) => e.source.id === "fire-mini")!;
+ok("the small fire board takes no text size", !/[?&]text=/.test(small.url));
+ok("the small fire board still fades with the scene", /[?&]opacity=0\.50/.test(small.url) && /[?&]empty=0\.30/.test(small.url));
 const finds = tuned.find((e) => e.source.id === "egg")!;
 ok("the find alert takes its hold time", /[?&]secs=9/.test(finds.url));
 ok("the find alert takes no text size", !/[?&]text=/.test(finds.url));

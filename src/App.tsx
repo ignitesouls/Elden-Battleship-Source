@@ -39,6 +39,15 @@ const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.S
 // Read once, on the day somebody starts streaming, and never again - so it has no business being in
 // the bundle a player firing at a board downloads. It drags in the scene generator and the sample.
 const Streaming = lazy(() => import("./pages/Streaming").then((m) => ({ default: m.Streaming })));
+/**
+ * A streamer's audience, arriving from a Twitch panel - see pages/Watch.
+ *
+ * Lazy despite being a live match page, which is the opposite of the rule three lines up, because
+ * the audience it serves is the opposite too: these are viewers who have never opened this site
+ * before and are here for one match. Making every player's bundle carry a page none of them will
+ * open is the wrong trade in both directions.
+ */
+const Watch = lazy(() => import("./pages/Watch").then((m) => ({ default: m.Watch })));
 
 /**
  * Every route that is composited into OBS must show nothing but the match state, so they opt out
@@ -120,6 +129,9 @@ function App() {
               pages/StreamSource. `/stream/cast` shares the route and is the caster's desk, not a
               browser source. */}
           <Route path="/stream/:element" element={<StreamSource />} />
+          {/* One public URL per streamer, resolved to whatever match they are in right now. Keeps
+              the site chrome: this is a page for people, not a source in a scene. */}
+          <Route path="/watch/:handle" element={<Watch />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/player/:key" element={<PlayerStats />} />
           <Route path="/almanac" element={<Almanac />} />

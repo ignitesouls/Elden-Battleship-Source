@@ -50,10 +50,14 @@ import "./OverlayBoard.css";
  *     ?pin=1             every fleet, but still pinned - see below
  *     ?autopan=1&lap=160      aims itself: a slow clockwise lap of the four quadrants
  *     ?spotlight=6            takes the camera to each square as it is marked, for six seconds
+ *     ?mini=1                 the small-board treatment - colours instead of names, no text at all
  *
- * The last two are the answer to "framed once" not being enough. A board framed on the whole grid
- * is unreadable at stream resolution and a board framed on a quarter of it is blind to the other
- * three - so it moves, on its own, with nobody at a desk. See lib/overlayCamera.
+ * `autopan` and `spotlight` are the answer to "framed once" not being enough. A board framed on the
+ * whole grid is unreadable at stream resolution and a board framed on a quarter of it is blind to
+ * the other three - so it moves, on its own, with nobody at a desk. See lib/overlayCamera.
+ *
+ * `mini` is the answer to the OTHER way "framed once" fails: a streamer who wants the board in a
+ * corner rather than as the stage. See the block on it below.
  *
  * `pin` exists because "all fleets, unattended" and "whatever the caster is doing" would otherwise
  * be the same URL (no parameters at all), and they are opposite intentions.
@@ -134,6 +138,37 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
   const { code, params } = useOverlaySource(props);
   const debug = params.get("debug") === "1";
+  /**
+   * The small-board treatment: colours instead of names, and no text on the board at all.
+   *
+   * -- Why this is a mode of THIS page and not a page of its own ----------------------------------
+   *
+   * pages/OverlayFleet argues at length that a small board is not the board source in a smaller
+   * rectangle, and every word of it still holds - but the thing it was arguing about was the
+   * CONTENT. That source shows a different board (the shots landing on you, with your own hulls
+   * under them), read out of a credential this page never touches, so it had to be its own page.
+   *
+   * A small fire board is not a different board. It is this one - the same shots, the same wrecks,
+   * the same finds in the water - asked to be legible at a fifth of the area. So the only honest
+   * place for it is here, as a way of DRAWING this board, and a second page would have been a
+   * duplicate of four hundred lines whose sole difference was which props it left off.
+   *
+   * What the mode changes is exactly the set of things that stop working when a square is 34px:
+   *
+   *   * names off, colour on   - a name fitted into 34px is mush; the challenge colour is the part
+   *                              of a square's identity that survives, and it is the same trade the
+   *                              players' own fleet panel has always made (see cellTint)
+   *   * count chips off        - two digits beside a hull sprite in a square this size is text
+   *                              pretending to be a picture
+   *   * the gutter collapsed   - A-J and 1-10 are text too, and on a board this small they charge
+   *                              two edges for it. ?coords=1 puts them back for anyone who wants
+   *                              chat to have a vocabulary
+   *
+   * Everything else is untouched, deliberately: hit, miss and sunk markers, the wrecks of hulls
+   * this crew has sunk, and whatever the water has given up are all pictures already, and they are
+   * the reason to have this on a stream rather than a coloured grid that never changes.
+   */
+  const mini = params.get("mini") === "1";
   /**
    * How large the names are drawn, over what the squares would choose - see lib/overlayText.
    *
@@ -253,6 +288,16 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   const askedText = params.get("text");
   const drawnText = askedText !== null && askedText !== "" ? textSize : (view.text ?? 1);
   const stale = !pinned && cast !== null && Date.now() - cast.at > STALE_AFTER_MS;
+  /**
+   * The coordinate gutter, which a mini board turns around: off unless asked for.
+   *
+   * Everywhere else on this page the gutter is on by default, because a caster saying "D7" to
+   * several thousand people has no other way to say where. A mini board is parked in a corner and
+   * nobody is calling squares off it, while the two label tracks cost it a band on all four edges
+   * of a board whose squares are already the smallest thing on the stream. So the default flips,
+   * and ?coords=1 hands them back - the same bargain pages/OverlayFleet struck for the same reason.
+   */
+  const showCoords = mini ? params.get("coords") === "1" : view.coords;
 
   const teams = activeTeams(state.players);
   const shown = typeof view.mode === "number" ? teams.filter((t) => t === view.mode) : teams;
@@ -437,9 +482,14 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
    *
    * No `myPlayerId`, so nothing is flagged as mine: a browser source belongs to no player, and the
    * accent that marks your own chip on your own screen would be a lie about whose it is here.
+   *
+   * Off on a mini board as well, because a tally is a number and a number is text - see the `mini`
+   * block above. It is the one thing the mode drops that a viewer might genuinely miss, and it
+   * still has to go: three chips crowded beside a hull in a 34px square is not a tally anybody can
+   * read, it is a smear that costs the square the colour it was kept for.
    */
   const counts =
-    fireTeam !== null
+    fireTeam !== null && !mini
       ? countChips(teamCounts.get(fireTeam) ?? new Map(), (pid) => {
           const who = state.players.find((pl) => pl.id === pid);
           return who?.nickname ?? "Someone";
@@ -462,7 +512,7 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
 
   return (
     <div
-      className={`ovb-frame ovb-board ovl-fade${view.coords ? "" : " ovb-no-coords"}`}
+      className={`ovb-frame ovb-board ovl-fade${mini ? " ovb-mini" : ""}${showCoords ? "" : " ovb-no-coords"}`}
       ref={frameRef}
       // Board size as a CSS variable so the stylesheet can recompute the cell font from the real
       // board size - BoardGrid's own figure is capped at 1600px. See OverlayBoard.css.
@@ -543,13 +593,25 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
           // reason this source exists is to be read from across a room. See lib/textFit.
           growText
           cellText={
-            view.names && revealed
+            view.names && revealed && !mini
               ? (i) => {
                   const c = challenges[i];
                   if (!c) return null;
                   // Region and colour included so the stream tints squares exactly as the players'
                   // own boards do - the key along the bottom of their screen reads true here too.
                   return { label: c.short ?? c.name, region: c.region, color: c.color };
+                }
+              : undefined
+          }
+          // What a square wears instead of its name, on a mini board - and only there. Behind the
+          // same reveal gate the names are, for the same reason (see lib/overlayReveal): a tint is
+          // a weaker read than a name but it is the same KIND of read, and a captain must not be
+          // able to see which squares are which off their own source while hulls are still in hand.
+          cellTint={
+            mini && revealed
+              ? (i) => {
+                  const c = challenges[i];
+                  return c ? { region: c.region, color: c.color } : null;
                 }
               : undefined
           }

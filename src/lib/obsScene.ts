@@ -83,6 +83,11 @@ function placements(kind: SceneKind): Record<string, SourcePlacement> {
   return {
     timer: { x: 360, y: 16, scale: 1 },
     board: { x: 1160, y: 254, scale: 0.72 },
+    // Not the big board's slot, even though the two are alternatives. The caster's pair share one
+    // because they are the same board at the same size; these are the same board at a fifth of the
+    // area, so a streamer ticking both to compare them wants to see both - and the small one's
+    // whole point is that it sits out of the way, above the fleet panel in the left-hand column.
+    "fire-mini": { x: 40, y: 230, scale: 0.8 },
     fleet: { x: 40, y: 566, scale: 1 },
     egg: { x: 460, y: 280, scale: 1 },
     key: { x: 0, y: 990, scale: 1 },

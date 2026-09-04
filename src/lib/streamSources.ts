@@ -92,6 +92,31 @@ const PLAYER_SOURCES: StreamSource[] = [
     followsTeam: true,
     on: true,
   },
+  /**
+   * The same board, small enough to live in a corner - see the `mini` block in pages/OverlayBoard.
+   *
+   * Offered second and unticked, because it is an ALTERNATIVE to the source above rather than an
+   * addition to it: both draw the crew's own shots, and a scene that arrived with the pair of them
+   * would be the same board twice. It is for the streamer whose stage is their gameplay rather than
+   * the board - the board goes in a corner, wearing colours instead of names, and the key strip
+   * along the bottom is what turns those colours back into bosses.
+   *
+   * No text size in `honours`, because there is no text in it to size. Same reasoning as the fleet
+   * panel, which made this trade first.
+   */
+  {
+    id: "fire-mini",
+    element: "board",
+    obsName: "EB Fire Board (small)",
+    label: "Fire board (small)",
+    note: "the same board for a corner - square colours instead of names, and no text at all",
+    width: 400,
+    height: 400,
+    query: { fire: "1", mini: "1" },
+    honours: { opacity: true, empty: true },
+    followsTeam: true,
+    on: false,
+  },
   {
     id: "fleet",
     element: "fleet",

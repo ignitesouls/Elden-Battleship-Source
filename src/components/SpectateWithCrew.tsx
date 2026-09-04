@@ -20,7 +20,17 @@ interface Props {
   /** The crew whose shoulder we're looking over. */
   team: number;
   attacks: Attack[];
-  fleets: Fleet[];
+  /**
+   * Every fleet this viewer is allowed to read, which is not the same thing in both callers.
+   *
+   * Narrowed to the two fields actually used, so the watch page can pass the one fleet an RPC handed
+   * it without inventing a ship_grid and a hit table it was never given. A full `Fleet[]` still
+   * satisfies it, so the spectator page is unchanged.
+   *
+   * Empty is a supported state, not a broken one: an audience member on /watch has no spectator seat
+   * and therefore cannot read `fleets` at all, and the boards below are honest without it.
+   */
+  fleets: Pick<Fleet, "team" | "placements">[];
   activeTeamsList: number[];
   /** This crew's square tallies, drawn where the crew themselves see them - on the board they fire at. */
   counts?: Map<number, SquareCount[]>;
@@ -42,6 +52,16 @@ interface Props {
    * that derivation should exist once. The panel is only a frame around it.
    */
   wrapBoard?: (id: "crewFire" | "crewFleet", title: string, board: ReactNode) => ReactNode;
+  /**
+   * What to say when this crew's hulls can't be drawn, for the audience that is reading it.
+   *
+   * The default below is written for the person running the site: it names an RLS policy, because on
+   * the spectator page a missing fleet means that policy has not been applied and the fix is a
+   * migration. On the watch page it means the streamer has not opted into showing their ships, which
+   * is a choice rather than a fault, and telling four hundred viewers to apply a database policy
+   * would be nonsense. Same absence, two completely different sentences.
+   */
+  noFleetNote?: ReactNode;
 }
 
 /** Vertical room the "riding with" line and the policy warning take out of the stage. */
@@ -70,6 +90,7 @@ export function SpectateWithCrew({
   deep,
   stage,
   wrapBoard,
+  noFleetNote,
 }: Props) {
   const boardSize = room.board_size;
   const shipDefs = room.ship_defs;
@@ -243,8 +264,12 @@ export function SpectateWithCrew({
 
       {!ownFleet && (
         <span className="spectate-note">
-          Their ship positions can't be read. Apply the <code>fleets select by spectator</code>{" "}
-          policy to see them. Shot results show either way.
+          {noFleetNote ?? (
+            <>
+              Their ship positions can't be read. Apply the <code>fleets select by spectator</code>{" "}
+              policy to see them. Shot results show either way.
+            </>
+          )}
         </span>
       )}
     </div>

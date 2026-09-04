@@ -4,6 +4,7 @@ import { OverlaySetting as Setting, textReadout } from "../components/OverlaySet
 import { OverlaySample } from "../components/OverlaySample";
 import { SourceRow } from "../components/SourceRow";
 import { SiteFooter } from "../components/SiteFooter";
+import { WatchLinkBox } from "../components/WatchLinkBox";
 import { useAuthProfile } from "../hooks/useAuthProfile";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
@@ -478,6 +479,16 @@ export function Streaming() {
           hands out URLs for that room alone.
         </span>
       </div>
+
+      {/*
+        -- the audience, last -------------------------------------------------------------------
+
+        After the overlay rather than before it, because it is the only thing on this page that is
+        not about the streamer's own screen. The first two boxes end with something pasted into OBS
+        or into a config file; this one ends with something pasted into Twitch, which is the next
+        thing they do and not the same thing.
+      */}
+      <WatchLinkBox />
 
       <SiteFooter />
     </div>

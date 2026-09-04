@@ -189,6 +189,26 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   const fireUrl = url("overlay-board", withScene(fireQuery));
 
   /**
+   * The same hunting board, small: colours instead of names, and no text on it at all. See the
+   * `mini` block in pages/OverlayBoard.
+   *
+   * Three of this box's settings are deliberately absent from it. `text` because there is none to
+   * size - that is the whole trade the source makes. Auto-pan and the spotlight because a board
+   * this size is a picture parked in a corner, not a stage: it has nothing to zoom into, and a
+   * 400px source walking its own quadrants would be motion in the corner of somebody's footage
+   * with no legibility bought by it.
+   */
+  const fireMiniQuery = new URLSearchParams();
+  if (crew !== null) {
+    fireMiniQuery.set("team", String(crew));
+    fireMiniQuery.set("fire", "1");
+  }
+  fireMiniQuery.set("mini", "1");
+  if (opacity < 1) fireMiniQuery.set("opacity", opacity.toFixed(2));
+  if (emptyFade < 1) fireMiniQuery.set("empty", emptyFade.toFixed(2));
+  const fireMiniUrl = url("overlay-board", fireMiniQuery.toString());
+
+  /**
    * The caster's board: no parameters at all.
    *
    * That is what puts it under the control page rather than pinning it - see pinnedView. The scene
@@ -578,6 +598,15 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
                 url={fireUrl}
                 size="1000 x 1000"
                 note={`${teamName(crew!)}'s own shots - the board they're playing off`}
+              />
+
+              {/* Directly under the board it replaces, because that is the choice being made: one
+                  of these two, not both. A scene with the pair in it is the same board twice. */}
+              <SourceRow
+                label="Fire board (small)"
+                url={fireMiniUrl}
+                size="400 x 400"
+                note="the same board for a corner - square colours instead of names, and no text at all. Add ?coords=1 for the A-J and 1-10 labels"
               />
 
               {canDrawFleet ? (

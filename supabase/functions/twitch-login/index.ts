@@ -188,6 +188,11 @@ Deno.serve(async (req) => {
       {
         id: caller.id,
         twitch_id: metadata.twitch_id,
+        // The address of their /watch/ page. Written here and nowhere else - a trigger refuses it
+        // from anybody but the service role, because a handle somebody could set by hand is a handle
+        // somebody could squat, and squatting one means serving your match at their URL to their
+        // audience. See guard_twitch_login in 20260905000000_watch_handles.
+        twitch_login: metadata.twitch_login,
         display_name: metadata.display_name,
         avatar_url: metadata.avatar_url,
         // Only written when there is one to carry across a reclaim. Omitting it keeps the column

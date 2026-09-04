@@ -148,6 +148,37 @@
 }
 
 /**
+ * A mini board's gutter is COLLAPSED, not merely hidden - the opposite of the rule above it.
+ *
+ * That rule keeps the footprint because the board it governs pans, and a footprint that changed
+ * with a setting would move every offset under it. A mini board is parked in a corner and framed
+ * once, so it has no offsets to protect and it does have pixels it cannot spare: BoardGrid's gutter
+ * tracks are `auto` and the whole grid is sized to exactly the square handed to it, so a
+ * hidden-but-present label goes on charging a 400px board for two edges it is not drawing. Zeroing
+ * the label's own box collapses the track and gives those pixels back to the squares. Same trade,
+ * and the same reasoning, as .ovf-no-coords in OverlayFleet.css.
+ */
+.ovb-mini.ovb-no-coords .bg-coord {
+  font-size: 0;
+  line-height: 0;
+  padding: 0;
+}
+
+/**
+ * The tint, turned up from the 20% the app uses - exactly as the fleet source does, and for exactly
+ * the same reasons (see the longer note on .ovf-board .bg-grid).
+ *
+ * In the app the wash is quiet because it only has to let a player match a colour across two boards
+ * a foot from their face. On a mini board it is the ONLY thing carrying a square's identity, it is
+ * being read at a fraction of the size, and a stream encoder takes a bite out of low-contrast fills
+ * before anybody sees them. Far enough up to survive the encode, and still short of the point where
+ * the fill starts winning against the wrecks drawn over it.
+ */
+.ovb-mini .bg-grid {
+  --bg-tint: 34%;
+}
+
+/**
  * Coordinates a viewer can actually read.
  *
  * In the app these are deliberately quiet - dim, small, and secondary to the square names, because
