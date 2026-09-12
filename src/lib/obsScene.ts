@@ -1,6 +1,16 @@
 // The pure half, deliberately - this module has to be runnable in Node so scripts/check-obs-scene.ts
 // can build a collection and pull it apart. See the note at the top of streamSources.
 import type { SceneKind, StreamSource } from "./streamSources";
+// Explicit .ts, like roomCode.ts and careerStats.ts elsewhere: this module is run directly by
+// scripts/check-obs-scene and scripts/check-cast-scene under Node, which does not resolve an
+// extensionless relative import.
+import {
+  screenRects,
+  boardRect,
+  clockRect,
+  CAST_CANVAS,
+  type CastLayoutConfig,
+} from "./castSceneLayout.ts";
 
 /**
  * An OBS Scene Collection, built in the browser and handed over as a download.
@@ -321,4 +331,171 @@ export function previewBox(kind: SceneKind, source: StreamSource) {
  */
 export function sceneFilename(kind: SceneKind): string {
   return `elden-battleship-${kind}-overlay.json`;
+}
+
+/* ======================================================================================
+ *  The casting set scene - a whole broadcast layout, not an element menu.
+ *
+ *  Everything above builds a scene the streamer arranges: a handful of sources dropped in a
+ *  corner, deliberately un-composed, because the caster owns the layout. This is the opposite by
+ *  request - a caster who wants THE shot: their players' streams boxed around the board, the clock
+ *  on top, and a second scene for the camera break. It is still an initial arrangement they can
+ *  move, but it arrives composed rather than stacked.
+ *
+ *  Two scenes in one collection so a caster hotkeys between "the match" and "the desk on camera"
+ *  rather than swapping collections. They share no sources.
+ * ==================================================================================== */
+
+export const CAST_SCENE_MAIN = "EB Cast";
+export const CAST_SCENE_BREAK = "EB Casters";
+
+/** A minimal StreamSource for a box the source catalogue does not describe - screens, the frame. */
+function castSource(id: string, element: StreamSource["element"], obsName: string, w: number, h: number): StreamSource {
+  return {
+    id,
+    element,
+    obsName,
+    label: obsName,
+    note: "",
+    width: w,
+    height: h,
+    query: {},
+    honours: {},
+    on: true,
+  };
+}
+
+export interface CastCollectionOptions {
+  /** Origin + path the URLs are built against - `window.location` in the page, a constant in a test. */
+  base: string;
+  /** The caster's overlay token. Every source in both scenes carries it and nothing else. */
+  token: string;
+  config: CastLayoutConfig;
+  /**
+   * The overlay hold, in milliseconds, written onto the clock's URL as `?delay=` so it sits back
+   * where the players' streams are. The driven board reads its hold live from the control page, so
+   * it takes nothing here. 0 writes nothing.
+   */
+  delayMs?: number;
+  /** Injectable ids, so a check can build the same collection twice and diff it. */
+  newId?: () => string;
+}
+
+/**
+ * The two-scene casting collection.
+ *
+ * The screen boxes are one Browser Source each - `EB Screen 1..N`, pinned by `?slot=` - because a
+ * caster wants to refresh a hitched stream on its own (see lib/castAux). Native size is the box's
+ * own pixels, so the Twitch embed inside renders at the size it is shown rather than being scaled.
+ */
+export function buildCastCollection({ base, token, config, delayMs = 0, newId }: CastCollectionOptions) {
+  const uuid = newId ?? (() => crypto.randomUUID());
+  const url = (path: string) => `${base}#/stream/${path}`;
+
+  const boxes = screenRects(config);
+  const board = boardRect();
+  const clock = clockRect();
+
+  /** One scene's worth of {entry, placement} pairs, in reading order (drawn bottom-up). */
+  const mainParts = [
+    ...boxes.map((box, i) => ({
+      entry: {
+        source: castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, Math.round(box.w), Math.round(box.h)),
+        url: url(`screen?token=${token}&slot=${i}`),
+      },
+      at: { x: Math.round(box.x), y: Math.round(box.y), scale: 1 },
+    })),
+    {
+      entry: { source: castSource("board", "board", "EB Board", 1000, 1000), url: url(`board?token=${token}`) },
+      at: { x: Math.round(board.x), y: Math.round(board.y), scale: board.w / 1000 },
+    },
+    {
+      entry: {
+        source: castSource("clock", "timer", "EB Caster Clock", 1200, 300),
+        url: url(`timer?token=${token}&odds=1${delayMs > 0 ? `&delay=${Math.round(delayMs)}` : ""}`),
+      },
+      at: { x: Math.round(clock.x), y: Math.round(clock.y), scale: clock.w / 1200 },
+    },
+    // The two caster boxes along the bottom of the channel - bordered cut-outs the caster drops
+    // their own and the co-caster's webcam behind, exactly as in the reference. Full-canvas source
+    // that positions its own boxes; last in the list so its borders sit on top.
+    {
+      entry: {
+        source: castSource("cast-cams", "frame", "EB Caster Boxes", CAST_CANVAS.w, CAST_CANVAS.h),
+        url: url(`frame?token=${token}&layout=cast`),
+      },
+      at: { x: 0, y: 0, scale: 1 },
+    },
+  ];
+
+  const breakParts = [
+    {
+      entry: {
+        source: castSource("frame", "frame", "EB Caster Cams", CAST_CANVAS.w, CAST_CANVAS.h),
+        url: url(`frame?token=${token}&layout=casters`),
+      },
+      at: { x: 0, y: 0, scale: 1 },
+    },
+  ];
+
+  /** Builds one scene object and its browser sources from a list of parts. */
+  function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement }>) {
+    const withIds = parts.map((p) => ({ ...p, uuid: uuid() }));
+    const items = [...withIds]
+      .reverse()
+      .map((p, i) => sceneItem(p.entry, p.uuid, p.at, i + 1));
+    const sceneObj = {
+      prev_ver: PREV_VER,
+      name,
+      uuid: uuid(),
+      id: "scene",
+      versioned_id: "scene",
+      settings: { id_counter: items.length + 1, custom_size: false, items },
+      mixers: 0,
+      sync: 0,
+      flags: 0,
+      volume: 1.0,
+      balance: 0.5,
+      enabled: true,
+      muted: false,
+      "push-to-mute": false,
+      "push-to-mute-delay": 0,
+      "push-to-talk": false,
+      "push-to-talk-delay": 0,
+      hotkeys: {},
+      deinterlace_mode: 0,
+      deinterlace_field_order: 0,
+      monitoring_type: 0,
+      private_settings: { eb_scene_version: SCENE_VERSION, eb_scene_kind: "cast" },
+    };
+    return { browsers: withIds.map((p) => browserSource(p.entry, p.uuid)), sceneObj };
+  }
+
+  const main = scene(CAST_SCENE_MAIN, mainParts);
+  const brk = scene(CAST_SCENE_BREAK, breakParts);
+
+  return {
+    name: CAST_SCENE_MAIN,
+    current_scene: CAST_SCENE_MAIN,
+    current_program_scene: CAST_SCENE_MAIN,
+    scene_order: [{ name: CAST_SCENE_MAIN }, { name: CAST_SCENE_BREAK }],
+    sources: [...main.browsers, ...brk.browsers, main.sceneObj, brk.sceneObj],
+    groups: [],
+    transitions: [],
+    current_transition: "Fade",
+    transition_duration: 300,
+    preview_locked: false,
+    scaling_enabled: false,
+    scaling_level: 0,
+    scaling_off_x: 0.0,
+    scaling_off_y: 0.0,
+    virtual_camera: { type2: 3 },
+    modules: {},
+    version: 2,
+  };
+}
+
+/** Filenames for the casting downloads, recognisable in a downloads folder. */
+export function castSceneFilename(): string {
+  return "elden-battleship-casting-scene.json";
 }

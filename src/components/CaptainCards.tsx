@@ -175,6 +175,23 @@ function Card({
         <Headline report={report} id="sinkConversion" />
       </div>
 
+      {(report.favoriteSquare || report.favoriteOpener) && (
+        <div className="muted" style={{ fontSize: "0.7rem" }}>
+          {report.favoriteSquare && (
+            <div>
+              Favorite square: <strong style={{ color: "var(--text)" }}>{report.favoriteSquare.name}</strong>{" "}
+              ({report.favoriteSquare.count}×)
+            </div>
+          )}
+          {report.favoriteOpener && (
+            <div>
+              Opens with: <strong style={{ color: "var(--text)" }}>{report.favoriteOpener.name}</strong>{" "}
+              ({report.favoriteOpener.count}×)
+            </div>
+          )}
+        </div>
+      )}
+
       <button
         onClick={onToggle}
         style={{ alignSelf: "flex-start", fontSize: "0.7rem", padding: "0.15rem 0.45rem" }}

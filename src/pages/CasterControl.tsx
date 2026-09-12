@@ -31,9 +31,12 @@ import {
   MIN_ZOOM,
   MAX_ZOOM,
   MIN_OPACITY,
+  MAX_DELAY_MS,
   type CastFleet,
   type CastView,
 } from "../lib/overlayCast";
+import { useCasterAux } from "../lib/castAux";
+import { useCastScreens } from "../hooks/useCastScreens";
 import "./CasterControl.css";
 import "./OverlayTiers.css";
 import "./OverlayBoard.css";
@@ -133,6 +136,9 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   const code = codeProp ?? routeCode;
   const state = useRoom(code);
   const { publish, ready } = useCastPublisher(code);
+  /** The player-stream boxes and how far behind each is running - see lib/castAux. */
+  const aux = useCasterAux(code);
+  const screens = useCastScreens(state.players);
 
   const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
@@ -895,6 +901,9 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     const q = new URLSearchParams();
     if (view.opacity < 1) q.set("opacity", view.opacity.toFixed(2));
     if ((view.text ?? 1) !== 1) q.set("text", String(view.text));
+    // The clock has no controller to hear the hold from, so it takes it as a URL parameter - copied
+    // again whenever it changes, same as opacity and text. The key ignores it harmlessly.
+    if ((view.delayMs ?? 0) > 0) q.set("delay", String(Math.round(view.delayMs ?? 0)));
     return q.toString();
   };
   const scene = sceneQs();
@@ -1254,6 +1263,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               whole board together.
             </p>
           </section>
+          
 
           {/*
             Framing slots. Save is a separate small button rather than a long-press or a shift-click,
@@ -1621,6 +1631,71 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               frame and grid lines barely move, so a faint board still reads as a board. The monitor
               above shows the same fade, over this page's background rather than gameplay - real
               footage is busier than this.
+            </p>
+          </section>
+
+          {/*
+            The player streams: how far the board is held back to meet them, and a way to kick a
+            box that has drifted.
+
+            The delay travels on the cast frame (view.delayMs), so the board honours it live and the
+            monitor above does not - the monitor is the desk's own view of the board and has no
+            reason to run late. The clock takes the same number from its URL; see the note by the
+            Browser sources list. Only ADDS latency - a Twitch stream cannot be made earlier.
+          */}
+          <section>
+            <h3>Player streams</h3>
+            <div className="cast-row">
+              <input
+                type="range"
+                min={0}
+                max={MAX_DELAY_MS}
+                step={100}
+                value={view.delayMs ?? 0}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: (view.delayMs ?? 0) / MAX_DELAY_MS }}
+                onChange={(e) => set({ delayMs: Number(e.target.value) })}
+                title="How long the board and clock are held back to line up with the streams"
+              />
+              <span className="cast-zoom-value">
+                {((view.delayMs ?? 0) / 1000).toFixed(1)}s
+              </span>
+              <button
+                disabled={aux.slowestMs === null}
+                onClick={() => set({ delayMs: Math.min(MAX_DELAY_MS, Math.round(aux.slowestMs ?? 0)) })}
+                title="Set the hold to the slowest stream's current latency"
+              >
+                Match streams
+              </button>
+            </div>
+            <div className="cast-buttons">
+              <button onClick={() => aux.resync()} title="Reload every player stream at once">
+                Resync all
+              </button>
+            </div>
+            {screens.length > 0 && (
+              <div className="cast-screens">
+                {screens.map((s) => {
+                  const ms = aux.latencies.get(s.slot);
+                  return (
+                    <div className="cast-screen-row" key={s.slot}>
+                      <span className="cast-screen-name" style={{ color: teamHex(s.team) }}>
+                        {s.name ?? teamName(s.team)}
+                      </span>
+                      <span className="cast-screen-lat">
+                        {ms === undefined ? "-" : `${(ms / 1000).toFixed(1)}s behind`}
+                      </span>
+                      <button className="cast-screen-resync" onClick={() => aux.resync(s.slot)} title="Reload just this stream">
+                        resync
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="cast-note muted">
+              Latency is read from each box every few seconds. If one stream drifts on its own, add a{" "}
+              <strong>Render Delay</strong> filter to that Screen source in OBS to nudge it back.
             </p>
           </section>
 

@@ -1,0 +1,86 @@
+/**
+ * One player box in a casting scene: a muted Twitch stream filling the source, with a name plate
+ * and a hit / miss / accuracy line over its top-left corner.
+ *
+ * The box IS the source - the casting scene places one of these per seat and sizes each to its slot
+ * in the layout, so there is nothing to centre or scale here. Everything is sized in rem off the
+ * source's own pixels; a caster who wants the plate bigger makes the source bigger.
+ */
+.ovs {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* The embed's host. Twitch's iframe is told width/height 100%, so this just has to be a box. */
+.ovs-stream {
+  position: absolute;
+  inset: 0;
+}
+
+.ovs-stream iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* A seat filled by an account with no linked Twitch: a quiet panel so the box is not a hole, with
+   the plate still standing over it. */
+.ovs-stream-empty {
+  background: rgba(6, 16, 24, 0.82);
+}
+
+/**
+ * The name plate, in the board font, pinned to the top-left the way a cam label sits on a stream.
+ *
+ * On its own translucent plate rather than bare text with a shadow: it is composited over live
+ * video that can be any colour from one second to the next, and a shadow alone loses the name
+ * against a bright frame. The team colour is the left edge, so the plate says whose box this is
+ * without a second element.
+ */
+.ovs-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0.85rem 0.45rem 0.7rem;
+  background: rgba(6, 16, 24, 0.74);
+  border-left: 4px solid var(--ovs-accent, #8fb3c8);
+  border-bottom-right-radius: 8px;
+  max-width: 92%;
+}
+
+.ovs-name {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: #f2f7fa;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
+  /* Cinzel's lowercase reads as small caps, so a long nickname stays on one plate rather than
+     wrapping into the video. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ovs-stats {
+  display: flex;
+  gap: 0.7rem;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: #cfe0ea;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.ovs-stat {
+  white-space: nowrap;
+}

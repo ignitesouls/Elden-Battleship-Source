@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchParticipants, fetchProfiles, fetchMatchEvents, profileName, type Profile } from "../lib/profiles";
 import { SquareSetTabs } from "../components/SquareSetTabs";
 import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
-import { aggregateCareers, type CareerStats, type ParticipantRow } from "../lib/careerStats";
+import { aggregateCareers, participantKey, type CareerStats, type ParticipantRow } from "../lib/careerStats";
 import { buildRecordBook } from "../lib/recordBook";
 import { squarePace, paceLabel, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
 import { RecordBook } from "../components/RecordBook";
@@ -152,6 +152,9 @@ export function Leaderboard() {
   // played most - opening on an empty table for a set nobody has touched helps nobody.
   const [setId, setSetId] = useState<SquareSetId | null>(null);
 
+  /** Career totals, or one row per player per match - see GameTable. */
+  const [view, setView] = useState<"career" | "game">("career");
+
   useEffect(() => {
     void (async () => {
       const data = await fetchParticipants();
@@ -247,6 +250,20 @@ export function Leaderboard() {
       <div className="panel stack" style={{ gap: "0.4rem" }}>
         <SquareSetTabs value={shownSet} onChange={setSetId} counts={counts} />
         <span className="muted" style={{ fontSize: "0.72rem" }}>{squareSet(shownSet).blurb}</span>
+        <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setView("career")}
+            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "career" ? "var(--accent)" : undefined }}
+          >
+            Career
+          </button>
+          <button
+            onClick={() => setView("game")}
+            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "game" ? "var(--accent)" : undefined }}
+          >
+            Per Game
+          </button>
+        </div>
       </div>
 
       {careers.length === 0 ? (
@@ -257,6 +274,8 @@ export function Leaderboard() {
           </p>
           <Link to="/">Back to the harbor</Link>
         </div>
+      ) : view === "game" ? (
+        <GameTable rows={(rows ?? []).filter((r) => rowSquareSet(r) === shownSet)} profiles={profiles} />
       ) : (
         <>
         {/* Above the career table on purpose: "the best game anybody has had" is the thing people
@@ -365,6 +384,194 @@ export function Leaderboard() {
         </>
       )}
       <SiteFooter />
+    </div>
+  );
+}
+
+type GameSortKey = "date" | "name" | "result" | "shots" | "hits" | "sunk" | "accuracy";
+
+/** One participant row, ready for the flat per-game table. */
+interface GameRow {
+  key: string;
+  matchKey: string;
+  finishedAt: string;
+  displayName: string;
+  verified: boolean;
+  won: boolean;
+  draw: boolean;
+  shots: number;
+  hits: number;
+  sunk: number;
+  accuracy: number;
+}
+
+const GAME_COLUMNS: SortColumn<GameSortKey>[] = [
+  {
+    key: "date",
+    label: "Date",
+    align: "left",
+    firstDirection: "desc",
+    title: "When the match finished. Click a row to open its recap.",
+  },
+  {
+    key: "name",
+    label: "Captain",
+    align: "left",
+    firstDirection: "asc",
+    title: "Signed-in captains are grouped by account; guests by nickname.",
+  },
+  {
+    key: "result",
+    label: "Result",
+    align: "right",
+    firstDirection: "desc",
+    title: "Win, loss, or draw for that one match.",
+  },
+  {
+    key: "shots",
+    label: "Shots",
+    align: "right",
+    firstDirection: "desc",
+    title: "Squares taken in that match. Each square counts once, hit or miss.",
+  },
+  {
+    key: "hits",
+    label: "Hits",
+    align: "right",
+    firstDirection: "desc",
+    title: "Shots that landed on an enemy ship, in that match.",
+  },
+  {
+    key: "sunk",
+    label: "Sunk",
+    align: "right",
+    firstDirection: "desc",
+    title: "Enemy ships finished off in that match.",
+  },
+  {
+    key: "accuracy",
+    label: "Acc.",
+    align: "right",
+    firstDirection: "desc",
+    title: "Hits as a share of shots, for that match alone.",
+  },
+];
+
+/** Win beats draw beats loss, so sorting by result groups the same way a standings column would. */
+function resultRank(r: GameRow): number {
+  if (r.draw) return 0.5;
+  return r.won ? 1 : 0;
+}
+
+function compareGameRows(a: GameRow, b: GameRow, key: GameSortKey): number {
+  switch (key) {
+    case "date":
+      return a.finishedAt.localeCompare(b.finishedAt);
+    case "name":
+      return a.displayName.localeCompare(b.displayName);
+    case "result":
+      return resultRank(a) - resultRank(b) || a.accuracy - b.accuracy;
+    case "shots":
+      return a.shots - b.shots || a.hits - b.hits;
+    case "hits":
+      return a.hits - b.hits || a.accuracy - b.accuracy;
+    case "sunk":
+      return a.sunk - b.sunk || a.hits - b.hits;
+    case "accuracy":
+      return a.accuracy - b.accuracy || a.hits - b.hits;
+  }
+}
+
+/**
+ * Every match, one row per player, instead of the career totals above.
+ *
+ * The career table answers "who's good overall" - this answers "what actually happened, game by
+ * game", which the same rows can't show once they're summed. Built straight off the participation
+ * rows already fetched for the career table, so it costs nothing extra to show.
+ */
+function GameTable({ rows, profiles }: { rows: ParticipantRow[]; profiles: Map<string, Profile> }) {
+  const { sort, direction, sortBy } = useSortColumns(GAME_COLUMNS, "date");
+
+  const gameRows = useMemo<GameRow[]>(
+    () =>
+      rows.map((r) => ({
+        key: `${r.match_key}|${participantKey(r)}`,
+        matchKey: r.match_key,
+        finishedAt: r.finished_at,
+        displayName: profileName(r.user_id ? profiles.get(r.user_id) : undefined) ?? r.nickname,
+        verified: Boolean(r.user_id),
+        won: r.won,
+        draw: r.draw,
+        shots: r.shots,
+        hits: r.hits,
+        sunk: r.sunk,
+        accuracy: r.shots > 0 ? r.hits / r.shots : 0,
+      })),
+    [rows, profiles]
+  );
+
+  const sorted = useMemo(
+    () => [...gameRows].sort((a, b) => (direction === "asc" ? 1 : -1) * compareGameRows(a, b, sort)),
+    [gameRows, sort, direction]
+  );
+
+  if (gameRows.length === 0) return null;
+
+  return (
+    <div className="panel stack" style={{ gap: "0.6rem" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0 }}>Every match</h3>
+        <span className="muted" style={{ fontSize: "0.7rem" }}>
+          {sorted.length} {sorted.length === 1 ? "row" : "rows"}, one per captain per match.
+        </span>
+      </div>
+      <div style={{ overflowX: "auto", maxHeight: "34rem", overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
+          <SortHeader columns={GAME_COLUMNS} sort={sort} direction={direction} onSort={sortBy} />
+          <tbody>
+            {sorted.map((r) => {
+              const num = { padding: "0.25rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
+              const when = new Date(r.finishedAt);
+              return (
+                <tr key={r.key} style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)" }}>
+                  <td style={{ textAlign: "left", padding: "0.25rem 0.4rem" }}>
+                    <Link
+                      to={`/match/${encodeURIComponent(r.matchKey)}`}
+                      className="muted"
+                      style={{ textDecoration: "none" }}
+                    >
+                      {when.toLocaleDateString()}
+                    </Link>
+                  </td>
+                  <td style={{ textAlign: "left", padding: "0.25rem 0.4rem" }}>
+                    {r.displayName}
+                    {!r.verified && (
+                      <span className="badge" title="Not signed in - grouped by nickname only">
+                        guest
+                      </span>
+                    )}
+                  </td>
+                  <td
+                    style={{
+                      ...num,
+                      color: r.draw ? "var(--text-dim)" : r.won ? "var(--accent)" : undefined,
+                    }}
+                  >
+                    {r.draw ? "draw" : r.won ? "won" : "lost"}
+                  </td>
+                  <td style={num}>{r.shots}</td>
+                  <td style={{ ...num, color: "var(--hit)" }}>{r.hits}</td>
+                  <td style={{ ...num, color: "var(--sunk)" }}>{r.sunk}</td>
+                  <td style={num}>{Math.round(r.accuracy * 100)}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <span className="muted" style={{ fontSize: "0.7rem" }}>
+        Click a heading to sort; click again to flip. Click a date to open that match's recap.
+      </span>
     </div>
   );
 }

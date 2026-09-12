@@ -6,7 +6,7 @@ import { useVictoryOdds } from "../hooks/useVictoryOdds";
 import { activeTeams, sunkHullFlags } from "../lib/battleshipLogic";
 import { formatDuration } from "../lib/matchTime";
 import { ClockBar } from "../components/ClockBar";
-import { readOpacity } from "../lib/overlayCast";
+import { readOpacity, MAX_DELAY_MS } from "../lib/overlayCast";
 import { readTextSize } from "../lib/overlayText";
 import "./Overlay.css";
 import "./OverlayTimer.css";
@@ -80,10 +80,23 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
   /** Hulls of `team` confirmed sunk, from the public log - never from reading their fleet. */
   const sunkHullsFor = (team: number) => sunkHullFlags(state.attacks, team, room.ship_defs);
 
+  /**
+   * ?delay= - hold the clock back to where the players' streams are, in milliseconds.
+   *
+   * The clock has no controller to hear a delay from (see CastView.delayMs), so a caster copies the
+   * same number onto its URL from the desk. A stream running N seconds late should read N seconds
+   * further from zero than the live board: the countdown is that much higher, the match clock that
+   * much lower. Only the number moves - the hull silhouettes stay live, which is a second-order
+   * detail nobody reads a scorebug for.
+   */
+  const delaySec = Math.max(0, Math.min(MAX_DELAY_MS, Number(params.get("delay")) || 0)) / 1000;
+  const shownElapsed = phase ? Math.max(0, Math.round(phase.matchElapsed - delaySec)) : 0;
+  const shownCountdown = phase ? Math.round(phase.countdown + delaySec) : 0;
+
   const clock = phase
     ? phase.phase === "match"
-      ? formatDuration(phase.matchElapsed)
-      : `-${formatDuration(phase.countdown)}`
+      ? formatDuration(shownElapsed)
+      : `-${formatDuration(shownCountdown)}`
     : "--:--";
 
   /**

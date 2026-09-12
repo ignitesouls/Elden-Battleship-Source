@@ -1,0 +1,41 @@
+/**
+ * Camera cut-outs for a casting scene. Each box is placed by inline percentages computed from the
+ * layout module's rects (see pages/OverlayFrame), so all this file styles is the border and, for
+ * the break scene, the wordmark. The boxes carry no fill - the cameras sit behind this in the
+ * scene and show through.
+ */
+.ovf {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* ?bg=deep - a sea-tone wash for a break frame meant to stand on its own rather than over footage. */
+.ovf-bg-deep {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(20, 46, 66, 0.9), rgba(4, 12, 20, 0.96) 70%),
+    #050d14;
+}
+
+.ovf-cam {
+  position: absolute;
+  border: 5px solid #f4f7f9;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 10px 40px rgba(0, 0, 0, 0.45);
+  background: transparent;
+}
+
+.ovf-logo {
+  position: absolute;
+  left: 50%;
+  bottom: 3.2%;
+  transform: translateX(-50%);
+  width: 20%;
+  max-width: 380px;
+  height: auto;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}

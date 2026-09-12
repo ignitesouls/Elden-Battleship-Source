@@ -14,8 +14,22 @@
  * to exist because of this split.
  */
 
-/** The `/stream/:element` routes. One per existing overlay page - nothing new renders. */
-export type StreamElement = "board" | "fleet" | "timer" | "key" | "odds" | "audio" | "egg";
+/**
+ * The `/stream/:element` routes. One per existing overlay page - nothing new renders - except the
+ * two the casting scene added: `screen`, a per-player Twitch box, and `frame`, the camera-break
+ * dressing. Neither has a room-coded twin: they only ever exist inside a scene a caster generated.
+ * See pages/OverlayScreen and pages/OverlayFrame.
+ */
+export type StreamElement =
+  | "board"
+  | "fleet"
+  | "timer"
+  | "key"
+  | "odds"
+  | "audio"
+  | "egg"
+  | "screen"
+  | "frame";
 
 /** Who a scene is for. The same one question OverlayLinkBox asks, asked once here too. */
 export type SceneKind = "player" | "caster";

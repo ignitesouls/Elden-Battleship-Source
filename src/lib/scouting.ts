@@ -141,6 +141,10 @@ export interface ScoutingReport {
   /** One sentence for the top of the card. */
   summary: string;
   lastPlayed: string | null;
+  /** The square they take most often, whether or not they're rated yet - it's a count, not a claim. */
+  favoriteSquare: FavoriteSquare | null;
+  /** The square their own first shot of a match lands on most often. */
+  favoriteOpener: FavoriteSquare | null;
 }
 
 /** Trait names, one per metric. Battleship's own, not bingo's - and all about the shooting. */
@@ -178,6 +182,24 @@ interface Tally {
   firstBloods: number;
   /** Mean seconds between their own shots, per match, pooled. */
   paceSpans: number[];
+  /** Every square this player has ever taken, tallied by name. */
+  squareCounts: Map<string, number>;
+  /** The square this player's OWN first shot of a match lands on, tallied by name. */
+  openerCounts: Map<string, number>;
+}
+
+export interface FavoriteSquare {
+  name: string;
+  count: number;
+}
+
+/** The most-tallied name in a count map, ties broken alphabetically so the pick is stable. */
+function topFavorite(counts: Map<string, number>): FavoriteSquare | null {
+  let best: FavoriteSquare | null = null;
+  for (const [name, count] of counts) {
+    if (!best || count > best.count || (count === best.count && name < best.name)) best = { name, count };
+  }
+  return best;
 }
 
 function emptyTally(key: string, row: ParticipantRow): Tally {
@@ -197,6 +219,8 @@ function emptyTally(key: string, row: ParticipantRow): Tally {
     firstBloodChances: 0,
     firstBloods: 0,
     paceSpans: [],
+    squareCounts: new Map(),
+    openerCounts: new Map(),
   };
 }
 
@@ -284,6 +308,16 @@ export function buildScoutingReports(
       const ordered = own
         .filter((e) => e.match_seconds !== null)
         .sort((a, b) => (a.match_seconds as number) - (b.match_seconds as number));
+
+      // Favorite squares: every one they've ever taken, and the one their own first shot of a
+      // match lands on most often. Counted here even for a single-shot match, unlike pace below.
+      for (const e of own) {
+        if (e.challenge_name) t.squareCounts.set(e.challenge_name, (t.squareCounts.get(e.challenge_name) ?? 0) + 1);
+      }
+      if (ordered[0]?.challenge_name) {
+        t.openerCounts.set(ordered[0].challenge_name, (t.openerCounts.get(ordered[0].challenge_name) ?? 0) + 1);
+      }
+
       // One shot has no interval to measure.
       if (ordered.length < 2) continue;
       const first = ordered[0].match_seconds as number;
@@ -428,6 +462,8 @@ export function buildScoutingReports(
       supporting,
       summary: summaryFor(t, traits, rated, fieldReady),
       lastPlayed: t.lastPlayed,
+      favoriteSquare: topFavorite(t.squareCounts),
+      favoriteOpener: topFavorite(t.openerCounts),
     };
   });
 

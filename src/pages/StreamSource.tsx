@@ -8,6 +8,8 @@ import { OverlayKey } from "./OverlayKey";
 import { OverlayOdds } from "./OverlayOdds";
 import { OverlayAudio } from "./OverlayAudio";
 import { OverlayEgg } from "./OverlayEgg";
+import { OverlayScreen } from "./OverlayScreen";
+import { OverlayFrame } from "./OverlayFrame";
 import { CasterControl } from "./CasterControl";
 import { setEgressRoom } from "../lib/egressMeter";
 import type { StreamElement } from "../lib/streamOverlay";
@@ -67,10 +69,27 @@ function element(
       return <OverlayAudio code={code} search={params} />;
     case "egg":
       return <OverlayEgg code={code} search={params} />;
+    case "screen":
+      // The casting scene's per-player Twitch box. `?slot=` inside `params` picks which seat.
+      return <OverlayScreen code={code} search={params} />;
+    case "frame":
+      // A dressed frame for camera breaks and holds - no room, so it is handled before the
+      // room gate below and never reaches here. Listed so the switch is exhaustive.
+      return <OverlayFrame search={params} />;
   }
 }
 
-const ELEMENTS: StreamElement[] = ["board", "fleet", "timer", "key", "odds", "audio", "egg"];
+const ELEMENTS: StreamElement[] = [
+  "board",
+  "fleet",
+  "timer",
+  "key",
+  "odds",
+  "audio",
+  "egg",
+  "screen",
+  "frame",
+];
 
 export function StreamSource() {
   const { element: name } = useParams<{ element: string }>();
@@ -167,6 +186,11 @@ export function StreamSource() {
     }
     return <CasterControl code={session.roomCode} />;
   }
+
+  // The camera-break frame carries no live data and has nothing to resolve - a caster shows it
+  // precisely between matches, when a token has no room. So it draws whether or not the session
+  // does, and never waits on the round trip the room sources wait on.
+  if (name === "frame") return <OverlayFrame search={search} />;
 
   if (loading || !session?.roomCode) return null;
   if (!name || !(ELEMENTS as string[]).includes(name)) return null;

@@ -33,6 +33,9 @@ export const DEFAULT_VIEW: CastView = {
   // Nobody has let go of the wheel. A source falling back to this default aims where it is told,
   // which is what every board did before the camera existed - see lib/overlayCamera.
   motion: null,
+  // No hold. The board draws each frame the instant it lands, which is every board's behaviour
+  // until a caster dials in a delay to line the overlay up with their players' streams.
+  delayMs: 0,
 };
 
 /**

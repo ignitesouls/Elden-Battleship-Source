@@ -19,7 +19,17 @@ import {
   type SceneKind,
   type SceneSettings,
 } from "../lib/streamOverlay";
-import { SCENE_CANVAS, buildObsScene, previewBox, sceneFilename } from "../lib/obsScene";
+import { SCENE_CANVAS, buildObsScene, buildCastCollection, castSceneFilename, previewBox, sceneFilename } from "../lib/obsScene";
+import {
+  screenRects,
+  boardRect,
+  clockRect,
+  castCamRects,
+  casterCamRects,
+  frac,
+  type CastLayoutConfig,
+} from "../lib/castSceneLayout";
+import { MAX_DELAY_MS } from "../lib/overlayCast";
 import type { DeepMark } from "../lib/deepWater";
 import "./Streaming.css";
 
@@ -92,6 +102,128 @@ function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
       })}
       <span className="obs-map-note">
         {SCENE_CANVAS.w} x {SCENE_CANVAS.h} - where each source lands.
+      </span>
+    </div>
+  );
+}
+
+/** The casting scene's map: numbered stream boxes, the board, the clock - and the break scene beside it. */
+function CastSceneMap({ config }: { config: CastLayoutConfig }) {
+  const boxes = screenRects(config);
+  const board = boardRect();
+  const clock = clockRect();
+  const castCams = castCamRects();
+  const cams = casterCamRects();
+  const box = (r: { x: number; y: number; w: number; h: number }, label: string, key: string) => {
+    const f = frac(r);
+    return (
+      <div
+        key={key}
+        className="obs-map-box"
+        style={{ left: `${f.left * 100}%`, top: `${f.top * 100}%`, width: `${f.width * 100}%`, height: `${f.height * 100}%` }}
+      >
+        <span>{label}</span>
+      </div>
+    );
+  };
+  return (
+    <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+      <div className="obs-map" role="img" aria-label="The casting scene">
+        {boxes.map((r, i) => box(r, `${i + 1}`, `s${i}`))}
+        {box(board, "Board", "board")}
+        {box(clock, "Clock", "clock")}
+        {castCams.map((r, i) => box(r, i === 0 ? "Caster" : "Co-caster", `cc${i}`))}
+        <span className="obs-map-note">EB Cast - {SCENE_CANVAS.w} x {SCENE_CANVAS.h}</span>
+      </div>
+      <div className="obs-map" role="img" aria-label="The camera-break scene">
+        {cams.map((r, i) => box(r, i === 0 ? "Caster" : "Co-caster", `c${i}`))}
+        <span className="obs-map-note">EB Casters - the break</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The casting set scene: a whole broadcast layout in one import, plus a camera-break scene.
+ *
+ * Its own box rather than a third "who's streaming" option, because it is a different shape of thing
+ * - it is not a menu of elements a caster arranges, it is one composed scene keyed to the room's
+ * roster. It reuses the same overlay token as the box above.
+ */
+function CastingSceneBox({ base, token }: { base: string; token: string }) {
+  const [teams, setTeams] = useState(2);
+  const [perTeam, setPerTeam] = useState(3);
+  const [delayMs, setDelayMs] = useState(0);
+  const config: CastLayoutConfig = { teams, perTeam };
+
+  function download() {
+    const collection = buildCastCollection({ base, token, config, delayMs });
+    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = castSceneFilename();
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="panel stack" style={{ gap: "0.6rem", padding: "0.7rem" }}>
+      <strong style={{ fontSize: "0.86rem" }}>Casting set scene</strong>
+      <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
+        One import, two scenes: <strong>EB Cast</strong> boxes every player's Twitch stream around
+        the board with a live hit / miss / accuracy line under each, and <strong>EB Casters</strong>
+        is a camera frame for the breaks. The boxes fill themselves from whoever is in your room.
+        Drive it from the caster desk - the delay slider there lines the board up with the streams.
+      </span>
+
+      <div className="row" style={{ gap: "0.8rem", flexWrap: "wrap" }}>
+        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
+          Fleets on camera
+          <select value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
+            {[2, 3, 4].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
+          Players per fleet
+          <select value={perTeam} onChange={(e) => setPerTeam(Number(e.target.value))}>
+            {[1, 2, 3, 4].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
+          Stream delay
+          <span className="row" style={{ gap: "0.4rem", alignItems: "center" }}>
+            <input
+              type="range"
+              min={0}
+              max={MAX_DELAY_MS}
+              step={100}
+              value={delayMs}
+              onChange={(e) => setDelayMs(Number(e.target.value))}
+            />
+            <span className="muted" style={{ fontSize: "0.7rem" }}>{(delayMs / 1000).toFixed(1)}s</span>
+          </span>
+        </label>
+      </div>
+
+      <CastSceneMap config={config} />
+
+      <button onClick={download} style={{ fontSize: "0.82rem" }}>
+        Download casting scene
+      </button>
+      <span style={{ fontSize: "0.68rem", lineHeight: 1.4, color: "var(--hit)" }}>
+        <strong>Arrange it after you import.</strong> Same as above - a re-download is a new pair of
+        scenes, not an update.
+      </span>
+      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
+        The player boxes are Twitch embeds, muted and capped to 480p. If one stream drifts, add a
+        Render Delay filter to that Screen source in OBS. The caster and co-caster boxes - two along
+        the bottom of EB Cast, two big ones in EB Casters - are cut-outs: put your webcams behind
+        them.
       </span>
     </div>
   );
@@ -479,6 +611,10 @@ export function Streaming() {
           hands out URLs for that room alone.
         </span>
       </div>
+
+      {/* The casting set scene - a whole broadcast layout, for whoever is running the desk. Needs
+          the same overlay token as the box above. */}
+      {signedIn && typeof token === "string" && <CastingSceneBox base={base} token={token} />}
 
       {/*
         -- the audience, last -------------------------------------------------------------------

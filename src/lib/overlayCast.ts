@@ -148,7 +148,25 @@ export interface CastView {
    * field is shaped to make impossible.
    */
   motion?: CastMotion | null;
+  /**
+   * How long the board holds a frame before drawing it, in milliseconds - so the overlay can be
+   * pulled back to where the players' Twitch streams actually are.
+   *
+   * A Twitch embed runs two to eight seconds behind real time; the board and the clock run on
+   * Realtime and are effectively live. Left alone that gap puts a shot on the board seconds before
+   * the viewer sees the kill that caused it. This is the caster's answer: every frame is held this
+   * long before it lands, which trades "instant" for "in step with the cams".
+   *
+   * Only ever ADDS latency - there is no making a stream earlier. Optional and defaulted to 0 by
+   * every reader, like `opacity` and `text`: a frame from a controller that predates this carries
+   * no opinion and the board draws with no hold. The clock takes the same number as `?delay=`,
+   * because it has no controller to hear it from - see pages/OverlayTimer.
+   */
+  delayMs?: number;
 }
+
+/** Ceiling on the overlay hold. Past this a "delay" is really "the board has stopped". */
+export const MAX_DELAY_MS = 12000;
 
 /**
  * The floor on a source's transparency, which is now none at all.
@@ -443,13 +461,38 @@ export function useCastReceiver(code: string | undefined) {
    */
   const [linkEpoch, setLinkEpoch] = useState(0);
 
+  /**
+   * Frames waiting out `view.delayMs` before they land - see the field's note in CastView.
+   *
+   * A QUEUE, not a single slot: the delay is constant and frames arrive in order, so every held one
+   * fires in the order it came and a pan that happened live still plays through as a pan five
+   * seconds later. Coalescing to the newest would collapse that pan to a jump. All handles are
+   * cleared on unmount so none can setState into a dead source.
+   */
+  const held = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
   useEffect(() => {
     if (!code) return;
     const channel = supabase.channel(channelName(code), { config: { broadcast: { self: false } } });
     channelRef.current = channel;
+    const timers = held.current;
+
+    const land = (payload: unknown) => {
+      const msg = payload as CastMessage;
+      const delay = Math.min(MAX_DELAY_MS, Math.max(0, msg.view?.delayMs ?? 0));
+      if (delay <= 0) {
+        setMessage(msg);
+        return;
+      }
+      const t = setTimeout(() => {
+        timers.delete(t);
+        setMessage(msg);
+      }, delay);
+      timers.add(t);
+    };
 
     channel
-      .on("broadcast", { event: STATE_EVENT }, ({ payload }) => setMessage(payload as CastMessage))
+      .on("broadcast", { event: STATE_EVENT }, ({ payload }) => land(payload))
       /**
        * An unchanged beat. Keeps the staleness clock fed without redrawing anything.
        *
@@ -473,6 +516,8 @@ export function useCastReceiver(code: string | undefined) {
 
     return () => {
       channelRef.current = null;
+      for (const t of timers) clearTimeout(t);
+      timers.clear();
       void supabase.removeChannel(channel);
     };
   }, [code]);

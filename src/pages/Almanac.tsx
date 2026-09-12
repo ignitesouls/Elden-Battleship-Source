@@ -41,7 +41,9 @@ export function Almanac() {
   const [size, setSize] = useState<number | null>(null);
   const [setId, setSetId] = useState<SquareSetId | null>(null);
   const [archived, setArchived] = useState<ArchivedMatchListing[]>([]);
-  const [view, setView] = useState<"patterns" | "captains">("patterns");
+  const [view, setView] = useState<"patterns" | "captains" | "game">("patterns");
+  /** Which match the "Per Game" tab is showing. Null defaults to the newest match on this board. */
+  const [gameKey, setGameKey] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -114,12 +116,41 @@ export function Almanac() {
     [fleets, setByMatch, shownSet]
   );
 
+  // Folded, like every other reader that groups by board - see the comment on MatchHistory's own
+  // filter, which this replaces. Newest first, for both the match history list and the Per Game
+  // picker below.
+  const matchesForSet = useMemo(
+    () =>
+      [...archived]
+        .filter((m) => displaySquareSet(m.square_set) === shownSet)
+        .sort((a, b) => b.finished_at.localeCompare(a.finished_at)),
+    [archived, shownSet]
+  );
+  const effectiveGameKey = gameKey ?? matchesForSet[0]?.match_key ?? null;
+
+  // Everything below this point read `events`/`parts`/`shownFleets` (the whole board) before the
+  // Per Game tab existed. It still does for Patterns - only the Per Game tab narrows it further, to
+  // one match - so every aggregate downstream (heatmap, squares, pace, match shape) is honest for
+  // whichever one it's showing without needing two copies of the JSX that renders them.
+  const activeEvents = useMemo(
+    () => (view === "game" ? events.filter((e) => e.match_key === effectiveGameKey) : events),
+    [view, effectiveGameKey, events]
+  );
+  const activeParts = useMemo(
+    () => (view === "game" ? parts.filter((p) => p.match_key === effectiveGameKey) : parts),
+    [view, effectiveGameKey, parts]
+  );
+  const activeFleets = useMemo(
+    () => (view === "game" ? shownFleets.filter((f) => f.match_key === effectiveGameKey) : shownFleets),
+    [view, effectiveGameKey, shownFleets]
+  );
+
   const reports = useMemo(() => buildScoutingReports(parts, events), [parts, events]);
 
-  const pace = useMemo(() => playerPace(events), [events]);
+  const pace = useMemo(() => playerPace(activeEvents), [activeEvents]);
   // The leaderboard's measure of the same thing, shown beside this page's. See the pace table.
-  const paceMedians = useMemo(() => squarePace(events), [events]);
-  const shape = useMemo(() => matchShape(events, parts), [events, parts]);
+  const paceMedians = useMemo(() => squarePace(activeEvents), [activeEvents]);
+  const shape = useMemo(() => matchShape(activeEvents, activeParts), [activeEvents, activeParts]);
   const freq = useMemo(
     // Rebuilds each board's full challenge list from its room id, which is what reveals squares
     // nobody ever fired at. Everything here is one TAB's matches, which can be more than one stored
@@ -127,30 +158,30 @@ export function Almanac() {
     // that reproduces the log is the board - a board that cannot is the wrong board, and counting
     // only the squares actually shot beats inventing a denominator.
     () =>
-      bossFrequency(events, (roomId, cells, fired, seed, perm) => {
+      bossFrequency(activeEvents, (roomId, cells, fired, seed, perm) => {
         for (const setId of squareSetVariants(shownSet)) {
           const board = challengesForRoom(roomId, cells, setId, seed, perm).map((c) => c.name)
           if (fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)) return board
         }
         return []
       }),
-    [events, shownSet]
+    [activeEvents, shownSet]
   );
 
-  const sizes = useMemo(() => boardSizesPresent(shownFleets, events), [shownFleets, events]);
+  const sizes = useMemo(() => boardSizesPresent(activeFleets, activeEvents), [activeFleets, activeEvents]);
   const boardSize = size ?? sizes[0] ?? 10;
 
   const map = useMemo(
-    () => (mode === "ships" ? placementHeatmap(shownFleets, boardSize) : shotHeatmap(events, boardSize)),
-    [mode, shownFleets, events, boardSize]
+    () => (mode === "ships" ? placementHeatmap(activeFleets, boardSize) : shotHeatmap(activeEvents, boardSize)),
+    [mode, activeFleets, activeEvents, boardSize]
   );
   // Every square on the board in one row, not just the ones somebody shot at - see mergeSquareStats.
-  const squares = useMemo(() => mergeSquareStats(bossStats(events), freq), [events, freq]);
-  const records = useMemo(() => fastestKills(events, 8), [events]);
+  const squares = useMemo(() => mergeSquareStats(bossStats(activeEvents), freq), [activeEvents, freq]);
+  const records = useMemo(() => fastestKills(activeEvents, 8), [activeEvents]);
 
   if (fleets === null) return <p className="muted">Consulting the almanac...</p>;
 
-  const hasData = shownFleets.length > 0 || events.length > 0;
+  const hasData = activeFleets.length > 0 || activeEvents.length > 0;
 
   return (
     <div className="stack" style={{ width: "min(900px, 100%)", gap: "0.9rem" }}>
@@ -176,6 +207,12 @@ export function Almanac() {
           >
             Captains
           </button>
+          <button
+            onClick={() => setView("game")}
+            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "game" ? "var(--accent)" : undefined }}
+          >
+            Per Game
+          </button>
         </div>
       </div>
 
@@ -183,14 +220,18 @@ export function Almanac() {
         <CaptainCards reports={reports} profiles={profiles} setId={shownSet} />
       ) : (
         <>
-        {/* Folded, like every other reader that groups by board: a variant - the trimmed boss cut
-            dealt to small crews - has no tab of its own, so matching its stored id raw dropped
-            those matches out of the list and out of the count above every aggregate they feed. */}
-        <MatchHistory
-          matches={archived.filter((m) => displaySquareSet(m.square_set) === shownSet)}
-          // Against the ceiling, so the count is a window rather than a total - see ARCHIVE_LIST_LIMIT.
-          capped={archived.length >= ARCHIVE_LIST_LIMIT}
-        />
+        {view === "patterns" ? (
+          // Folded, like every other reader that groups by board: a variant - the trimmed boss cut
+          // dealt to small crews - has no tab of its own, so matching its stored id raw dropped
+          // those matches out of the list and out of the count above every aggregate they feed.
+          <MatchHistory
+            matches={matchesForSet}
+            // Against the ceiling, so the count is a window rather than a total - see ARCHIVE_LIST_LIMIT.
+            capped={archived.length >= ARCHIVE_LIST_LIMIT}
+          />
+        ) : (
+          <GamePicker matches={matchesForSet} value={effectiveGameKey} onChange={setGameKey} />
+        )}
 
         {!hasData ? (
           <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
@@ -411,6 +452,59 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
           {showAll ? "Show fewer" : `Show all ${matches.length}`}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Picks one match, so everything below - heatmap, squares, pace, match shape - can recompute for
+ * it alone instead of the whole board. The Almanac is otherwise entirely aggregate; this is the
+ * same "one match at a time" idea as MatchHistory, but reusing the aggregate views themselves
+ * rather than sending the reader off to the standalone recap.
+ */
+function GamePicker({
+  matches,
+  value,
+  onChange,
+}: {
+  matches: ArchivedMatchListing[];
+  value: string | null;
+  onChange: (key: string) => void;
+}) {
+  if (matches.length === 0) return null;
+
+  return (
+    <div className="panel stack" style={{ gap: "0.4rem" }}>
+      <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0 }}>Choose a match</h3>
+        {value && (
+          <Link to={`/match/${encodeURIComponent(value)}`} style={{ fontSize: "0.75rem" }}>
+            Open full recap →
+          </Link>
+        )}
+      </div>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ fontSize: "0.82rem", padding: "0.3rem 0.4rem" }}
+      >
+        {matches.map((m) => {
+          const when = new Date(m.finished_at);
+          const label = matchName({
+            roomCode: m.room_code,
+            winnerTeam: m.winner_team,
+            duration: m.duration,
+            totalShots: m.total_shots,
+            stats: m.summary?.stats ?? [],
+            awards: m.summary?.awards ?? [],
+          });
+          return (
+            <option key={m.match_key} value={m.match_key}>
+              {when.toLocaleDateString()} - {label}
+            </option>
+          );
+        })}
+      </select>
     </div>
   );
 }
