@@ -11,6 +11,7 @@ import scaduLeagueColors from "../data/scaduLeagueColors.json";
 import scaduLeagueColorNames from "../data/scaduLeagueColorNames.json";
 import ringusData from "../data/ringusSquares.json";
 import bossTooltipsFr from "../data/battleshipTooltipsFr.json";
+import bossNamesFr from "../data/battleshipNamesFr.json";
 import incursionNamesFr from "../data/incursionNamesFr.json";
 import incursionTooltipsFr from "../data/incursionTooltipsFr.json";
 import incursionShortNamesFr from "../data/incursionShortNamesFr.json";
@@ -126,11 +127,11 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     tooltipReplacesName: true,
     cutsLabel: "Boss board",
     cutLabel: "All bosses",
-    // The cell handles themselves ("LG Tree Sent", "BOFA") stay English on purpose even in French -
-    // they're community nicknames and abbreviations, not prose, and "translating" a nickname would
-    // just replace one arbitrary label with another nobody in the community actually calls it. Only
-    // the tooltip, which spells the boss and its location out in full, gets a real translation.
     tooltipsFr: bossTooltipsFr as Record<string, string>,
+    // The cell handles ("LG Tree Sent", "BOFA") get their own French community shorthand rather
+    // than a literal translation - see battleshipNamesFr.json for the abbreviation glossary.
+    namesFr: (bossNamesFr as { names: Record<string, string> }).names,
+    shortNamesFr: (bossNamesFr as { shorts: Record<string, string> }).shorts,
   },
   /**
    * The boss board with its 42 longest squares taken out, leaving 164.
@@ -165,6 +166,8 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     variantOf: "bosses",
     cutLabel: "Small crew",
     tooltipsFr: bossTooltipsFr as Record<string, string>,
+    namesFr: (bossNamesFr as { names: Record<string, string> }).names,
+    shortNamesFr: (bossNamesFr as { shorts: Record<string, string> }).shorts,
   },
   objectives: {
     id: "objectives",
