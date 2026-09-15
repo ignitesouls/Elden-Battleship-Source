@@ -4,6 +4,7 @@ import { useSquareCounts, countChips } from "../../hooks/useSquareCounts";
 import { sendAttack } from "../../lib/rooms";
 import { playSfx } from "../../lib/sfx";
 import { teamName, teamHex } from "../../lib/teamColors";
+import { useLanguage, useT } from "../../lib/language";
 import { EndMatchButton } from "../../components/EndMatchButton";
 import { PauseBanner, PauseControls } from "../../components/PauseControls";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
@@ -85,6 +86,8 @@ export function BattlePhase({
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seenResolved = useRef(new Set<string>());
+  const lang = useLanguage();
+  const t = useT();
   /**
    * Every cell this browser has fired at, from the moment the click is accepted.
    *
@@ -210,8 +213,8 @@ export function BattlePhase({
   // Tallies, resolved from player ids to something a square can print. See countChips.
   const countsByCell = useMemo(() => {
     const byId = new Map(players.map((p) => [p.id, p]));
-    return countChips(rawCounts, (pid) => byId.get(pid)?.nickname ?? "Someone", myPlayerId);
-  }, [rawCounts, players, myPlayerId]);
+    return countChips(rawCounts, (pid) => byId.get(pid)?.nickname ?? t("Someone", "Quelqu'un"), myPlayerId);
+  }, [rawCounts, players, myPlayerId, t]);
 
   // Every cell of a sunk ship, not just the one that dealt the final blow, so fire/smoke covers
   // the whole hull instead of a single explosion marker sitting next to intact-looking wreckage.
@@ -311,16 +314,20 @@ export function BattlePhase({
       playSfx("whale");
       setToast(
         mine
-          ? `You found the white whale at ${where}. It did not survive.`
-          : `${found?.who} found the white whale at ${where}. Tell nobody.`
+          ? t(`You found the white whale at ${where}. It did not survive.`, `Vous avez trouvé la baleine blanche à ${where}. Elle n'a pas survécu.`)
+          : t(`${found?.who} found the white whale at ${where}. Tell nobody.`, `${found?.who} a trouvé la baleine blanche à ${where}. Ne le dites à personne.`)
       );
     } else if (kind === "laboon") {
       // The same whale call, heard before you can see which whale it was. That is most of the joke.
       playSfx("whale");
-      setToast(mine ? `That is Laboon, at ${where}. He is fine.` : `${found?.who} found Laboon at ${where}. He is fine.`);
+      setToast(
+        mine
+          ? t(`That is Laboon, at ${where}. He is fine.`, `C'est Laboon, à ${where}. Il va bien.`)
+          : t(`${found?.who} found Laboon at ${where}. He is fine.`, `${found?.who} a trouvé Laboon à ${where}. Il va bien.`)
+      );
     } else if (kind === "sleeper") {
       playSfx("awaken");
-      setToast("Something enormous has woken up beneath the board.");
+      setToast(t("Something enormous has woken up beneath the board.", "Quelque chose d'énorme s'est réveillé sous le plateau."));
     } else if (kind === "dutchman") {
       playSfx("dutchman");
       /**
@@ -346,22 +353,26 @@ export function BattlePhase({
         }, FATES_DELAY_MS);
       }
       setToast(
-        (mine ? `A sail at ${where}, and nothing under it.` : `${found?.who} sighted the Dutchman at ${where}.`) +
-          (sightings > 1 ? ` That is ${sightings} sightings now.` : " She is already gone.")
+        (mine
+          ? t(`A sail at ${where}, and nothing under it.`, `Une voile à ${where}, et rien dessous.`)
+          : t(`${found?.who} sighted the Dutchman at ${where}.`, `${found?.who} a repéré le Hollandais à ${where}.`)) +
+          (sightings > 1
+            ? t(` That is ${sightings} sightings now.`, ` Cela fait ${sightings} apparitions maintenant.`)
+            : t(" She is already gone.", " Elle a déjà disparu."))
       );
     } else if (kind === "bottle") {
       playSfx("bottle");
       setToast(
         (mine
-          ? `You found a message in a bottle at ${where}! It says `
-          : `${found?.who} found a message in a bottle at ${where}! It says `) + `"${bottleNote(room, cell)}"`
+          ? t(`You found a message in a bottle at ${where}! It says `, `Vous avez trouvé un message dans une bouteille à ${where} ! Il dit `)
+          : t(`${found?.who} found a message in a bottle at ${where}! It says `, `${found?.who} a trouvé un message dans une bouteille à ${where} ! Il dit `)) + `"${bottleNote(room, cell)}"`
       );
     } else if (kind === "jar") {
       playSfx("jar");
       setToast(
         mine
-          ? `Something ceramic is wedged in the shallows at ${where}, and it is kicking. Try shooting beside it.`
-          : `${found?.who} turned up a warrior jar at ${where}, stuck fast.`
+          ? t(`Something ceramic is wedged in the shallows at ${where}, and it is kicking. Try shooting beside it.`, `Quelque chose en céramique est coincé dans les hauts-fonds à ${where}, et ça bouge. Essayez de tirer à côté.`)
+          : t(`${found?.who} turned up a warrior jar at ${where}, stuck fast.`, `${found?.who} a découvert une jarre de guerrier à ${where}, bien coincée.`)
       );
     } else if (kind === "jarFree") {
       playSfx("jar");
@@ -371,15 +382,15 @@ export function BattlePhase({
       const freer = deep.alexander.find((jar) => jar.found.attackerTeam === myTeam)?.freed;
       setToast(
         freer?.playerId === myPlayerId
-          ? "You shot Alexander loose. He is delighted, and says you are a Potfriend."
-          : `${freer?.who} shot Alexander loose. He is delighted.`
+          ? t("You shot Alexander loose. He is delighted, and says you are a Potfriend.", "Vous avez libéré Alexander d'un tir. Il est ravi, et vous traite d'Ami des Pots.")
+          : t(`${freer?.who} shot Alexander loose. He is delighted.`, `${freer?.who} a libéré Alexander d'un tir. Il est ravi.`)
       );
     } else if (kind === "igon") {
       playSfx("igonFinger");
       setToast(
         mine
-          ? `Igon is on the rocks at ${where}. He gives you his furled finger - go and kill Bayle with it.`
-          : `${found?.who} found Igon at ${where} and was handed his furled finger.`
+          ? t(`Igon is on the rocks at ${where}. He gives you his furled finger - go and kill Bayle with it.`, `Igon est sur les rochers à ${where}. Il vous donne son doigt recroquevillé - allez tuer Bayle avec.`)
+          : t(`${found?.who} found Igon at ${where} and was handed his furled finger.`, `${found?.who} a trouvé Igon à ${where} et a reçu son doigt recroquevillé.`)
       );
     } else if (kind === "igonAvenged") {
       playSfx("igonHappy");
@@ -388,25 +399,27 @@ export function BattlePhase({
       const avenger = deep.igon.find((ig) => ig.found.attackerTeam === myTeam)?.avenged;
       setToast(
         avenger?.playerId === myPlayerId
-          ? "Bayle is dead and you did it with Igon's finger. He shall be tormented no longer."
-          : `${avenger?.who} killed Bayle. Igon shall be tormented no longer.`
+          ? t("Bayle is dead and you did it with Igon's finger. He shall be tormented no longer.", "Bayle est mort, et vous l'avez tué avec le doigt d'Igon. Il ne sera plus tourmenté.")
+          : t(`${avenger?.who} killed Bayle. Igon shall be tormented no longer.`, `${avenger?.who} a tué Bayle. Igon ne sera plus tourmenté.`)
       );
     } else if (kind === "patches") {
       playSfx("tentacle");
       setToast(
         mine
-          ? `You reached for a tentacle at ${where} and got Patches. He is "sorry".`
-          : `${found?.who} found Patches at ${where}. He is "sorry".`
+          ? t(`You reached for a tentacle at ${where} and got Patches. He is "sorry".`, `Vous avez tendu la main vers un tentacule à ${where} et récupéré Patches. Il est « désolé ».`)
+          : t(`${found?.who} found Patches at ${where}. He is "sorry".`, `${found?.who} a trouvé Patches à ${where}. Il est « désolé ».`)
       );
     } else {
       playSfx("tentacle");
       const mineCount = [...deepCells.values()].filter((k) => k === "tentacle").length;
       setToast(
-        `Something is down there at ${where}` +
-          (mineCount > 1 ? ` - that makes ${mineCount} your crew has found.` : ".")
+        t(`Something is down there at ${where}`, `Quelque chose se trouve là-bas à ${where}`) +
+          (mineCount > 1
+            ? t(` - that makes ${mineCount} your crew has found.`, ` - cela en fait ${mineCount} que votre équipe a trouvés.`)
+            : ".")
       );
     }
-  }, [deepCells, deep, myPlayerId, myTeam, boardSize, room]);
+  }, [deepCells, deep, myPlayerId, myTeam, boardSize, room, t]);
 
   /**
    * Records this crew is closing on (see lib/recordChase).
@@ -450,10 +463,15 @@ export function BattlePhase({
     for (const c of broken) {
       if (seen.has(`${c.recordId}-${c.key}`)) continue;
       playSfx("hit");
-      setToast(`${c.nickname} just set a record - ${c.label.toLowerCase()}, ${c.display.split(" - ")[0]}.`);
+      setToast(
+        t(
+          `${c.nickname} just set a record - ${c.label.toLowerCase()}, ${c.display.split(" - ")[0]}.`,
+          `${c.nickname} vient de battre un record - ${c.label.toLowerCase()}, ${c.display.split(" - ")[0]}.`
+        )
+      );
       break;
     }
-  }, [chases]);
+  }, [chases, t]);
 
   // Squares that can't be hiding anything any more. Only fleets still afloat are considered - a
   // sunk one can't be the reason to keep a square open. See lib/deduction for the rules.
@@ -484,11 +502,17 @@ export function BattlePhase({
       if (a.result === "sunk") {
         playSfx("sunk");
         setToast(
-          mine ? `You sank ${teamName(a.defender_team)}'s ${a.sunk_ship_name}!` : `Your ${a.sunk_ship_name} was sunk!`
+          mine
+            ? t(`You sank ${teamName(a.defender_team)}'s ${a.sunk_ship_name}!`, `Vous avez coulé le ${a.sunk_ship_name} de ${teamName(a.defender_team)} !`)
+            : t(`Your ${a.sunk_ship_name} was sunk!`, `Votre ${a.sunk_ship_name} a été coulé !`)
         );
       } else if (a.result === "hit") {
         playSfx("hit");
-        setToast(mine ? `Direct hit on ${teamName(a.defender_team)}!` : "Your fleet took a hit!");
+        setToast(
+          mine
+            ? t(`Direct hit on ${teamName(a.defender_team)}!`, `Coup direct sur ${teamName(a.defender_team)} !`)
+            : t("Your fleet took a hit!", "Votre flotte a été touchée !")
+        );
       } else {
         // Incoming misses are announced too. They used to be the one resolved attack that made no
         // sound at all, which is why the board sometimes went quiet while the other fleet was
@@ -496,12 +520,14 @@ export function BattlePhase({
         // (much the commoner outcome) were not.
         playSfx("miss");
         setToast(
-          mine ? `Miss on ${teamName(a.defender_team)}.` : `${teamName(a.attacker_team)} missed your fleet.`
+          mine
+            ? t(`Miss on ${teamName(a.defender_team)}.`, `Manqué sur ${teamName(a.defender_team)}.`)
+            : t(`${teamName(a.attacker_team)} missed your fleet.`, `${teamName(a.attacker_team)} a manqué votre flotte.`)
         );
       }
     }
     primed.current = true;
-  }, [attacks, myTeam]);
+  }, [attacks, myTeam, t]);
 
   useEffect(() => {
     if (!toast) return;
@@ -652,8 +678,8 @@ export function BattlePhase({
         // Cell shows the short form; hover gets the square spelled out - see squareTitle, which
         // settled what that reads like when the board was built.
         return {
-          label: c.short ?? c.name,
-          title: c.title ?? c.name,
+          label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+          title: (lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name,
           region: c.region,
           color: c.color,
         };
@@ -674,7 +700,7 @@ export function BattlePhase({
     <BoardGrid
       boardSize={boardSize}
       cellVisual={myDefenseVisual}
-      label={fill ? undefined : "Your fleet"}
+      label={fill ? undefined : t("Your fleet", "Votre flotte")}
       ships={myShipOverlays}
       sunkOrientation={defenseSunkCells}
       cellTint={(i) => {
@@ -746,7 +772,7 @@ export function BattlePhase({
         title={AUTO_RULE_HINT}
         aria-pressed={autoRule}
       >
-        {autoRule ? "✕ Dead water shown" : "✕ Show dead water"}
+        {autoRule ? t("✕ Dead water shown", "✕ Eaux mortes affichées") : t("✕ Show dead water", "✕ Afficher les eaux mortes")}
       </button>
       {/* Beside the dead-water toggle because they are the same kind of thing: what this player is
           being told about the board. Renders nothing at all on a board with a cell for every square
@@ -765,7 +791,7 @@ export function BattlePhase({
       <AutoFireStatus squareSet={room.square_set} />
       {noteCount > 0 && (
         <button onClick={clearMarks} style={{ fontSize: "0.78rem" }} title={NOTE_HINT}>
-          Clear {noteCount} note{noteCount === 1 ? "" : "s"}
+          {noteCount === 1 ? t(`Clear ${noteCount} note`, `Effacer ${noteCount} note`) : t(`Clear ${noteCount} notes`, `Effacer ${noteCount} notes`)}
         </button>
       )}
       <OverlayLinkBox roomCode={room.code} team={myTeam} rejoinCode={rejoinCode} teams={activeTeamsList} />
@@ -816,7 +842,7 @@ export function BattlePhase({
           nobody else can see them - which is exactly how it went unnoticed. */}
       {countError && (
         <div className="error-text" style={{ fontSize: "0.78rem" }}>
-          Square counts aren't saving - your crew can't see them. {countError}
+          {t("Square counts aren't saving - your crew can't see them.", "Les décomptes de case ne sont pas enregistrés - votre équipe ne peut pas les voir.")} {countError}
         </div>
       )}
 
@@ -829,7 +855,10 @@ export function BattlePhase({
           write a row against), so say so rather than leaving someone clicking an inert board. */}
       {opponentTeams.length === 0 && (
         <div className="panel" style={{ borderColor: "var(--accent)", fontSize: "0.85rem" }}>
-          Every other fleet has left the room. There's nothing to fire at, so the host can end the match.
+          {t(
+            "Every other fleet has left the room. There's nothing to fire at, so the host can end the match.",
+            "Toutes les autres flottes ont quitté la partie. Il n'y a plus rien à viser, l'hôte peut donc terminer la partie."
+          )}
         </div>
       )}
 
@@ -844,9 +873,9 @@ export function BattlePhase({
         <button
           onClick={() => setCanvasOn(!canvasOn)}
           style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}
-          title="Drag panels by their title bar; resize from the bottom-right corner"
+          title={t("Drag panels by their title bar; resize from the bottom-right corner", "Faites glisser les panneaux par leur barre de titre ; redimensionnez depuis le coin inférieur droit")}
         >
-          {canvasOn ? "Fixed layout" : "Move / resize panels"}
+          {canvasOn ? t("Fixed layout", "Disposition fixe") : t("Move / resize panels", "Déplacer / redimensionner les panneaux")}
         </button>
         {canvasOn && (
           <>
@@ -862,16 +891,16 @@ export function BattlePhase({
               }}
               title={
                 locked
-                  ? "Panels are frozen. Unlock to move, resize or restack them."
-                  : "Freeze every panel where it is."
+                  ? t("Panels are frozen. Unlock to move, resize or restack them.", "Les panneaux sont figés. Déverrouillez pour les déplacer, redimensionner ou réordonner.")
+                  : t("Freeze every panel where it is.", "Figer chaque panneau où il se trouve.")
               }
               aria-pressed={locked}
             >
-              {locked ? "🔒 Locked" : "🔓 Lock layout"}
+              {locked ? t("🔒 Locked", "🔒 Verrouillé") : t("🔓 Lock layout", "🔓 Verrouiller la disposition")}
             </button>
             {/* Still offered while locked - see the note on reset in useMatchLayout. */}
             <button onClick={resetLayout} style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem" }}>
-              Reset layout
+              {t("Reset layout", "Réinitialiser la disposition")}
             </button>
           </>
         )}

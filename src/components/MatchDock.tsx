@@ -11,6 +11,7 @@ import { NOTE_HINT } from "../hooks/usePencilMarks";
 import { AUTO_RULE_HINT } from "../lib/deduction";
 import type { Challenge } from "../lib/challenges";
 import type { Player, Room } from "../types/battleship";
+import { useT } from "../lib/language";
 import "./MatchDock.css";
 
 interface Props {
@@ -95,6 +96,7 @@ export function MatchDock({
   holdMs,
   onChangeHoldMs,
 }: Props) {
+  const t = useT();
   return (
     <div className="match-dock">
       {/* Renders nothing on a square set that tints nothing (Ringus), and the bar closes up. */}
@@ -112,7 +114,7 @@ export function MatchDock({
         title={AUTO_RULE_HINT}
         aria-pressed={autoRule}
       >
-        {autoRule ? "✕ Dead water shown" : "✕ Show dead water"}
+        {autoRule ? t("✕ Dead water shown", "✕ Eau morte affichée") : t("✕ Show dead water", "✕ Afficher l'eau morte")}
       </button>
 
       {/* Next to the dead-water toggle because the two are the same kind of thing: what the board is
@@ -132,7 +134,7 @@ export function MatchDock({
 
       {markCount > 0 && (
         <button className="match-dock-btn" onClick={onClearMarks} title={NOTE_HINT}>
-          Clear {markCount} note{markCount === 1 ? "" : "s"}
+          {t("Clear", "Effacer")} {markCount} {t("note", "note")}{markCount === 1 ? "" : "s"}
         </button>
       )}
 

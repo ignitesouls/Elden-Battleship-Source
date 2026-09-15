@@ -3,6 +3,7 @@ import { fitScale } from "../lib/overlayFit";
 import { formatDuration } from "../lib/matchTime";
 import { teamName, teamHex } from "../lib/teamColors";
 import { oddsLabel, oddsWorthShowing, type OddsPoint, type OddsSnapshot } from "../lib/victoryOdds";
+import { useT } from "../lib/language";
 import { OddsGraph } from "./OddsGraph";
 // The panel's styling still lives with the source it was written for. Imported rather than moved so
 // the split costs no risk: nothing about how the odds look changes here. Same arrangement ClockBar
@@ -82,6 +83,7 @@ export function OddsPanel({
 }) {
   const [frameRef, frame] = useBoxSize<HTMLDivElement>();
   const [panelRef, panel] = useBoxSize<HTMLDivElement>();
+  const t = useT();
 
   /**
    * The width the bar is LAID OUT at, before anything is scaled.
@@ -125,8 +127,8 @@ export function OddsPanel({
           style={{ transform: `translate(-50%, -50%) scale(${scale})`, opacity }}
         >
           <div className="ovo-head">
-            <span className="ovo-title">Odds of Victory</span>
-            {snapshot.decided && <span className="ovo-decided">Decided</span>}
+            <span className="ovo-title">{t("Odds of Victory", "Chances de victoire")}</span>
+            {snapshot.decided && <span className="ovo-decided">{t("Decided", "Décidé")}</span>}
           </div>
 
           {/**

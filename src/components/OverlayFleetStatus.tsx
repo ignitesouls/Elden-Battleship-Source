@@ -1,6 +1,7 @@
 import type { ShipDefinition } from "../types/battleship";
 import { shipArtUrl } from "../lib/shipArt";
 import { fleetByLength } from "../lib/fleetOrder";
+import { useT } from "../lib/language";
 
 interface Props {
   teamLabel: string;
@@ -20,6 +21,7 @@ interface Props {
  * useful thing to read off a stream than "3/5".
  */
 export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkHulls, isMine }: Props) {
+  const t = useT();
   const sunk = sunkHulls;
   const afloat = sunk.filter((s) => !s).length;
 
@@ -42,7 +44,7 @@ export function OverlayFleetStatus({ teamLabel, colorHex, shipDefs, sunkHulls, i
           <span
             key={i}
             className={`ov-fleet-ship${sunk[i] ? " ov-fleet-ship-sunk" : ""}`}
-            title={`${def.name} - ${def.size}${sunk[i] ? ", sunk" : ""}`}
+            title={`${def.name} - ${def.size}${sunk[i] ? t(", sunk", ", coulé") : ""}`}
             style={{
               // Width tracks hull length so a Carrier reads as the big one, exactly as on the board.
               //

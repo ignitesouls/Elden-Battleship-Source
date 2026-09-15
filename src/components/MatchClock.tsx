@@ -1,6 +1,7 @@
 import { formatDuration } from "../lib/matchTime";
 import { useBattleClock } from "../hooks/useBattlePhase";
 import type { Attack, Room } from "../types/battleship";
+import { useT } from "../lib/language";
 
 interface Props {
   attacks: Attack[];
@@ -40,15 +41,25 @@ const PAUSE_LABEL = {
 } as const;
 
 export function MatchClock({ attacks, room, maxVh = 34, maxVw = 26, compact }: Props) {
+  const t = useT();
   // The one component on the match screen that genuinely draws seconds, and so the one that takes
   // the ticking hook. Everything else reads the phase name instead - see useBattlePhase.
   const info = useBattleClock(attacks, room);
   const stopped = info && info.pause.phase !== "running" && info.pause.phase !== "pausing";
+  const TR_PHASE_LABEL: Record<keyof typeof PHASE_LABEL, string> = {
+    starting: t("Randomization", "Randomisation"),
+    preparation: t("Preparation", "Préparation"),
+    match: t("Match", "Match"),
+  };
+  const TR_PAUSE_LABEL: Record<keyof typeof PAUSE_LABEL, string> = {
+    paused: t("Paused", "En pause"),
+    resuming: t("Resuming", "Reprise"),
+  };
   const label = stopped
-    ? PAUSE_LABEL[info.pause.phase as keyof typeof PAUSE_LABEL]
+    ? TR_PAUSE_LABEL[info.pause.phase as keyof typeof PAUSE_LABEL]
     : info
-      ? PHASE_LABEL[info.phase]
-      : "Match";
+      ? TR_PHASE_LABEL[info.phase]
+      : t("Match", "Match");
   // STARTING/PREPARATION count down toward zero, so they read as negative time; MATCH counts up.
   const display = info
     ? info.phase === "match"
@@ -67,7 +78,7 @@ export function MatchClock({ attacks, room, maxVh = 34, maxVw = 26, compact }: P
   if (compact) {
     return (
       <span className="spectate-clock">
-        <span className="spectate-clock-phase">{info ? label : (room?.status ?? "waiting")}</span>
+        <span className="spectate-clock-phase">{info ? label : (room?.status ?? t("waiting", "en attente"))}</span>
         {info && <span className="spectate-clock-time">{display}</span>}
       </span>
     );

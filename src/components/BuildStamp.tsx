@@ -1,3 +1,5 @@
+import { useT } from "../lib/language";
+
 /** Injected by Vite's `define` at build time - see buildId() in vite.config.ts. */
 declare const __BUILD_ID__: string;
 
@@ -17,9 +19,13 @@ declare const __BUILD_ID__: string;
  * pasted straight into chat.
  */
 export function BuildStamp() {
+  const t = useT();
   return (
     <div
-      title="Build version. If someone's game is out of sync, compare these and hard-refresh (Ctrl+Shift+R)."
+      title={t(
+        "Build version. If someone's game is out of sync, compare these and hard-refresh (Ctrl+Shift+R).",
+        "Version du build. Si la partie de quelqu'un semble désynchronisée, comparez ces versions et forcez l'actualisation (Ctrl+Shift+R)."
+      )}
       style={{
         position: "fixed",
         left: "0.5rem",
@@ -36,7 +42,7 @@ export function BuildStamp() {
         userSelect: "text",
       }}
     >
-      build {__BUILD_ID__}
+      {t("build", "build")} {__BUILD_ID__}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuthProfile } from "../hooks/useAuthProfile";
 import { isTwitchLoginConfigured, signInWithTwitch } from "../lib/supabase";
 import { autoFireSupported, fetchIngestToken } from "../lib/autoFire";
+import { useT } from "../lib/language";
 
 /**
  * Whether the game is marking this player's squares for them, said in the room where it matters.
@@ -22,6 +23,7 @@ import { autoFireSupported, fetchIngestToken } from "../lib/autoFire";
  */
 export function AutoFireStatus({ squareSet }: { squareSet: string | null | undefined }) {
   const profile = useAuthProfile();
+  const t = useT();
   /** `undefined` while unread; only ever fetched for a signed-in player, who is the only one who can have one. */
   const [token, setToken] = useState<string | null | undefined>(undefined);
 
@@ -56,18 +58,20 @@ export function AutoFireStatus({ squareSet }: { squareSet: string | null | undef
     return (
       <div className="panel stack" style={{ gap: "0.35rem", padding: "0.5rem" }}>
         <span style={line}>
-          <strong>Auto-marking</strong> fires a square the moment you kill its boss.
+          <strong>{t("Auto-marking", "Le marquage automatique")}</strong> {t("fires a square the moment you kill its boss.", "tire sur une case dès que vous tuez son boss.")}
         </span>
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Needs a Twitch sign-in: the game mod carries a token that has to outlive your browser
-          cache. It asks for no permissions, not even your email.
+          {t(
+            "Needs a Twitch sign-in: the game mod carries a token that has to outlive your browser cache. It asks for no permissions, not even your email.",
+            "Nécessite une connexion Twitch : le mod de jeu porte un jeton qui doit survivre au cache de votre navigateur. Il ne demande aucune permission, pas même votre e-mail."
+          )}
         </span>
         <button
           onClick={() => void signInWithTwitch()}
           disabled={!isTwitchLoginConfigured}
           style={{ fontSize: "0.74rem" }}
         >
-          Sign in to unlock it
+          {t("Sign in to unlock it", "Connectez-vous pour le débloquer")}
         </button>
       </div>
     );
@@ -79,10 +83,10 @@ export function AutoFireStatus({ squareSet }: { squareSet: string | null | undef
     return (
       <div className="panel stack" style={{ gap: "0.35rem", padding: "0.5rem" }}>
         <span style={line}>
-          <strong>Auto-marking</strong> works on this board.
+          <strong>{t("Auto-marking", "Le marquage automatique")}</strong> {t("works on this board.", "fonctionne sur ce plateau.")}
         </span>
         <Link to={`/player/${profile.userId}`} style={{ fontSize: "0.74rem" }}>
-          Set it up on your profile →
+          {t("Set it up on your profile →", "Configurez-le sur votre profil →")}
         </Link>
       </div>
     );
@@ -93,7 +97,7 @@ export function AutoFireStatus({ squareSet }: { squareSet: string | null | undef
   // shots are landing; this confirms the website's half is ready.
   return (
     <span className="muted" style={{ ...line, opacity: 0.85 }}>
-      ⚔ Auto-marking armed
+      ⚔ {t("Auto-marking armed", "Marquage automatique activé")}
     </span>
   );
 }

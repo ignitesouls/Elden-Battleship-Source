@@ -28,6 +28,7 @@ import { markedAttacks, spotSet } from "../lib/overlayMarkers";
 import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
+import { useLanguage, useT } from "../lib/language";
 import "./Overlay.css";
 import "./OverlayTiers.css";
 import "./OverlayBoard.css";
@@ -137,6 +138,8 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   // The room and the query string come from the URL, or from the persistent stream route that has
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
   const { code, params } = useOverlaySource(props);
+  const t = useT();
+  const lang = useLanguage();
   const debug = params.get("debug") === "1";
   /**
    * The small-board treatment: colours instead of names, and no text on the board at all.
@@ -599,7 +602,11 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
                   if (!c) return null;
                   // Region and colour included so the stream tints squares exactly as the players'
                   // own boards do - the key along the bottom of their screen reads true here too.
-                  return { label: c.short ?? c.name, region: c.region, color: c.color };
+                  return {
+                    label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+                    region: c.region,
+                    color: c.color,
+                  };
                 }
               : undefined
           }
@@ -621,7 +628,7 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
       {/* Deliberately visible ON STREAM rather than only in the control page. A frozen board that
           looks live is the failure that actually costs a caster something, and the person who can
           fix it is the one looking at the stream. */}
-      {stale && <div className="ovb-stale">board control disconnected</div>}
+      {stale && <div className="ovb-stale">{t("board control disconnected", "contrôle du plateau déconnecté")}</div>}
 
       {/*
         ?debug=1 - the numbers this layout is actually built from.

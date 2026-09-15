@@ -9,6 +9,7 @@ import {
   type Screenshot,
 } from "../lib/support";
 import { SiteFooter } from "../components/SiteFooter";
+import { useT } from "../lib/language";
 
 /**
  * Report a bug, or ask for help.
@@ -36,6 +37,7 @@ import { SiteFooter } from "../components/SiteFooter";
  * click, because a player who has just hit PrintScreen should not then have to find a file.
  */
 export function Support() {
+  const t = useT();
   const [category, setCategory] = useState<CategoryId>("auto-marking");
   const [message, setMessage] = useState("");
   const [discord, setDiscord] = useState("");
@@ -91,15 +93,15 @@ export function Support() {
     return (
       <div className="stack" style={{ width: "min(560px, 100%)", gap: "0.8rem" }}>
         <div className="panel stack" style={{ gap: "0.5rem", padding: "0.9rem" }}>
-          <strong>Sent.</strong>
+          <strong>{t("Sent.", "Envoyé.")}</strong>
           <span className="muted" style={{ fontSize: "0.78rem", lineHeight: 1.5 }}>
             {discord.trim()
-              ? "I'll get back to you on Discord if I need more."
-              : "No handle given, so I can't reply. Thanks for taking the time."}
+              ? t("I'll get back to you on Discord if I need more.", "Je vous recontacterai sur Discord si j'ai besoin de plus d'infos.")
+              : t("No handle given, so I can't reply. Thanks for taking the time.", "Aucun identifiant fourni, donc je ne peux pas répondre. Merci d'avoir pris le temps.")}
           </span>
           <div className="row" style={{ gap: "0.4rem", flexWrap: "wrap" }}>
             <Link to="/">
-              <button style={{ fontSize: "0.8rem" }}>Back to the menu</button>
+              <button style={{ fontSize: "0.8rem" }}>{t("Back to the menu", "Retour au menu")}</button>
             </Link>
             <button
               style={{ fontSize: "0.8rem" }}
@@ -109,7 +111,7 @@ export function Support() {
                 setShot(null);
               }}
             >
-              Report something else
+              {t("Report something else", "Signaler autre chose")}
             </button>
           </div>
         </div>
@@ -122,13 +124,13 @@ export function Support() {
     <div className="stack" style={{ width: "min(560px, 100%)", gap: "0.8rem" }}>
       <div className="panel stack" style={{ gap: "0.7rem", padding: "0.9rem" }}>
         <div className="stack" style={{ gap: "0.25rem" }}>
-          <strong style={{ fontSize: "1rem" }}>Report a bug</strong>
+          <strong style={{ fontSize: "1rem" }}>{t("Report a bug", "Signaler un bug")}</strong>
           <span className="muted" style={{ fontSize: "0.75rem", lineHeight: 1.45 }}>
-            Bugs, and anything you can't work out. This goes straight to me.
+            {t("Bugs, and anything you can't work out. This goes straight to me.", "Des bugs, ou tout ce que vous n'arrivez pas à comprendre. Ça vient directement à moi.")}
           </span>
         </div>
 
-        <Field label="Category">
+        <Field label={t("Category", "Catégorie")}>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as CategoryId)}
@@ -143,30 +145,42 @@ export function Support() {
         </Field>
 
         <Field
-          label="What happened"
-          hint="What you did, and what happened instead. Include the room code if you have it."
+          label={t("What happened", "Ce qui s'est passé")}
+          hint={t(
+            "What you did, and what happened instead. Include the room code if you have it.",
+            "Ce que vous avez fait, et ce qui s'est passé à la place. Indiquez le code de la partie si vous l'avez."
+          )}
         >
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, MAX_MESSAGE))}
             rows={7}
-            placeholder="I killed Margit and the square didn't fill in..."
+            placeholder={t("I killed Margit and the square didn't fill in...", "J'ai tué Margit et la case ne s'est pas remplie...")}
             style={{ width: "100%", fontSize: "0.82rem", lineHeight: 1.5, resize: "vertical" }}
           />
         </Field>
 
-        <Field label="Your Discord" hint="Optional, but it's the only way I can reply. Username or ID.">
+        <Field
+          label={t("Your Discord", "Votre Discord")}
+          hint={t("Optional, but it's the only way I can reply. Username or ID.", "Optionnel, mais c'est le seul moyen pour moi de répondre. Nom d'utilisateur ou ID.")}
+        >
           <input
             value={discord}
             onChange={(e) => setDiscord(e.target.value)}
-            placeholder="yourname"
+            placeholder={t("yourname", "votrenom")}
             autoComplete="off"
             spellCheck={false}
             style={{ width: "100%", fontSize: "0.82rem" }}
           />
         </Field>
 
-        <Field label="Screenshot" hint="Optional. Paste one anywhere on this page, drop it below, or choose a file.">
+        <Field
+          label={t("Screenshot", "Capture d'écran")}
+          hint={t(
+            "Optional. Paste one anywhere on this page, drop it below, or choose a file.",
+            "Optionnel. Collez-en une n'importe où sur cette page, déposez-la ci-dessous, ou choisissez un fichier."
+          )}
+        >
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -185,7 +199,7 @@ export function Support() {
               <div className="stack" style={{ gap: "0.4rem", alignItems: "center" }}>
                 <img
                   src={shot.previewUrl}
-                  alt="Attached screenshot"
+                  alt={t("Attached screenshot", "Capture d'écran jointe")}
                   style={{ maxWidth: "100%", maxHeight: "11rem", borderRadius: "4px" }}
                 />
                 <div className="row" style={{ gap: "0.4rem", alignItems: "center" }}>
@@ -193,13 +207,13 @@ export function Support() {
                     {Math.round(shot.bytes / 1024)} KB
                   </span>
                   <button onClick={() => setShot(null)} style={{ fontSize: "0.72rem" }}>
-                    Remove
+                    {t("Remove", "Supprimer")}
                   </button>
                 </div>
               </div>
             ) : (
               <button onClick={() => fileInput.current?.click()} style={{ fontSize: "0.78rem" }}>
-                Choose an image
+                {t("Choose an image", "Choisir une image")}
               </button>
             )}
             <input
@@ -239,7 +253,7 @@ export function Support() {
           disabled={busy || message.trim().length === 0}
           style={{ fontSize: "0.85rem" }}
         >
-          {busy ? "Sending..." : "Send report"}
+          {busy ? t("Sending...", "Envoi...") : t("Send report", "Envoyer le rapport")}
         </button>
 
         {error && (
@@ -249,8 +263,10 @@ export function Support() {
         )}
 
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-          Also sent: your build number, browser, screen size, and the room you're in if you're in one.
-          No email address is asked for or stored.
+          {t(
+            "Also sent: your build number, browser, screen size, and the room you're in if you're in one. No email address is asked for or stored.",
+            "Également envoyé : votre numéro de build, navigateur, taille d'écran, et la partie dans laquelle vous êtes le cas échéant. Aucune adresse e-mail n'est demandée ni stockée."
+          )}
         </span>
       </div>
 

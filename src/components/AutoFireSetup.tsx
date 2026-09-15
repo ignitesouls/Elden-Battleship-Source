@@ -7,6 +7,7 @@ import {
   maskToken,
 } from "../lib/autoFire";
 import { CONFIG_FILENAME } from "../lib/overlayConfig";
+import { useT } from "../lib/language";
 
 /**
  * Where a player sets up auto-marking: mint a token, copy it into the game mod, replace it if it
@@ -38,6 +39,7 @@ import { CONFIG_FILENAME } from "../lib/overlayConfig";
  */
 
 export function AutoFireSetup() {
+  const t = useT();
   /** `undefined` while loading, `null` when the player has never made one. */
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [revealed, setRevealed] = useState(false);
@@ -88,20 +90,22 @@ export function AutoFireSetup() {
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem", padding: "0.6rem" }}>
-      <strong style={{ fontSize: "0.82rem" }}>Auto-marking</strong>
+      <strong style={{ fontSize: "0.82rem" }}>{t("Auto-marking", "Marquage automatique")}</strong>
 
       <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.4 }}>
-        Kill a boss in game and its square fires itself. The game supplies the kill time, so it
-        doesn't matter how long you take to alt-tab. Boss boards only - Objectives can't be detected.
+        {t(
+          "Kill a boss in game and its square fires itself. The game supplies the kill time, so it doesn't matter how long you take to alt-tab. Boss boards only - Objectives can't be detected.",
+          "Tuez un boss en jeu et sa case se marque toute seule. Le jeu fournit l'heure de la mort, donc le temps que vous mettez à revenir sur l'écran n'a pas d'importance. Plateaux de boss uniquement - les objectifs ne peuvent pas être détectés."
+        )}
       </span>
 
       {token === null ? (
         <>
           <button onClick={() => void run(createIngestToken)} disabled={busy} style={{ fontSize: "0.78rem" }}>
-            {busy ? "Setting up..." : "Set up auto-marking"}
+            {busy ? t("Setting up...", "Configuration...") : t("Set up auto-marking", "Configurer le marquage automatique")}
           </button>
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            You paste a config file into Dionysus, once.
+            {t("You paste a config file into Dionysus, once.", "Vous collez un fichier de configuration dans Dionysus, une seule fois.")}
           </span>
         </>
       ) : (
@@ -121,7 +125,7 @@ export function AutoFireSetup() {
 
           <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
             <button onClick={() => setRevealed((r) => !r)} style={{ fontSize: "0.74rem" }}>
-              {revealed ? "Hide" : "Reveal"}
+              {revealed ? t("Hide", "Masquer") : t("Reveal", "Révéler")}
             </button>
             <button
               onClick={() => {
@@ -131,7 +135,7 @@ export function AutoFireSetup() {
               }}
               style={{ fontSize: "0.74rem" }}
             >
-              {copied ? "Copied" : "Copy config"}
+              {copied ? t("Copied", "Copié") : t("Copy config", "Copier la configuration")}
             </button>
 
             {/* Two clicks, because the first one is irreversible and silent: the old token stops
@@ -144,33 +148,37 @@ export function AutoFireSetup() {
                   disabled={busy}
                   style={{ fontSize: "0.74rem", borderColor: "var(--hit)" }}
                 >
-                  {busy ? "Replacing..." : "Yes, replace it"}
+                  {busy ? t("Replacing...", "Remplacement...") : t("Yes, replace it", "Oui, remplacer")}
                 </button>
                 <button onClick={() => setConfirmingReset(false)} style={{ fontSize: "0.74rem" }}>
-                  Cancel
+                  {t("Cancel", "Annuler")}
                 </button>
               </>
             ) : (
               <button
                 onClick={() => setConfirmingReset(true)}
                 style={{ fontSize: "0.74rem" }}
-                title="Replaces the token. The old one stops working straight away."
+                title={t("Replaces the token. The old one stops working straight away.", "Remplace le token. L'ancien arrête de fonctionner immédiatement.")}
               >
-                Replace
+                {t("Replace", "Remplacer")}
               </button>
             )}
           </div>
 
           {confirmingReset && (
             <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
-              The old token stops working immediately. Paste the new config into Dionysus before it
-              can mark anything again.
+              {t(
+                "The old token stops working immediately. Paste the new config into Dionysus before it can mark anything again.",
+                "L'ancien token arrête de fonctionner immédiatement. Collez la nouvelle configuration dans Dionysus avant qu'il puisse à nouveau marquer quoi que ce soit."
+              )}
             </span>
           )}
 
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Your token is in that config. Anyone who has it can fire shots as you. It can't read or
-            change anything else, but replace it if it gets out.
+            {t(
+              "Your token is in that config. Anyone who has it can fire shots as you. It can't read or change anything else, but replace it if it gets out.",
+              "Votre token est dans cette configuration. Quiconque le possède peut tirer des coups à votre place. Il ne peut ni lire ni changer autre chose, mais remplacez-le s'il venait à fuiter."
+            )}
           </span>
         </>
       )}
@@ -188,7 +196,7 @@ export function AutoFireSetup() {
         aria-expanded={guideOpen}
         style={{ fontSize: "0.74rem", alignSelf: "flex-start" }}
       >
-        {guideOpen ? "▾" : "▸"} How to set it up
+        {guideOpen ? "▾" : "▸"} {t("How to set it up", "Comment le configurer")}
       </button>
 
       {guideOpen && <SetupGuide />}
@@ -210,36 +218,46 @@ export function AutoFireSetup() {
  * carry the order and the titles already carry the actions.
  */
 function SetupGuide() {
+  const t = useT();
   return (
     <div className="stack" style={{ gap: "0.7rem", paddingTop: "0.2rem" }}>
-      <Step n={1} title="Update Dionysus">
-        <p style={body}>Auto-marking rides on the overlay Dionysus ships. An old install won't have it.</p>
+      <Step n={1} title={t("Update Dionysus", "Mettre à jour Dionysus")}>
+        <p style={body}>
+          {t(
+            "Auto-marking rides on the overlay Dionysus ships. An old install won't have it.",
+            "Le marquage automatique repose sur l'overlay que Dionysus fournit. Une ancienne installation ne l'aura pas."
+          )}
+        </p>
       </Step>
 
-      <Step n={2} title="Open the config file">
-        <p style={body}>In your Dionysus folder:</p>
+      <Step n={2} title={t("Open the config file", "Ouvrir le fichier de configuration")}>
+        <p style={body}>{t("In your Dionysus folder:", "Dans votre dossier Dionysus :")}</p>
         <Pre>{`Dionysus\\
 └─ Resources\\
    └─ me3-v0.8.0\\
       └─ EROverlay\\
-         └─ ${CONFIG_FILENAME}      <- open this one`}</Pre>
-        <p style={body}>Open it in Notepad.</p>
+         └─ ${CONFIG_FILENAME}      <- ${t("open this one", "ouvrez ce fichier")}`}</Pre>
+        <p style={body}>{t("Open it in Notepad.", "Ouvrez-le dans le Bloc-notes.")}</p>
       </Step>
 
-      <Step n={3} title="Paste over everything">
+      <Step n={3} title={t("Paste over everything", "Collez par-dessus tout")}>
         <p style={body}>
-          Press <strong>Copy config</strong> above. Click in the file, press{" "}
-          <code style={code}>Ctrl+A</code>, then <code style={code}>Ctrl+V</code>.
+          {t("Press", "Appuyez sur")} <strong>{t("Copy config", "Copier la configuration")}</strong>{" "}
+          {t("above. Click in the file, press", "ci-dessus. Cliquez dans le fichier, appuyez sur")}{" "}
+          <code style={code}>Ctrl+A</code>, {t("then", "puis")} <code style={code}>Ctrl+V</code>.
         </p>
       </Step>
 
-      <Step n={4} title="Save">
+      <Step n={4} title={t("Save", "Enregistrer")}>
         <p style={body}>
-          <code style={code}>Ctrl+S</code>. That's it - bosses you kill now mark your squares.
+          <code style={code}>Ctrl+S</code>.{" "}
+          {t("That's it - bosses you kill now mark your squares.", "C'est tout - les boss que vous tuez marquent désormais vos cases.")}
         </p>
       </Step>
 
-      <Warn>Your token is in that file now. Don't send the file to anyone.</Warn>
+      <Warn>
+        {t("Your token is in that file now. Don't send the file to anyone.", "Votre token est maintenant dans ce fichier. N'envoyez ce fichier à personne.")}
+      </Warn>
     </div>
   );
 }

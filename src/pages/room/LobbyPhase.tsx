@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../../lib/language";
 import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed } from "../../lib/rooms";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -86,8 +88,8 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
     const isOn = online.has(id);
     return (
       <span
-        aria-label={isOn ? "online" : "away"}
-        title={isOn ? "Online" : "Away - tab closed or disconnected"}
+        aria-label={isOn ? t("online", "en ligne") : t("away", "absent")}
+        title={isOn ? t("Online", "En ligne") : t("Away - tab closed or disconnected", "Absent - onglet fermé ou déconnecté")}
         style={{
           display: "inline-block",
           width: "0.5rem",
@@ -135,9 +137,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
               setEditing(true);
             }}
             style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem", flex: "none" }}
-            title="Give this team a name of its own"
+            title={t("Give this team a name of its own", "Donner un nom à cette équipe")}
           >
-            Rename
+            {t("Rename", "Renommer")}
           </button>
         </div>
       );
@@ -161,10 +163,10 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
           style={{ flex: 1, minWidth: 0, fontSize: "0.8rem" }}
         />
         <button type="submit" disabled={saving} style={{ fontSize: "0.7rem", flex: "none" }}>
-          Save
+          {t("Save", "Enregistrer")}
         </button>
         <button type="button" onClick={() => setEditing(false)} style={{ fontSize: "0.7rem", flex: "none" }}>
-          Cancel
+          {t("Cancel", "Annuler")}
         </button>
       </form>
     );
@@ -209,7 +211,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       <div className="panel row" style={{ justifyContent: "space-between" }}>
         <div>
-          <div className="muted">Room code</div>
+          <div className="muted">{t("Room code", "Code de la partie")}</div>
           <div
             className="display"
             style={{ fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.09em", color: "var(--accent)" }}
@@ -220,7 +222,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
           {/* Everyone in the room feeds this same number into the randomizer mod, so it has to be
               read off one shared place - hence directly under the code, before anyone scrolls. */}
           <div className="row" style={{ gap: "0.4rem", alignItems: "baseline", marginTop: "0.35rem" }}>
-            <span className="muted" style={{ fontSize: "0.75rem" }}>Seed:</span>
+            <span className="muted" style={{ fontSize: "0.75rem" }}>{t("Seed:", "Graine :")}</span>
             <code style={{ fontSize: "0.95rem", letterSpacing: "0.06em", color: "var(--text)" }}>
               {room.seed ?? "-"}
             </code>
@@ -233,16 +235,16 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
               disabled={!room.seed}
               style={{ fontSize: "0.68rem", padding: "0.1rem 0.4rem" }}
             >
-              {copiedSeed ? "Copied" : "Copy"}
+              {copiedSeed ? t("Copied", "Copié") : t("Copy", "Copier")}
             </button>
             {myPlayer.is_host && (
               <button
                 disabled={busy}
                 onClick={() => void handleReroll()}
-                title="Roll a new seed. Everyone must set their game up against the new number."
+                title={t("Roll a new seed. Everyone must set their game up against the new number.", "Tirer une nouvelle graine. Tout le monde doit reconfigurer son jeu avec le nouveau nombre.")}
                 style={{ fontSize: "0.68rem", padding: "0.1rem 0.4rem" }}
               >
-                {room.seed ? "Reroll" : "Generate"}
+                {room.seed ? t("Reroll", "Retirer") : t("Generate", "Générer")}
               </button>
             )}
           </div>
@@ -256,10 +258,10 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
             rejoinCode={myPlayer.rejoin_code}
             teams={usedTeams}
           />
-          <button onClick={copySpectateLink} title="Link that joins straight into spectator mode">
-            {copiedSpectate ? "Copied!" : "Spectator link"}
+          <button onClick={copySpectateLink} title={t("Link that joins straight into spectator mode", "Lien qui rejoint directement en mode spectateur")}>
+            {copiedSpectate ? t("Copied!", "Copié !") : t("Spectator link", "Lien spectateur")}
           </button>
-          <button onClick={copyLink}>{copied ? "Copied!" : "Copy invite link"}</button>
+          <button onClick={copyLink}>{copied ? t("Copied!", "Copié !") : t("Copy invite link", "Copier le lien d'invitation")}</button>
         </div>
       </div>
 
@@ -294,7 +296,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                 <h3 style={{ color: color.hex, margin: 0 }}>{teamName(team)}</h3>
               )}
               <div className="stack" style={{ gap: "0.3rem" }}>
-                {teamPlayers.length === 0 && <span className="muted">Empty</span>}
+                {teamPlayers.length === 0 && <span className="muted">{t("Empty", "Vide")}</span>}
                 {teamPlayers.map((p) => {
                   // Presence hasn't reported yet while the list is empty, which must not read as
                   // "everybody is away" - the same guard HostTakeover makes.
@@ -303,9 +305,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                     <div key={p.id} className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                         <PresenceDot id={p.id} />
-                        {p.nickname} {p.is_host && <span className="badge">host</span>}
-                        {captain?.id === p.id && <span className="badge">captain</span>}
-                        {p.id === myPlayer.id && <span className="badge">you</span>}
+                        {p.nickname} {p.is_host && <span className="badge">{t("host", "hôte")}</span>}
+                        {captain?.id === p.id && <span className="badge">{t("captain", "capitaine")}</span>}
+                        {p.id === myPlayer.id && <span className="badge">{t("you", "vous")}</span>}
                       </span>
                       <div className="row" style={{ gap: "0.3rem", flex: "none" }}>
                         {/* Command passes downwards only - a captain hands it over, nobody takes it.
@@ -319,16 +321,22 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                             style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}
                             title={
                               away
-                                ? `${p.nickname} is away, so command would be stuck with them`
-                                : `Hand command of this fleet to ${p.nickname}, who then places its ships`
+                                ? t(
+                                    `${p.nickname} is away, so command would be stuck with them`,
+                                    `${p.nickname} est absent, la commande resterait bloquée chez lui`
+                                  )
+                                : t(
+                                    `Hand command of this fleet to ${p.nickname}, who then places its ships`,
+                                    `Confier le commandement de cette flotte à ${p.nickname}, qui placera ensuite ses navires`
+                                  )
                             }
                           >
-                            Make captain
+                            {t("Make captain", "Nommer capitaine")}
                           </button>
                         )}
                         {myPlayer.is_host && p.id !== myPlayer.id && (
-                          <button disabled={busy} onClick={() => handleKick(p.id)} title="Kick">
-                            Kick
+                          <button disabled={busy} onClick={() => handleKick(p.id)} title={t("Kick", "Exclure")}>
+                            {t("Kick", "Exclure")}
                           </button>
                         )}
                       </div>
@@ -343,17 +351,17 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       {spectators.length > 0 && (
         <div className="panel stack" style={{ gap: "0.3rem" }}>
-          <span className="muted">Spectating:</span>
+          <span className="muted">{t("Spectating:", "Spectateurs :")}</span>
           {spectators.map((p) => (
             <div key={p.id} className="row" style={{ justifyContent: "space-between" }}>
               <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                 <PresenceDot id={p.id} />
-                {p.nickname} {p.is_host && <span className="badge">host</span>}
-                {p.id === myPlayer.id && <span className="badge">you</span>}
+                {p.nickname} {p.is_host && <span className="badge">{t("host", "hôte")}</span>}
+                {p.id === myPlayer.id && <span className="badge">{t("you", "vous")}</span>}
               </span>
               {myPlayer.is_host && p.id !== myPlayer.id && (
-                <button disabled={busy} onClick={() => handleKick(p.id)} title="Kick">
-                  Kick
+                <button disabled={busy} onClick={() => handleKick(p.id)} title={t("Kick", "Exclure")}>
+                  {t("Kick", "Exclure")}
                 </button>
               )}
             </div>
@@ -370,7 +378,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
        */}
       {myPlayer.is_host && (
         <button className="secondary" onClick={() => setDrawOpen(true)} disabled={players.length < 2}>
-          Draw teams at sea
+          {t("Draw teams at sea", "Tirer les équipes au sort")}
         </button>
       )}
 
@@ -384,11 +392,13 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       {myPlayer.is_host ? (
         <button className="primary" disabled={busy || !canStart} onClick={handleStart}>
-          {canStart ? "Start ship placement" : "Need at least 2 fleets with players"}
+          {canStart
+            ? t("Start ship placement", "Commencer le placement des navires")
+            : t("Need at least 2 fleets with players", "Il faut au moins 2 flottes avec des joueurs")}
         </button>
       ) : (
         <div className="muted" style={{ textAlign: "center" }}>
-          Waiting for the host to start the match...
+          {t("Waiting for the host to start the match...", "En attente que l'hôte démarre le match...")}
         </div>
       )}
 
@@ -396,7 +406,7 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
           lobby is a screen you pass through in seconds, so a code you only notice here is a code
           you haven't written down by the time you need it. */}
 
-      <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} inMatch={false} label="Leave room" />
+      <LeaveMatchButton playerId={myPlayer.id} roomCode={room.code} inMatch={false} label={t("Leave room", "Quitter la partie")} />
 
       <SiteFooter />
     </div>

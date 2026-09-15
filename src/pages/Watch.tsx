@@ -14,6 +14,7 @@ import { formatRoomCode } from "../lib/roomCode";
 import { MatchClock } from "../components/MatchClock";
 import { SpectateWithCrew } from "../components/SpectateWithCrew";
 import { LoadingScreen } from "../components/BrandMark";
+import { useT } from "../lib/language";
 import "./Spectator.css";
 
 /**
@@ -62,6 +63,7 @@ import "./Spectator.css";
 export function Watch() {
   const { handle } = useParams<{ handle: string }>();
   const { loading, session } = useWatchSession(handle);
+  const t = useT();
 
   const code = session?.roomCode ?? undefined;
   const state = useRoom(code);
@@ -130,11 +132,11 @@ export function Watch() {
   );
   const activeTeamsList = useMemo(() => activeTeams(players), [players]);
 
-  const name = session?.streamerName ?? handle ?? "This streamer";
+  const name = session?.streamerName ?? handle ?? t("This streamer", "Ce streamer");
 
   // One round trip, and nothing on screen until it lands. A page that flashed "no such streamer"
   // on the way to drawing a match would do it on every single open.
-  if (loading) return <LoadingScreen>Finding the match...</LoadingScreen>;
+  if (loading) return <LoadingScreen>{t("Finding the match...", "Recherche du match...")}</LoadingScreen>;
 
   /**
    * Three empty states, and they are three different sentences on purpose.
@@ -147,10 +149,14 @@ export function Watch() {
   if (!session) {
     return (
       <div className="stack" style={{ width: "min(720px, 100%)", gap: "0.5rem" }}>
-        <h2>No streamer here</h2>
+        <h2>{t("No streamer here", "Aucun streamer ici")}</h2>
         <p className="muted">
-          Nobody plays under the name <strong>{handle}</strong>. Watch links use the streamer's
-          Twitch name, so check the spelling - or ask them for their link again.
+          {t("Nobody plays under the name ", "Personne ne joue sous le nom ")}
+          <strong>{handle}</strong>
+          {t(
+            ". Watch links use the streamer's Twitch name, so check the spelling - or ask them for their link again.",
+            ". Les liens de visionnage utilisent le nom Twitch du streamer, donc vérifiez l'orthographe - ou redemandez-lui son lien."
+          )}
         </p>
       </div>
     );
@@ -159,10 +165,12 @@ export function Watch() {
   if (!code || !room) {
     return (
       <div className="stack" style={{ width: "min(720px, 100%)", gap: "0.5rem" }}>
-        <h2>{name} isn't in a match</h2>
+        <h2>{name} {t("isn't in a match", "n'est pas dans un match")}</h2>
         <p className="muted">
-          Leave this page open - it'll pick up their next match on its own, with no reload. Nothing
-          to refresh and nothing to click.
+          {t(
+            "Leave this page open - it'll pick up their next match on its own, with no reload. Nothing to refresh and nothing to click.",
+            "Laissez cette page ouverte - elle détectera leur prochain match d'elle-même, sans recharger. Rien à actualiser et rien à cliquer."
+          )}
         </p>
       </div>
     );
@@ -171,10 +179,14 @@ export function Watch() {
   if (session.team === null) {
     return (
       <div className="stack" style={{ width: "min(720px, 100%)", gap: "0.5rem" }}>
-        <h2>{name} is watching this one</h2>
+        <h2>{name} {t("is watching this one", "regarde celui-ci")}</h2>
         <p className="muted">
-          They're in {formatRoomCode(code)} as a spectator rather than on a fleet, so there's no crew
-          to ride with. This page will follow them into their next match.
+          {t("They're in ", "Ils sont dans ")}
+          {formatRoomCode(code)}
+          {t(
+            " as a spectator rather than on a fleet, so there's no crew to ride with. This page will follow them into their next match.",
+            " en tant que spectateur plutôt que sur une flotte, donc il n'y a pas d'équipe à suivre. Cette page les suivra dans leur prochain match."
+          )}
         </p>
       </div>
     );
@@ -196,15 +208,15 @@ export function Watch() {
 
         {room.status === "finished" && room.winner_team !== null && (
           <strong style={{ color: teamHex(room.winner_team), fontSize: "0.85rem" }}>
-            {teamName(room.winner_team)} wins
+            {teamName(room.winner_team)} {t("wins", "gagne")}
           </strong>
         )}
 
         <span className="spectate-divider" />
-        <span className="spectate-label">Watching with</span>
+        <span className="spectate-label">{t("Watching with", "Regarde avec")}</span>
         <strong style={{ color: teamHex(team), fontSize: "0.85rem" }}>{name}</strong>
         <span className="muted" style={{ fontSize: "0.75rem" }}>
-          on {teamName(team)} · {formatRoomCode(code)}
+          {t("on", "sur")} {teamName(team)} · {formatRoomCode(code)}
         </span>
 
         <span className="spectate-bar-spacer" />
@@ -227,8 +239,11 @@ export function Watch() {
           stage={stage}
           noFleetNote={
             <>
-              {name} hasn't turned on showing their own ships, so their hulls aren't drawn. Every
-              hit, miss and sinking on their fleet is here either way.
+              {name}{" "}
+              {t(
+                "hasn't turned on showing their own ships, so their hulls aren't drawn. Every hit, miss and sinking on their fleet is here either way.",
+                "n'a pas activé l'affichage de ses propres navires, donc ses coques ne sont pas dessinées. Chaque touche, chaque échec et chaque naufrage sur sa flotte est visible ici quand même."
+              )}
             </>
           }
         />

@@ -31,6 +31,7 @@ import {
 } from "../lib/castSceneLayout";
 import { MAX_DELAY_MS } from "../lib/overlayCast";
 import type { DeepMark } from "../lib/deepWater";
+import { useT } from "../lib/language";
 import "./Streaming.css";
 
 /**
@@ -80,9 +81,10 @@ function sceneName(kind: SceneKind): string {
  * it cannot drift from what lands in OBS.
  */
 function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
+  const t = useT();
   const sources = sourcesFor(kind).filter((s) => chosen.has(s.id));
   return (
-    <div className="obs-map" role="img" aria-label="Where each source lands in the scene">
+    <div className="obs-map" role="img" aria-label={t("Where each source lands in the scene", "Où chaque source se place dans la scène")}>
       {sources.map((source) => {
         const box = previewBox(kind, source);
         return (
@@ -101,7 +103,7 @@ function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
         );
       })}
       <span className="obs-map-note">
-        {SCENE_CANVAS.w} x {SCENE_CANVAS.h} - where each source lands.
+        {SCENE_CANVAS.w} x {SCENE_CANVAS.h} {t("- where each source lands.", "- où chaque source se place.")}
       </span>
     </div>
   );
@@ -109,6 +111,7 @@ function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
 
 /** The casting scene's map: numbered stream boxes, the board, the clock - and the break scene beside it. */
 function CastSceneMap({ config }: { config: CastLayoutConfig }) {
+  const t = useT();
   const boxes = screenRects(config);
   const board = boardRect();
   const clock = clockRect();
@@ -128,16 +131,16 @@ function CastSceneMap({ config }: { config: CastLayoutConfig }) {
   };
   return (
     <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
-      <div className="obs-map" role="img" aria-label="The casting scene">
+      <div className="obs-map" role="img" aria-label={t("The casting scene", "La scène de commentaire")}>
         {boxes.map((r, i) => box(r, `${i + 1}`, `s${i}`))}
-        {box(board, "Board", "board")}
-        {box(clock, "Clock", "clock")}
-        {castCams.map((r, i) => box(r, i === 0 ? "Caster" : "Co-caster", `cc${i}`))}
+        {box(board, t("Board", "Plateau"), "board")}
+        {box(clock, t("Clock", "Horloge"), "clock")}
+        {castCams.map((r, i) => box(r, i === 0 ? t("Caster", "Commentateur") : t("Co-caster", "Co-commentateur"), `cc${i}`))}
         <span className="obs-map-note">EB Cast - {SCENE_CANVAS.w} x {SCENE_CANVAS.h}</span>
       </div>
-      <div className="obs-map" role="img" aria-label="The camera-break scene">
-        {cams.map((r, i) => box(r, i === 0 ? "Caster" : "Co-caster", `c${i}`))}
-        <span className="obs-map-note">EB Casters - the break</span>
+      <div className="obs-map" role="img" aria-label={t("The camera-break scene", "La scène de pause caméra")}>
+        {cams.map((r, i) => box(r, i === 0 ? t("Caster", "Commentateur") : t("Co-caster", "Co-commentateur"), `c${i}`))}
+        <span className="obs-map-note">EB Casters - {t("the break", "la pause")}</span>
       </div>
     </div>
   );
@@ -151,6 +154,7 @@ function CastSceneMap({ config }: { config: CastLayoutConfig }) {
  * roster. It reuses the same overlay token as the box above.
  */
 function CastingSceneBox({ base, token }: { base: string; token: string }) {
+  const t = useT();
   const [teams, setTeams] = useState(2);
   const [perTeam, setPerTeam] = useState(3);
   const [delayMs, setDelayMs] = useState(0);
@@ -169,17 +173,23 @@ function CastingSceneBox({ base, token }: { base: string; token: string }) {
 
   return (
     <div className="panel stack" style={{ gap: "0.6rem", padding: "0.7rem" }}>
-      <strong style={{ fontSize: "0.86rem" }}>Casting set scene</strong>
+      <strong style={{ fontSize: "0.86rem" }}>{t("Casting set scene", "Ensemble de scènes de commentaire")}</strong>
       <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-        One import, two scenes: <strong>EB Cast</strong> boxes every player's Twitch stream around
-        the board with a live hit / miss / accuracy line under each, and <strong>EB Casters</strong>
-        is a camera frame for the breaks. The boxes fill themselves from whoever is in your room.
-        Drive it from the caster desk - the delay slider there lines the board up with the streams.
+        {t("One import, two scenes:", "Un import, deux scènes :")} <strong>EB Cast</strong>{" "}
+        {t(
+          "boxes every player's Twitch stream around the board with a live hit / miss / accuracy line under each, and",
+          "encadre le flux Twitch de chaque joueur autour du plateau avec une ligne touché / manqué / précision en direct sous chacun, et"
+        )}{" "}
+        <strong>EB Casters</strong>{" "}
+        {t(
+          "is a camera frame for the breaks. The boxes fill themselves from whoever is in your room. Drive it from the caster desk - the delay slider there lines the board up with the streams.",
+          "est un cadre caméra pour les pauses. Les cadres se remplissent tout seuls selon qui est dans votre partie. Pilotez-le depuis le poste de commentaire - le curseur de décalage là-bas aligne le plateau sur les flux."
+        )}
       </span>
 
       <div className="row" style={{ gap: "0.8rem", flexWrap: "wrap" }}>
         <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          Fleets on camera
+          {t("Fleets on camera", "Flottes à l'écran")}
           <select value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
             {[2, 3, 4].map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -187,7 +197,7 @@ function CastingSceneBox({ base, token }: { base: string; token: string }) {
           </select>
         </label>
         <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          Players per fleet
+          {t("Players per fleet", "Joueurs par flotte")}
           <select value={perTeam} onChange={(e) => setPerTeam(Number(e.target.value))}>
             {[1, 2, 3, 4].map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -195,7 +205,7 @@ function CastingSceneBox({ base, token }: { base: string; token: string }) {
           </select>
         </label>
         <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          Stream delay
+          {t("Stream delay", "Décalage du flux")}
           <span className="row" style={{ gap: "0.4rem", alignItems: "center" }}>
             <input
               type="range"
@@ -213,17 +223,17 @@ function CastingSceneBox({ base, token }: { base: string; token: string }) {
       <CastSceneMap config={config} />
 
       <button onClick={download} style={{ fontSize: "0.82rem" }}>
-        Download casting scene
+        {t("Download casting scene", "Télécharger la scène de commentaire")}
       </button>
       <span style={{ fontSize: "0.68rem", lineHeight: 1.4, color: "var(--hit)" }}>
-        <strong>Arrange it after you import.</strong> Same as above - a re-download is a new pair of
-        scenes, not an update.
+        <strong>{t("Arrange it after you import.", "Disposez-la après l'import.")}</strong>{" "}
+        {t("Same as above - a re-download is a new pair of scenes, not an update.", "Comme ci-dessus - un nouveau téléchargement crée une nouvelle paire de scènes, pas une mise à jour.")}
       </span>
       <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-        The player boxes are Twitch embeds, muted and capped to 480p. If one stream drifts, add a
-        Render Delay filter to that Screen source in OBS. The caster and co-caster boxes - two along
-        the bottom of EB Cast, two big ones in EB Casters - are cut-outs: put your webcams behind
-        them.
+        {t(
+          "The player boxes are Twitch embeds, muted and capped to 480p. If one stream drifts, add a Render Delay filter to that Screen source in OBS. The caster and co-caster boxes - two along the bottom of EB Cast, two big ones in EB Casters - are cut-outs: put your webcams behind them.",
+          "Les cadres joueurs sont des flux Twitch intégrés, muets et limités à 480p. Si un flux se décale, ajoutez un filtre Render Delay à cette source Screen dans OBS. Les cadres commentateur et co-commentateur - deux en bas d'EB Cast, deux grands dans EB Casters - sont des découpes : placez vos webcams derrière."
+        )}
       </span>
     </div>
   );
@@ -238,6 +248,7 @@ export function Streaming() {
    * resolving the moment somebody clears their cache or moves machines - with no error anywhere, in
    * the middle of a stream.
    */
+  const t = useT();
   const viewer = useAuthProfile();
   const signedIn = Boolean(viewer?.isTwitch);
 
@@ -347,10 +358,12 @@ export function Streaming() {
   return (
     <div className="stack obs-page" style={{ gap: "0.9rem" }}>
       <div className="stack" style={{ gap: "0.3rem" }}>
-        <h2 style={{ margin: 0 }}>OBS &amp; auto-marking</h2>
+        <h2 style={{ margin: 0 }}>{t("OBS & auto-marking", "OBS et marquage automatique")}</h2>
         <span className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.45 }}>
-          Set both up once. The game mod fires your squares as you kill them; the overlay follows you
-          from match to match.
+          {t(
+            "Set both up once. The game mod fires your squares as you kill them; the overlay follows you from match to match.",
+            "Configurez les deux une fois. Le mod du jeu tire vos cases à mesure que vous tuez ; l'overlay vous suit de partie en partie."
+          )}
         </span>
       </div>
 
@@ -366,51 +379,63 @@ export function Streaming() {
 
       {/* -- the overlay ------------------------------------------------------------------------ */}
       <div className="panel stack" style={{ gap: "0.6rem", padding: "0.7rem" }}>
-        <strong style={{ fontSize: "0.86rem" }}>Stream overlay</strong>
+        <strong style={{ fontSize: "0.86rem" }}>{t("Stream overlay", "Overlay de stream")}</strong>
 
         <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-          One download, one import. Each element arrives as its own Browser Source, so you can place
-          them separately. The URLs never change - join your next match and the overlay is already
-          on it.
+          {t(
+            "One download, one import. Each element arrives as its own Browser Source, so you can place them separately. The URLs never change - join your next match and the overlay is already on it.",
+            "Un téléchargement, un import. Chaque élément arrive comme sa propre Browser Source, pour les placer séparément. Les URL ne changent jamais - rejoignez votre prochaine partie et l'overlay y est déjà."
+          )}
         </span>
 
         {!signedIn ? (
           <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-            Sign in with Twitch first. Without an account you exist only in this browser, so clearing
-            your cache would leave your whole scene pointing at nobody.
+            {t(
+              "Sign in with Twitch first. Without an account you exist only in this browser, so clearing your cache would leave your whole scene pointing at nobody.",
+              "Connectez-vous d'abord avec Twitch. Sans compte, vous n'existez que dans ce navigateur, donc vider votre cache laisserait toute votre scène pointer vers personne."
+            )}
           </span>
         ) : token === undefined ? null : token === null ? (
           <>
             <button onClick={() => void run(createOverlayToken)} disabled={busy} style={{ fontSize: "0.8rem" }}>
-              {busy ? "Setting up..." : "Set up overlay"}
+              {busy ? t("Setting up...", "Configuration...") : t("Set up overlay", "Configurer l'overlay")}
             </button>
             <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              Makes a read-only token. It can't fire shots, take your seat, or read your account.
+              {t(
+                "Makes a read-only token. It can't fire shots, take your seat, or read your account.",
+                "Crée un jeton en lecture seule. Il ne peut pas tirer, prendre votre place, ni lire votre compte."
+              )}
             </span>
           </>
         ) : (
           <>
             {/* -- who it is for ------------------------------------------------------------- */}
             <div className="stack" style={{ gap: "0.25rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>Who's streaming?</span>
+              <span style={{ fontSize: "0.78rem" }}>{t("Who's streaming?", "Qui diffuse ?")}</span>
               <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
                 <button
                   onClick={() => setKind("player")}
                   style={{ fontSize: "0.74rem", borderColor: !isCaster ? "var(--accent)" : undefined }}
                 >
-                  Player
+                  {t("Player", "Joueur")}
                 </button>
                 <button
                   onClick={() => setKind("caster")}
                   style={{ fontSize: "0.74rem", borderColor: isCaster ? "var(--accent)" : undefined }}
                 >
-                  Caster
+                  {t("Caster", "Commentateur")}
                 </button>
               </div>
               <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
                 {isCaster
-                  ? "The desk: the board you aim from the control page, and the clock with the odds bar in it. Join a room as a spectator and the scene follows you in."
-                  : "Your own scene - the board you're playing off, and the clock. Your fleet is filled in when the match starts, so you can change crews without touching anything."}
+                  ? t(
+                      "The desk: the board you aim from the control page, and the clock with the odds bar in it. Join a room as a spectator and the scene follows you in.",
+                      "Le poste : le plateau que vous visez depuis la page de contrôle, et l'horloge avec la barre de cotes. Rejoignez une partie en spectateur et la scène vous suit."
+                    )
+                  : t(
+                      "Your own scene - the board you're playing off, and the clock. Your fleet is filled in when the match starts, so you can change crews without touching anything.",
+                      "Votre propre scène - le plateau sur lequel vous jouez, et l'horloge. Votre flotte se remplit au début de la partie, vous pouvez donc changer d'équipe sans rien toucher."
+                    )}
               </span>
             </div>
 
@@ -424,22 +449,28 @@ export function Streaming() {
             />
 
             <Setting
-              label="Overlay transparency"
-              hint="How much of your gameplay shows through the whole scene. On the boards it's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move."
+              label={t("Overlay transparency", "Transparence de l'overlay")}
+              hint={t(
+                "How much of your gameplay shows through the whole scene. On the boards it's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move.",
+                "Combien de votre gameplay transparaît dans toute la scène. Sur les plateaux, c'est l'eau qui s'efface : les noms de cases et les tirs restent à peu près à mi-chemin du plein, et le cadre et les lignes de grille bougent à peine."
+              )}
               min={MIN_OPACITY}
               max={1}
               step={0.05}
               value={opacity}
               onChange={setOpacity}
-              readout={opacity >= 1 ? "solid" : opacity <= 0 ? "hidden" : `${Math.round(opacity * 100)}%`}
+              readout={opacity >= 1 ? t("solid", "plein") : opacity <= 0 ? t("hidden", "invisible") : `${Math.round(opacity * 100)}%`}
             />
 
             {/* Crews only, for the reason the in-room box gives: a caster is reading the whole board
                 and needs the squares nobody has fired at to still be squares. */}
             {!isCaster && (
               <Setting
-                label="Unfired squares"
-                hint="How solid a square you haven't shot at yet is. Turn it down and your own gameplay shows through everywhere you haven't been, while hits, misses and wrecks stay as solid as ever."
+                label={t("Unfired squares", "Cases non tirées")}
+                hint={t(
+                  "How solid a square you haven't shot at yet is. Turn it down and your own gameplay shows through everywhere you haven't been, while hits, misses and wrecks stay as solid as ever.",
+                  "À quel point une case sur laquelle vous n'avez pas encore tiré est pleine. Baissez-la et votre propre gameplay transparaît partout où vous n'êtes pas allé, tandis que touchés, manqués et épaves restent tout aussi pleins."
+                )}
                 min={0}
                 max={1}
                 step={0.05}
@@ -447,17 +478,20 @@ export function Streaming() {
                 onChange={setEmptyFade}
                 readout={
                   emptyFade >= 1
-                    ? "same as the rest"
+                    ? t("same as the rest", "comme le reste")
                     : emptyFade <= 0
-                      ? "no fill at all"
+                      ? t("no fill at all", "aucun remplissage")
                       : `${Math.round(emptyFade * 100)}%`
                 }
               />
             )}
 
             <Setting
-              label="Text size"
-              hint="How much of each square its name fills, plus the clock and the key. Text never overflows: a size that doesn't fit draws as large as it can."
+              label={t("Text size", "Taille du texte")}
+              hint={t(
+                "How much of each square its name fills, plus the clock and the key. Text never overflows: a size that doesn't fit draws as large as it can.",
+                "Quelle part de chaque case son nom remplit, ainsi que l'horloge et la légende. Le texte ne dépasse jamais : une taille qui ne rentre pas se dessine aussi grande que possible."
+              )}
               min={MIN_TEXT_SIZE}
               max={MAX_TEXT_SIZE}
               step={0.05}
@@ -467,8 +501,11 @@ export function Streaming() {
             />
 
             <Setting
-              label="Find alert time"
-              hint="How long the Finds source holds a find on screen before it goes back to drawing nothing."
+              label={t("Find alert time", "Durée d'alerte de découverte")}
+              hint={t(
+                "How long the Finds source holds a find on screen before it goes back to drawing nothing.",
+                "Combien de temps la source Finds garde une découverte à l'écran avant de redessiner le vide."
+              )}
               min={MIN_ALERT_SECS}
               max={MAX_ALERT_SECS}
               step={1}
@@ -480,14 +517,14 @@ export function Streaming() {
             <button
               onClick={() => setPlaying(playing ? null : "whale")}
               style={{ fontSize: "0.74rem", alignSelf: "flex-start" }}
-              title="Show a sample find over the preview above"
+              title={t("Show a sample find over the preview above", "Afficher une découverte d'exemple sur l'aperçu ci-dessus")}
             >
-              {playing ? "Stop" : "Play a sample find"}
+              {playing ? t("Stop", "Arrêter") : t("Play a sample find", "Jouer une découverte d'exemple")}
             </button>
 
             {/* -- what goes in it ------------------------------------------------------------ */}
             <div className="stack" style={{ gap: "0.3rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>Elements</span>
+              <span style={{ fontSize: "0.78rem" }}>{t("Elements", "Éléments")}</span>
               {sourcesFor(kind).map((source) => (
                 <label key={source.id} className="obs-pick">
                   <input type="checkbox" checked={picked.has(source.id)} onChange={() => toggle(source.id)} />
@@ -506,8 +543,10 @@ export function Streaming() {
                     {source.spoiler && picked.has(source.id) && (
                       <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
                         <strong>
-                          This one draws your ships. Put it on stream only if you want viewers to
-                          see where your hulls are.
+                          {t(
+                            "This one draws your ships. Put it on stream only if you want viewers to see where your hulls are.",
+                            "Celle-ci dessine vos navires. Ne la mettez en stream que si vous voulez que les spectateurs voient où sont vos coques."
+                          )}
                         </strong>
                       </span>
                     )}
@@ -519,27 +558,33 @@ export function Streaming() {
             <SceneMap kind={kind} chosen={picked} />
 
             <button onClick={download} disabled={picked.size === 0} style={{ fontSize: "0.82rem" }}>
-              Download OBS scene
+              {t("Download OBS scene", "Télécharger la scène OBS")}
             </button>
 
             <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-              In OBS: <strong>Scene Collection - Import</strong>, pick the file, then switch to it.
+              {t("In OBS:", "Dans OBS :")} <strong>{t("Scene Collection - Import", "Collection de scènes - Importer")}</strong>
+              {t(", pick the file, then switch to it.", ", choisissez le fichier, puis basculez dessus.")}
             </span>
 
             {/* The one warning on this page that is worth red. Losing an evening's layout to a
                 re-import is the worst thing that can happen to somebody using this. */}
             <span style={{ fontSize: "0.68rem", lineHeight: 1.4, color: "var(--hit)" }}>
-              <strong>Arrange it after you import, not before.</strong> Downloading again builds a
-              new scene, not an update - whatever you moved in OBS is gone.
+              <strong>{t("Arrange it after you import, not before.", "Disposez-la après l'import, pas avant.")}</strong>{" "}
+              {t(
+                "Downloading again builds a new scene, not an update - whatever you moved in OBS is gone.",
+                "Télécharger à nouveau crée une nouvelle scène, pas une mise à jour - tout ce que vous avez déplacé dans OBS est perdu."
+              )}
             </span>
 
             {isCaster && (
               <div className="stack" style={{ gap: "0.15rem" }}>
-                <span style={{ fontSize: "0.78rem" }}>Control page</span>
+                <span style={{ fontSize: "0.78rem" }}>{t("Control page", "Page de contrôle")}</span>
                 <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-                  Open <a href={streamCastUrl(base, token)}>your caster desk</a> in a normal browser
-                  window, not in OBS. It drives the Board source - zoom, pan, spotlight, markers, and
-                  how solid the scene looks - and it follows you between rooms like the sources do.
+                  {t("Open", "Ouvrez")} <a href={streamCastUrl(base, token)}>{t("your caster desk", "votre poste de commentaire")}</a>{" "}
+                  {t(
+                    "in a normal browser window, not in OBS. It drives the Board source - zoom, pan, spotlight, markers, and how solid the scene looks - and it follows you between rooms like the sources do.",
+                    "dans une fenêtre de navigateur normale, pas dans OBS. Il pilote la source Board - zoom, panoramique, projecteur, marqueurs, et la transparence de la scène - et il vous suit d'une partie à l'autre comme les autres sources."
+                  )}
                 </span>
               </div>
             )}
@@ -547,11 +592,13 @@ export function Streaming() {
             {/* -- the advanced half ---------------------------------------------------------- */}
             <details className="stack" style={{ gap: "0.4rem" }}>
               <summary style={{ fontSize: "0.78rem", cursor: "pointer" }}>
-                Advanced - individual Browser Sources
+                {t("Advanced - individual Browser Sources", "Avancé - sources navigateur individuelles")}
               </summary>
               <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-                The same URLs the scene file holds. Use them to build the scene yourself, or to add
-                one element to a scene you already have. Paste one in and it never needs changing.
+                {t(
+                  "The same URLs the scene file holds. Use them to build the scene yourself, or to add one element to a scene you already have. Paste one in and it never needs changing.",
+                  "Les mêmes URL que contient le fichier de scène. Utilisez-les pour construire la scène vous-même, ou pour ajouter un élément à une scène que vous avez déjà. Collez-en une et elle n'a plus jamais besoin de changer."
+                )}
               </span>
               {entries.map(({ source, url }) => (
                 <SourceRow
@@ -566,11 +613,11 @@ export function Streaming() {
 
             {/* -- the token ------------------------------------------------------------------ */}
             <div className="stack" style={{ gap: "0.3rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>Your overlay token</span>
+              <span style={{ fontSize: "0.78rem" }}>{t("Your overlay token", "Votre jeton d'overlay")}</span>
               <code className="obs-token">{revealed ? token : maskOverlayToken(token)}</code>
               <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
                 <button onClick={() => setRevealed((r) => !r)} style={{ fontSize: "0.74rem" }}>
-                  {revealed ? "Hide" : "Reveal"}
+                  {revealed ? t("Hide", "Masquer") : t("Reveal", "Révéler")}
                 </button>
                 {confirmingRotate ? (
                   <>
@@ -579,22 +626,28 @@ export function Streaming() {
                       disabled={busy}
                       style={{ fontSize: "0.74rem", color: "var(--hit)" }}
                     >
-                      {busy ? "Rotating..." : "Yes, rotate it"}
+                      {busy ? t("Rotating...", "Rotation...") : t("Yes, rotate it", "Oui, le régénérer")}
                     </button>
                     <button onClick={() => setConfirmingRotate(false)} style={{ fontSize: "0.74rem" }}>
-                      Cancel
+                      {t("Cancel", "Annuler")}
                     </button>
                   </>
                 ) : (
                   <button onClick={() => setConfirmingRotate(true)} style={{ fontSize: "0.74rem" }}>
-                    Rotate token
+                    {t("Rotate token", "Régénérer le jeton")}
                   </button>
                 )}
               </div>
               <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
                 {confirmingRotate
-                  ? "Kills the old token at once: every source in your scene goes blank until you download and import again."
-                  : "There's nothing to paste anywhere - it's already inside the scene file. Masked because people screenshot this page; rotate it if it leaks, then import the scene again."}
+                  ? t(
+                      "Kills the old token at once: every source in your scene goes blank until you download and import again.",
+                      "Annule le jeton actuel immédiatement : toutes les sources de votre scène deviennent vides jusqu'à ce que vous retéléchargiez et réimportiez."
+                    )
+                  : t(
+                      "There's nothing to paste anywhere - it's already inside the scene file. Masked because people screenshot this page; rotate it if it leaks, then import the scene again.",
+                      "Il n'y a rien à coller nulle part - il est déjà dans le fichier de scène. Masqué parce que les gens font des captures d'écran de cette page ; régénérez-le s'il fuite, puis réimportez la scène."
+                    )}
               </span>
             </div>
           </>
@@ -607,8 +660,9 @@ export function Streaming() {
         )}
 
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-          Want a scene for one particular room? The <strong>Stream overlay</strong> box inside a room
-          hands out URLs for that room alone.
+          {t("Want a scene for one particular room? The", "Vous voulez une scène pour une seule partie ? La boîte")}{" "}
+          <strong>{t("Stream overlay", "Overlay de stream")}</strong>{" "}
+          {t("box inside a room hands out URLs for that room alone.", "à l'intérieur d'une partie distribue des URL pour cette partie uniquement.")}
         </span>
       </div>
 

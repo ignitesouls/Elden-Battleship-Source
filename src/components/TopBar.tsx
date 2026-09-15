@@ -7,6 +7,7 @@ import { isColorblindMode, setColorblindMode } from "../lib/teamColors";
 import { isTwitchLoginConfigured, signInWithTwitch, signOut } from "../lib/supabase";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import { useAdminStatus } from "../lib/admin";
+import { useLanguage, setLanguage, useT } from "../lib/language";
 import { OutreachLinks } from "./OutreachLinks";
 import "./TopBar.css";
 
@@ -27,10 +28,10 @@ import "./TopBar.css";
  * Null while the check is still out, and null for 'finished' too - a match that's over is a recap
  * waiting to be read, and labelling the way back to it "finished" reads as "nothing to see".
  */
-function roomDoing(status: string | null): string | null {
-  if (status === "lobby") return "in the lobby";
-  if (status === "placement") return "placing fleets";
-  if (status === "battle") return "in battle";
+function roomDoing(status: string | null, t: (en: string, fr: string) => string): string | null {
+  if (status === "lobby") return t("in the lobby", "dans le lobby");
+  if (status === "placement") return t("placing fleets", "en placement des flottes");
+  if (status === "battle") return t("in battle", "en bataille");
   return null;
 }
 
@@ -62,6 +63,8 @@ export function TopBar() {
   const [premuteVolume, setPremuteVolume] = useState(() => (getVolume() > 0 ? getVolume() : 0.7));
   const [colorblind, setColorblind] = useState(isColorblindMode);
   const [deep, setDeep] = useState(isDeepSfx);
+  const lang = useLanguage();
+  const t = useT();
 
   const muted = volume === 0;
   // The slider works in whole percent, and the CSS fill is driven off the SAME rounded number -
@@ -91,6 +94,10 @@ export function TopBar() {
     setDeep(next);
   }
 
+  function toggleLanguage() {
+    setLanguage(lang === "fr" ? "en" : "fr");
+  }
+
   return (
     <div className="tb-bar">
       {/* The bar spans the full width, so it needs an anchor at the far left or it reads as a
@@ -99,7 +106,7 @@ export function TopBar() {
           harbor" link each rolled their own, and the room pages only show one in certain states.
           Matches the anchor and wording of the Home page heading exactly, so it reads as the same
           thing rather than as a second, differently-named app. */}
-      <Link to="/" className="tb-item tb-brand" title="Back to the harbor">
+      <Link to="/" className="tb-item tb-brand" title={t("Back to the harbor", "Retour au port")}>
         <span className="tb-emoji">⚓</span>
         <span className="tb-label">Elden Battleship</span>
       </Link>
@@ -112,7 +119,7 @@ export function TopBar() {
         <Link
           to={`/room/${activeRoom.code}`}
           className="tb-item tb-return"
-          title={`Back to the room you're in${roomDoing(activeRoom.status) ? ` - ${roomDoing(activeRoom.status)}` : ""}`}
+          title={`${t("Back to the room you're in", "Retour à votre partie")}${roomDoing(activeRoom.status, t) ? ` - ${roomDoing(activeRoom.status, t)}` : ""}`}
         >
           {/* A plain arrow, not an emoji: this one is a direction, and every emoji that means
               "ship" or "harbor" would read as a destination instead. */}
@@ -121,8 +128,8 @@ export function TopBar() {
               lobby" and "in battle" are the difference between wandering back at leisure and
               having left a match running. Absent until the check lands, so the bar doesn't
               flicker a word in on load. */}
-          {roomDoing(activeRoom.status) && (
-            <span className="tb-return-state">{roomDoing(activeRoom.status)}</span>
+          {roomDoing(activeRoom.status, t) && (
+            <span className="tb-return-state">{roomDoing(activeRoom.status, t)}</span>
           )}
         </Link>
       )}
@@ -139,7 +146,7 @@ export function TopBar() {
       <div className="tb-right">
         {profile?.isTwitch ? (
           <>
-            <Link to={`/player/${profile.userId}`} className="tb-item tb-account" title="Your stats">
+            <Link to={`/player/${profile.userId}`} className="tb-item tb-account" title={t("Your stats", "Vos statistiques")}>
               {profile.avatarUrl ? (
                 <img src={profile.avatarUrl} alt="" width={20} height={20} className="tb-avatar" />
               ) : (
@@ -151,8 +158,8 @@ export function TopBar() {
             </Link>
             {/* Text, not a glyph: ⎋ renders as a "no entry" sign in several fonts, which reads
                 as "blocked" rather than "log out". */}
-            <button onClick={() => void signOut()} className="tb-item" title="Sign out">
-              Sign out
+            <button onClick={() => void signOut()} className="tb-item" title={t("Sign out", "Se déconnecter")}>
+              {t("Sign out", "Se déconnecter")}
             </button>
           </>
         ) : (
@@ -160,9 +167,12 @@ export function TopBar() {
             onClick={() => void signInWithTwitch()}
             disabled={!isTwitchLoginConfigured}
             className="tb-twitch"
-            title="Sign in with Twitch to keep your fleet and track career stats. It asks for no permissions, not even your email."
+            title={t(
+              "Sign in with Twitch to keep your fleet and track career stats. It asks for no permissions, not even your email.",
+              "Connectez-vous avec Twitch pour conserver votre flotte et suivre vos statistiques de carrière. Aucune permission n'est demandée, pas même votre e-mail."
+            )}
           >
-            Twitch login
+            {t("Twitch login", "Connexion Twitch")}
           </button>
         )}
 
@@ -171,14 +181,14 @@ export function TopBar() {
         <Link
           to="/leaderboard"
           className="tb-item"
-          title="Leaderboard - career records across every finished match"
+          title={t("Leaderboard - career records across every finished match", "Classement - records de carrière sur toutes les parties terminées")}
         >
           <span className="tb-emoji">🏆</span>
-          <span className="tb-label">Leaderboard</span>
+          <span className="tb-label">{t("Leaderboard", "Classement")}</span>
         </Link>
-        <Link to="/almanac" className="tb-item" title="Almanac - heatmaps, boss timings and records">
+        <Link to="/almanac" className="tb-item" title={t("Almanac - heatmaps, boss timings and records", "Almanach - cartes de chaleur, temps de boss et records")}>
           <span className="tb-emoji">📖</span>
-          <span className="tb-label">Almanac</span>
+          <span className="tb-label">{t("Almanac", "Almanach")}</span>
         </Link>
 
         {/* Only for admins, and only once the check has come back - rendering it while `loading`
@@ -187,9 +197,9 @@ export function TopBar() {
             types the URL. Tinted like the panel's own heading so it reads as the one item in this
             bar that isn't for everybody. */}
         {isAdmin && (
-          <Link to="/admin" className="tb-item tb-admin" title="Admin - records, live rooms and administrators">
+          <Link to="/admin" className="tb-item tb-admin" title={t("Admin - records, live rooms and administrators", "Admin - records, parties en direct et administrateurs")}>
             <span className="tb-emoji">🛠️</span>
-            <span className="tb-label">Admin</span>
+            <span className="tb-label">{t("Admin", "Admin")}</span>
           </Link>
         )}
 
@@ -206,10 +216,26 @@ export function TopBar() {
           onClick={toggleColorblind}
           aria-pressed={colorblind}
           className={`tb-item${colorblind ? " tb-colorblind-on" : ""}`}
-          title="Colorblind mode - blue and orange fleets instead of red and blue, on boards, rosters and the leaderboard."
+          title={t(
+            "Colorblind mode - blue and orange fleets instead of red and blue, on boards, rosters and the leaderboard.",
+            "Mode daltonien - flottes bleue et orange au lieu de rouge et bleu, sur les plateaux, les listes d'équipage et le classement."
+          )}
         >
           <span className="tb-emoji">🎨</span>
-          <span className="tb-label">Colorblind {colorblind ? "on" : "off"}</span>
+          <span className="tb-label">{t("Colorblind", "Daltonien")} {colorblind ? t("on", "activé") : t("off", "désactivé")}</span>
+        </button>
+
+        {/* The language toggle sits here, between colorblind and sound, so the three "how this app
+            presents itself to you" preferences stay grouped in one run rather than being split
+            across the bar. */}
+        <button
+          onClick={toggleLanguage}
+          aria-pressed={lang === "fr"}
+          className={`tb-item${lang === "fr" ? " tb-on" : ""}`}
+          title={t("Switch to French", "Passer à l'anglais")}
+        >
+          <span className="tb-emoji">🌐</span>
+          <span className="tb-label">{lang === "fr" ? "Français" : "English"}</span>
         </button>
 
         {/* Both toggles state the CURRENT state ("Sound on") rather than the action ("Mute") -
@@ -220,10 +246,10 @@ export function TopBar() {
           onClick={toggleMute}
           aria-pressed={muted}
           className={`tb-item${muted ? "" : " tb-on"}`}
-          title={muted ? "Turn sound on" : "Turn sound off"}
+          title={muted ? t("Turn sound on", "Activer le son") : t("Turn sound off", "Désactiver le son")}
         >
           <span className="tb-emoji">{muted ? "🔇" : "🔊"}</span>
-          <span className="tb-label">Sound {muted ? "off" : "on"}</span>
+          <span className="tb-label">{t("Sound", "Son")} {muted ? t("off", "désactivé") : t("on", "activé")}</span>
         </button>
         {/* Kept next to its own toggle rather than swapped across with it - a volume track adrift
             from the speaker it controls is a worse bar than either ordering. */}
@@ -233,7 +259,7 @@ export function TopBar() {
           max={100}
           value={volumePercent}
           onChange={(e) => applyVolume(Number(e.target.value) / 100)}
-          aria-label="Sound effect volume"
+          aria-label={t("Sound effect volume", "Volume des effets sonores")}
           className="eb-slider tb-slider"
           // A range input offers no hook for colouring the track up to the thumb, so the fill is
           // painted in CSS from this fraction. See .eb-slider in index.css for why it's 0-1 and not
@@ -261,12 +287,18 @@ export function TopBar() {
           className={`tb-item${deep ? " tb-on" : " tb-deep-off"}`}
           title={
             deep
-              ? "Turn off the Deep's sounds - whales, the Dutchman, tentacles, bottles, Alexander and Igon. Shots, horns and the final sting are unaffected."
-              : "Turn the Deep's sounds back on - whales, the Dutchman, tentacles, bottles, Alexander and Igon"
+              ? t(
+                  "Turn off the Deep's sounds - whales, the Dutchman, tentacles, bottles, Alexander and Igon. Shots, horns and the final sting are unaffected.",
+                  "Désactiver les sons des Profondeurs - baleines, le Hollandais, tentacules, bouteilles, Alexander et Igon. Les tirs, cornes et le générique final ne sont pas affectés."
+                )
+              : t(
+                  "Turn the Deep's sounds back on - whales, the Dutchman, tentacles, bottles, Alexander and Igon",
+                  "Réactiver les sons des Profondeurs - baleines, le Hollandais, tentacules, bouteilles, Alexander et Igon"
+                )
           }
         >
           <span className="tb-emoji">🐙</span>
-          <span className="tb-label">Deep sounds {deep ? "on" : "off"}</span>
+          <span className="tb-label">{t("Deep sounds", "Sons des Profondeurs")} {deep ? t("on", "activés") : t("off", "désactivés")}</span>
         </button>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { useBattlePhaseName } from "../hooks/useBattlePhase";
 import { ruledOutCells } from "../lib/deduction";
 import { deepMarks, type DeepWater } from "../lib/deepWater";
 import { teamName, teamHex } from "../lib/teamColors";
+import { useLanguage, useT } from "../lib/language";
 import { boardSideFor } from "../hooks/useBoxSize";
 import type { Attack, Fleet, Room } from "../types/battleship";
 
@@ -94,6 +95,8 @@ export function SpectateWithCrew({
 }: Props) {
   const boardSize = room.board_size;
   const shipDefs = room.ship_defs;
+  const lang = useLanguage();
+  const t = useT();
 
   // Riding along means reading the same squares the crew reads, on both of their boards - the
   // whole point is following what they're deciding between, which bare colored cells can't carry.
@@ -110,8 +113,8 @@ export function SpectateWithCrew({
     const c = challenges[i];
     if (!c) return null;
     return {
-      label: c.short ?? c.name,
-      title: c.title ?? c.name,
+      label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+      title: (lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name,
       region: c.region,
       color: c.color,
     };
@@ -202,8 +205,10 @@ export function SpectateWithCrew({
   const notes = NOTE_H * (ownFleet ? 1 : 2);
   const side = boardSideFor({ w: stage.w, h: Math.max(0, stage.h - notes) }, 2);
 
-  const fireTitle = opponents ? `Their shots on ${opponents}` : "Their shots";
-  const fleetTitle = `${teamName(team)} - their fleet`;
+  const fireTitle = opponents
+    ? t(`Their shots on ${opponents}`, `Leurs tirs sur ${opponents}`)
+    : t("Their shots", "Leurs tirs");
+  const fleetTitle = t(`${teamName(team)} - their fleet`, `${teamName(team)} - leur flotte`);
   // Sized by the panel in canvas mode and by the stage otherwise. Everything else about the two
   // boards is identical, which is the point of deriving them once.
   const sizing = wrapBoard ? { fill: true } : { maxVh: `${side}px`, maxVw: `${side}px` };
@@ -253,8 +258,11 @@ export function SpectateWithCrew({
   return (
     <div className="spectate-crew">
       <span className="spectate-note">
-        Riding with <strong style={{ color: teamHex(team) }}>{teamName(team)}</strong>. You see only
-        what they see, and you can't fire.
+        {t("Riding with", "Vous suivez")} <strong style={{ color: teamHex(team) }}>{teamName(team)}</strong>
+        {t(
+          ". You see only what they see, and you can't fire.",
+          ". Vous voyez seulement ce qu'ils voient, et vous ne pouvez pas tirer."
+        )}
       </span>
 
       <div className="spectate-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
@@ -266,8 +274,9 @@ export function SpectateWithCrew({
         <span className="spectate-note">
           {noFleetNote ?? (
             <>
-              Their ship positions can't be read. Apply the <code>fleets select by spectator</code>{" "}
-              policy to see them. Shot results show either way.
+              {t("Their ship positions can't be read. Apply the", "La position de leurs navires ne peut pas être lue. Appliquez la politique")}{" "}
+              <code>fleets select by spectator</code>{" "}
+              {t("policy to see them. Shot results show either way.", "pour les voir. Les résultats des tirs s'affichent quand même.")}
             </>
           )}
         </span>

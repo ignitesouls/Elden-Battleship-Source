@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchFairnessGaps, fairnessOf, ordinal, type MatchBalance } from "../lib/matchBalance";
+import { useT } from "../lib/language";
 
 /**
  * How fair the board was, on the recap.
@@ -57,6 +58,7 @@ export function BalanceReadout({
    * already read.
    */
   const [gaps, setGaps] = useState<number[] | null>(null);
+  const t = useT();
 
   useEffect(() => {
     if (!balance) return;
@@ -79,20 +81,22 @@ export function BalanceReadout({
 
   return (
     <div className="panel stack" style={{ gap: "0.45rem", width }}>
-      <h3 style={{ margin: 0 }}>Board fairness</h3>
+      <h3 style={{ margin: 0 }}>{t("Board fairness", "Équité du plateau")}</h3>
 
       {fairness ? (
         <div className="stack" style={{ gap: "0.1rem" }}>
           <span style={{ fontSize: "1.7rem", fontWeight: 700, lineHeight: 1.1, color: "var(--accent)" }}>
-            {ordinal(fairness.percentile)} percentile
+            {ordinal(fairness.percentile)} {t("percentile", "centile")}
           </span>
           <span className="muted" style={{ fontSize: "0.72rem" }}>
-            in terms of fairness, compared to every match played
+            {t("in terms of fairness, compared to every match played", "en termes d'équité, par rapport à toutes les parties jouées")}
           </span>
         </div>
       ) : (
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          {gaps === null ? "Ranking this board..." : "Nothing to rank this against yet."}
+          {gaps === null
+            ? t("Ranking this board...", "Classement de ce plateau en cours...")
+            : t("Nothing to rank this against yet.", "Rien à comparer pour l'instant.")}
         </span>
       )}
     </div>

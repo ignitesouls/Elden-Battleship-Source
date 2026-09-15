@@ -8,6 +8,7 @@ import { EndMatchButton } from "../../components/EndMatchButton";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { MatchInfoBox } from "../../components/MatchInfoBox";
 import { TeamBox } from "../../components/TeamBox";
+import { useT } from "../../lib/language";
 import type { Room, Fleet, Player, ShipPlacement, TeamReady } from "../../types/battleship";
 
 interface Props {
@@ -31,6 +32,7 @@ export function PlacementPhase({
   teamReady,
   isHost,
 }: Props) {
+  const t = useT();
   const iAmCaptain = isCaptain(players, myTeam, myPlayerId);
   const [placements, setPlacements] = useState<ShipPlacement[]>(myFleet.placements ?? []);
   const [selectedShip, setSelectedShip] = useState(0);
@@ -303,8 +305,11 @@ export function PlacementPhase({
           cellVisual={cellVisual}
           label={
             myFleet.placement_confirmed
-              ? `${teamName(myTeam)} - fleet confirmed`
-              : `${teamName(myTeam)} - ${captain?.nickname ?? "your captain"} is placing`
+              ? `${teamName(myTeam)} - ${t("fleet confirmed", "flotte confirmée")}`
+              : `${teamName(myTeam)} - ${captain?.nickname ?? t("your captain", "votre capitaine")} ${t(
+                  "is placing",
+                  "place la flotte"
+                )}`
           }
           ships={shipOverlays}
           maxVh="calc(100vh - 5.5rem)"
@@ -316,18 +321,22 @@ export function PlacementPhase({
           style={{ minWidth: 220, gap: "0.75rem", maxHeight: "calc(100vh - 5.5rem)", minHeight: 0, overflowY: "auto" }}
         >
           <div className="panel stack" style={{ gap: "0.4rem" }}>
-            <h3 style={{ margin: 0 }}>Standing by</h3>
+            <h3 style={{ margin: 0 }}>{t("Standing by", "En attente")}</h3>
             <span className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.4 }}>
-              <strong>{captain?.nickname ?? "Your captain"}</strong> is laying out the fleet. Every
-              hull appears here as they put it down, and nothing is settled until they confirm, so
-              speak up while it can still move.
+              <strong>{captain?.nickname ?? t("Your captain", "Votre capitaine")}</strong>{" "}
+              {t(
+                "is laying out the fleet. Every hull appears here as they put it down, and nothing is settled until they confirm, so speak up while it can still move.",
+                "est en train de composer la flotte. Chaque coque apparaît ici au fur et à mesure qu'elle est posée, et rien n'est définitif avant confirmation, alors parlez pendant qu'elle peut encore bouger."
+              )}
             </span>
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {myFleet.placement_confirmed
                 ? allReady
-                  ? "Every fleet is ready. Battle starting..."
-                  : `Confirmed. Waiting on: ${notReadyTeams.map((t) => teamName(t)).join(", ")}`
-                : `${shownPlacements.length} of ${shipDefs.length} ships placed.`}
+                  ? t("Every fleet is ready. Battle starting...", "Toutes les flottes sont prêtes. La bataille commence...")
+                  : `${t("Confirmed. Waiting on:", "Confirmé. En attente de :")} ${notReadyTeams
+                      .map((t) => teamName(t))
+                      .join(", ")}`
+                : `${shownPlacements.length} ${t("of", "sur")} ${shipDefs.length} ${t("ships placed.", "navires placés.")}`}
             </span>
           </div>
 
@@ -357,15 +366,15 @@ export function PlacementPhase({
     return (
       <div className="stack" style={{ alignItems: "center", width: "min(480px, 100%)" }}>
         <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
-          <h2>Fleet confirmed</h2>
+          <h2>{t("Fleet confirmed", "Flotte confirmée")}</h2>
           <p className="muted">
             {allReady
-              ? "Every fleet is ready. Battle starting..."
-              : `Waiting on: ${notReadyTeams.map((t) => teamName(t)).join(", ")}`}
+              ? t("Every fleet is ready. Battle starting...", "Toutes les flottes sont prêtes. La bataille commence...")
+              : `${t("Waiting on:", "En attente de :")} ${notReadyTeams.map((t) => teamName(t)).join(", ")}`}
           </p>
           {error && <div className="error-text">{error}</div>}
           <button disabled={saving || allReady} onClick={handleUnconfirm}>
-            Edit placement
+            {t("Edit placement", "Modifier le placement")}
           </button>
           {/* The single best moment for this to be on screen: the fleet is done, the match hasn't
               started, and waiting on the other teams is exactly when somebody realises they still
@@ -388,7 +397,7 @@ export function PlacementPhase({
         onCellClick={handleCellClick}
         onCellHover={setHoverIndex}
         onMouseLeave={() => setHoverIndex(null)}
-        label="Place your fleet"
+        label={t("Place your fleet", "Placez votre flotte")}
         ships={shipOverlays}
         // Same chrome subtraction as the battle board. maxVw is capped well under the old 92
         // default too: at 92vw the board plus the 220px ship panel and the 2rem gap were wider
@@ -423,7 +432,7 @@ export function PlacementPhase({
         ))}
 
       <div className="panel stack">
-        <h3>Ships</h3>
+        <h3>{t("Ships", "Navires")}</h3>
         {shipDefs.map((def, i) => (
           <div key={i} className="row" style={{ justifyContent: "space-between" }}>
             <button
@@ -439,7 +448,7 @@ export function PlacementPhase({
               {def.name} ({def.size})
             </button>
             {placedShipIndices.has(i) && (
-              <button onClick={() => clearShip(i)} title="Clear">
+              <button onClick={() => clearShip(i)} title={t("Clear", "Effacer")}>
                 ✕
               </button>
             )}
@@ -447,14 +456,15 @@ export function PlacementPhase({
         ))}
 
         <button onClick={() => setHorizontal((h) => !h)}>
-          Orientation: {horizontal ? "Horizontal" : "Vertical"} <span className="muted">(R)</span>
+          {t("Orientation:", "Orientation :")} {horizontal ? t("Horizontal", "Horizontale") : t("Vertical", "Verticale")}{" "}
+          <span className="muted">(R)</span>
         </button>
         <div className="row" style={{ gap: "0.4rem" }}>
           <button style={{ flex: 1 }} onClick={randomize}>
-            Randomize
+            {t("Randomize", "Aléatoire")}
           </button>
           <button style={{ flex: 1 }} onClick={clearAll} disabled={placements.length === 0}>
-            Clear all
+            {t("Clear all", "Tout effacer")}
           </button>
         </div>
 
@@ -462,22 +472,25 @@ export function PlacementPhase({
             anyone not using a mouse) - that behavior stays. It just isn't worth advertising here,
             because "arrow keys move around the board" reads as if it moves your ships. */}
         <span className="muted" style={{ fontSize: "0.7rem", lineHeight: 1.35 }}>
-          Click a placed ship to rotate it. <strong>R</strong> flips the selected ship.
+          {t("Click a placed ship to rotate it.", "Cliquez sur un navire placé pour le faire pivoter.")}{" "}
+          <strong>R</strong> {t("flips the selected ship.", "retourne le navire sélectionné.")}
         </span>
 
         {/* Said plainly, because a captain who doesn't know this is being watched will assume the
             crew are looking at a blank board and narrate the whole thing over voice. */}
         {crewCount > 0 && (
           <span className="muted" style={{ fontSize: "0.7rem", lineHeight: 1.35 }}>
-            {crewCount === 1 ? "Your crewmate sees" : `Your ${crewCount} crewmates see`} each hull as
-            you put it down, before you confirm.
+            {crewCount === 1
+              ? t("Your crewmate sees", "Votre coéquipier voit")
+              : `${t("Your", "Vos")} ${crewCount} ${t("crewmates see", "coéquipiers voient")}`}{" "}
+            {t("each hull as you put it down, before you confirm.", "chaque coque dès que vous la posez, avant confirmation.")}
           </span>
         )}
 
         {error && <div className="error-text">{error}</div>}
 
         <button className="primary" disabled={!allPlaced || !allValid || saving} onClick={handleConfirm}>
-          Confirm fleet
+          {t("Confirm fleet", "Confirmer la flotte")}
         </button>
         {isHost && <EndMatchButton roomId={room.id} />}
         <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} />

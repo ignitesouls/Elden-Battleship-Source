@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useOverlayToken } from "../hooks/useOverlayToken";
+import { useT } from "../lib/language";
 import { OverlayBoard } from "./OverlayBoard";
 import { OverlayFleet } from "./OverlayFleet";
 import { OverlayTimer } from "./OverlayTimer";
@@ -97,6 +98,7 @@ export function StreamSource() {
   const token = params.get("token");
 
   const { loading, session } = useOverlayToken(token);
+  const t = useT();
 
   /**
    * The transparent-background opt-out, taken here as well as in each page.
@@ -175,11 +177,17 @@ export function StreamSource() {
     if (!session?.roomCode) {
       return (
         <div className="stack" style={{ width: "min(860px, 100%)", gap: "0.5rem" }}>
-          <h2>Caster desk</h2>
+          <h2>{t("Caster desk", "Poste du commentateur")}</h2>
           <p className="muted">
             {session
-              ? "You're not in a room right now. Join one as a spectator and this page will pick it up on its own - no need to reload."
-              : "That overlay token isn't valid. Generate a new one on the OBS & auto-marking page."}
+              ? t(
+                  "You're not in a room right now. Join one as a spectator and this page will pick it up on its own - no need to reload.",
+                  "Vous n'êtes dans aucune partie actuellement. Rejoignez-en une en tant que spectateur et cette page le détectera d'elle-même - pas besoin de recharger."
+                )
+              : t(
+                  "That overlay token isn't valid. Generate a new one on the OBS & auto-marking page.",
+                  "Ce jeton d'overlay n'est pas valide. Générez-en un nouveau sur la page OBS et marquage automatique."
+                )}
           </p>
         </div>
       );

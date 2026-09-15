@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { profileName, type Profile } from "../lib/profiles";
 import type { RecordEntry, RecordHolder } from "../lib/recordBook";
 import type { SquareSetId } from "../lib/challenges";
+import { useT } from "../lib/language";
 
 interface Props {
   records: RecordEntry[];
@@ -35,14 +36,19 @@ export function RecordBook({ records, profiles, squareSet, loadingShots }: Props
    * An empty line is also honest on its own terms - "nobody has strung three hits together on this
    * board yet" is a fact about the board, and one worth a reader knowing.
    */
+  const t = useT();
+
   if (records.every((r) => r.holder === null)) return null;
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-        <h3 style={{ margin: 0 }}>Record Book</h3>
+        <h3 style={{ margin: 0 }}>{t("Record Book", "Livre des records")}</h3>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          The standout single games on this board. Ties go to whoever did it first.
+          {t(
+            "The standout single games on this board. Ties go to whoever did it first.",
+            "Les parties les plus remarquables sur ce plateau. En cas d'égalité, le premier à l'avoir fait l'emporte."
+          )}
         </span>
       </div>
 
@@ -54,7 +60,10 @@ export function RecordBook({ records, profiles, squareSet, loadingShots }: Props
 
       {loadingShots && (
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          Reading the shot log for the streak and timing records...
+          {t(
+            "Reading the shot log for the streak and timing records...",
+            "Lecture du journal des tirs pour les records de série et de temps..."
+          )}
         </span>
       )}
     </div>
@@ -71,6 +80,7 @@ function RecordRow({
   squareSet: SquareSetId;
 }) {
   const holder = record.holder;
+  const t = useT();
 
   // Unclaimed: the record's name and what it takes to set it, dimmed. Deliberately the same row
   // shape as a held one, so the book reads as a fixed list of records with some still open rather
@@ -86,7 +96,7 @@ function RecordRow({
             {record.label}
           </span>
           <div className="muted" style={{ fontSize: "0.72rem" }}>
-            {["unclaimed", record.note].filter(Boolean).join(" · ")}
+            {[t("unclaimed", "non réclamé"), record.note].filter(Boolean).join(" · ")}
           </div>
         </span>
       </div>
@@ -117,7 +127,7 @@ function RecordRow({
         <div className="muted" style={{ fontSize: "0.72rem" }}>
           {[
             holder.detail,
-            holder.roomCode ? `room ${holder.roomCode}` : null,
+            holder.roomCode ? `${t("room", "salle")} ${holder.roomCode}` : null,
             new Date(holder.finishedAt).toLocaleDateString(),
             record.note,
           ]
@@ -129,7 +139,7 @@ function RecordRow({
             for, and three numbers in a row reads as a table nobody asked for. */}
         {record.chasers.length > 0 && (
           <div className="muted" style={{ fontSize: "0.7rem" }}>
-            chased by{" "}
+            {t("chased by", "poursuivi par")}{" "}
             {record.chasers.map((c, i) => (
               <span key={`${c.key}-${c.matchKey}`}>
                 {i > 0 && ", "}

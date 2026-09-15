@@ -7,6 +7,7 @@ import { LoadingScreen } from "../components/BrandMark";
 import { useAdminStatus } from "../lib/admin";
 import { fetchRecentMatchReports, countMatchReports } from "../lib/rooms";
 import type { MatchReportRow } from "../types/battleship";
+import { useT } from "../lib/language";
 
 /** How many matches the list shows at first, and how many each "Show more" adds. */
 const PAGE = 25;
@@ -30,6 +31,7 @@ const PAGE = 25;
  * still say how many matches exist without reading them.
  */
 export function Admin() {
+  const t = useT();
   const { isAdmin, loading } = useAdminStatus();
   const [matches, setMatches] = useState<MatchReportRow[] | null>(null);
   /** Every archived match, including the ones not loaded - a HEAD count, not a fetch. */
@@ -66,7 +68,7 @@ export function Admin() {
 
   // The status check is a round trip, so without this the page would show "nothing here" for a
   // moment to an admin who is in fact an admin.
-  if (loading) return <LoadingScreen>Checking...</LoadingScreen>;
+  if (loading) return <LoadingScreen>{t("Checking...", "Vérification...")}</LoadingScreen>;
 
   /**
    * Anyone can type this URL, so it needs an answer for people who aren't admins. Deliberately not
@@ -78,20 +80,20 @@ export function Admin() {
     return (
       <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
         <p className="muted" style={{ margin: 0 }}>
-          Nothing here for you. These controls are for administrators.
+          {t("Nothing here for you. These controls are for administrators.", "Rien ici pour vous. Ces commandes sont réservées aux administrateurs.")}
         </p>
-        <Link to="/">Back to the harbor</Link>
+        <Link to="/">{t("Back to the harbor", "Retour au port")}</Link>
       </div>
     );
   }
 
-  if (matches === null) return <LoadingScreen>Loading the records...</LoadingScreen>;
+  if (matches === null) return <LoadingScreen>{t("Loading the records...", "Chargement des dossiers...")}</LoadingScreen>;
 
   return (
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
-        <h1>Admin</h1>
-        <p className="muted">Records, live rooms, administrators, board balance and egress.</p>
+        <h1>{t("Admin", "Admin")}</h1>
+        <p className="muted">{t("Records, live rooms, administrators, board balance and egress.", "Dossiers, parties en direct, administrateurs, équité des plateaux et bande passante.")}</p>
       </div>
 
       <AdminPanel

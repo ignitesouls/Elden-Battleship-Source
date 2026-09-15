@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../lib/language";
 import "./SourceRow.css";
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
  */
 export function SourceRow({ label, url, size, note }: Props) {
   const [copied, setCopied] = useState(false);
+  const t = useT();
 
   return (
     <div className="src-row">
@@ -32,7 +34,7 @@ export function SourceRow({ label, url, size, note }: Props) {
             setTimeout(() => setCopied(false), 1500);
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("Copied", "Copié") : t("Copy", "Copier")}
         </button>
       </div>
 

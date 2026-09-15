@@ -10,12 +10,23 @@ import scaduLeagueData from "../data/scaduLeagueSquares.json";
 import scaduLeagueColors from "../data/scaduLeagueColors.json";
 import scaduLeagueColorNames from "../data/scaduLeagueColorNames.json";
 import ringusData from "../data/ringusSquares.json";
+import bossTooltipsFr from "../data/battleshipTooltipsFr.json";
+import incursionNamesFr from "../data/incursionNamesFr.json";
+import incursionTooltipsFr from "../data/incursionTooltipsFr.json";
+import incursionShortNamesFr from "../data/incursionShortNamesFr.json";
+import rookieRumbleNamesFr from "../data/rookieRumbleNamesFr.json";
+import rookieRumbleColorNamesFr from "../data/rookieRumbleColorNamesFr.json";
+import scaduLeagueNamesFr from "../data/scaduLeagueNamesFr.json";
+import scaduLeagueTooltipsFr from "../data/scaduLeagueTooltipsFr.json";
+import scaduLeagueOptionsFr from "../data/scaduLeagueOptionsFr.json";
+import scaduLeagueColorNamesFr from "../data/scaduLeagueColorNamesFr.json";
+import ringusNamesFr from "../data/ringusNamesFr.json";
 import { colorLegend, largestBoardFor, type BingoSquareSet, type Challenge, type ColorLegendEntry, type KeywordColor } from "./squareSetFormat";
 import { BOARD_SIZES } from "../types/battleship";
 
 export type { Challenge, BingoSquare, BingoSquareSet, Region, KeywordColor, ColorLegendEntry } from "./squareSetFormat";
 export { REGION_ORDER, REGION_LABELS } from "./squareSetFormat";
-export { buildBingoBoard, buildFlatBoard } from "./squareSetFormat";
+export { buildBingoBoard, buildFlatBoard, shortLabel } from "./squareSetFormat";
 
 interface BaseSet {
   id: string;
@@ -53,6 +64,17 @@ interface BaseSet {
   cutLabel?: string;
   /** The label over that row of buttons. On the parent only, since the row belongs to the set. */
   cutsLabel?: string;
+  /**
+   * French text for this set's squares, keyed by the square's raw `name` - same keying as
+   * `shortNames`/`regions` and the same reason: kept beside the set's own file rather than inside
+   * it, so a translation is never lost to a version drop and a square with none simply falls back
+   * to English. `namesFr` only applies to flat sets today - see challengesForRoom.
+   */
+  namesFr?: Record<string, string>;
+  tooltipsFr?: Record<string, string>;
+  /** French for `short`/`shortNames`, keyed by raw name. Flat and bingo sets both carry a short
+   *  form, so this lives here rather than on BingoSet alone. */
+  shortNamesFr?: Record<string, string>;
 }
 
 interface FlatSet extends BaseSet {
@@ -74,6 +96,10 @@ interface BingoSet extends BaseSet {
   colors?: KeywordColor[];
   /** What those colours are called, keyed by the colour as `colors` writes it. See colorLegend. */
   colorNames?: Record<string, string>;
+  /** French for `colorNames`, same keying. See colorLegend. */
+  colorNamesFr?: Record<string, string>;
+  /** French for the individual values a square's %variable% can draw - see buildBingoBoard. */
+  optionsFr?: Record<string, string>;
 }
 
 export type SquareSetDef = FlatSet | BingoSet;
@@ -100,6 +126,11 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     tooltipReplacesName: true,
     cutsLabel: "Boss board",
     cutLabel: "All bosses",
+    // The cell handles themselves ("LG Tree Sent", "BOFA") stay English on purpose even in French -
+    // they're community nicknames and abbreviations, not prose, and "translating" a nickname would
+    // just replace one arbitrary label with another nobody in the community actually calls it. Only
+    // the tooltip, which spells the boss and its location out in full, gets a real translation.
+    tooltipsFr: bossTooltipsFr as Record<string, string>,
   },
   /**
    * The boss board with its 42 longest squares taken out, leaving 164.
@@ -133,6 +164,7 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     tooltipReplacesName: true,
     variantOf: "bosses",
     cutLabel: "Small crew",
+    tooltipsFr: bossTooltipsFr as Record<string, string>,
   },
   objectives: {
     id: "objectives",
@@ -145,6 +177,9 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     // array of lines) alongside the real entries, which no square name can collide with and which
     // buildBingoBoard drops anyway, since it only accepts values that name a known region.
     regions: incursionRegions as unknown as Record<string, string>,
+    namesFr: incursionNamesFr as Record<string, string>,
+    tooltipsFr: incursionTooltipsFr as Record<string, string>,
+    shortNamesFr: incursionShortNamesFr as Record<string, string>,
   },
   /**
    * The two community sets, each the base game or the DLC alone.
@@ -165,6 +200,8 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     // Cast for the same reason incursionRegions is: the file carries a `_comment` key holding an
     // array of lines, which no colour string can collide with and which colorLegend never looks up.
     colorNames: rookieRumbleColorNames as unknown as Record<string, string>,
+    namesFr: rookieRumbleNamesFr as Record<string, string>,
+    colorNamesFr: rookieRumbleColorNamesFr as unknown as Record<string, string>,
   },
   "objectives-dlc": {
     id: "objectives-dlc",
@@ -174,6 +211,10 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     data: scaduLeagueData as BingoSquareSet,
     colors: scaduLeagueColors as KeywordColor[],
     colorNames: scaduLeagueColorNames as unknown as Record<string, string>,
+    namesFr: scaduLeagueNamesFr as Record<string, string>,
+    tooltipsFr: scaduLeagueTooltipsFr as Record<string, string>,
+    colorNamesFr: scaduLeagueColorNamesFr as unknown as Record<string, string>,
+    optionsFr: scaduLeagueOptionsFr as Record<string, string>,
   },
   /**
    * Ringus, for randomizer runs - hence the "Replacement" squares, which name the boss whose slot
@@ -189,6 +230,8 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     blurb: "Randomizer chaos - boss replacements, stunt kills, scavenger hunts and team dares.",
     format: "flat",
     data: ringusData as Challenge[],
+    namesFr: (ringusNamesFr as { names: Record<string, string> }).names,
+    shortNamesFr: (ringusNamesFr as { shorts: Record<string, string> }).shorts,
   },
 };
 
@@ -244,6 +287,20 @@ export function squareSetVariants(id: string | null | undefined): SquareSetId[] 
 export function squareTitle(challenge: Challenge, set: SquareSetDef): string {
   if (set.tooltipReplacesName) return challenge.tooltip ?? challenge.name;
   return challenge.tooltip ? `${challenge.name} - ${challenge.tooltip}` : challenge.name;
+}
+
+/**
+ * French for squareTitle(), or undefined when this square has no French text at all yet.
+ *
+ * Undefined rather than falling back to English piecemeal: a caller in French mode wants either the
+ * whole hover translated or, for a square nobody has gotten to, the whole thing in English - never a
+ * title that's half one language and half the other because `tooltip` had a translation and `name`
+ * didn't.
+ */
+export function squareTitleFr(challenge: Challenge, set: SquareSetDef): string | undefined {
+  if (set.tooltipReplacesName) return challenge.tooltipFr;
+  if (challenge.nameFr === undefined) return undefined;
+  return challenge.tooltipFr ? `${challenge.nameFr} - ${challenge.tooltipFr}` : challenge.nameFr;
 }
 
 export const DEFAULT_SQUARE_SET = "bosses";

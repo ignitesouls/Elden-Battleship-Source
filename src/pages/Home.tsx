@@ -9,9 +9,11 @@ import { SiteFooter } from "../components/SiteFooter";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
 import { formatRoomCode } from "../lib/roomCode";
+import { useT } from "../lib/language";
 
 export function Home() {
   const navigate = useNavigate();
+  const t = useT();
   const [nickname, setNickname] = useState(getLastNickname());
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,7 +77,9 @@ export function Home() {
       await saveNickname(name);
       setNicknameSaved(true);
     } catch (e) {
-      setError(`Couldn't save that nickname: ${e instanceof Error ? e.message : String(e)}`);
+      setError(
+        `${t("Couldn't save that nickname", "Impossible d'enregistrer ce pseudo")}: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
 
@@ -94,13 +98,15 @@ export function Home() {
         storeLastNickname(profile.displayName.slice(0, NICKNAME_MAX));
       }
     } catch (e) {
-      setError(`Couldn't clear that nickname: ${e instanceof Error ? e.message : String(e)}`);
+      setError(
+        `${t("Couldn't clear that nickname", "Impossible d'effacer ce pseudo")}: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
-    if (!nickname.trim()) return setError("Enter a nickname first.");
+    if (!nickname.trim()) return setError(t("Enter a nickname first.", "Entrez un pseudo d'abord."));
     setBusy(true);
     setError(null);
     try {
@@ -120,8 +126,8 @@ export function Home() {
 
   async function handleJoin(e: FormEvent) {
     e.preventDefault();
-    if (!nickname.trim()) return setError("Enter a nickname first.");
-    if (!joinCode.trim()) return setError("Enter a room code.");
+    if (!nickname.trim()) return setError(t("Enter a nickname first.", "Entrez un pseudo d'abord."));
+    if (!joinCode.trim()) return setError(t("Enter a room code.", "Entrez un code de partie."));
     setBusy(true);
     setError(null);
     try {
@@ -152,22 +158,26 @@ export function Home() {
             className="brand-logo"
           />
         </h1>
-        <p className="muted">Place your fleet, take aim, sink your rivals.</p>
+        <p className="muted">{t("Place your fleet, take aim, sink your rivals.", "Placez votre flotte, visez, coulez vos rivaux.")}</p>
       </div>
 
       {!isSupabaseConfigured && (
         <div className="panel" style={{ borderColor: "var(--danger)" }}>
-          <strong>Supabase isn't configured yet.</strong>
+          <strong>{t("Supabase isn't configured yet.", "Supabase n'est pas encore configuré.")}</strong>
           <p className="muted" style={{ marginTop: "0.4rem" }}>
-            Copy <code>.env.example</code> to <code>.env.local</code>, fill in your Supabase project's URL and anon
-            key, and restart the dev server. See <code>README.md</code> for the full setup steps.
+            {t("Copy", "Copiez")} <code>.env.example</code> {t("to", "vers")} <code>.env.local</code>,{" "}
+            {t(
+              "fill in your Supabase project's URL and anon key, and restart the dev server. See",
+              "renseignez l'URL et la clé anonyme de votre projet Supabase, puis redémarrez le serveur de dev. Consultez"
+            )}{" "}
+            <code>README.md</code> {t("for the full setup steps.", "pour la procédure complète.")}
           </p>
         </div>
       )}
 
       <div className="panel stack">
         <label className="stack" style={{ gap: "0.3rem" }}>
-          <span className="muted">Nickname</span>
+          <span className="muted">{t("Nickname", "Pseudo")}</span>
           <input
             value={nickname}
             onChange={(e) => {
@@ -177,7 +187,7 @@ export function Home() {
             }}
             onBlur={handleNicknameBlur}
             maxLength={NICKNAME_MAX}
-            placeholder="Sir Reginald"
+            placeholder={t("Sir Reginald", "Sire Reginald")}
           />
         </label>
 
@@ -187,8 +197,8 @@ export function Home() {
           <div className="row" style={{ gap: "0.4rem", flexWrap: "wrap", marginTop: "-0.35rem" }}>
             <span className="muted" style={{ fontSize: "0.72rem" }}>
               {nicknameSaved
-                ? "Saved - this is your name on any device now."
-                : "Kept on your Twitch account, on any device."}
+                ? t("Saved - this is your name on any device now.", "Enregistré - c'est votre nom sur tout appareil désormais.")
+                : t("Kept on your Twitch account, on any device.", "Conservé sur votre compte Twitch, sur tout appareil.")}
             </span>
             {profile.nickname && profile.displayName && profile.nickname !== profile.displayName && (
               <button
@@ -203,7 +213,7 @@ export function Home() {
                   textDecoration: "underline",
                 }}
               >
-                Use “{profile.displayName}”
+                {t("Use", "Utiliser")} “{profile.displayName}”
               </button>
             )}
           </div>
@@ -219,10 +229,10 @@ export function Home() {
             // Long enough for the longest word pair plus a numeric suffix ("THUNDERING
             // LEVIATHAN 42"). The old 6 silently truncated anything nautical mid-word.
             maxLength={28}
-            placeholder="Room code - e.g. SALTY KRAKEN"
+            placeholder={t("Room code - e.g. SALTY KRAKEN", "Code de partie - ex. SALTY KRAKEN")}
           />
           <button type="submit" disabled={busy || !isSupabaseConfigured}>
-            Join
+            {t("Join", "Rejoindre")}
           </button>
         </form>
 
@@ -234,7 +244,7 @@ export function Home() {
 
         <form onSubmit={handleCreate} className="stack">
           <button type="submit" className="primary" disabled={busy || !isSupabaseConfigured}>
-            Create new room
+            {t("Create new room", "Créer une nouvelle partie")}
           </button>
         </form>
       </div>
@@ -246,8 +256,8 @@ export function Home() {
       {live.length > 0 && (
         <div className="panel stack" style={{ gap: "0.45rem" }}>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-            <h3 style={{ margin: 0 }}>Current battles</h3>
-            <span className="muted" style={{ fontSize: "0.7rem" }}>Fighting now</span>
+            <h3 style={{ margin: 0 }}>{t("Current battles", "Batailles en cours")}</h3>
+            <span className="muted" style={{ fontSize: "0.7rem" }}>{t("Fighting now", "En cours")}</span>
           </div>
           {live.map((b) => (
             <LiveRow key={b.code} battle={b} />
@@ -270,6 +280,7 @@ export function Home() {
  * it always was, rather than in a second copy of that flow living on the front page.
  */
 function LiveRow({ battle }: { battle: LiveBattle }) {
+  const t = useT();
   // serverNow, not Date.now: created_at is a Postgres timestamp, so a skewed PC clock would
   // otherwise report a match that started ten minutes ago as an hour old, or as not yet begun.
   const minutes = Math.max(0, Math.round((serverNow() - new Date(battle.created_at).getTime()) / 60000));
@@ -282,19 +293,25 @@ function LiveRow({ battle }: { battle: LiveBattle }) {
             whether the row is worth clicking, and the detail line is where you look after you have
             already decided. */}
         {battle.practice && (
-          <span style={{ color: "var(--hit)", fontSize: "0.68rem", letterSpacing: "0.06em" }}> · PRACTICE</span>
+          <span style={{ color: "var(--hit)", fontSize: "0.68rem", letterSpacing: "0.06em" }}>
+            {" "}
+            · {t("PRACTICE", "ENTRAÎNEMENT")}
+          </span>
         )}
         <div className="muted" style={{ fontSize: "0.7rem" }}>
-          {battle.fleets} fleet{battle.fleets === 1 ? "" : "s"} · {battle.players} aboard · opened {minutes}m ago
+          {t(
+            `${battle.fleets} fleet${battle.fleets === 1 ? "" : "s"} · ${battle.players} aboard · opened ${minutes}m ago`,
+            `${battle.fleets} flotte${battle.fleets === 1 ? "" : "s"} · ${battle.players} à bord · ouvert il y a ${minutes}m`
+          )}
         </div>
       </span>
       <Link
         to={`/room/${battle.code}?spectate=1`}
         className="link-button"
         style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", whiteSpace: "nowrap" }}
-        title="Fleets are already placed, so you'll join as a spectator."
+        title={t("Fleets are already placed, so you'll join as a spectator.", "Les flottes sont déjà placées, vous rejoindrez donc en tant que spectateur.")}
       >
-        Watch
+        {t("Watch", "Regarder")}
       </Link>
     </div>
   );

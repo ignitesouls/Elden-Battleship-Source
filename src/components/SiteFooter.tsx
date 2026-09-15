@@ -1,3 +1,4 @@
+import { useT } from "../lib/language";
 import "./SiteFooter.css";
 
 /**
@@ -23,11 +24,14 @@ import "./SiteFooter.css";
  * the page to put anything at.
  */
 export function SiteFooter() {
+  const t = useT();
   return (
     <div className="site-footer">
       <span className="foot-fine">
-        Free and open source. Unofficial fan project, not affiliated with FromSoftware or Bandai
-        Namco.
+        {t(
+          "Free and open source. Unofficial fan project, not affiliated with FromSoftware or Bandai Namco.",
+          "Gratuit et open source. Projet de fan non officiel, sans lien avec FromSoftware ou Bandai Namco."
+        )}
       </span>
     </div>
   );

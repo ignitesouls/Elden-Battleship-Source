@@ -5,6 +5,7 @@ import { matchStartedAt, matchTimeAt, matchTimings } from "../lib/matchTime";
 import type { Challenge } from "../lib/challenges";
 import type { DeepMark, IgonEncounter } from "../lib/deepWater";
 import type { Attack, Player, Room } from "../types/battleship";
+import { useT } from "../lib/language";
 
 interface Props {
   attacks: Attack[];
@@ -36,6 +37,7 @@ export function AttackFeed({
   deepCells,
   igon,
 }: Props) {
+  const t = useT();
   const shots = groupIntoShots(attacks, players);
   const startedAt = matchStartedAt(attacks);
   const timings = matchTimings(room);
@@ -47,12 +49,12 @@ export function AttackFeed({
 
   return (
     <div className="panel stack" style={{ width: "100%", flex: 1, minHeight: 0, gap: "0.4rem" }}>
-      <h3 style={{ margin: 0 }}>Battle Log</h3>
+      <h3 style={{ margin: 0 }}>{t("Battle Log", "Journal de bataille")}</h3>
       {/* On the scroller below: flex + minHeight 0 alongside maxHeight, because a percentage
           max-height only resolves against a parent with a definite height - on its own it silently
           does nothing in a flex column. The flex pair is what holds it to the space left over. */}
       {shots.length === 0 ? (
-        <span className="muted" style={{ fontSize: "0.8rem" }}>Nothing slain yet.</span>
+        <span className="muted" style={{ fontSize: "0.8rem" }}>{t("Nothing slain yet.", "Rien de tué pour l'instant.")}</span>
       ) : (
         <div
           className="stack"
@@ -73,7 +75,7 @@ export function AttackFeed({
                     </span>
                     <span style={{ minWidth: 0 }}>
                       <strong style={{ color: teamHex(shot.attackerTeam) }}>{shot.who}</strong>
-                      <span className="muted"> killed </span>
+                      <span className="muted"> {t("killed", "a tué")} </span>
                       <strong>{challenge?.name ?? cellLabel(shot.cellIndex, boardSize)}</strong>
                     </span>
                   </span>

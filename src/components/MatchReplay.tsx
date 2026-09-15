@@ -5,6 +5,7 @@ import { teamHex, teamName } from "../lib/teamColors";
 import { replayStateAt, replayDuration, type Replay } from "../lib/replay";
 import type { Region } from "../lib/challenges";
 import type { DeepMark } from "../lib/deepWater";
+import { useT } from "../lib/language";
 
 interface Props {
   replay: Replay;
@@ -37,6 +38,7 @@ const SPEEDS = [0.5, 1, 2, 4];
  * something you scrub back INTO rather than something you have to sit through first.
  */
 export function MatchReplay({ replay, cellText, deepCells }: Props) {
+  const t = useT();
   const total = replay.shots.length;
   const [cursor, setCursor] = useState(total);
   const [playing, setPlaying] = useState(false);
@@ -138,14 +140,14 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
     <div className="stack" style={{ gap: "0.6rem", width: "100%" }}>
       <div className="panel stack" style={{ gap: "0.5rem" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
-          <h3 style={{ margin: 0 }}>Replay</h3>
+          <h3 style={{ margin: 0 }}>{t("Replay", "Rediffusion")}</h3>
           <span className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>
             {atEnd && (
               <span
                 className="display"
                 style={{ fontSize: "0.7rem", letterSpacing: "0.12em", color: "var(--accent)" }}
               >
-                FINAL BOARD
+                {t("FINAL BOARD", "PLATEAU FINAL")}
               </span>
             )}
             <strong style={{ fontVariantNumeric: "tabular-nums", fontSize: "1.15rem" }}>
@@ -156,8 +158,12 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
         </div>
 
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          Shot {cursor} of {total}
-          {!replay.exact && " · outcomes for this match come from the archived result column, which can't tell one defender from another"}
+          {t("Shot", "Tir")} {cursor} {t("of", "sur")} {total}
+          {!replay.exact &&
+            ` · ${t(
+              "outcomes for this match come from the archived result column, which can't tell one defender from another",
+              "les résultats de cette partie viennent de la colonne archivée, qui ne distingue pas un défenseur d'un autre"
+            )}`}
         </span>
 
         {/* Progress toward winning, straight off the board: a fleet with no hull left has lost.
@@ -172,10 +178,11 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
                 <div className="row" style={{ justifyContent: "space-between", fontSize: "0.76rem", gap: "0.5rem" }}>
                   <span>
                     <strong style={{ color: teamHex(team) }}>{teamName(team)}</strong>
-                    {own?.eliminated && <span className="muted"> · fleet lost</span>}
+                    {own?.eliminated && <span className="muted"> · {t("fleet lost", "flotte perdue")}</span>}
                   </span>
                   <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
-                    sank {p.shipsSunk}/{p.shipsTotal} · {Math.round(p.destroyed * 100)}% of enemy hull
+                    {t("sank", "a coulé")} {p.shipsSunk}/{p.shipsTotal} · {Math.round(p.destroyed * 100)}%{" "}
+                    {t("of enemy hull", "de la coque ennemie")}
                   </span>
                 </div>
                 <div style={{ height: 6, borderRadius: 3, background: "var(--cell)", overflow: "hidden" }}>
@@ -202,10 +209,10 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
 
         <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap", alignItems: "center" }}>
           <button onClick={() => jump(0)} style={btn} disabled={cursor === 0}>
-            Start
+            {t("Start", "Début")}
           </button>
           <button onClick={() => jump(cursor - 1)} style={btn} disabled={cursor === 0}>
-            Prev
+            {t("Prev", "Préc.")}
           </button>
           <button
             onClick={() => {
@@ -215,13 +222,13 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
             }}
             style={{ ...btn, borderColor: "var(--accent)", minWidth: "4.5rem" }}
           >
-            {playing ? "Pause" : atEnd ? "Replay" : "Play"}
+            {playing ? t("Pause", "Pause") : atEnd ? t("Replay", "Revoir") : t("Play", "Lecture")}
           </button>
           <button onClick={() => jump(cursor + 1)} style={btn} disabled={atEnd}>
-            Next
+            {t("Next", "Suivant")}
           </button>
           <button onClick={() => jump(total)} style={btn} disabled={atEnd}>
-            End
+            {t("End", "Fin")}
           </button>
           <span className="row" style={{ gap: "0.2rem", marginLeft: "auto", alignItems: "center" }}>
             {SPEEDS.map((s) => (
@@ -236,9 +243,12 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
             <button
               onClick={() => setRevealFleets((v) => !v)}
               style={{ ...btn, marginLeft: "0.4rem", borderColor: revealFleets ? "var(--accent)" : undefined }}
-              title="Hide the hulls to watch the match the way the attackers saw it"
+              title={t(
+                "Hide the hulls to watch the match the way the attackers saw it",
+                "Cacher les coques pour voir la partie comme les attaquants l'ont vue"
+              )}
             >
-              Fleets
+              {t("Fleets", "Flottes")}
             </button>
           </span>
         </div>
@@ -255,7 +265,7 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
               key={team}
               boardSize={replay.boardSize}
               cellVisual={visualFor(team)}
-              label={`${teamName(team)}${own?.shipsTotal ? ` - ${own.shipsTotal - own.shipsSunk}/${own.shipsTotal} afloat` : ""}`}
+              label={`${teamName(team)}${own?.shipsTotal ? ` - ${own.shipsTotal - own.shipsSunk}/${own.shipsTotal} ${t("afloat", "à flot")}` : ""}`}
               ships={shipsFor(team)}
               sunkOrientation={own?.sunkOrientation}
               deepCells={deepCellsFor(team)}
@@ -269,24 +279,26 @@ export function MatchReplay({ replay, cellText, deepCells }: Props) {
 
       <div className="row" style={{ gap: "0.75rem", alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="panel stack" style={{ flex: "1 1 18rem", minWidth: "16rem", gap: "0.3rem" }}>
-          <h3 style={{ margin: 0 }}>Log</h3>
+          <h3 style={{ margin: 0 }}>{t("Log", "Journal")}</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            {cursor === 0 ? "Before the first shot." : "Newest first, up to the cursor."}
+            {cursor === 0
+              ? t("Before the first shot.", "Avant le premier tir.")
+              : t("Newest first, up to the cursor.", "Du plus récent au curseur.")}
           </span>
           <ShotLog shots={played} boardSize={replay.boardSize} onPick={jump} />
         </div>
 
         {state.shooters.length > 0 && (
           <div className="panel stack" style={{ flex: "1 1 14rem", minWidth: "13rem", gap: "0.3rem" }}>
-            <h3 style={{ margin: 0 }}>Scoreboard at this point</h3>
+            <h3 style={{ margin: 0 }}>{t("Scoreboard at this point", "Score à ce moment")}</h3>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
               <thead>
                 <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.3rem" }}>Player</th>
-                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>Shots</th>
-                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>Hits</th>
-                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>Sunk</th>
-                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>Acc.</th>
+                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.3rem" }}>{t("Player", "Joueur")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>{t("Shots", "Tirs")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>{t("Hits", "Touchés")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>{t("Sunk", "Coulés")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.15rem 0.3rem" }}>{t("Acc.", "Préc.")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,6 +340,7 @@ function Scrubber({
   shots: Replay["shots"];
   onSeek: (to: number) => void;
 }) {
+  const t = useT();
   const sinkings = shots.filter((s) => s.sank.length > 0);
 
   return (
@@ -338,7 +351,7 @@ function Scrubber({
         max={total}
         value={cursor}
         onChange={(e) => onSeek(Number(e.target.value))}
-        aria-label="Shot"
+        aria-label={t("Shot", "Tir")}
         style={{ width: "100%", accentColor: "var(--accent)" }}
       />
       {/* Same inset as the slider's travel, so a marker sits under the thumb that reaches it. */}
@@ -348,7 +361,7 @@ function Scrubber({
             key={s.index}
             type="button"
             onClick={() => onSeek(s.index + 1)}
-            title={`${fmt(s.seconds)} - ${s.nickname} sank ${s.sank.map((x) => x.ship).join(", ")}`}
+            title={`${fmt(s.seconds)} - ${s.nickname} ${t("sank", "a coulé")} ${s.sank.map((x) => x.ship).join(", ")}`}
             style={{
               position: "absolute",
               left: `${total > 0 ? ((s.index + 1) / total) * 100 : 0}%`,
@@ -381,6 +394,7 @@ function ShotLog({
   boardSize: number;
   onPick: (to: number) => void;
 }) {
+  const t = useT();
   const scroller = useRef<HTMLDivElement | null>(null);
 
   // Newest first means the newest entry is at the top, so following along is a scroll to 0.
@@ -388,7 +402,12 @@ function ShotLog({
     if (scroller.current) scroller.current.scrollTop = 0;
   }, [shots.length]);
 
-  if (shots.length === 0) return <span className="muted" style={{ fontSize: "0.8rem" }}>Nothing fired yet.</span>;
+  if (shots.length === 0)
+    return (
+      <span className="muted" style={{ fontSize: "0.8rem" }}>
+        {t("Nothing fired yet.", "Rien n'a encore été tiré.")}
+      </span>
+    );
 
   return (
     <div ref={scroller} className="stack" style={{ gap: "0.3rem", maxHeight: "22rem", overflowY: "auto" }}>
@@ -422,7 +441,8 @@ function ShotLog({
               <span>{s.challengeName ?? cellLabel(s.cellIndex, boardSize)}</span>
               <div className="muted" style={{ fontSize: "0.68rem" }}>
                 {cellLabel(s.cellIndex, boardSize)}
-                {sank && ` · sank the ${s.sank.map((x) => x.ship).join(" and ")}`}
+                {sank &&
+                  ` · ${t("sank the", "a coulé le")} ${s.sank.map((x) => x.ship).join(` ${t("and", "et")} `)}`}
               </div>
             </span>
             <span
@@ -432,7 +452,7 @@ function ShotLog({
                 color: sank ? "var(--sunk)" : hit ? "var(--hit)" : "var(--text-dim)",
               }}
             >
-              {sank ? "SANK" : hit ? "HIT" : "miss"}
+              {sank ? t("SANK", "COULÉ") : hit ? t("HIT", "TOUCHÉ") : t("miss", "manqué")}
             </span>
           </button>
         );

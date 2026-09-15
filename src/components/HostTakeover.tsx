@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { claimHost } from "../lib/rooms";
 import type { Player } from "../types/battleship";
+import { useT } from "../lib/language";
 
 interface Props {
   players: Player[];
@@ -28,6 +29,7 @@ interface Props {
 export function HostTakeover({ players, onlinePlayerIds, myPlayerId, inline }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   const host = players.find((p) => p.is_host);
   const online = new Set(onlinePlayerIds);
@@ -49,8 +51,12 @@ export function HostTakeover({ players, onlinePlayerIds, myPlayerId, inline }: P
   }
 
   const button = (
-    <button disabled={busy} onClick={() => void handleClaim()} title="Take over hosting so the room isn't stuck">
-      {busy ? "Claiming..." : "Become host"}
+    <button
+      disabled={busy}
+      onClick={() => void handleClaim()}
+      title={t("Take over hosting so the room isn't stuck", "Prendre le contrôle pour que la partie ne reste pas bloquée")}
+    >
+      {busy ? t("Claiming...", "Prise de contrôle...") : t("Become host", "Devenir hôte")}
     </button>
   );
 
@@ -58,7 +64,7 @@ export function HostTakeover({ players, onlinePlayerIds, myPlayerId, inline }: P
     return (
       <>
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          Host <strong>{host?.nickname}</strong> is offline
+          {t("Host", "Hôte")} <strong>{host?.nickname}</strong> {t("is offline", "est hors ligne")}
         </span>
         {button}
         {error && <span className="error-text">{error}</span>}
@@ -72,8 +78,12 @@ export function HostTakeover({ players, onlinePlayerIds, myPlayerId, inline }: P
       style={{ justifyContent: "space-between", gap: "0.5rem", borderColor: "var(--accent)" }}
     >
       <span className="muted" style={{ fontSize: "0.85rem" }}>
-        The host (<strong>{host?.nickname}</strong>) looks offline. Without a host, nobody can end
-        the match or start the next one.
+        {t("The host (", "L'hôte (")}
+        <strong>{host?.nickname}</strong>
+        {t(
+          ") looks offline. Without a host, nobody can end the match or start the next one.",
+          ") semble hors ligne. Sans hôte, personne ne peut terminer la partie ni démarrer la suivante."
+        )}
       </span>
       <div className="stack" style={{ gap: "0.25rem", alignItems: "flex-end" }}>
         {button}

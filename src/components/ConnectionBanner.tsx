@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useT } from "../lib/language";
 
 /**
  * Warns when live updates have stopped arriving.
@@ -10,6 +11,7 @@ import { useEffect, useState } from "react";
  */
 export function ConnectionBanner({ connection }: { connection: "connecting" | "online" | "offline" }) {
   const [visible, setVisible] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     if (connection === "online") {
@@ -42,8 +44,11 @@ export function ConnectionBanner({ connection }: { connection: "connecting" | "o
       }}
     >
       {connection === "connecting"
-        ? "Connecting to the match..."
-        : "Connection lost - reconnecting. The board may be out of date."}
+        ? t("Connecting to the match...", "Connexion à la partie...")
+        : t(
+            "Connection lost - reconnecting. The board may be out of date.",
+            "Connexion perdue - reconnexion en cours. Le plateau peut être obsolète."
+          )}
     </div>
   );
 }

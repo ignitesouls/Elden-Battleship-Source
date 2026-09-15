@@ -13,6 +13,7 @@ import { OverlayFleetStatus } from "../components/OverlayFleetStatus";
 import { fetchOverlayFleet, type OverlayFleet } from "../lib/overlayFleet";
 import { squaresRevealed } from "../lib/overlayReveal";
 import type { Attack, Room } from "../types/battleship";
+import { useT } from "../lib/language";
 import "./Overlay.css";
 import "../components/BoardGrid.css";
 
@@ -33,6 +34,7 @@ export function Overlay() {
   const { code } = useParams<{ code: string }>();
   const [params] = useSearchParams();
   const state = useRoom(code);
+  const t = useT();
 
   // The app shell paints a background and centers content; a stream overlay must be transparent
   // and flush to the corner, so opt this route out of both while it's mounted.
@@ -189,7 +191,8 @@ export function Overlay() {
             </span>
           </div>
           <div className="ov-focus-name">
-            {challenges[latestShot.cellIndex]?.name ?? `Square ${latestShot.cellIndex}`}
+            {challenges[latestShot.cellIndex]?.name ??
+              t(`Square ${latestShot.cellIndex}`, `Case ${latestShot.cellIndex}`)}
           </div>
           <div className="ov-focus-who" style={{ color: teamHex(latestShot.attackerTeam) }}>
             {latestShot.who}
@@ -239,7 +242,7 @@ export function Overlay() {
                   boardSize={room.board_size}
                   cell={cellPx}
                   layers={[l]}
-                  label={highlightTeam === l.team ? `${l.teamLabel} - you` : l.teamLabel}
+                  label={highlightTeam === l.team ? `${l.teamLabel} ${t("- you", "- vous")}` : l.teamLabel}
                   showCoords={showCoords}
                   cellName={showNames ? (i) => challenges[i]?.short ?? challenges[i]?.name ?? null : undefined}
                   // Every board, not only the one that was fired at. A find is a fact about the
@@ -301,7 +304,13 @@ export function Overlay() {
  * Same trick, same reason, as MatchClock on the player's screen - see useBattlePhase.
  */
 function OverlayClock({ attacks, room }: { attacks: Attack[]; room: Room | null }) {
+  const t = useT();
   const phase = useBattleClock(attacks, room);
+  const TR_PHASE_LABEL: Record<keyof typeof PHASE_LABEL, string> = {
+    starting: t("Randomization", "Randomisation"),
+    preparation: t("Preparation", "Préparation"),
+    match: t("Match", "Match"),
+  };
   const clock = phase
     ? phase.phase === "match"
       ? formatDuration(phase.matchElapsed)
@@ -310,7 +319,7 @@ function OverlayClock({ attacks, room }: { attacks: Attack[]; room: Room | null 
 
   return (
     <div className="ov-card ov-clock">
-      <span className="ov-phase">{phase ? PHASE_LABEL[phase.phase] : "Match"}</span>
+      <span className="ov-phase">{phase ? TR_PHASE_LABEL[phase.phase] : t("Match", "Match")}</span>
       <span className="ov-time">{clock}</span>
     </div>
   );

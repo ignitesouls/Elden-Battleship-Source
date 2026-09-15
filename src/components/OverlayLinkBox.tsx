@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useT } from "../lib/language";
 import { teamName, teamHex } from "../lib/teamColors";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
@@ -72,6 +73,7 @@ type Audience = number | "caster";
  * hand every local tester a link pointing at production.
  */
 export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   /**
    * Who this scene is for, once they've said.
@@ -306,8 +308,12 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} style={{ fontSize: "0.8rem" }} title="Get stream overlay URLs for OBS">
-        Stream overlay
+      <button
+        onClick={() => setOpen(true)}
+        style={{ fontSize: "0.8rem" }}
+        title={t("Get stream overlay URLs for OBS", "Obtenir les URL de superposition pour OBS")}
+      >
+        {t("Stream overlay", "Superposition de stream")}
       </button>
     );
   }
@@ -315,15 +321,17 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
   return (
     <div className="panel stack" style={{ gap: "0.5rem", padding: "0.6rem" }}>
       <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
-        <strong style={{ fontSize: "0.82rem" }}>OBS sources</strong>
+        <strong style={{ fontSize: "0.82rem" }}>{t("OBS sources", "Sources OBS")}</strong>
         <button onClick={() => setOpen(false)} style={{ padding: "0.1rem 0.4rem", fontSize: "0.75rem" }}>
-          Close
+          {t("Close", "Fermer")}
         </button>
       </div>
 
       <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        Add each as a <strong>Browser Source</strong> in OBS at the size shown, and tick{" "}
-        <em>Shutdown source when not visible</em>. Backgrounds are transparent.
+        {t("Add each as a", "Ajoutez chacune comme une")} <strong>{t("Browser Source", "source navigateur")}</strong>{" "}
+        {t("in OBS at the size shown, and tick", "dans OBS, à la taille indiquée, et cochez")}{" "}
+        <em>{t("Shutdown source when not visible", "Arrêter la source quand elle n'est pas visible")}</em>.{" "}
+        {t("Backgrounds are transparent.", "Les arrière-plans sont transparents.")}
       </span>
 
       {/*
@@ -336,13 +344,18 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         persistent version is the answer to the other case, which is most people most of the time.
       */}
       <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-        These name <strong>this room</strong>, so you'd paste them in again next match. For a scene
-        you install once and never touch, see{" "}
+        {t("These name", "Celles-ci nomment")} <strong>{t("this room", "cette partie")}</strong>
+        {t(
+          ", so you'd paste them in again next match. For a scene you install once and never touch, see",
+          ", donc vous devrez les recoller au prochain match. Pour une scène installée une fois pour toutes, voyez"
+        )}{" "}
         <a href="#/streaming" target="_blank" rel="noreferrer">
-          OBS &amp; auto-marking
+          {t("OBS & auto-marking", "OBS et marquage auto")}
         </a>{" "}
-        - it downloads a whole OBS scene whose sources follow you from match to match. (Opens in a
-        new tab, so it can't cost you this one.)
+        {t(
+          "- it downloads a whole OBS scene whose sources follow you from match to match. (Opens in a new tab, so it can't cost you this one.)",
+          "- ça télécharge une scène OBS entière dont les sources vous suivent de match en match. (S'ouvre dans un nouvel onglet, donc ça ne peut pas vous coûter celui-ci.)"
+        )}
       </span>
 
       {/*
@@ -351,32 +364,38 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
         you: see crewOptions and the lobby paragraph.
       */}
       <div className="stack" style={{ gap: "0.25rem" }}>
-        <span style={{ fontSize: "0.78rem" }}>Who's streaming?</span>
+        <span style={{ fontSize: "0.78rem" }}>{t("Who's streaming?", "Qui est en stream ?")}</span>
         <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
-          {crewOptions.map((t) => (
+          {crewOptions.map((ct) => (
             <button
-              key={t}
-              onClick={() => setPicked(t)}
+              key={ct}
+              onClick={() => setPicked(ct)}
               style={{
                 fontSize: "0.74rem",
-                color: teamHex(t),
-                borderColor: audience === t ? "var(--accent)" : undefined,
+                color: teamHex(ct),
+                borderColor: audience === ct ? "var(--accent)" : undefined,
               }}
             >
-              {t === myTeam ? `${teamName(t)} (you)` : teamName(t)}
+              {ct === myTeam ? `${teamName(ct)} ${t("(you)", "(vous)")}` : teamName(ct)}
             </button>
           ))}
           <button
             onClick={() => setPicked("caster")}
             style={{ fontSize: "0.74rem", borderColor: isCaster ? "var(--accent)" : undefined }}
           >
-            Caster
+            {t("Caster", "Présentateur")}
           </button>
         </div>
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
           {isCaster
-            ? "The desk: a board you aim from the control page, and the clock with the odds bar in it."
-            : "A crew's own scene - the two boards they're playing off, and nothing they'd have to think about."}
+            ? t(
+                "The desk: a board you aim from the control page, and the clock with the odds bar in it.",
+                "Le poste : un plateau que vous visez depuis la page de contrôle, et l'horloge avec la barre de cotes."
+              )
+            : t(
+                "A crew's own scene - the two boards they're playing off, and nothing they'd have to think about.",
+                "La scène d'une équipe - les deux plateaux sur lesquels elle joue, et rien d'autre à se soucier."
+              )}
         </span>
       </div>
 
@@ -384,8 +403,11 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           at random would be worse than offering none. */}
       {audience === undefined ? (
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-          Pick a fleet above - or <em>Caster</em> - and the sources for it appear here. Joining a
-          fleet in the lobby picks it for you.
+          {t("Pick a fleet above - or", "Choisissez une flotte ci-dessus - ou")} <em>{t("Caster", "Présentateur")}</em>{" "}
+          {t(
+            "- and the sources for it appear here. Joining a fleet in the lobby picks it for you.",
+            "- et les sources correspondantes apparaissent ici. Rejoindre une flotte dans le lobby la choisit pour vous."
+          )}
         </span>
       ) : (
         <>
@@ -427,14 +449,23 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
             slider you cannot drag to either end is a slider that lies about its own range.
           */}
           <Setting
-            label="Overlay transparency"
-            hint="How much of your gameplay shows through the whole scene. On the boards it's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move."
+            label={t("Overlay transparency", "Transparence de la superposition")}
+            hint={t(
+              "How much of your gameplay shows through the whole scene. On the boards it's the water that fades: square names and shots hold back about halfway to solid, and the frame and grid lines barely move.",
+              "La part de votre jeu qui transparaît dans toute la scène. Sur les plateaux, c'est l'eau qui s'efface : les noms de cases et les tirs restent environ à mi-chemin du plein, et le cadre et les lignes de grille bougent à peine."
+            )}
             min={MIN_OPACITY}
             max={1}
             step={0.05}
             value={opacity}
             onChange={setOpacity}
-            readout={opacity >= 1 ? "solid" : opacity <= 0 ? "hidden" : `${Math.round(opacity * 100)}%`}
+            readout={
+              opacity >= 1
+                ? t("solid", "plein")
+                : opacity <= 0
+                  ? t("hidden", "invisible")
+                  : `${Math.round(opacity * 100)}%`
+            }
           />
 
           {/* Crews only. A caster is reading the whole board and needs the squares nobody has fired
@@ -443,8 +474,11 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
               them and their own footage. */}
           {!isCaster && (
             <Setting
-              label="Unfired squares"
-              hint="How solid a square you haven't shot at yet is. Turn it down and your own gameplay shows through everywhere you haven't been, while hits, misses and wrecks stay as solid as ever."
+              label={t("Unfired squares", "Cases non tirées")}
+              hint={t(
+                "How solid a square you haven't shot at yet is. Turn it down and your own gameplay shows through everywhere you haven't been, while hits, misses and wrecks stay as solid as ever.",
+                "À quel point une case où vous n'avez pas encore tiré est pleine. Baissez-la et votre propre jeu transparaît partout où vous n'êtes pas allé, tandis que les touchés, ratés et épaves restent aussi pleins qu'avant."
+              )}
               min={0}
               max={1}
               step={0.05}
@@ -452,9 +486,9 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
               onChange={setEmptyFade}
               readout={
                 emptyFade >= 1
-                  ? "same as the rest"
+                  ? t("same as the rest", "comme le reste")
                   : emptyFade <= 0
-                    ? "no fill at all"
+                    ? t("no fill at all", "aucun remplissage")
                     : `${Math.round(emptyFade * 100)}%`
               }
             />
@@ -467,31 +501,44 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           {!isCaster && (
             <>
               <Setting
-                label="Auto-pan"
-                hint="Zooms to 2x and walks the four quadrants clockwise, holding still on each one long enough to read it. A whole board at stream resolution is names nobody can make out; a quarter of it is legible, and this is how the other three quarters still get seen."
+                label={t("Auto-pan", "Panoramique auto")}
+                hint={t(
+                  "Zooms to 2x and walks the four quadrants clockwise, holding still on each one long enough to read it. A whole board at stream resolution is names nobody can make out; a quarter of it is legible, and this is how the other three quarters still get seen.",
+                  "Zoome à 2x et parcourt les quatre quadrants dans le sens horaire, s'arrêtant sur chacun assez longtemps pour le lire. Un plateau entier à la résolution du stream, c'est des noms illisibles ; un quart est lisible, et c'est comme ça que les trois autres quarts sont vus aussi."
+                )}
                 min={0}
                 max={MAX_LAP}
                 step={40}
                 value={lapSecs}
                 onChange={setLapSecs}
-                readout={lapSecs === 0 ? "off" : `${Math.floor(lapSecs / 60)}:${String(lapSecs % 60).padStart(2, "0")} a lap`}
+                readout={
+                  lapSecs === 0
+                    ? t("off", "désactivé")
+                    : `${Math.floor(lapSecs / 60)}:${String(lapSecs % 60).padStart(2, "0")} ${t("a lap", "par tour")}`
+                }
               />
               <Setting
-                label="Spotlight new squares"
-                hint="Each square you mark takes the camera for this long, ringed in white. With auto-pan on it only moves as far as that square's quadrant and the lap carries on from there, so a busy exchange doesn't throw your viewers around the board."
+                label={t("Spotlight new squares", "Éclairer les nouvelles cases")}
+                hint={t(
+                  "Each square you mark takes the camera for this long, ringed in white. With auto-pan on it only moves as far as that square's quadrant and the lap carries on from there, so a busy exchange doesn't throw your viewers around the board.",
+                  "Chaque case que vous marquez prend la caméra pendant ce temps, entourée de blanc. Avec le panoramique auto activé, elle ne se déplace que jusqu'au quadrant de cette case et le tour reprend de là, pour qu'un échange animé ne balade pas vos spectateurs sur le plateau."
+                )}
                 min={0}
                 max={MAX_SPOT}
                 step={2}
                 value={spotSecs}
                 onChange={setSpotSecs}
-                readout={spotSecs === 0 ? "off" : `${spotSecs}s`}
+                readout={spotSecs === 0 ? t("off", "désactivé") : `${spotSecs}s`}
               />
             </>
           )}
 
           <Setting
-            label="Text size"
-            hint="How much of each square its name fills, plus the clock and the key. The A-J and 1-10 labels aren't touched - they're sized by the board, so they grow when you zoom rather than when you drag this. Text never overflows: a size that doesn't fit draws as large as it can."
+            label={t("Text size", "Taille du texte")}
+            hint={t(
+              "How much of each square its name fills, plus the clock and the key. The A-J and 1-10 labels aren't touched - they're sized by the board, so they grow when you zoom rather than when you drag this. Text never overflows: a size that doesn't fit draws as large as it can.",
+              "La part de chaque case que son nom remplit, plus l'horloge et la légende. Les repères A-J et 1-10 ne sont pas affectés - ils sont dimensionnés par le plateau, donc ils grandissent au zoom plutôt qu'avec ce réglage. Le texte ne dépasse jamais : une taille qui ne rentre pas se dessine aussi grande que possible."
+            )}
             min={MIN_TEXT_SIZE}
             max={MAX_TEXT_SIZE}
             step={0.05}
@@ -501,8 +548,11 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           />
 
           <Setting
-            label="Find alert time"
-            hint="How long the Finds source holds a find on screen before it goes back to drawing nothing."
+            label={t("Find alert time", "Durée d'alerte de découverte")}
+            hint={t(
+              "How long the Finds source holds a find on screen before it goes back to drawing nothing.",
+              "Combien de temps la source Finds garde une découverte à l'écran avant de redessiner le vide."
+            )}
             min={MIN_ALERT_SECS}
             max={MAX_ALERT_SECS}
             step={1}
@@ -516,9 +566,9 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           <button
             onClick={() => setPlaying(playing ? null : "whale")}
             style={{ fontSize: "0.74rem", alignSelf: "flex-start" }}
-            title="Show a sample find over the preview above"
+            title={t("Show a sample find over the preview above", "Afficher une découverte d'exemple sur l'aperçu ci-dessus")}
           >
-            {playing ? "Stop" : "Play a sample find"}
+            {playing ? t("Stop", "Arrêter") : t("Play a sample find", "Jouer une découverte d'exemple")}
           </button>
 
           {/* The Board is the exception to all of the above, and only for a caster: it takes these
@@ -526,103 +576,140 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
               the very desk the caster is about to drive it from. See the casterBoardUrl note. */}
           {isCaster && (
             <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              These apply to the clock, the key and the alert. The Board takes its transparency,
-              text size, zoom and framing from the control page instead - set them there, mid-match,
-              with the board in front of you.
+              {t(
+                "These apply to the clock, the key and the alert. The Board takes its transparency, text size, zoom and framing from the control page instead - set them there, mid-match, with the board in front of you.",
+                "Ceci s'applique à l'horloge, à la légende et à l'alerte. Le plateau prend sa transparence, sa taille de texte, son zoom et son cadrage depuis la page de contrôle - réglez-les là-bas, en plein match, plateau sous les yeux."
+              )}
             </span>
           )}
 
           {isCaster ? (
             <>
               <SourceRow
-                label="Board"
+                label={t("Board", "Plateau")}
                 url={casterBoardUrl}
                 size="1000 x 1000"
-                note="the board you aim from the control page - zoom, pan and spotlight"
+                note={t(
+                  "the board you aim from the control page - zoom, pan and spotlight",
+                  "le plateau que vous visez depuis la page de contrôle - zoom, panoramique et projecteur"
+                )}
               />
               {/* Second, and deliberately after the one this page drives: a desk that wants a board
                   wants the controllable one, and this is for the scene that has no desk. */}
               <SourceRow
-                label="All fleets"
+                label={t("All fleets", "Toutes les flottes")}
                 url={allFleetsUrl}
                 size="1000 x 1000"
-                note="every fleet's shots on one board, with nobody driving it - no control page needed"
+                note={t(
+                  "every fleet's shots on one board, with nobody driving it - no control page needed",
+                  "les tirs de toutes les flottes sur un plateau, sans personne aux commandes - aucune page de contrôle requise"
+                )}
               />
               <SourceRow
-                label="Caster clock"
+                label={t("Caster clock", "Horloge du commentateur")}
                 url={clockUrl}
                 size="1200 x 300"
-                note="the match clock, every fleet's hulls, and the odds bar under it"
+                note={t(
+                  "the match clock, every fleet's hulls, and the odds bar under it",
+                  "l'horloge de la partie, les coques de chaque flotte, et la barre de cotes en dessous"
+                )}
               />
               <SourceRow
-                label="Key"
+                label={t("Key", "Légende")}
                 url={keyUrl}
                 size="1920 x 90"
-                note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+                note={t(
+                  "a thin strip for the bottom edge - add ?plate=0 for no backing",
+                  "une fine bande pour le bas de l'écran - ajoutez ?plate=0 pour ne pas avoir de fond"
+                )}
               />
               <SourceRow
-                label="Audio"
+                label={t("Audio", "Audio")}
                 url={audioUrl}
                 size="100 x 100"
-                note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+                note={t(
+                  "the board's sound - no picture. Tick 'Control audio via OBS' for its own fader",
+                  "le son du plateau - pas d'image. Cochez « Contrôler l'audio via OBS » pour son propre fader"
+                )}
               />
 
               <SourceRow
-                label="Finds"
+                label={t("Finds", "Découvertes")}
                 url={eggUrl}
                 size="600 x 600"
-                note="empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer"
+                note={t(
+                  "empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer",
+                  "vide jusqu'à ce que l'eau révèle quelque chose, puis la découverte pendant quelques secondes - ajoutez ?secs=8 pour la garder plus longtemps"
+                )}
               />
 
               {/* Not a browser source, and listed apart so nobody pastes it into OBS. */}
               <div className="stack" style={{ gap: "0.15rem" }}>
-                <span style={{ fontSize: "0.78rem" }}>Control page</span>
+                <span style={{ fontSize: "0.78rem" }}>{t("Control page", "Page de contrôle")}</span>
                 <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-                  Open <a href={castUrl}>{castUrl}</a> in a normal browser window - not in OBS. It
-                  drives the Board source above: zoom, pan, spotlight, which fleets' markers show,
-                  and the transparency and text size for the scene.
+                  {t("Open", "Ouvrez")} <a href={castUrl}>{castUrl}</a>{" "}
+                  {t(
+                    "in a normal browser window - not in OBS. It drives the Board source above: zoom, pan, spotlight, which fleets' markers show, and the transparency and text size for the scene.",
+                    "dans une fenêtre de navigateur normale - pas dans OBS. Elle pilote la source Board ci-dessus : zoom, panoramique, projecteur, quelles flottes affichent leurs marqueurs, et la transparence et la taille du texte de la scène."
+                  )}
                 </span>
               </div>
 
               <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-                The odds bar is a caster's instrument, so it's on this clock and not on a crew's. It
-                runs on the public shot log in the browser, so it isn't locked to this page - it's
-                simply not something to put in front of somebody who's still playing.
+                {t(
+                  "The odds bar is a caster's instrument, so it's on this clock and not on a crew's. It runs on the public shot log in the browser, so it isn't locked to this page - it's simply not something to put in front of somebody who's still playing.",
+                  "La barre de cotes est un instrument de commentateur, donc elle est sur cette horloge et pas sur celle d'une équipe. Elle tourne sur le journal public des tirs dans le navigateur, donc elle n'est pas verrouillée à cette page - ce n'est simplement pas quelque chose à mettre sous les yeux de quelqu'un qui joue encore."
+                )}
               </span>
             </>
           ) : (
             <>
               {/* First, because it is the board the player is actually looking at. */}
               <SourceRow
-                label="Fire board"
+                label={t("Fire board", "Plateau de tir")}
                 url={fireUrl}
                 size="1000 x 1000"
-                note={`${teamName(crew!)}'s own shots - the board they're playing off`}
+                note={t(
+                  `${teamName(crew!)}'s own shots - the board they're playing off`,
+                  `Les tirs de ${teamName(crew!)} - le plateau sur lequel iels jouent`
+                )}
               />
 
               {/* Directly under the board it replaces, because that is the choice being made: one
                   of these two, not both. A scene with the pair in it is the same board twice. */}
               <SourceRow
-                label="Fire board (small)"
+                label={t("Fire board (small)", "Plateau de tir (petit)")}
                 url={fireMiniUrl}
                 size="400 x 400"
-                note="the same board for a corner - square colours instead of names, and no text at all. Add ?coords=1 for the A-J and 1-10 labels"
+                note={t(
+                  "the same board for a corner - square colours instead of names, and no text at all. Add ?coords=1 for the A-J and 1-10 labels",
+                  "le même plateau pour un coin de l'écran - des couleurs de case au lieu de noms, et aucun texte du tout. Ajoutez ?coords=1 pour les repères A-J et 1-10"
+                )}
               />
 
               {canDrawFleet ? (
                 <SourceRow
-                  label="Your fleet"
+                  label={t("Your fleet", "Votre flotte")}
                   url={fleetUrl}
                   size="400 x 400"
-                  note="your ships and the damage they've taken - the small board from your screen"
+                  note={t(
+                    "your ships and the damage they've taken - the small board from your screen",
+                    "vos navires et les dégâts qu'ils ont subis - le petit plateau de votre écran"
+                  )}
                 />
               ) : (
                 <div className="stack" style={{ gap: "0.15rem" }}>
-                  <span style={{ fontSize: "0.78rem" }}>Your fleet</span>
+                  <span style={{ fontSize: "0.78rem" }}>{t("Your fleet", "Votre flotte")}</span>
                   <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
                     {myTeam === null
-                      ? "Only the crew themselves can put this on stream - it's drawn with their rejoin code, from this page, while they're on the fleet."
-                      : `You're on ${teamName(myTeam)}, so this is the one source you can't build for ${teamName(crew!)}. Pick your own fleet above to get it.`}
+                      ? t(
+                          "Only the crew themselves can put this on stream - it's drawn with their rejoin code, from this page, while they're on the fleet.",
+                          "Seule l'équipe elle-même peut mettre ceci en stream - c'est dessiné avec son code de reconnexion, depuis cette page, tant qu'elle est sur la flotte."
+                        )
+                      : t(
+                          `You're on ${teamName(myTeam)}, so this is the one source you can't build for ${teamName(crew!)}. Pick your own fleet above to get it.`,
+                          `Vous êtes dans ${teamName(myTeam)}, donc c'est la seule source que vous ne pouvez pas construire pour ${teamName(crew!)}. Choisissez votre propre flotte ci-dessus pour l'obtenir.`
+                        )}
                   </span>
                 </div>
               )}
@@ -632,40 +719,54 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
               {canDrawFleet && (
                 <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
                   <strong>
-                    The Fleet URL draws your ships and carries your rejoin code. Put it on stream
-                    only if you want viewers to see where your hulls are, and share it with nobody.
+                    {t(
+                      "The Fleet URL draws your ships and carries your rejoin code. Put it on stream only if you want viewers to see where your hulls are, and share it with nobody.",
+                      "L'URL de la flotte dessine vos navires et porte votre code de reconnexion. Ne la mettez en stream que si vous voulez que les spectateurs voient où sont vos coques, et ne la partagez avec personne."
+                    )}
                   </strong>
                 </span>
               )}
 
               <SourceRow
-                label="Clock"
+                label={t("Clock", "Horloge")}
                 url={clockUrl}
                 size="1200 x 200"
-                note="the match clock and every fleet's hulls, with yours marked"
+                note={t(
+                  "the match clock and every fleet's hulls, with yours marked",
+                  "l'horloge de la partie et les coques de chaque flotte, avec les vôtres repérées"
+                )}
               />
               <SourceRow
-                label="Key"
+                label={t("Key", "Légende")}
                 url={keyUrl}
                 size="1920 x 90"
-                note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+                note={t(
+                  "a thin strip for the bottom edge - add ?plate=0 for no backing",
+                  "une fine bande pour le bas de l'écran - ajoutez ?plate=0 pour ne pas avoir de fond"
+                )}
               />
 
               <SourceRow
-                label="Finds"
+                label={t("Finds", "Découvertes")}
                 url={eggUrl}
                 size="600 x 600"
-                note="empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer"
+                note={t(
+                  "empty until the water gives something up, then the find for a few seconds - add ?secs=8 to hold it longer",
+                  "vide jusqu'à ce que l'eau révèle quelque chose, puis la découverte pendant quelques secondes - ajoutez ?secs=8 pour la garder plus longtemps"
+                )}
               />
 
               {/* The one source with nothing to look at, so the size is a formality and the note has
                   to do the whole job of saying what it is. Listed last for the same reason: it is
                   the only one whose placement in the scene doesn't matter. */}
               <SourceRow
-                label="Audio"
+                label={t("Audio", "Audio")}
                 url={audioUrl}
                 size="100 x 100"
-                note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+                note={t(
+                  "the board's sound - no picture. Tick 'Control audio via OBS' for its own fader",
+                  "le son du plateau - pas d'image. Cochez « Contrôler l'audio via OBS » pour son propre fader"
+                )}
               />
             </>
           )}
@@ -673,8 +774,10 @@ export function OverlayLinkBox({ roomCode, team, rejoinCode, teams }: Props) {
           {/* Said here because the alternative is a streamer discovering it live and assuming their
               source is broken. See lib/overlayReveal.ts. */}
           <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-            Square names, square colours and the colour key stay blank until the match starts, so
-            nobody can read the board during placement. That includes you.
+            {t(
+              "Square names, square colours and the colour key stay blank until the match starts, so nobody can read the board during placement. That includes you.",
+              "Les noms de case, les couleurs de case et la légende des couleurs restent vides jusqu'au début de la partie, pour que personne ne puisse lire le plateau pendant le placement. Vous y compris."
+            )}
           </span>
         </>
       )}

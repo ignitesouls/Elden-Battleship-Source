@@ -8,6 +8,7 @@ import {
   type BilledEgress,
 } from "../lib/egress";
 import { formatRoomCode } from "../lib/roomCode";
+import { useT } from "../lib/language";
 import type { MatchReportRow } from "../types/battleship";
 
 /** Rows per page, matching the archived-match list this panel sits under. */
@@ -38,6 +39,7 @@ const PAGE = 25;
  * match at a time, it is one round trip for the match somebody is actually asking about.
  */
 export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
+  const t = useT();
   const [rooms, setRooms] = useState<RoomEgress[] | null>(null);
   /** How many rows to ask for. Raised by "Show more", in step with the match list above. */
   const [limit, setLimit] = useState(PAGE);
@@ -68,14 +70,23 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
       setBilled((b) => ({
         ...b,
         [key]: notLoadedYet
-          ? "This room is older than the matches loaded above. Press Show more on the archived list, then ask again."
-          : "No archived match lines up with these samples. A room that was opened and abandoned still spends bytes, but there is no window to ask Supabase about.",
+          ? t(
+              "This room is older than the matches loaded above. Press Show more on the archived list, then ask again.",
+              "Cette partie est plus ancienne que les parties chargées ci-dessus. Appuyez sur Afficher plus dans la liste archivée, puis redemandez."
+            )
+          : t(
+              "No archived match lines up with these samples. A room that was opened and abandoned still spends bytes, but there is no window to ask Supabase about.",
+              "Aucune partie archivée ne correspond à ces échantillons. Une partie ouverte puis abandonnée consomme quand même des octets, mais il n'y a pas de fenêtre pour interroger Supabase."
+            ),
       }));
       return;
     }
     const window = matchWindow(match.match_key, match.finished_at);
     if (!window) {
-      setBilled((b) => ({ ...b, [key]: "Couldn't read a start time off that match key." }));
+      setBilled((b) => ({
+        ...b,
+        [key]: t("Couldn't read a start time off that match key.", "Impossible de lire une heure de début à partir de cette clé de partie."),
+      }));
       return;
     }
 
@@ -84,14 +95,16 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
     setBusy(false);
 
     if (!res.ok) {
-      setBilled((b) => ({ ...b, [key]: reasonText(res.reason) }));
+      setBilled((b) => ({ ...b, [key]: reasonText(res.reason, t) }));
       return;
     }
     if (res.data.retentionWarning) {
       setBilled((b) => ({
         ...b,
-        [key]:
+        [key]: t(
           "No log rows in that window. Supabase keeps them for one day on Free and seven on Pro, so this match has almost certainly aged out - which is not the same as it having cost nothing.",
+          "Aucune ligne de log dans cette fenêtre. Supabase les conserve un jour sur Free et sept sur Pro, donc cette partie a presque certainement expiré - ce qui ne veut pas dire qu'elle n'a rien coûté."
+        ),
       }));
       return;
     }
@@ -101,33 +114,33 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
   return (
     <div className="panel stack" style={{ gap: "0.7rem", width: "100%" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem" }}>Egress</h2>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>{t("Egress", "Trafic sortant")}</h2>
         <button
           disabled={busy}
           style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem" }}
           onClick={() => void (async () => setRooms(await listRoomEgress(limit)))()}
         >
-          Refresh
+          {t("Refresh", "Actualiser")}
         </button>
       </div>
 
       <p className="muted" style={{ margin: 0, fontSize: "0.76rem" }}>
-        What each room's watchers downloaded, reported by their own browsers. Realtime is counted
-        here and nowhere else - Supabase publishes no byte count for websocket traffic, at any plan -
-        and those frames are uncompressed, so that figure is the real one. REST is a floor: PostgREST
-        sends no length header, so the number is re-compressed client-side and reads 10-30% low.
-        "Billed" asks Supabase what it actually sent over the same window, which is exact for REST
-        and blind to realtime. The two are not added together.
+        {t(
+          `What each room's watchers downloaded, reported by their own browsers. Realtime is counted here and nowhere else - Supabase publishes no byte count for websocket traffic, at any plan - and those frames are uncompressed, so that figure is the real one. REST is a floor: PostgREST sends no length header, so the number is re-compressed client-side and reads 10-30% low. "Billed" asks Supabase what it actually sent over the same window, which is exact for REST and blind to realtime. The two are not added together.`,
+          `Ce que les spectateurs de chaque partie ont téléchargé, rapporté par leurs propres navigateurs. Le temps réel est compté ici et nulle part ailleurs - Supabase ne publie aucun nombre d'octets pour le trafic websocket, sur aucun plan - et ces trames sont non compressées, donc ce chiffre est le vrai. REST est un plancher : PostgREST n'envoie aucun en-tête de longueur, donc le nombre est recompressé côté client et affiche 10 à 30 % de moins. "Facturé" demande à Supabase ce qu'il a réellement envoyé sur la même fenêtre, ce qui est exact pour REST et aveugle pour le temps réel. Les deux ne sont pas additionnés.`
+        )}
       </p>
 
       {rooms === null && (
-        <span className="muted" style={{ fontSize: "0.78rem" }}>Reading the samples...</span>
+        <span className="muted" style={{ fontSize: "0.78rem" }}>{t("Reading the samples...", "Lecture des échantillons...")}</span>
       )}
 
       {rooms?.length === 0 && (
         <span className="muted" style={{ fontSize: "0.78rem" }}>
-          Nothing reported yet. Rows appear a minute into the next match played on a build that
-          carries the meter.
+          {t(
+            "Nothing reported yet. Rows appear a minute into the next match played on a build that carries the meter.",
+            "Rien de rapporté pour l'instant. Les lignes apparaissent une minute après le début de la prochaine partie jouée sur une build qui embarque le compteur."
+          )}
         </span>
       )}
 
@@ -144,10 +157,10 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
               style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}
             >
               <span style={{ minWidth: 0, flex: 1 }}>
-                <strong>{r.room_code ? formatRoomCode(r.room_code) : "(no room)"}</strong>
+                <strong>{r.room_code ? formatRoomCode(r.room_code) : t("(no room)", "(pas de partie)")}</strong>
                 <span className="muted">
                   {" "}
-                  · {bytes(total)} total · {bytes(r.realtime_bytes)} realtime ·{" "}
+                  · {bytes(total)} {t("total", "total")} · {bytes(r.realtime_bytes)} {t("realtime", "temps réel")} ·{" "}
                   {/* A floor, not a figure. PostgREST sends no Content-Length, so the client
                       re-compresses each body to weigh it and lands 10-30% under what the gateway
                       actually put on the wire - see weigh() in lib/egressMeter. The greater-than
@@ -163,7 +176,7 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
                   if (!isOpen && !billed[key]) void askBilled(r);
                 }}
               >
-                {isOpen ? "Hide" : "Billed"}
+                {isOpen ? t("Hide", "Masquer") : t("Billed", "Facturé")}
               </button>
             </div>
 
@@ -171,19 +184,19 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
               {/* Named where the samples line up with an archived game, so a row reads as "that
                   match" rather than as a room code somebody has to go and look up. A room that was
                   opened and abandoned has no match and says so by omission. */}
-              {match ? `${match.duration ?? "--:--"} · ${match.total_shots} shots · ` : ""}
-              {r.clients} tab{r.clients === 1 ? "" : "s"}
-              {r.players > 0 && ` · ${r.players} player`}
-              {r.spectators > 0 && ` · ${r.spectators} spectator`}
-              {r.overlays > 0 && ` · ${r.overlays} overlay`}
-              {r.casters > 0 && ` · ${r.casters} caster`}
+              {match ? `${match.duration ?? "--:--"} · ${match.total_shots} ${t("shots", "tirs")} · ` : ""}
+              {r.clients} {t("tab", "onglet")}{r.clients === 1 ? "" : "s"}
+              {r.players > 0 && ` · ${r.players} ${t("player", "joueur")}`}
+              {r.spectators > 0 && ` · ${r.spectators} ${t("spectator", "spectateur")}`}
+              {r.overlays > 0 && ` · ${r.overlays} ${t("overlay", "overlay")}`}
+              {r.casters > 0 && ` · ${r.casters} ${t("caster", "présentateur")}`}
               {" · "}
-              {r.realtime_messages.toLocaleString()} frames · {r.rest_requests.toLocaleString()}{" "}
-              requests
+              {r.realtime_messages.toLocaleString()} {t("frames", "trames")} · {r.rest_requests.toLocaleString()}{" "}
+              {t("requests", "requêtes")}
               {/* Responses with no Content-Length were weighed after decompression, which overstates
                   gzipped JSON several times over. Said out loud rather than folded into the total,
                   because a row where this is most of the requests is not really a measurement. */}
-              {r.rest_estimated > 0 && ` · ${r.rest_estimated.toLocaleString()} uncompressed est.`}
+              {r.rest_estimated > 0 && ` · ${t(`${r.rest_estimated.toLocaleString()} uncompressed est.`, `${r.rest_estimated.toLocaleString()} non compressé est.`)}`}
               {" · "}
               {new Date(r.last_seen).toLocaleString()}
             </span>
@@ -193,7 +206,7 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
                 className="stack"
                 style={{ gap: "0.2rem", fontSize: "0.72rem", paddingLeft: "0.6rem" }}
               >
-                {busy && !detail && <span className="muted">Asking Supabase...</span>}
+                {busy && !detail && <span className="muted">{t("Asking Supabase...", "Interrogation de Supabase...")}</span>}
                 {typeof detail === "string" && (
                   <span className="muted" style={{ color: "var(--danger)" }}>{detail}</span>
                 )}
@@ -202,15 +215,18 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
                     <span>
                       <strong>{bytes(detail.bytes)}</strong>{" "}
                       <span className="muted">
-                        billed REST over {detail.requests.toLocaleString()} requests, against{" "}
-                        {bytes(r.rest_bytes)} the tabs reported. Realtime is not in this number.
+                        {t(
+                          `billed REST over ${detail.requests.toLocaleString()} requests, against ${bytes(r.rest_bytes)} the tabs reported. Realtime is not in this number.`,
+                          `REST facturé sur ${detail.requests.toLocaleString()} requêtes, contre ${bytes(r.rest_bytes)} rapportés par les onglets. Le temps réel n'est pas inclus dans ce chiffre.`
+                        )}
                       </span>
                     </span>
                     {detail.withoutLength > 0 && (
                       <span className="muted">
-                        {detail.withoutLength.toLocaleString()} response
-                        {detail.withoutLength === 1 ? "" : "s"} carried no Content-Length and counted
-                        as zero, so the figure above is a floor.
+                        {t(
+                          `${detail.withoutLength.toLocaleString()} response${detail.withoutLength === 1 ? "" : "s"} carried no Content-Length and counted as zero, so the figure above is a floor.`,
+                          `${detail.withoutLength.toLocaleString()} réponse${detail.withoutLength === 1 ? "" : "s"} sans Content-Length ont été comptées comme zéro, donc le chiffre ci-dessus est un plancher.`
+                        )}
                       </span>
                     )}
                     {detail.byPath.map((p) => (
@@ -242,13 +258,15 @@ export function EgressPanel({ matches }: { matches: MatchReportRow[] }) {
           style={{ fontSize: "0.72rem", padding: "0.25rem 0.5rem", alignSelf: "center" }}
           onClick={() => setLimit((n) => n + PAGE)}
         >
-          Show more
+          {t("Show more", "Afficher plus")}
         </button>
       )}
 
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        Samples are dropped after thirty days. The billed half needs EGRESS_MANAGEMENT_TOKEN set as
-        a function secret, and only reaches back as far as log retention - one day on Free.
+        {t(
+          "Samples are dropped after thirty days. The billed half needs EGRESS_MANAGEMENT_TOKEN set as a function secret, and only reaches back as far as log retention - one day on Free.",
+          "Les échantillons sont supprimés après trente jours. La moitié facturée nécessite EGRESS_MANAGEMENT_TOKEN défini comme secret de fonction, et ne remonte que jusqu'à la limite de rétention des logs - un jour sur Free."
+        )}
       </span>
     </div>
   );
@@ -287,11 +305,14 @@ function matchForRoom(row: RoomEgress, matches: MatchReportRow[]): MatchReportRo
 }
 
 /** The function's own refusals, in words. Anything else is passed through as it arrived. */
-function reasonText(reason: string): string {
+function reasonText(reason: string, t: (en: string, fr: string) => string): string {
   if (reason === "no_management_token")
-    return "No EGRESS_MANAGEMENT_TOKEN set on the project, so nothing can ask Supabase what it sent. Set it with: npx supabase secrets set EGRESS_MANAGEMENT_TOKEN=sbp_... --project-ref <ref>";
-  if (reason === "not_admin") return "The server says you aren't an admin.";
-  if (reason === "bad_window") return "That match's start and end don't make a window.";
-  if (reason === "window_too_wide") return "That window is longer than a day.";
+    return t(
+      "No EGRESS_MANAGEMENT_TOKEN set on the project, so nothing can ask Supabase what it sent. Set it with: npx supabase secrets set EGRESS_MANAGEMENT_TOKEN=sbp_... --project-ref <ref>",
+      "Aucun EGRESS_MANAGEMENT_TOKEN défini sur le projet, donc rien ne peut demander à Supabase ce qu'il a envoyé. Définissez-le avec : npx supabase secrets set EGRESS_MANAGEMENT_TOKEN=sbp_... --project-ref <ref>"
+    );
+  if (reason === "not_admin") return t("The server says you aren't an admin.", "Le serveur indique que vous n'êtes pas administrateur.");
+  if (reason === "bad_window") return t("That match's start and end don't make a window.", "Le début et la fin de cette partie ne forment pas une fenêtre valide.");
+  if (reason === "window_too_wide") return t("That window is longer than a day.", "Cette fenêtre dépasse un jour.");
   return reason;
 }

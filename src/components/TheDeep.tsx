@@ -4,6 +4,7 @@ import { teamName } from "../lib/teamColors";
 import type { DeepMark } from "../lib/deepWater";
 // Moved out to lib when the stream alert started naming the same finds - see lib/deepLabels.
 import { DEEP_LABEL } from "../lib/deepLabels";
+import { useT } from "../lib/language";
 
 /**
  * One find, flattened to the few facts the panel prints.
@@ -50,12 +51,13 @@ export function TheDeep({
   /** The tally under the list. Omitted when the record doesn't carry one. */
   cthulhu?: { found: number; needed: number; awake: boolean };
 }) {
+  const t = useT();
   // Nothing found, nothing to say. Most matches end here, which is the point of the whole hunt.
   if (entries.length === 0) return null;
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem", width: "min(560px, 100%)" }}>
-      <h3 style={{ margin: 0 }}>The Deep</h3>
+      <h3 style={{ margin: 0 }}>{t("The Deep", "Les Profondeurs")}</h3>
       {entries.map((entry, i) => (
         // Keyed by position as well as square, because a square can hold more than one find: the
         // Dutchman is met rather than caught, so every crew that fires at his square sights him.
@@ -92,8 +94,8 @@ export function TheDeep({
       {cthulhu && cthulhu.needed > 0 && (
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {cthulhu.awake
-            ? `All ${cthulhu.needed} tentacles found. Cthulhu woke.`
-            : `${cthulhu.found} of ${cthulhu.needed} tentacles found.`}
+            ? t(`All ${cthulhu.needed} tentacles found. Cthulhu woke.`, `Les ${cthulhu.needed} tentacules ont été trouvées. Cthulhu s'est réveillé.`)
+            : t(`${cthulhu.found} of ${cthulhu.needed} tentacles found.`, `${cthulhu.found} tentacule${cthulhu.found === 1 ? "" : "s"} sur ${cthulhu.needed} trouvée${cthulhu.found === 1 ? "" : "s"}.`)}
         </span>
       )}
     </div>

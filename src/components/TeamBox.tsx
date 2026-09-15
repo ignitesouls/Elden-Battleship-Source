@@ -1,6 +1,7 @@
 import { teamName, teamHex } from "../lib/teamColors";
 import { fleetByLength } from "../lib/fleetOrder";
 import type { Player, ShipDefinition } from "../types/battleship";
+import { useT } from "../lib/language";
 
 interface Props {
   team: number;
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function TeamBox({ team, players, shipDefs, sunkHulls, eliminated, isMine, myPlayerId }: Props) {
+  const t = useT();
   const members = players.filter((p) => p.team === team);
   const afloat = sunkHulls ? shipDefs.filter((_, i) => !sunkHulls[i]).length : null;
 
@@ -32,26 +34,28 @@ export function TeamBox({ team, players, shipDefs, sunkHulls, eliminated, isMine
       <div className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
         <h3 style={{ color: teamHex(team), margin: 0, fontSize: "0.95rem" }}>
           {teamName(team)}
-          {isMine && <span className="badge" style={{ marginLeft: "0.35rem" }}>you</span>}
+          {isMine && <span className="badge" style={{ marginLeft: "0.35rem" }}>{t("you", "vous")}</span>}
         </h3>
         {eliminated ? (
-          <span className="badge">eliminated</span>
+          <span className="badge">{t("eliminated", "éliminé")}</span>
         ) : (
           afloat !== null && (
             <span className="muted" style={{ fontSize: "0.75rem" }}>
-              {afloat}/{shipDefs.length} afloat
+              {afloat}/{shipDefs.length} {t("afloat", "à flot")}
             </span>
           )
         )}
       </div>
 
       <div className="stack" style={{ gap: "0.1rem", fontSize: "0.8rem" }}>
-        {members.length === 0 && <span className="muted">empty</span>}
+        {members.length === 0 && <span className="muted">{t("empty", "vide")}</span>}
         {members.map((p) => (
           <span key={p.id}>
             {p.nickname}
-            {p.is_host && <span className="badge" style={{ marginLeft: "0.3rem" }}>host</span>}
-            {p.id === myPlayerId && !isMine && <span className="badge" style={{ marginLeft: "0.3rem" }}>you</span>}
+            {p.is_host && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("host", "hôte")}</span>}
+            {p.id === myPlayerId && !isMine && (
+              <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("you", "vous")}</span>
+            )}
           </span>
         ))}
       </div>

@@ -8,6 +8,7 @@ import { joinRoom, resetRoomToLobby, redeemRejoinCode, startBattle } from "../li
 import { activeTeams } from "../lib/battleshipLogic";
 import { setEgressRole } from "../lib/egressMeter";
 import { teamName, teamHex } from "../lib/teamColors";
+import { useLanguage, useT } from "../lib/language";
 import {
   getLastNickname,
   storeLastNickname,
@@ -70,6 +71,7 @@ const EMPTY_SUNK: ReadonlyMap<number, boolean> = new Map();
 export function Room() {
   const { code } = useParams<{ code: string }>();
   const state = useRoom(code);
+  const t = useT();
   const prevStatus = useRef<string | null>(null);
   // The NAME only. This hook sits at the top of the match screen, so anything that changes here
   // re-renders both boards, the log and every roster below it - and the one thing this page wants
@@ -155,15 +157,17 @@ export function Room() {
         // this same client having been beaten to it, which is the guard working rather than a fault.
         if (balance.balanced || balance.reason === "already_balanced") return;
         setHostError(
-          `This board was NOT balanced against the fleets (${balance.reason ?? "unknown"}). It is ` +
-            `playing as the raw seeded deal, which may be lopsided. Restart the match if you'd rather not risk it.`
+          `${t("This board was NOT balanced against the fleets (", "Ce plateau n'a PAS été équilibré selon les flottes (")}${balance.reason ?? t("unknown", "inconnue")}${t(
+            "). It is playing as the raw seeded deal, which may be lopsided. Restart the match if you'd rather not risk it.",
+            "). Il utilise la répartition brute générée par la graine, qui peut être déséquilibrée. Redémarrez la partie si vous préférez ne pas prendre ce risque."
+          )}`
         );
       })
       .catch((e) => {
         battleStartedRef.current = false;
         setHostError(e instanceof Error ? e.message : String(e));
       });
-  }, [state.room, state.myPlayer, state.players, state.teamReady]);
+  }, [state.room, state.myPlayer, state.players, state.teamReady, t]);
 
   // Remembers where you are so the top bar can offer a way back from the leaderboard, a captain's
   // page or the almanac - and forgets it the moment the room stops being somewhere you can return
@@ -179,16 +183,16 @@ export function Room() {
   // The connection banner has to sit alongside whichever phase is showing, so the phase choice
   // is resolved in here and rendered inside a single fragment below rather than early-returned.
   function renderPhase() {
-  if (state.loading) return <LoadingScreen>Loading room...</LoadingScreen>;
+  if (state.loading) return <LoadingScreen>{t("Loading room...", "Chargement de la partie...")}</LoadingScreen>;
   // A real failure - no network, a rejected read - as opposed to a room that simply isn't there,
   // which is the case below and no longer arrives here. Given a way out for the same reason that
   // one has: whatever went wrong, a dead end is not the answer to it.
   if (state.error) {
     return (
       <div className="panel stack" style={{ width: "min(420px, 100%)", alignItems: "center", textAlign: "center" }}>
-        <h2 style={{ margin: 0 }}>Couldn't open this room</h2>
+        <h2 style={{ margin: 0 }}>{t("Couldn't open this room", "Impossible d'ouvrir cette partie")}</h2>
         <p className="error-text" style={{ margin: 0 }}>{state.error}</p>
-        <Link to="/">Return to harbor</Link>
+        <Link to="/">{t("Return to harbor", "Retour au port")}</Link>
       </div>
     );
   }
@@ -198,13 +202,16 @@ export function Room() {
   if (!state.room) {
     return (
       <div className="panel stack" style={{ width: "min(420px, 100%)", alignItems: "center", textAlign: "center" }}>
-        <h2 style={{ margin: 0 }}>This room is gone</h2>
+        <h2 style={{ margin: 0 }}>{t("This room is gone", "Cette partie n'existe plus")}</h2>
         <p className="muted" style={{ margin: 0 }}>
-          {code ? formatRoomCode(code) : "That room"} has been closed, deleted, or cleared away after
-          sitting idle. Nothing here to rejoin.
+          {code ? formatRoomCode(code) : t("That room", "Cette partie")}{" "}
+          {t(
+            "has been closed, deleted, or cleared away after sitting idle. Nothing here to rejoin.",
+            "a été fermée, supprimée, ou nettoyée après être restée inactive. Rien à rejoindre ici."
+          )}
         </p>
         <Link to="/">
-          Return to harbor
+          {t("Return to harbor", "Retour au port")}
         </Link>
       </div>
     );
@@ -220,12 +227,15 @@ export function Room() {
       <div className="stack" style={{ width: "min(400px, 100%)", gap: "0.6rem" }}>
         {wasHere && (
           <div className="panel stack" style={{ gap: "0.4rem", borderColor: "var(--danger)" }}>
-            <strong>You're no longer in this room</strong>
+            <strong>{t("You're no longer in this room", "Vous n'êtes plus dans cette partie")}</strong>
             <span className="muted" style={{ fontSize: "0.85rem" }}>
-              The host or an admin removed you. You can join again below, or head back out.
+              {t(
+                "The host or an admin removed you. You can join again below, or head back out.",
+                "L'hôte ou un administrateur vous a retiré. Vous pouvez rejoindre à nouveau ci-dessous, ou repartir."
+              )}
             </span>
             <Link to="/" style={{ fontSize: "0.85rem" }}>
-              Return to harbor
+              {t("Return to harbor", "Retour au port")}
             </Link>
           </div>
         )}
@@ -287,7 +297,7 @@ export function Room() {
 
   const myTeam = myPlayer.team;
 
-  if (!myFleet) return <LoadingScreen>Loading your fleet...</LoadingScreen>;
+  if (!myFleet) return <LoadingScreen>{t("Loading your fleet...", "Chargement de votre flotte...")}</LoadingScreen>;
 
   if (room.status === "placement") {
     return (
@@ -354,6 +364,7 @@ export function Room() {
 }
 
 function JoinForm({ code }: { code: string }) {
+  const t = useT();
   const [nickname, setNickname] = useState(getLastNickname());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -377,7 +388,7 @@ function JoinForm({ code }: { code: string }) {
     try {
       const playerId = await redeemRejoinCode(code, rejoinCode);
       if (!playerId) {
-        setError("That rejoin code doesn't match anyone in this room.");
+        setError(t("That rejoin code doesn't match anyone in this room.", "Ce code de reprise ne correspond à personne dans cette partie."));
         setBusy(false);
         return;
       }
@@ -412,10 +423,13 @@ function JoinForm({ code }: { code: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="panel stack" style={{ width: "min(400px, 100%)" }}>
-      <h2>{spectating ? `Spectate ${formatRoomCode(code)}` : `Join ${formatRoomCode(code)}`}</h2>
+      <h2>{spectating ? `${t("Spectate", "Observer")} ${formatRoomCode(code)}` : `${t("Join", "Rejoindre")} ${formatRoomCode(code)}`}</h2>
       {spectating && (
         <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>
-          You'll join as a spectator. Pick a fleet in the lobby if you'd rather play.
+          {t(
+            "You'll join as a spectator. Pick a fleet in the lobby if you'd rather play.",
+            "Vous rejoindrez comme spectateur. Choisissez une flotte dans le lobby si vous préférez jouer."
+          )}
         </p>
       )}
       <input
@@ -424,35 +438,38 @@ function JoinForm({ code }: { code: string }) {
           setTouched(true);
           setNickname(e.target.value);
         }}
-        placeholder="Nickname"
+        placeholder={t("Nickname", "Pseudo")}
         maxLength={NICKNAME_MAX}
         autoFocus
       />
       {profile?.isTwitch && (
         <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
-          Your Twitch account keeps this name for next time.
+          {t("Your Twitch account keeps this name for next time.", "Votre compte Twitch conserve ce nom pour la prochaine fois.")}
         </span>
       )}
       {error && <div className="error-text">{error}</div>}
       <button type="submit" className="primary" disabled={busy}>
-        {spectating ? "Spectate" : "Join"}
+        {spectating ? t("Spectate", "Observer") : t("Join", "Rejoindre")}
       </button>
 
       {showRejoin ? (
         <div className="stack" style={{ gap: "0.35rem" }}>
           <span className="muted" style={{ fontSize: "0.75rem" }}>
-            Enter the rejoin code from your previous session to take back that fleet.
+            {t(
+              "Enter the rejoin code from your previous session to take back that fleet.",
+              "Entrez le code de reprise de votre session précédente pour récupérer cette flotte."
+            )}
           </span>
           <div className="row" style={{ gap: "0.4rem" }}>
             <input
               style={{ flex: 1, textTransform: "uppercase" }}
               value={rejoinCode}
               onChange={(e) => setRejoinCode(e.target.value)}
-              placeholder="Rejoin code"
+              placeholder={t("Rejoin code", "Code de reprise")}
               maxLength={8}
             />
             <button type="button" disabled={busy} onClick={handleRejoin}>
-              Rejoin
+              {t("Rejoin", "Reprendre")}
             </button>
           </div>
         </div>
@@ -462,7 +479,7 @@ function JoinForm({ code }: { code: string }) {
           onClick={() => setShowRejoin(true)}
           style={{ fontSize: "0.75rem", background: "none", border: "none", color: "var(--text-dim)" }}
         >
-          Played here before? Use a rejoin code
+          {t("Played here before? Use a rejoin code", "Déjà joué ici ? Utilisez un code de reprise")}
         </button>
       )}
     </form>
@@ -535,6 +552,8 @@ function SpectatorView({
   // The stage the boards are measured into. See Spectator.css for why this page measures rather
   // than capping boards in vh.
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
+  const lang = useLanguage();
+  const t = useT();
 
   /**
    * Correct the byte meter's guess about what this tab is.
@@ -712,10 +731,10 @@ function SpectatorView({
     const out = new Map<number, ReturnType<typeof countChips>>();
     if (!showShips) return out;
     const byId = new Map(players.map((p) => [p.id, p]));
-    const name = (pid: string) => byId.get(pid)?.nickname ?? "Someone";
+    const name = (pid: string) => byId.get(pid)?.nickname ?? t("Someone", "Quelqu'un");
     for (const [team, counts] of spectatorCounts) out.set(team, countChips(counts, name));
     return out;
-  }, [spectatorCounts, players, showShips]);
+  }, [spectatorCounts, players, showShips, t]);
 
   function visualFor(team: number) {
     const visuals = visualsByTeam.get(team);
@@ -798,8 +817,8 @@ function SpectatorView({
     const c = challenges[i];
     if (!c) return null;
     return {
-      label: c.short ?? c.name,
-      title: c.title ?? c.name,
+      label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+      title: (lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name,
       region: c.region,
       color: c.color,
     };
@@ -850,35 +869,35 @@ function SpectatorView({
 
         {status === "finished" && winnerTeam !== null && (
           <strong style={{ color: teamHex(winnerTeam), fontSize: "0.85rem" }}>
-            {teamName(winnerTeam)} wins
+            {teamName(winnerTeam)} {t("wins", "gagne")}
           </strong>
         )}
 
         <span className="spectate-divider" />
-        <span className="spectate-label">Spectating</span>
+        <span className="spectate-label">{t("Spectating", "Spectateur")}</span>
 
         <button
           onClick={() => setView("attacks")}
           style={{ borderColor: view === "attacks" ? "var(--accent)" : undefined }}
-          title="Shot results only - no ship positions revealed"
+          title={t("Shot results only - no ship positions revealed", "Résultats des tirs uniquement - positions des navires non révélées")}
         >
-          Attacks only
+          {t("Attacks only", "Tirs uniquement")}
         </button>
         <button
           onClick={() => setView("all")}
           style={{ borderColor: view === "all" ? "var(--accent)" : undefined }}
-          title="Every fleet's ships"
+          title={t("Every fleet's ships", "Les navires de toutes les flottes")}
         >
-          All fleets
+          {t("All fleets", "Toutes les flottes")}
         </button>
-        {activeTeamsList.map((t) => (
+        {activeTeamsList.map((team) => (
           <button
-            key={t}
-            onClick={() => setView(t)}
-            style={{ borderColor: view === t ? teamHex(t) : undefined, color: teamHex(t) }}
-            title={`Only ${teamName(t)}'s ships`}
+            key={team}
+            onClick={() => setView(team)}
+            style={{ borderColor: view === team ? teamHex(team) : undefined, color: teamHex(team) }}
+            title={t(`Only ${teamName(team)}'s ships`, `Uniquement les navires de ${teamName(team)}`)}
           >
-            {teamName(t)}
+            {teamName(team)}
           </button>
         ))}
 
@@ -887,20 +906,20 @@ function SpectatorView({
         {/* Ride along with a crew: their exact two-board view, read-only. Built for someone sitting
             in the same Discord call as a team - they need to see what that team is looking at,
             including which squares the team has already tried, not a neutral overhead of both. */}
-        {activeTeamsList.map((t) => (
+        {activeTeamsList.map((team) => (
           <button
-            key={`crew${t}`}
+            key={`crew${team}`}
             onClick={() => {
-              setRidingWith(t);
+              setRidingWith(team);
               setView("crew");
             }}
             style={{
-              borderColor: overShoulder && ridingWith === t ? teamHex(t) : undefined,
-              color: teamHex(t),
+              borderColor: overShoulder && ridingWith === team ? teamHex(team) : undefined,
+              color: teamHex(team),
             }}
-            title={`See what ${teamName(t)} sees: their fleet and their shots. You still can't fire`}
+            title={`${t("See what", "Voir ce que")} ${teamName(team)} ${t("sees: their fleet and their shots. You still can't fire", "voit : sa flotte et ses tirs. Vous ne pouvez toujours pas tirer")}`}
           >
-            With {teamName(t)}
+            {t("With", "Avec")} {teamName(team)}
           </button>
         ))}
 
@@ -909,13 +928,18 @@ function SpectatorView({
         {!overShoulder && status === "placement" && (
           <span className="spectate-note">
             {showShips && canSeeShips
-              ? "Fleets are being placed. Each hull appears as its captain puts it down, and can still move until they confirm."
-              : "Every fleet is placing their ships..."}
+              ? t(
+                  "Fleets are being placed. Each hull appears as its captain puts it down, and can still move until they confirm.",
+                  "Les flottes se placent. Chaque navire apparaît quand son capitaine le pose, et peut encore bouger jusqu'à sa confirmation."
+                )
+              : t("Every fleet is placing their ships...", "Toutes les flottes placent leurs navires...")}
           </span>
         )}
         {!overShoulder && showShips && !canSeeShips && status !== "placement" && (
           <span className="spectate-note">
-            Ship positions are hidden. Apply the <code>fleets select by spectator</code> policy to show them.
+            {t("Ship positions are hidden. Apply the", "Les positions des navires sont masquées. Appliquez la politique")}{" "}
+            <code>fleets select by spectator</code>{" "}
+            {t("policy to show them.", "pour les révéler.")}
           </span>
         )}
 
@@ -941,18 +965,18 @@ function SpectatorView({
           target="_blank"
           rel="noreferrer"
           className="spectate-cast-link"
-          title="Drive the OBS board source: swap fleets, zoom and pan for viewers"
+          title={t("Drive the OBS board source: swap fleets, zoom and pan for viewers", "Piloter la source de board OBS : changer de flotte, zoomer et déplacer pour les viewers")}
         >
-          Board control
+          {t("Board control", "Contrôle du board")}
         </Link>
 
         <button
           onClick={() => setRailOpen(!railOpen)}
           style={{ borderColor: railOpen ? "var(--accent)" : undefined }}
-          title="Show the battle log and fleet rosters beside the boards."
+          title={t("Show the battle log and fleet rosters beside the boards.", "Afficher le journal de bataille et les équipages à côté des plateaux.")}
           aria-pressed={railOpen}
         >
-          {railOpen ? "Hide log" : "Log & rosters"}
+          {railOpen ? t("Hide log", "Masquer le journal") : t("Log & rosters", "Journal et équipages")}
         </button>
 
         {/* The crews' own card, on this page too. A caster is the person most likely to be asked
@@ -970,10 +994,10 @@ function SpectatorView({
           <button
             onClick={() => setOddsOn(!oddsOn)}
             style={{ borderColor: oddsOn ? "var(--accent)" : undefined }}
-            title="Each fleet's chance of winning, and the line that got them there."
+            title={t("Each fleet's chance of winning, and the line that got them there.", "La chance de victoire de chaque flotte, et la courbe qui y a mené.")}
             aria-pressed={oddsOn}
           >
-            Odds
+            {t("Odds", "Cotes")}
           </button>
         )}
 
@@ -992,9 +1016,9 @@ function SpectatorView({
         */}
         <button
           onClick={() => setCanvasOn(!canvasOn)}
-          title="Drag panels by their title bar; resize from the bottom-right corner"
+          title={t("Drag panels by their title bar; resize from the bottom-right corner", "Faites glisser les panneaux par leur barre de titre ; redimensionnez depuis le coin inférieur droit")}
         >
-          {canvasOn ? "Fixed layout" : "Move / resize panels"}
+          {canvasOn ? t("Fixed layout", "Disposition fixe") : t("Move / resize panels", "Déplacer / redimensionner les panneaux")}
         </button>
         {canvasOn && (
           <>
@@ -1003,16 +1027,16 @@ function SpectatorView({
               style={{ borderColor: locked ? "var(--accent)" : undefined }}
               title={
                 locked
-                  ? "Panels are frozen. Unlock to move, resize or restack them."
-                  : "Freeze every panel where it is."
+                  ? t("Panels are frozen. Unlock to move, resize or restack them.", "Les panneaux sont figés. Déverrouillez pour les déplacer, redimensionner ou réorganiser.")
+                  : t("Freeze every panel where it is.", "Figer tous les panneaux là où ils sont.")
               }
               aria-pressed={locked}
             >
-              {locked ? "🔒 Locked" : "🔓 Lock layout"}
+              {locked ? `🔒 ${t("Locked", "Verrouillé")}` : `🔓 ${t("Lock layout", "Verrouiller la disposition")}`}
             </button>
             {/* Still offered while locked - it's the escape hatch for a panel dragged out of reach. */}
-            <button onClick={resetLayout} title="Put every panel back where it started">
-              Reset layout
+            <button onClick={resetLayout} title={t("Put every panel back where it started", "Remettre tous les panneaux à leur position de départ")}>
+              {t("Reset layout", "Réinitialiser la disposition")}
             </button>
           </>
         )}
@@ -1076,11 +1100,11 @@ function SpectatorView({
                   the whole argument for the canvas. The history line comes with it here, because a
                   panel somebody sized themselves has room for the reasoning as well as the number. */}
               {oddsOn && (
-                <CanvasPanel {...panelProps("odds", "Odds of victory")} flush>
+                <CanvasPanel {...panelProps("odds", t("Odds of victory", "Chances de victoire"))} flush>
                   <SpectatorOdds attacks={attacks} room={room} snapshot={snapshot} points={timeline} showGraph />
                 </CanvasPanel>
               )}
-              <CanvasPanel {...panelProps("log", "Battle log")} flush>
+              <CanvasPanel {...panelProps("log", t("Battle log", "Journal de bataille"))} flush>
                 <AttackFeed
                   attacks={attacks}
                   players={players}
@@ -1092,7 +1116,7 @@ function SpectatorView({
                   igon={deep.igon}
                 />
               </CanvasPanel>
-              <CanvasPanel {...panelProps("roster", "Fleets")}>
+              <CanvasPanel {...panelProps("roster", t("Fleets", "Flottes"))}>
                 <div className="stack" style={{ gap: "0.4rem" }}>{rosters}</div>
               </CanvasPanel>
             </>
@@ -1211,6 +1235,7 @@ function FinishedView({
   fleets: Fleet[];
 }) {
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
   const won = room.winner_team === myTeam;
   const draw = room.winner_team === null;
 
@@ -1218,10 +1243,10 @@ function FinishedView({
     <div className="stack" style={{ alignItems: "center", width: "100%", gap: "0.9rem" }}>
       <p className="muted" style={{ margin: 0, fontSize: "1.05rem" }}>
         {draw
-          ? "The last fleets sank each other."
+          ? t("The last fleets sank each other.", "Les dernières flottes se sont coulées mutuellement.")
           : won
-            ? "You're the last fleet afloat."
-            : `${room.winner_team !== null ? teamName(room.winner_team) : "Another fleet"} is the last one afloat.`}
+            ? t("You're the last fleet afloat.", "Votre flotte est la dernière à flot.")
+            : `${room.winner_team !== null ? teamName(room.winner_team) : t("Another fleet", "Une autre flotte")} ${t("is the last one afloat.", "est la dernière à flot.")}`}
       </p>
 
       <MatchReport
@@ -1255,12 +1280,12 @@ function FinishedView({
           <PlayAgainButton room={room} />
         ) : (
           <p className="muted" style={{ textAlign: "center", margin: 0 }}>
-            Waiting for the host to start a new match...
+            {t("Waiting for the host to start a new match...", "En attente que l'hôte démarre une nouvelle partie...")}
           </p>
         )}
         {/* Between matches is the natural moment to bow out, so the way out lives here rather than
             only in the lobby everyone passes through in seconds. */}
-        <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} inMatch={false} label="Leave room" />
+        <LeaveMatchButton playerId={myPlayerId} roomCode={room.code} inMatch={false} label={t("Leave room", "Quitter la partie")} />
       </div>
     </div>
   );
@@ -1276,6 +1301,7 @@ function FinishedView({
 function PlayAgainButton({ room }: { room: RoomType }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   async function handlePlayAgain() {
     setBusy(true);
@@ -1291,7 +1317,7 @@ function PlayAgainButton({ room }: { room: RoomType }) {
   return (
     <>
       <button className="primary" disabled={busy} onClick={() => void handlePlayAgain()}>
-        {busy ? "Starting..." : "Play again"}
+        {busy ? t("Starting...", "Démarrage...") : t("Play again", "Rejouer")}
       </button>
       {error && <div className="error-text">{error}</div>}
     </>

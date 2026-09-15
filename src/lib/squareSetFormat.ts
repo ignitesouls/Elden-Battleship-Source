@@ -210,6 +210,19 @@ export interface Challenge {
    */
   title?: string;
   /**
+   * French for `name`, when the set has a translation for this square. Never the archived identity -
+   * that is always `name` - so this is purely a rendering choice and can be added, changed or
+   * removed without touching a single stored row. Absent means "not translated yet", and every
+   * caller that reads it must fall back to the English field rather than showing nothing.
+   */
+  nameFr?: string;
+  /** French for `short`, same rule as `nameFr` - what a French board prints in the cell. */
+  shortFr?: string;
+  /** French for `tooltip`, same rule as `nameFr`. */
+  tooltipFr?: string;
+  /** French for `title`, see squareTitleFr. Same fallback rule as `nameFr`. */
+  titleFr?: string;
+  /**
    * Which part of the map this square is in, if the set records it. Optional because only the boss
    * set is tagged - objective squares aren't tied to one place, so they keep the default colour.
    */
@@ -542,11 +555,16 @@ const COMBINED_CATEGORY = "combinedSquare";
  * board, "Kill 4" in the log, never 4 and 5), and a name mentioning %demiNum% twice must say the
  * same number both times.
  */
-function makeResolver(square: BingoSquare, next: () => number): (text: string) => string {
+/**
+ * `resolve` fills English placeholders and draws each one exactly once, as before. `drawn` is the
+ * same record the closure writes into, exposed so a French pass can translate the exact values
+ * English already picked instead of drawing its own - see resolveFr.
+ */
+function makeResolver(square: BingoSquare, next: () => number): { resolve: (text: string) => string; drawn: Record<string, string> } {
   const drawn: Record<string, string> = {};
   const combined = categoriesOf(square).includes(COMBINED_CATEGORY);
 
-  return (text: string) =>
+  const resolve = (text: string) =>
     text.replace(/%(\w+)%/g, (whole, key: string) => {
       if (drawn[key] === undefined) {
         const options = square[key];
@@ -556,6 +574,27 @@ function makeResolver(square: BingoSquare, next: () => number): (text: string) =
       }
       return drawn[key];
     });
+  return { resolve, drawn };
+}
+
+/**
+ * The French sibling of `resolve()`, for a French template of the same square.
+ *
+ * Never draws - a French board must show the SAME drawn option as its English counterpart ("Kill 5"
+ * next to "Tuer 5", never "Tuer 6"), so this only ever reads `drawn`, which `resolve()` above has
+ * already populated by the time this runs. A key `resolve()` never drew (because the ENGLISH
+ * template never mentioned it) is left as its literal `%token%` - the same "not translated" signal
+ * `namesFr`/`tooltipsFr` use elsewhere, since a French renderer with nothing to substitute has
+ * nothing honest to show.
+ */
+function resolveFr(text: string, drawn: Record<string, string>, optionsFr: Record<string, string>): string {
+  return text.replace(/%(\w+)%/g, (whole, key: string) => {
+    const en = drawn[key];
+    if (en === undefined) return whole;
+    // The option value itself, translated - falling back to the English value (not the whole
+    // template) when this particular option string has no French entry yet.
+    return optionsFr[en] ?? en;
+  });
 }
 
 /**
@@ -870,7 +909,27 @@ export function buildBingoBoard(
    * The set's keyword->colour rules, for sets that tint that way instead of by region. A set never
    * uses both: `regions` names a closed vocabulary with a legend, these are loose hexes.
    */
-  colors: KeywordColor[] = []
+  colors: KeywordColor[] = [],
+  /**
+   * French for `name`, keyed the same way as `shortNames` - raw, with `%variables%` still in
+   * place. Resolved through the SAME resolver as the English name (see below), so a square that
+   * drew "5" for %demiNum% shows that same "5" in both languages rather than drawing again. A
+   * square with no entry here simply carries no `nameFr`, which every renderer must read as "show
+   * the English name instead" - see squareTitleFr.
+   */
+  namesFr: Record<string, string> = {},
+  /** French for `tooltip`, keyed the same way. Tooltips carry no %variables% today, so this is a
+   *  plain lookup rather than something the resolver needs to touch. */
+  tooltipsFr: Record<string, string> = {},
+  /** French for `shortNames`, keyed the same way - an authored French abbreviation. Falls back to
+   *  `shortLabel(nameFr)` exactly the way the English short form falls back to `shortLabel(name)`. */
+  shortNamesFr: Record<string, string> = {},
+  /**
+   * French for the individual %variable% OPTION VALUES a square can draw - not the template, the
+   * drawn word itself, e.g. "Kill a Furnace Golem" -> "Tuer un Golem de Fournaise". Keyed by the
+   * exact English option string. See resolveFr for why this can't reuse `namesFr`.
+   */
+  optionsFr: Record<string, string> = {}
 ): Challenge[] {
   const picked = shuffled(pickSquares(set, count, next, true), next);
 
@@ -880,7 +939,7 @@ export function buildBingoBoard(
   for (let i = 0; i < count; i++) {
     const square = picked.length > 0 ? (picked[i] ?? picked[i % picked.length]) : null;
     if (!square) break;
-    const resolve = makeResolver(square, next);
+    const { resolve, drawn } = makeResolver(square, next);
     const isCombined = categoriesOf(square).includes(COMBINED_CATEGORY);
     // Combined squares carry two objectives, so their counts are floored at three - in the drawn
     // variables (see atLeastThree) and in the written text alike. Applied to the name and the short
@@ -909,10 +968,33 @@ export function buildBingoBoard(
       typeof square.short === "string"
         ? square.short
         : (shortNames[square.name] ?? null);
+    // French, resolved through the same `resolve` instance as `name` above so a %variable% draws
+    // once and reads the same number in both languages. Absent (rather than falling back to the
+    // English template) when this square has no translation yet, so a caller can tell "not
+    // translated" apart from "translated to something that happens to read like the original".
+    const rawNameFr = namesFr[square.name];
+    const nameFr = rawNameFr !== undefined ? bump(resolveFr(rawNameFr, drawn, optionsFr)) : undefined;
+    // Keyed by the English TOOLTIP text, not the name - tooltips are their own piece of prose, not
+    // an attribute of the square's identity, so that's how the translation files key them too.
+    const tooltipFr = square.tooltip ? tooltipsFr[square.tooltip] : undefined;
+    // Same authored-wins-over-regex rule as the English short form, one step down: an authored
+    // French short form wins, then a French name falls back to its own shortLabel(), and only a
+    // square with no French name at all ends up with no shortFr - never a shortFr built off the
+    // English name, which would silently mix the two languages in one cell.
+    const rawShortFr = shortNamesFr[square.name];
+    const shortFr =
+      rawShortFr !== undefined
+        ? bump(resolveFr(rawShortFr, drawn, optionsFr))
+        : nameFr !== undefined
+          ? shortLabel(nameFr)
+          : undefined;
     out.push({
       name,
       short: authored !== null ? bump(resolve(authored)) : shortLabel(name),
       tooltip: square.tooltip,
+      nameFr,
+      shortFr,
+      tooltipFr,
       region,
       color: colors.length > 0 ? colorFor(name, colors) : undefined,
     });

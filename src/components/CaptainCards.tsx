@@ -10,6 +10,7 @@ import {
   type MetricReading,
   type ScoutingReport,
 } from "../lib/scouting";
+import { useT } from "../lib/language";
 
 interface Props {
   reports: ScoutingReport[];
@@ -27,6 +28,7 @@ interface Props {
  * dressing two games up as a scouting read.
  */
 export function CaptainCards({ reports, profiles, setId }: Props) {
+  const t = useT();
   const [expanded, setExpanded] = useState<string | null>(null);
   const rated = reports.filter((r) => r.rated).length;
 
@@ -34,7 +36,7 @@ export function CaptainCards({ reports, profiles, setId }: Props) {
     return (
       <div className="panel">
         <p className="muted" style={{ margin: 0 }}>
-          No captains on this board yet.
+          {t("No captains on this board yet.", "Pas encore de capitaines sur ce plateau.")}
         </p>
       </div>
     );
@@ -43,11 +45,17 @@ export function CaptainCards({ reports, profiles, setId }: Props) {
   return (
     <div className="stack" style={{ gap: "0.6rem" }}>
       <div className="panel stack" style={{ gap: "0.2rem" }}>
-        <h3 style={{ margin: 0 }}>Captains</h3>
+        <h3 style={{ margin: 0 }}>{t("Captains", "Capitaines")}</h3>
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          {reports.length} on record, {rated} with enough matches to rank.
+          {t(
+            `${reports.length} on record, ${rated} with enough matches to rank.`,
+            `${reports.length} enregistrés, ${rated} avec assez de parties pour être classés.`
+          )}
           {rated < MIN_FIELD_SIZE &&
-            ` Ranking needs ${MIN_MATCHES_FOR_TRAITS} matches each, from ${MIN_FIELD_SIZE} captains. These are plain totals until then.`}
+            t(
+              ` Ranking needs ${MIN_MATCHES_FOR_TRAITS} matches each, from ${MIN_FIELD_SIZE} captains. These are plain totals until then.`,
+              ` Le classement nécessite ${MIN_MATCHES_FOR_TRAITS} parties chacun, à partir de ${MIN_FIELD_SIZE} capitaines. Ce ne sont que des totaux bruts jusque-là.`
+            )}
         </span>
       </div>
 
@@ -87,6 +95,7 @@ function Card({
   open: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   const name = profileName(profile) ?? report.nickname;
   const waiting = matchesUntilRated(report);
 
@@ -128,8 +137,8 @@ function Card({
           <div className="muted" style={{ fontSize: "0.7rem", fontVariantNumeric: "tabular-nums" }}>
             {report.wins}-{report.losses}
             {report.draws > 0 ? `-${report.draws}` : ""} · {report.matches}{" "}
-            {report.matches === 1 ? "match" : "matches"}
-            {!report.verified && " · guest"}
+            {report.matches === 1 ? t("match", "partie") : t("matches", "parties")}
+            {!report.verified && t(" · guest", " · invité")}
           </div>
         </div>
         <ConfidenceChip report={report} />
@@ -164,7 +173,10 @@ function Card({
 
       {waiting > 0 && (
         <span className="muted" style={{ fontSize: "0.68rem" }}>
-          {waiting} more {waiting === 1 ? "match" : "matches"} before this card can be read.
+          {t(
+            `${waiting} more ${waiting === 1 ? "match" : "matches"} before this card can be read.`,
+            `${waiting} ${waiting === 1 ? "partie" : "parties"} de plus avant que cette fiche puisse être lue.`
+          )}
         </span>
       )}
 
@@ -179,13 +191,15 @@ function Card({
         <div className="muted" style={{ fontSize: "0.7rem" }}>
           {report.favoriteSquare && (
             <div>
-              Favorite square: <strong style={{ color: "var(--text)" }}>{report.favoriteSquare.name}</strong>{" "}
+              {t("Favorite square:", "Case préférée :")}{" "}
+              <strong style={{ color: "var(--text)" }}>{report.favoriteSquare.name}</strong>{" "}
               ({report.favoriteSquare.count}×)
             </div>
           )}
           {report.favoriteOpener && (
             <div>
-              Opens with: <strong style={{ color: "var(--text)" }}>{report.favoriteOpener.name}</strong>{" "}
+              {t("Opens with:", "Ouvre avec :")}{" "}
+              <strong style={{ color: "var(--text)" }}>{report.favoriteOpener.name}</strong>{" "}
               ({report.favoriteOpener.count}×)
             </div>
           )}
@@ -197,7 +211,7 @@ function Card({
         style={{ alignSelf: "flex-start", fontSize: "0.7rem", padding: "0.15rem 0.45rem" }}
         aria-expanded={open}
       >
-        {open ? "Less" : "Full read"}
+        {open ? t("Less", "Réduire") : t("Full read", "Fiche complète")}
       </button>
 
       {open && <FullRead report={report} />}
@@ -205,15 +219,23 @@ function Card({
   );
 }
 
+const CONFIDENCE_LABEL: Record<ScoutingReport["confidence"], [string, string]> = {
+  unrated: ["Unrated", "Non classé"],
+  low: ["Low confidence", "Confiance faible"],
+  medium: ["Medium confidence", "Confiance moyenne"],
+  high: ["High confidence", "Confiance élevée"],
+};
+
 function ConfidenceChip({ report }: { report: ScoutingReport }) {
-  const label =
-    report.confidence === "unrated"
-      ? "Unrated"
-      : `${report.confidence[0].toUpperCase()}${report.confidence.slice(1)} confidence`;
+  const t = useT();
+  const label = t(...CONFIDENCE_LABEL[report.confidence]);
   const dim = report.confidence === "unrated" || report.confidence === "low";
   return (
     <span
-      title={`Based on ${report.matches} ${report.matches === 1 ? "match" : "matches"}`}
+      title={t(
+        `Based on ${report.matches} ${report.matches === 1 ? "match" : "matches"}`,
+        `Basé sur ${report.matches} ${report.matches === 1 ? "partie" : "parties"}`
+      )}
       style={{
         fontSize: "0.6rem",
         letterSpacing: "0.06em",
@@ -232,6 +254,7 @@ function ConfidenceChip({ report }: { report: ScoutingReport }) {
 
 /** Every metric, with the field comparison when there is one to make. */
 function FullRead({ report }: { report: ScoutingReport }) {
+  const t = useT();
   return (
     <div className="stack" style={{ gap: "0.35rem", borderTop: "1px solid var(--panel-border)", paddingTop: "0.4rem" }}>
       {METRICS.map((def) => {
@@ -245,15 +268,19 @@ function FullRead({ report }: { report: ScoutingReport }) {
             </div>
             <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.66rem" }}>
               <span className="muted">
-                {reading.rank !== null ? `#${reading.rank} of ${reading.rankOf}` : `n = ${reading.sample}`}
+                {reading.rank !== null
+                  ? t(`#${reading.rank} of ${reading.rankOf}`, `#${reading.rank} sur ${reading.rankOf}`)
+                  : `n = ${reading.sample}`}
               </span>
               {reading.field !== null && reading.edge !== null ? (
                 <span style={{ color: reading.edge >= 0 ? "var(--accent)" : "var(--text-dim)" }}>
-                  field {def.format(reading.field)} · {reading.edge >= 0 ? "+" : ""}
-                  {reading.edge.toFixed(1)} spread
+                  {t(
+                    `field ${def.format(reading.field)} · ${reading.edge >= 0 ? "+" : ""}${reading.edge.toFixed(1)} spread`,
+                    `terrain ${def.format(reading.field)} · ${reading.edge >= 0 ? "+" : ""}${reading.edge.toFixed(1)} écart`
+                  )}
                 </span>
               ) : (
-                <span className="muted">no field baseline yet</span>
+                <span className="muted">{t("no field baseline yet", "pas encore de référence de terrain")}</span>
               )}
             </div>
             <Bar reading={reading} def={def} />
@@ -262,7 +289,8 @@ function FullRead({ report }: { report: ScoutingReport }) {
       })}
       {report.supporting.length > 0 && (
         <span className="muted" style={{ fontSize: "0.68rem" }}>
-          Also above the field on: {report.supporting.map((t) => t.name).join(", ")}.
+          {t("Also above the field on:", "Aussi au-dessus du terrain sur :")}{" "}
+          {report.supporting.map((tr) => tr.name).join(", ")}.
         </span>
       )}
     </div>

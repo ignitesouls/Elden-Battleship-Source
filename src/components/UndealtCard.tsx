@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { clampToViewport, useFloatPos, type FloatPos } from "../hooks/useFloatPos";
 import type { Challenge } from "../lib/challenges";
+import { REGION_LABELS, REGION_ORDER, type Region } from "../lib/squareSets";
+import { useLanguage, useT } from "../lib/language";
 import "./UndealtCard.css";
 
 interface Props {
@@ -59,6 +61,8 @@ const DEFAULT_POS: FloatPos = { x: 0.015, y: 0.14 };
  */
 export function UndealtCard({ squares, pool, open, onClose }: Props) {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const lang = useLanguage();
+  const t = useT();
   // `place` is a drag and is remembered; `nudge` is this code putting the card back within reach and
   // deliberately isn't - see useFloatPos. `placed` is what was chosen, which is what a resize has to
   // aim at rather than at wherever the last correction left it.
@@ -74,6 +78,42 @@ export function UndealtCard({ squares, pool, open, onClose }: Props) {
   /** The chosen position, for the listener below - it is subscribed once and would read it stale. */
   const placedRef = useRef(placed);
   placedRef.current = placed;
+
+  /**
+   * The pack, split into region blocks in the order a run meets them.
+   *
+   * Same buckets and same colours the board groups by - a boss square carries its `region` from the
+   * set file (see battleshipChallenges.json) and it rides through undealtSquares untouched, so this
+   * is only re-sorting what is already tagged. Empty regions are dropped rather than shown at zero:
+   * a near-ceiling board leaves a dozen-odd bosses, so most regions never appear and a "Caelid (0)"
+   * row would be noise. Anything the set left untagged - nothing on the boss board today - still
+   * gets listed, in a trailing block with no heading.
+   */
+  const groups = useMemo(() => {
+    const byRegion = new Map<string, Challenge[]>();
+    for (const c of squares) {
+      const key = c.region ?? "";
+      const bucket = byRegion.get(key);
+      if (bucket) bucket.push(c);
+      else byRegion.set(key, [c]);
+    }
+    // Alphabetical within a block, so it reads as a reference list rather than replaying the shuffle.
+    const byTitle = (a: Challenge, b: Challenge) =>
+      (a.title ?? a.name).localeCompare(b.title ?? b.name);
+
+    const out: { key: string; region: Region | null; label: string | null; items: Challenge[] }[] = [];
+    for (const region of REGION_ORDER) {
+      const items = byRegion.get(region);
+      if (items?.length) {
+        out.push({ key: region, region, label: REGION_LABELS[region], items: [...items].sort(byTitle) });
+      }
+    }
+    const untagged = byRegion.get("");
+    if (untagged?.length) {
+      out.push({ key: "untagged", region: null, label: null, items: [...untagged].sort(byTitle) });
+    }
+    return out;
+  }, [squares]);
 
   // Once there is an element to measure, put it somewhere it can actually be grabbed. Covers a
   // position saved on a wider window, and the very first render at the default - a fraction picked
@@ -142,7 +182,7 @@ export function UndealtCard({ squares, pool, open, onClose }: Props) {
       // A region rather than a dialog: nothing here is modal, nothing is waiting on an answer, and
       // announcing it as a dialog would tell a screen reader the page behind it had stopped.
       role="region"
-      aria-label="Squares not on this board"
+      aria-label={t("Squares not on this board", "Cases non distribuées sur ce plateau")}
     >
       <div
         className="undealt-head"
@@ -151,9 +191,9 @@ export function UndealtCard({ squares, pool, open, onClose }: Props) {
         onPointerUp={end}
         onPointerCancel={end}
       >
-        <span className="undealt-title">Not on this board</span>
+        <span className="undealt-title">{t("Not on this board", "Pas sur ce plateau")}</span>
         <span className="undealt-sub">
-          {squares.length} of {pool}
+          {squares.length} {t("of", "sur")} {pool}
         </span>
         {/* stopPropagation because the header it sits in is the drag handle - without it, pressing
             close also starts moving the card. */}
@@ -163,23 +203,37 @@ export function UndealtCard({ squares, pool, open, onClose }: Props) {
           onClick={onClose}
           // Not "the bar below": the match screen's is under the canvas and the spectator page's is
           // over the boards, and naming the button is the one direction that is true on both.
-          title="Hide - reopen with the 'not dealt' button"
-          aria-label="Hide"
+          title={t("Hide - reopen with the 'not dealt' button", "Masquer - rouvrir avec le bouton « non distribuées »")}
+          aria-label={t("Hide", "Masquer")}
         >
           ✕
         </button>
       </div>
-      <ul className="undealt-list">
-        {squares.map((c) => (
-          // Keyed on the name because that is what a flat set's squares are unique by - the same
-          // property buildFlatBoard leans on to never deal one twice.
-          <li key={c.name} className="undealt-item">
-            {/* The full form, not the board's abbreviation: nothing here is sitting on a square you
-                could hover, so the card is the only place it gets spelled out. See squareTitle. */}
-            {c.title ?? c.name}
-          </li>
+      <div className="undealt-list">
+        {groups.map((g) => (
+          // The region tint is set once on the block, via the board's own .bg-region-* class (it
+          // only sets the --bg-region custom property), and the heading and every name under it read
+          // that property for their colour - so the card is tinted by the same rules the board is.
+          <div
+            key={g.key}
+            className={`undealt-group${g.region ? ` bg-region-${g.region}` : ""}`}
+          >
+            {g.label && <div className="undealt-group-head">{g.label}</div>}
+            <ul className="undealt-items">
+              {g.items.map((c) => (
+                // Keyed on the name because that is what a flat set's squares are unique by - the
+                // same property buildFlatBoard leans on to never deal one twice.
+                <li key={c.name} className="undealt-item">
+                  {/* The full form, not the board's abbreviation: nothing here is sitting on a
+                      square you could hover, so the card is the only place it gets spelled out.
+                      See squareTitle. */}
+                  {(lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name}
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>,
     document.body
   );
@@ -210,6 +264,7 @@ export function UndealtToggle({
   /** So each bar can keep its own type size - the dock, the sidebar and the spectate bar differ. */
   style?: CSSProperties;
 }) {
+  const t = useT();
   if (count === 0) return null;
 
   return (
@@ -220,10 +275,13 @@ export function UndealtToggle({
       // A state rather than an action, so it carries the accent and aria-pressed - the same shape as
       // the dead-water and rail toggles it sits beside.
       style={{ ...style, borderColor: open ? "var(--accent)" : style?.borderColor }}
-      title="Name the squares this board's deal left in the pack. Drag the card by its title to move it."
+      title={t(
+        "Name the squares this board's deal left in the pack. Drag the card by its title to move it.",
+        "Nomme les cases que la distribution de ce plateau a laissées dans le paquet. Faites glisser la carte par son titre pour la déplacer."
+      )}
       aria-pressed={open}
     >
-      {count} not dealt
+      {count} {t("not dealt", "non distribuées")}
     </button>
   );
 }

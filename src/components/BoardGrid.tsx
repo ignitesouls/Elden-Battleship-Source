@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { shipArtUrl } from "../lib/shipArt";
 import type { Region } from "../lib/challenges";
+import { useT } from "../lib/language";
 import "./BoardGrid.css";
 import { HitMark, MissMark, SunkMark, RuledOutMark, DeepMarkIcon } from "./HitMarkers";
 import { fitText, useTextFit, breakSegments } from "../lib/textFit";
@@ -302,6 +303,8 @@ export function BoardGrid({
   spotColor,
   growText = false,
 }: BoardGridProps) {
+  const t = useT();
+
   // Numbers keep the original "percentage of the viewport" shorthand; strings pass through as raw
   // CSS so a caller can subtract fixed page chrome with calc().
   const vhLimit = typeof maxVh === "number" ? `${maxVh}vh` : maxVh;
@@ -904,7 +907,7 @@ export function BoardGrid({
           ref={gridRef}
           className={`bg-grid${fill ? " bg-grid-fill" : ""}`}
           role="grid"
-          aria-label={label ?? "Game board"}
+          aria-label={label ?? t("Game board", "Plateau de jeu")}
           style={{
             gridTemplateColumns: `auto repeat(${boardSize}, 1fr)`,
             gridTemplateRows: `auto repeat(${boardSize}, 1fr)`,

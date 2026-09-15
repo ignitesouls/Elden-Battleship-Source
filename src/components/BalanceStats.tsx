@@ -9,6 +9,7 @@ import {
   type Summary,
   SLICE,
 } from "../lib/balanceStats";
+import { useT } from "../lib/language";
 
 /**
  * The balance model, scored against every match on record.
@@ -24,6 +25,7 @@ import {
  * and re-runs the balancer on each, which is real work and nobody wants it on every visit.
  */
 export function BalanceStats() {
+  const t = useT();
   const [stats, setStats] = useState<Stats | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<SweepProgress | null>(null);
@@ -49,22 +51,27 @@ export function BalanceStats() {
     if (res.ok) {
       setStats(res.stats);
       setPersisted(res.persisted);
-    } else setError(reasonText(res.reason));
+    } else setError(reasonText(res.reason, t));
   };
 
   return (
     <div className="panel stack" style={{ gap: "0.7rem", width: "100%" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem" }}>Board balance</h2>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>{t("Board balance", "Équilibre du plateau")}</h2>
         <button onClick={() => void run()} disabled={busy}>
-          {busy ? "Scoring..." : stats ? "Re-run" : "Score the archive"}
+          {busy
+            ? t("Scoring...", "Analyse en cours...")
+            : stats
+              ? t("Re-run", "Relancer")
+              : t("Score the archive", "Analyser les archives")}
         </button>
       </div>
 
       <p className="muted" style={{ margin: 0, fontSize: "0.76rem" }}>
-        Every archived match re-scored against the current model. A ship costs its slowest square, a
-        fleet is its ships sorted longest first, and the gap is the widest difference between two
-        fleets at the same rank. Lower is fairer.
+        {t(
+          "Every archived match re-scored against the current model. A ship costs its slowest square, a fleet is its ships sorted longest first, and the gap is the widest difference between two fleets at the same rank. Lower is fairer.",
+          "Chaque partie archivée est réévaluée avec le modèle actuel. Un navire coûte sa case la plus lente, une flotte est ses navires triés du plus long au plus court, et l'écart est la plus grande différence entre deux flottes au même rang. Plus c'est bas, plus c'est équitable."
+        )}
       </p>
 
       {error && (
@@ -76,21 +83,26 @@ export function BalanceStats() {
       {busy && (
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {progress
-            ? `Scored ${progress.done} of ${progress.total} matches` +
+            ? `${t("Scored", "Analysé")} ${progress.done} ${t("of", "sur")} ${progress.total} ${t("matches", "parties")}` +
               // Only said once it has actually narrowed, which is against the slice the walk STARTED
               // on rather than a literal. That literal was 3, and outlived the SLICE it was copied
               // from - once SLICE dropped to 1 the condition was true on every clean sweep, so a run
               // that never hit a 546 still reported having been narrowed.
-              (progress.slice < SLICE ? ` - narrowed to ${progress.slice} per request` : "")
-            : "Listing the archive..."}
+              (progress.slice < SLICE
+                ? ` ${t("- narrowed to", "- réduit à")} ${progress.slice} ${t("per request", "par requête")}`
+                : "")
+            : t("Listing the archive...", "Liste de l'archive en cours...")}
         </span>
       )}
 
       {persisted !== null && !busy && (
         <span className="muted" style={{ fontSize: "0.76rem" }}>
           {persisted === 0
-            ? "Every scored match already had a fairness record on its recap."
-            : `Backfilled ${persisted} ${persisted === 1 ? "recap" : "recaps"} that had no fairness record.`}
+            ? t(
+                "Every scored match already had a fairness record on its recap.",
+                "Chaque partie analysée avait déjà une mention d'équité sur son récapitulatif."
+              )
+            : `${t("Backfilled", "Complété pour")} ${persisted} ${persisted === 1 ? t("recap", "récapitulatif") : t("recaps", "récapitulatifs")} ${t("that had no fairness record.", "qui n'avaient aucune mention d'équité.")}`}
         </span>
       )}
 
@@ -99,19 +111,23 @@ export function BalanceStats() {
   );
 }
 
-function reasonText(reason: string): string {
-  if (reason.includes("not_admin")) return `The server refused - this account is not an administrator. (${reason})`;
-  if (reason.includes("not_signed_in")) return `The server refused - no signed-in session on the request. (${reason})`;
-  if (reason === "timed out") return "The sweep ran past two minutes and gave up.";
+function reasonText(reason: string, t: (en: string, fr: string) => string): string {
+  if (reason.includes("not_admin"))
+    return `${t("The server refused - this account is not an administrator.", "Le serveur a refusé - ce compte n'est pas administrateur.")} (${reason})`;
+  if (reason.includes("not_signed_in"))
+    return `${t("The server refused - no signed-in session on the request.", "Le serveur a refusé - aucune session connectée sur la requête.")} (${reason})`;
+  if (reason === "timed out")
+    return t("The sweep ran past two minutes and gave up.", "L'analyse a dépassé deux minutes et a abandonné.");
   // 546 is the platform killing a worker that ran past its CPU budget, which is a different problem
   // from anything this function decided, so it is named rather than left as a bare number.
   if (reason.startsWith("HTTP 546") || reason.toLowerCase().includes("cpu")) {
-    return `The worker ran out of CPU budget. The sweep is too big for one request. (${reason})`;
+    return `${t("The worker ran out of CPU budget. The sweep is too big for one request.", "Le worker a épuisé son budget CPU. L'analyse est trop volumineuse pour une seule requête.")} (${reason})`;
   }
-  return `Could not score the archive: ${reason}`;
+  return `${t("Could not score the archive:", "Impossible d'analyser les archives :")} ${reason}`;
 }
 
 function Report({ stats }: { stats: Stats }) {
+  const t = useT();
   const { counts, overall, balancerOfTheDay, stranded } = stats;
   const limit = stats.rankLimitSeconds;
   // Its own line, not the rank one. See FIND_GAP_SECONDS for why the two differ by a factor of two.
@@ -121,33 +137,37 @@ function Report({ stats }: { stats: Stats }) {
   return (
     <div className="stack" style={{ gap: "0.8rem" }}>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        {counts.scored} of {counts.matchesInArchive} matches scored
-        {rejectedTotal > 0 && ` - ${rejectedTotal} skipped`}
-        {stats.duration && ` - median match ${mmss(stats.duration.median)}`}
-        {" - thresholds "}
-        {mmss(limit)} rank / {mmss(findLimit)} find
+        {counts.scored} {t("of", "sur")} {counts.matchesInArchive} {t("matches scored", "parties analysées")}
+        {rejectedTotal > 0 && ` - ${rejectedTotal} ${t("skipped", "ignorées")}`}
+        {stats.duration && ` - ${t("median match", "partie médiane")} ${mmss(stats.duration.median)}`}
+        {" - "}
+        {t("thresholds", "seuils")}{" "}
+        {mmss(limit)} {t("rank", "rang")} / {mmss(findLimit)} {t("find", "découverte")}
       </span>
 
       {/* The headline: same deal, three balancers. */}
       <Section
-        title="Fairness gap"
-        note="The same boards, three ways. Dealt is the raw seeded deal. Played is what the match ran on. Rebalanced is what today's balancer would make of that same deal."
+        title={t("Fairness gap", "Écart d'équité")}
+        note={t(
+          "The same boards, three ways. Dealt is the raw seeded deal. Played is what the match ran on. Rebalanced is what today's balancer would make of that same deal.",
+          "Les mêmes plateaux, de trois façons. Distribué est le tirage brut d'origine. Joué est ce sur quoi la partie s'est déroulée. Rééquilibré est ce que l'équilibreur actuel ferait du même tirage."
+        )}
       >
         <table style={tableStyle}>
           <thead>
             <tr>
               <Th>&nbsp;</Th>
-              <Th right>Mean</Th>
-              <Th right>Median</Th>
+              <Th right>{t("Mean", "Moyenne")}</Th>
+              <Th right>{t("Median", "Médiane")}</Th>
               <Th right>p90</Th>
-              <Th right>Worst</Th>
-              <Th right>Over {mmss(limit)}</Th>
+              <Th right>{t("Worst", "Pire")}</Th>
+              <Th right>{t("Over", "Plus de")} {mmss(limit)}</Th>
             </tr>
           </thead>
           <tbody>
-            <Row label="Dealt" s={overall.dealt} />
-            <Row label="Played" s={overall.played} />
-            <Row label="Rebalanced" s={overall.rebalanced} strong />
+            <Row label={t("Dealt", "Distribué")} s={overall.dealt} />
+            <Row label={t("Played", "Joué")} s={overall.played} />
+            <Row label={t("Rebalanced", "Rééquilibré")} s={overall.rebalanced} strong />
           </tbody>
         </table>
       </Section>
@@ -158,58 +178,67 @@ function Report({ stats }: { stats: Stats }) {
         different limits under one "Over 5:00" column would silently misreport both.
       */}
       <Section
-        title="Find gap"
-        note="The same boards on when ships get FOUND rather than on when they get cleared - a hull is found through its cheapest square and cleared at its dearest. Over the archive the two ends of a ship correlate at r = 0.19, so this is not the table above said twice."
+        title={t("Find gap", "Écart de découverte")}
+        note={t(
+          "The same boards on when ships get FOUND rather than on when they get cleared - a hull is found through its cheapest square and cleared at its dearest. Over the archive the two ends of a ship correlate at r = 0.19, so this is not the table above said twice.",
+          "Les mêmes plateaux, mais sur le moment où les navires sont TROUVÉS plutôt que sur celui où ils sont éliminés - une coque est trouvée par sa case la moins chère et éliminée par sa plus chère. Sur l'ensemble des archives, les deux bouts d'un navire ne corrèlent qu'à r = 0.19, donc ceci n'est pas le tableau du haut redit deux fois."
+        )}
       >
         <table style={tableStyle}>
           <thead>
             <tr>
               <Th>&nbsp;</Th>
-              <Th right>Mean</Th>
-              <Th right>Median</Th>
+              <Th right>{t("Mean", "Moyenne")}</Th>
+              <Th right>{t("Median", "Médiane")}</Th>
               <Th right>p90</Th>
-              <Th right>Worst</Th>
-              <Th right>Over {mmss(findLimit)}</Th>
+              <Th right>{t("Worst", "Pire")}</Th>
+              <Th right>{t("Over", "Plus de")} {mmss(findLimit)}</Th>
             </tr>
           </thead>
           <tbody>
-            <Row label="Dealt" s={stats.overallFind.dealt} />
-            <Row label="Played" s={stats.overallFind.played} />
-            <Row label="Rebalanced" s={stats.overallFind.rebalanced} strong />
+            <Row label={t("Dealt", "Distribué")} s={stats.overallFind.dealt} />
+            <Row label={t("Played", "Joué")} s={stats.overallFind.played} />
+            <Row label={t("Rebalanced", "Rééquilibré")} s={stats.overallFind.rebalanced} strong />
           </tbody>
         </table>
       </Section>
 
       {/* The test the old model failed. */}
       <Section
-        title="Did the balancer of the day do anything?"
-        note="Matches split by whether the balancer actually ran. If these two rows look the same, it did nothing. That is what the old per-cell model looked like."
+        title={t("Did the balancer of the day do anything?", "L'équilibreur du jour a-t-il fait quelque chose ?")}
+        note={t(
+          "Matches split by whether the balancer actually ran. If these two rows look the same, it did nothing. That is what the old per-cell model looked like.",
+          "Parties séparées selon que l'équilibreur ait vraiment tourné ou non. Si ces deux lignes se ressemblent, il n'a rien fait. C'est à cela que ressemblait l'ancien modèle par case."
+        )}
       >
         <table style={tableStyle}>
           <thead>
             <tr>
               <Th>&nbsp;</Th>
-              <Th right>Matches</Th>
-              <Th right>Mean</Th>
-              <Th right>Median</Th>
-              <Th right>Over {mmss(limit)}</Th>
+              <Th right>{t("Matches", "Parties")}</Th>
+              <Th right>{t("Mean", "Moyenne")}</Th>
+              <Th right>{t("Median", "Médiane")}</Th>
+              <Th right>{t("Over", "Plus de")} {mmss(limit)}</Th>
             </tr>
           </thead>
           <tbody>
-            <SplitRow label="Balancer ran" bucket={balancerOfTheDay.balanced} />
-            <SplitRow label="Never balanced" bucket={balancerOfTheDay.unbalanced} />
+            <SplitRow label={t("Balancer ran", "Équilibreur exécuté")} bucket={balancerOfTheDay.balanced} />
+            <SplitRow label={t("Never balanced", "Jamais équilibré")} bucket={balancerOfTheDay.unbalanced} />
           </tbody>
         </table>
       </Section>
 
       <Section
-        title="Stranded fleets"
-        note="A fleet is stranded when one of its ships sits on a square that takes longer to beat than the match lasted. One side stranded and the other not is what makes a match unwinnable rather than merely long."
+        title={t("Stranded fleets", "Flottes échouées")}
+        note={t(
+          "A fleet is stranded when one of its ships sits on a square that takes longer to beat than the match lasted. One side stranded and the other not is what makes a match unwinnable rather than merely long.",
+          "Une flotte est échouée quand un de ses navires occupe une case plus longue à vaincre que la partie n'a duré. Un camp échoué et l'autre non, voilà ce qui rend une partie ingagnable plutôt que simplement longue."
+        )}
       >
         <table style={tableStyle}>
           <tbody>
             <tr>
-              <Td>Neither side stranded</Td>
+              <Td>{t("Neither side stranded", "Aucun camp échoué")}</Td>
               <Td right>{stranded.none}</Td>
               <Td right muted>
                 {share(stranded.none, counts.scored)}
@@ -217,7 +246,7 @@ function Report({ stats }: { stats: Stats }) {
             </tr>
             <tr>
               <Td>
-                <strong>One side only</strong>
+                <strong>{t("One side only", "Un seul camp")}</strong>
               </Td>
               <Td right>
                 <strong>{stranded.oneSided}</strong>
@@ -227,7 +256,7 @@ function Report({ stats }: { stats: Stats }) {
               </Td>
             </tr>
             <tr>
-              <Td>Both sides</Td>
+              <Td>{t("Both sides", "Les deux camps")}</Td>
               <Td right>{stranded.both}</Td>
               <Td right muted>
                 {share(stranded.both, counts.scored)}
@@ -237,20 +266,28 @@ function Report({ stats }: { stats: Stats }) {
         </table>
       </Section>
 
-      <Breakdown title="By board size" groups={stats.byBoardSize} suffix="" limit={limit} />
-      <Breakdown title="By team count" groups={stats.byTeamCount} suffix=" teams" limit={limit} />
-      <Breakdown title="By square set" groups={stats.bySquareSet} suffix="" limit={limit} />
+      <Breakdown title={t("By board size", "Par taille du plateau")} groups={stats.byBoardSize} suffix="" limit={limit} />
+      <Breakdown
+        title={t("By team count", "Par nombre d'équipes")}
+        groups={stats.byTeamCount}
+        suffix={` ${t("teams", "équipes")}`}
+        limit={limit}
+      />
+      <Breakdown title={t("By square set", "Par jeu de cases")} groups={stats.bySquareSet} suffix="" limit={limit} />
 
-      <Section title="Worst boards played" note="Sorted by the gap the match actually ran on.">
+      <Section
+        title={t("Worst boards played", "Pires plateaux joués")}
+        note={t("Sorted by the gap the match actually ran on.", "Triés par l'écart réel de la partie jouée.")}
+      >
         <table style={tableStyle}>
           <thead>
             <tr>
-              <Th>Match</Th>
-              <Th right>Size</Th>
-              <Th right>Teams</Th>
-              <Th right>Length</Th>
-              <Th right>Played</Th>
-              <Th right>Rebalanced</Th>
+              <Th>{t("Match", "Partie")}</Th>
+              <Th right>{t("Size", "Taille")}</Th>
+              <Th right>{t("Teams", "Équipes")}</Th>
+              <Th right>{t("Length", "Durée")}</Th>
+              <Th right>{t("Played", "Joué")}</Th>
+              <Th right>{t("Rebalanced", "Rééquilibré")}</Th>
             </tr>
           </thead>
           <tbody>
@@ -271,7 +308,10 @@ function Report({ stats }: { stats: Stats }) {
       </Section>
 
       {rejectedTotal > 0 && (
-        <Section title="Skipped" note="Matches the sweep would not score, and why.">
+        <Section
+          title={t("Skipped", "Ignorées")}
+          note={t("Matches the sweep would not score, and why.", "Parties que l'analyse n'a pas notées, et pourquoi.")}
+        >
           <div className="stack" style={{ gap: "0.15rem" }}>
             {Object.entries(counts.rejected)
               .sort((a, b) => b[1] - a[1])
@@ -298,6 +338,7 @@ function Breakdown({
   suffix: string;
   limit: number;
 }) {
+  const t = useT();
   const keys = Object.keys(groups).sort();
   if (keys.length < 2) return null; // one bucket is the overall table again
   return (
@@ -306,10 +347,10 @@ function Breakdown({
         <thead>
           <tr>
             <Th>&nbsp;</Th>
-            <Th right>Matches</Th>
-            <Th right>Played</Th>
-            <Th right>Rebalanced</Th>
-            <Th right>Over {mmss(limit)}</Th>
+            <Th right>{t("Matches", "Parties")}</Th>
+            <Th right>{t("Played", "Joué")}</Th>
+            <Th right>{t("Rebalanced", "Rééquilibré")}</Th>
+            <Th right>{t("Over", "Plus de")} {mmss(limit)}</Th>
           </tr>
         </thead>
         <tbody>

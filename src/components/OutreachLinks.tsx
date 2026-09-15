@@ -1,4 +1,5 @@
 import { PatchesMark } from "./HitMarkers";
+import { useT } from "../lib/language";
 // Patches' own colours live in BoardGrid.css alongside the rest of the board markers. Imported here
 // for the same reason the overlay pages import it: the top bar is on menu screens that never mount
 // a board, and the drawing without its stylesheet is a stack of black paths.
@@ -47,6 +48,7 @@ const LOGO = `${import.meta.env.BASE_URL}ignite_logo.png`;
  * of a battle, and a link that navigates away from a live match is a hazard.
  */
 export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
+  const t = useT();
   return (
     <div className="tb-outreach">
       {/* Plain anchors and a new tab, all three: this is on every screen now, including one with a
@@ -57,23 +59,27 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
         href="#/support"
         target="_blank"
         rel="noreferrer"
-        title="Report a bug. (Opens in a new tab)"
+        title={t("Report a bug. (Opens in a new tab)", "Signaler un bug. (Ouvre un nouvel onglet)")}
       >
         <span className="tb-out-icon" aria-hidden="true">
           <BugMark />
         </span>
-        <span className="tb-label">Report a bug</span>
+        <span className="tb-label">{t("Report a bug", "Signaler un bug")}</span>
       </a>
 
       {!inLiveMatch && (
         <>
           {/* An ordinary in-app link, not a new tab: this one IS the site, and the three around it
               are only opened in tabs because they lead away from it. */}
-          <a className="tb-item tb-out tb-out-obs" href="#/streaming" title="Set up your stream overlay and auto-marking">
+          <a
+            className="tb-item tb-out tb-out-obs"
+            href="#/streaming"
+            title={t("Set up your stream overlay and auto-marking", "Configurez votre overlay de diffusion et le marquage automatique")}
+          >
             <span className="tb-out-icon" aria-hidden="true">
               <CameraMark />
             </span>
-            <span className="tb-label">OBS &amp; auto-marking</span>
+            <span className="tb-label">{t("OBS & auto-marking", "OBS et marquage automatique")}</span>
           </a>
 
           <a
@@ -81,7 +87,7 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
             href="https://github.com/kcbrazos"
             target="_blank"
             rel="noreferrer"
-            title="Like the game? Let me know!"
+            title={t("Like the game? Let me know!", "Vous aimez le jeu ? Faites-le-moi savoir !")}
           >
             {/* Patches, because the greeting is the point and he is already the site's drawing of
                 somebody waving at you out of the water. The water tile behind him is not decoration
@@ -89,7 +95,7 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
             <span className="tb-out-icon tb-out-water" aria-hidden="true">
               <PatchesMark />
             </span>
-            <span className="tb-label">Say hello</span>
+            <span className="tb-label">{t("Say hello", "Dire bonjour")}</span>
           </a>
 
           <a
@@ -98,7 +104,7 @@ export function OutreachLinks({ inLiveMatch }: { inLiveMatch: boolean }) {
             // noreferrer alongside noopener since this one leaves for a third party entirely.
             target="_blank"
             rel="noopener noreferrer"
-            title="Join Ignite on Discord"
+            title={t("Join Ignite on Discord", "Rejoignez Ignite sur Discord")}
           >
             <span className="tb-out-icon" aria-hidden="true">
               <img src={LOGO} alt="" width={20} height={20} />

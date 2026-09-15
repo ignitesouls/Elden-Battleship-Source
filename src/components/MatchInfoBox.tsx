@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatRoomCode } from "../lib/roomCode";
+import { useT } from "../lib/language";
 
 interface Props {
   roomCode: string;
@@ -19,12 +20,22 @@ interface Props {
 }
 
 /** What the marker says, in the two places it is drawn. Kept in one place so they cannot drift. */
-const PRACTICE_HINT = "Practice match - nothing here reaches the leaderboard, careers or records.";
+function practiceHint(t: (en: string, fr: string) => string): string {
+  return t(
+    "Practice match - nothing here reaches the leaderboard, careers or records.",
+    "Partie d'entraînement - rien ici n'est pris en compte pour le classement, les carrières ou les records."
+  );
+}
 
 /** The rejoin code's warning, which the bar form has no room to print. Kept here so both say it. */
-const REJOIN_HINT =
-  "Copy the rejoin code now. It's what gets your fleet back on another device, or after you " +
-  "clear your cache. Signing in with Twitch does the same for you.";
+function rejoinHint(t: (en: string, fr: string) => string): string {
+  return t(
+    "Copy the rejoin code now. It's what gets your fleet back on another device, or after you " +
+      "clear your cache. Signing in with Twitch does the same for you.",
+    "Copiez le code de reconnexion maintenant. C'est ce qui récupère votre flotte sur un autre appareil, ou " +
+      "après avoir vidé votre cache. Se connecter avec Twitch fait la même chose pour vous."
+  );
+}
 
 /**
  * Room code, randomizer seed and rejoin code, parked at the bottom of the match screen.
@@ -41,6 +52,9 @@ const REJOIN_HINT =
  * it has to be somewhere you'll be sitting for the next twenty minutes.
  */
 export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: Props) {
+  const t = useT();
+  const PRACTICE_HINT = practiceHint(t);
+  const REJOIN_HINT = rejoinHint(t);
   const [copied, setCopied] = useState<string | null>(null);
 
   function copy(label: string, value: string) {
@@ -64,7 +78,7 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: P
         type="button"
         className={`match-info-chip${accent ? " match-info-chip-accent" : ""}`}
         onClick={() => copy(key, value)}
-        title={title ?? `Copy ${label.toLowerCase()}`}
+        title={title ?? t(`Copy ${label.toLowerCase()}`, `Copier ${label.toLowerCase()}`)}
       >
         <span className="match-info-chip-label">{label}</span>
         <code className="match-info-chip-value">{value}</code>
@@ -80,12 +94,12 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: P
             next hour is worth, and a bar is read left to right. */}
         {practice && (
           <span className="match-info-practice" title={PRACTICE_HINT}>
-            Practice
+            {t("Practice", "Entraînement")}
           </span>
         )}
-        {chip("room", "Room", formatRoomCode(roomCode), true)}
-        {seed && chip("seed", "Seed", seed, false)}
-        {rejoinCode && chip("rejoin", "Rejoin", rejoinCode, true, REJOIN_HINT)}
+        {chip("room", t("Room", "Salle"), formatRoomCode(roomCode), true)}
+        {seed && chip("seed", t("Seed", "Graine"), seed, false)}
+        {rejoinCode && chip("rejoin", t("Rejoin", "Reconnexion"), rejoinCode, true, REJOIN_HINT)}
       </div>
     );
   }
@@ -113,19 +127,19 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: P
         <span style={{ fontSize: "0.68rem", lineHeight: 1.3, color: "var(--hit)" }}>{PRACTICE_HINT}</span>
       )}
       <div style={row}>
-        <span className="muted" style={{ fontSize: "0.7rem" }}>Room</span>
+        <span className="muted" style={{ fontSize: "0.7rem" }}>{t("Room", "Salle")}</span>
         <code style={value}>{formatRoomCode(roomCode)}</code>
         <button style={btn} onClick={() => copy("room", formatRoomCode(roomCode))}>
-          {copied === "room" ? "✓" : "Copy"}
+          {copied === "room" ? "✓" : t("Copy", "Copier")}
         </button>
       </div>
 
       {seed && (
         <div style={row}>
-          <span className="muted" style={{ fontSize: "0.7rem" }}>Seed</span>
+          <span className="muted" style={{ fontSize: "0.7rem" }}>{t("Seed", "Graine")}</span>
           <code style={{ ...value, color: "var(--text)" }}>{seed}</code>
           <button style={btn} onClick={() => copy("seed", seed)}>
-            {copied === "seed" ? "✓" : "Copy"}
+            {copied === "seed" ? "✓" : t("Copy", "Copier")}
           </button>
         </div>
       )}
@@ -133,10 +147,10 @@ export function MatchInfoBox({ roomCode, seed, rejoinCode, inline, practice }: P
       {rejoinCode && (
         <>
           <div style={row}>
-            <span className="muted" style={{ fontSize: "0.7rem" }}>Rejoin</span>
+            <span className="muted" style={{ fontSize: "0.7rem" }}>{t("Rejoin", "Reconnexion")}</span>
             <code style={value}>{rejoinCode}</code>
             <button style={btn} onClick={() => copy("rejoin", rejoinCode)}>
-              {copied === "rejoin" ? "✓" : "Copy"}
+              {copied === "rejoin" ? "✓" : t("Copy", "Copier")}
             </button>
           </div>
           <span className="muted" style={{ fontSize: "0.62rem", lineHeight: 1.3 }}>{REJOIN_HINT}</span>

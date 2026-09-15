@@ -16,8 +16,10 @@ import {
 } from "../lib/careerStats";
 import { SiteFooter } from "../components/SiteFooter";
 import { squarePace, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
+import { useT } from "../lib/language";
 
 export function PlayerStats() {
+  const t = useT();
   const { key: rawKey } = useParams<{ key: string }>();
   const playerKey = decodeURIComponent(rawKey ?? "");
   // Careers are keyed on user id for signed-in captains and on nickname for guests, so this only
@@ -94,7 +96,7 @@ export function PlayerStats() {
     };
   }, [rows, playerKey]);
 
-  if (rows === null) return <LoadingScreen>Loading the log...</LoadingScreen>;
+  if (rows === null) return <LoadingScreen>{t("Loading the log...", "Chargement du journal...")}</LoadingScreen>;
   /**
    * Nobody has played a match under this key yet.
    *
@@ -120,16 +122,16 @@ export function PlayerStats() {
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ margin: 0, fontSize: "1.5rem" }}>
-              {isMe ? accountName(viewer) ?? "Your record" : "No record found"}
+              {isMe ? accountName(viewer) ?? t("Your record", "Votre historique") : t("No record found", "Aucun historique trouvé")}
             </h1>
             <span className="muted" style={{ fontSize: "0.82rem" }}>
               {isMe
-                ? "No matches yet. Your record starts with the first one."
-                : "No matches under this captain."}
+                ? t("No matches yet. Your record starts with the first one.", "Aucun match pour l'instant. Votre historique commence avec le premier.")
+                : t("No matches under this captain.", "Aucun match sous ce capitaine.")}
             </span>
           </div>
           <Link to="/leaderboard" style={{ fontSize: "0.8rem" }}>
-            Leaderboard
+            {t("Leaderboard", "Classement")}
           </Link>
         </div>
 
@@ -168,30 +170,30 @@ export function PlayerStats() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ margin: 0, fontSize: "1.5rem" }}>{profileName(profile) ?? career.nickname}</h1>
           <span className="muted" style={{ fontSize: "0.82rem" }}>
-            {career.wins}W - {career.losses}L{career.draws > 0 ? ` - ${career.draws}D` : ""} ·{" "}
-            {Math.round(career.winRate * 100)}% win rate · {career.matches} matches
-            {!career.verified && " · guest record"}
+            {career.wins}{t("W", "V")} - {career.losses}{t("L", "D")}{career.draws > 0 ? ` - ${career.draws}${t("D", "N")}` : ""} ·{" "}
+            {Math.round(career.winRate * 100)}% {t("win rate", "taux de victoire")} · {career.matches} {t("matches", "matchs")}
+            {!career.verified && ` · ${t("guest record", "historique invité")}`}
           </span>
           {/* Named explicitly: these numbers are one board's, and the same captain will have a
               different record on the other. */}
           <div className="muted" style={{ fontSize: "0.72rem" }}>
-            {squareSet(shownSet).label} board
+            {squareSet(shownSet).label} {t("board", "plateau")}
           </div>
         </div>
         <Link to="/leaderboard" style={{ fontSize: "0.8rem" }}>
-          Leaderboard
+          {t("Leaderboard", "Classement")}
         </Link>
       </div>
 
       <div className="panel stack" style={{ gap: "0.4rem" }}>
-        <h3 style={{ margin: 0 }}>Career</h3>
+        <h3 style={{ margin: 0 }}>{t("Career", "Carrière")}</h3>
         <div className="row" style={{ gap: "0.6rem", flexWrap: "wrap" }}>
-          <Stat label="Shots fired" value={career.shots} />
-          <Stat label="Hits" value={career.hits} color="var(--hit)" />
-          <Stat label="Misses" value={career.misses} color="var(--text-dim)" />
-          <Stat label="Ships sunk" value={career.sunk} color="var(--sunk)" />
-          <Stat label="Accuracy" value={`${Math.round(career.accuracy * 100)}%`} />
-          <Stat label="Ships lost" value={career.shipsLost} />
+          <Stat label={t("Shots fired", "Tirs effectués")} value={career.shots} />
+          <Stat label={t("Hits", "Touchés")} value={career.hits} color="var(--hit)" />
+          <Stat label={t("Misses", "Manqués")} value={career.misses} color="var(--text-dim)" />
+          <Stat label={t("Ships sunk", "Navires coulés")} value={career.sunk} color="var(--sunk)" />
+          <Stat label={t("Accuracy", "Précision")} value={`${Math.round(career.accuracy * 100)}%`} />
+          <Stat label={t("Ships lost", "Navires perdus")} value={career.shipsLost} />
           {/*
             Both measures, labelled as such, the way the almanac's pace table shows them.
             "Square pace" used to sit here alone on the MEAN, which is the leaderboard's name for
@@ -201,24 +203,30 @@ export function PlayerStats() {
           */}
           {myMedianPace !== null && (
             <Stat
-              label="Square pace (median)"
+              label={t("Square pace (median)", "Rythme par case (médian)")}
               value={fmtTime(myMedianPace)}
-              title={`The time from one square falling to the next, as a median. The same number the leaderboard ranks on. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`}
+              title={t(
+                `The time from one square falling to the next, as a median. The same number the leaderboard ranks on. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
+                `Le temps entre deux cases, en médiane. Le même chiffre que celui utilisé pour le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître.`
+              )}
             />
           )}
           {myPace && (
             <Stat
-              label="Square pace (average)"
+              label={t("Square pace (average)", "Rythme par case (moyen)")}
               value={fmtTime(myPace.secondsPerShot)}
-              title="The same figure as a mean, worked out inside each match and then averaged across matches. It counts every gap, including the pair a duo boss fills at once."
+              title={t(
+                "The same figure as a mean, worked out inside each match and then averaged across matches. It counts every gap, including the pair a duo boss fills at once.",
+                "Le même chiffre en moyenne, calculé match par match puis moyenné entre les matchs. Il compte chaque intervalle, y compris la paire qu'un boss en duo remplit d'un coup."
+              )}
             />
           )}
           {myPace?.bestMatch && (
             <Stat
-              label="Best match"
+              label={t("Best match", "Meilleur match")}
               value={fmtTime(myPace.bestMatch.seconds)}
               color="var(--accent)"
-              title="Their fastest single match, by that average."
+              title={t("Their fastest single match, by that average.", "Leur match le plus rapide, selon cette moyenne.")}
             />
           )}
         </div>
@@ -226,9 +234,9 @@ export function PlayerStats() {
 
       {bestKills.length > 0 && (
         <div className="panel stack" style={{ gap: "0.25rem" }}>
-          <h3 style={{ margin: 0 }}>Personal bests</h3>
+          <h3 style={{ margin: 0 }}>{t("Personal bests", "Meilleurs temps")}</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Each timed from their previous square. Misses count.
+            {t("Each timed from their previous square. Misses count.", "Chacun chronométré depuis la case précédente. Les tirs manqués comptent.")}
           </span>
           {bestKills.map((k, i) => (
             <div
@@ -238,10 +246,10 @@ export function PlayerStats() {
             >
               <span style={{ minWidth: 0 }}>
                 <span className="muted">{i + 1}. </span>
-                <strong>{k.challenge ?? "Unknown square"}</strong>
-                {k.previous && <span className="muted"> · after {k.previous}</span>}
-                {k.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · sank a ship</span>}
-                {k.result === "hit" && <span style={{ color: "var(--hit)" }}> · hit</span>}
+                <strong>{k.challenge ?? t("Unknown square", "Case inconnue")}</strong>
+                {k.previous && <span className="muted"> · {t("after", "après")} {k.previous}</span>}
+                {k.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · {t("sank a ship", "a coulé un navire")}</span>}
+                {k.result === "hit" && <span style={{ color: "var(--hit)" }}> · {t("hit", "touché")}</span>}
               </span>
               <strong style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums" }}>{fmtTime(k.seconds)}</strong>
             </div>
@@ -251,15 +259,17 @@ export function PlayerStats() {
 
       {killLog.length > 0 && (
         <div className="panel stack" style={{ gap: "0.25rem" }}>
-          <h3 style={{ margin: 0 }}>Square log</h3>
+          <h3 style={{ margin: 0 }}>{t("Square log", "Journal des cases")}</h3>
           {/*
             Says which clock it is reading. These times are POSITIONS in a match - when each square
             fell - while the personal bests directly above are DURATIONS, how long each fight took.
             Identical m:ss either way, opposite meanings, and nothing on screen used to separate them.
           */}
           <span className="muted" style={{ fontSize: "0.7rem" }}>
-            Every square taken, most recent match first. The time is how far into that match the
-            square fell, not how long the fight took.
+            {t(
+              "Every square taken, most recent match first. The time is how far into that match the square fell, not how long the fight took.",
+              "Chaque case prise, match le plus récent en premier. Le temps indique le moment du match où la case est tombée, pas la durée du combat."
+            )}
           </span>
           <div style={{ maxHeight: "18rem", overflowY: "auto" }} className="stack">
             {killLog.map((k, i) => (
@@ -275,9 +285,9 @@ export function PlayerStats() {
                         k.result === "sunk" ? "var(--sunk)" : k.result === "hit" ? "var(--hit)" : "var(--text-dim)",
                     }}
                   >
-                    {k.result === "sunk" ? "SANK" : k.result === "hit" ? "HIT" : "miss"}
+                    {k.result === "sunk" ? t("SANK", "COULÉ") : k.result === "hit" ? t("HIT", "TOUCHÉ") : t("miss", "manqué")}
                   </strong>
-                  <span> {k.challenge ?? "Unknown square"}</span>
+                  <span> {k.challenge ?? t("Unknown square", "Case inconnue")}</span>
                 </span>
                 <span className="muted" style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                   {fmtTime(k.seconds)}
@@ -293,27 +303,32 @@ export function PlayerStats() {
           {nemesis && (
             <div className="panel stack" style={{ flex: 1, minWidth: 0, gap: "0.2rem" }}>
               <span className="muted" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                ☠ Nemesis
+                ☠ {t("Nemesis", "Némésis")}
               </span>
               <Link to={captainLink(nemesis.key)} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                 {nemesis.nickname}
               </Link>
               <span className="muted" style={{ fontSize: "0.78rem" }}>
-                You've lost {nemesis.losses} of {nemesis.played} with them in the game, with you or against you - you win{" "}
-                {Math.round(nemesis.winRate * 100)}%
+                {t(
+                  `You've lost ${nemesis.losses} of ${nemesis.played} with them in the game, with you or against you - you win ${Math.round(nemesis.winRate * 100)}%`,
+                  `Vous avez perdu ${nemesis.losses} de vos ${nemesis.played} parties avec eux, avec vous ou contre vous - vous gagnez ${Math.round(nemesis.winRate * 100)}%`
+                )}
               </span>
             </div>
           )}
           {bestMate && (
             <div className="panel stack" style={{ flex: 1, minWidth: 0, gap: "0.2rem" }}>
               <span className="muted" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                ⚓ Best shipmate
+                ⚓ {t("Best shipmate", "Meilleur coéquipier")}
               </span>
               <Link to={captainLink(bestMate.key)} style={{ fontSize: "1.05rem", fontWeight: 700 }}>
                 {bestMate.nickname}
               </Link>
               <span className="muted" style={{ fontSize: "0.78rem" }}>
-                {bestMate.wins} wins together from {bestMate.played} - {Math.round(bestMate.winRate * 100)}%
+                {t(
+                  `${bestMate.wins} wins together from ${bestMate.played} - ${Math.round(bestMate.winRate * 100)}%`,
+                  `${bestMate.wins} victoires ensemble sur ${bestMate.played} - ${Math.round(bestMate.winRate * 100)}%`
+                )}
               </span>
             </div>
           )}
@@ -322,7 +337,7 @@ export function PlayerStats() {
 
       {awardList.length > 0 && (
         <div className="panel stack" style={{ gap: "0.3rem" }}>
-          <h3 style={{ margin: 0 }}>Honors</h3>
+          <h3 style={{ margin: 0 }}>{t("Honors", "Distinctions")}</h3>
           {awardList.map(([title, count]) => (
             <div key={title} className="row" style={{ justifyContent: "space-between", fontSize: "0.84rem" }}>
               <span>{title}</span>
@@ -334,15 +349,15 @@ export function PlayerStats() {
 
       {h2h.length > 0 && (
         <div className="panel stack" style={{ gap: "0.3rem" }}>
-          <h3 style={{ margin: 0 }}>Head to head</h3>
+          <h3 style={{ margin: 0 }}>{t("Head to head", "Face à face")}</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
               <thead>
                 <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem" }}>Opponent</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Played</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>W-L</th>
-                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>Win %</th>
+                  <th style={{ textAlign: "left", fontWeight: 500, padding: "0.25rem 0.4rem" }}>{t("Opponent", "Adversaire")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>{t("Played", "Joués")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>{t("W-L", "V-D")}</th>
+                  <th style={{ fontWeight: 500, padding: "0.25rem 0.4rem" }}>{t("Win %", "% Victoires")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,7 +381,7 @@ export function PlayerStats() {
 
       {recent.length > 0 && (
         <div className="panel stack" style={{ gap: "0.25rem" }}>
-          <h3 style={{ margin: 0 }}>Recent matches</h3>
+          <h3 style={{ margin: 0 }}>{t("Recent matches", "Matchs récents")}</h3>
           {recent.map((r) => (
             <div
               key={r.match_key}
@@ -375,11 +390,14 @@ export function PlayerStats() {
             >
               <span style={{ minWidth: 0 }}>
                 <strong style={{ color: r.draw ? "var(--text-dim)" : r.won ? "var(--accent)" : "var(--danger)" }}>
-                  {r.draw ? "DRAW" : r.won ? "WIN" : "LOSS"}
+                  {r.draw ? t("DRAW", "NUL") : r.won ? t("WIN", "VICTOIRE") : t("LOSS", "DÉFAITE")}
                 </strong>
                 <span className="muted">
                   {" "}
-                  · {r.shots} shots, {r.hits} hits, {r.sunk} sunk
+                  · {t(
+                    `${r.shots} shots, ${r.hits} hits, ${r.sunk} sunk`,
+                    `${r.shots} tirs, ${r.hits} touchés, ${r.sunk} coulés`
+                  )}
                 </span>
               </span>
               <span className="muted" style={{ whiteSpace: "nowrap", fontSize: "0.72rem" }}>

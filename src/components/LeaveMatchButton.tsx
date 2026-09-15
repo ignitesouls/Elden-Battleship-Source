@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { leaveRoom } from "../lib/rooms";
 import { clearActiveRoom, clearStoredPlayerId } from "../lib/playerSession";
+import { useT } from "../lib/language";
 
 interface Props {
   playerId: string;
@@ -27,14 +28,19 @@ export function LeaveMatchButton({ playerId, roomCode, inMatch = true, label, sp
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   async function handleLeave() {
     const warning = spectating
-      ? "Stop spectating and leave this room?"
+      ? t("Stop spectating and leave this room?", "Arrêter de regarder et quitter cette partie ?")
       : inMatch
-        ? "Leave this match? You give up your seat and the fight carries on without you. Rejoining " +
-          "puts you back as a new player, and your fleet stays where it is."
-        : "Leave this room?";
+        ? t(
+            "Leave this match? You give up your seat and the fight carries on without you. Rejoining " +
+              "puts you back as a new player, and your fleet stays where it is.",
+            "Quitter ce combat ? Vous abandonnez votre place et le combat continue sans vous. En " +
+              "revenant, vous serez un nouveau joueur, mais votre flotte restera en place."
+          )
+        : t("Leave this room?", "Quitter cette partie ?");
     if (!window.confirm(warning)) return;
 
     setBusy(true);
@@ -53,7 +59,9 @@ export function LeaveMatchButton({ playerId, roomCode, inMatch = true, label, sp
   return (
     <>
       <button disabled={busy} onClick={() => void handleLeave()} style={{ width: "100%", fontSize: "0.8rem" }}>
-        {busy ? "Leaving..." : (label ?? (spectating ? "Leave room" : "Leave match"))}
+        {busy
+          ? t("Leaving...", "Départ en cours...")
+          : (label ?? (spectating ? t("Leave room", "Quitter la partie") : t("Leave match", "Quitter le combat")))}
       </button>
       {error && <div className="error-text">{error}</div>}
     </>

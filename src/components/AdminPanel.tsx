@@ -27,6 +27,7 @@ import {
 import { formatRoomCode } from "../lib/roomCode";
 import { durationSeconds } from "../lib/matchName";
 import { teamName, teamHex } from "../lib/teamColors";
+import { useT } from "../lib/language";
 import type { MatchReportRow } from "../types/battleship";
 
 interface Props {
@@ -56,6 +57,7 @@ interface Props {
  * decides whether to offer controls that would otherwise fail.
  */
 export function AdminPanel({ matches, total = null, onShowMore, loadingMore, revision = 0, onChanged }: Props) {
+  const t = useT();
   const { isAdmin, isOwner, loading } = useAdminStatus();
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
@@ -101,9 +103,9 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
   return (
     <div className="panel stack" style={{ gap: "0.7rem", borderColor: "var(--danger)", width: "100%" }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ margin: 0, color: "var(--danger)" }}>Admin</h3>
+        <h3 style={{ margin: 0, color: "var(--danger)" }}>{t("Admin", "Admin")}</h3>
         <span className="muted" style={{ fontSize: "0.72rem" }}>
-          {isOwner ? "Owner" : "Administrator"}
+          {isOwner ? t("Owner", "Propriétaire") : t("Administrator", "Administrateur")}
         </span>
       </div>
 
@@ -114,29 +116,34 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
         {/* Both numbers, when they differ: the second is what exists, the first is what the buttons
             below can currently reach. One number alone would read as the whole archive. */}
         <strong style={{ fontSize: "0.82rem" }}>
-          Archived matches (
-          {total !== null && total > matches.length ? `${matches.length} of ${total}` : matches.length})
+          {t("Archived matches", "Parties archivées")} (
+          {total !== null && total > matches.length
+            ? t(`${matches.length} of ${total}`, `${matches.length} sur ${total}`)
+            : matches.length}
+          )
         </strong>
-        {matches.length === 0 && <span className="muted" style={{ fontSize: "0.78rem" }}>Nothing on record.</span>}
+        {matches.length === 0 && (
+          <span className="muted" style={{ fontSize: "0.78rem" }}>{t("Nothing on record.", "Rien à afficher.")}</span>
+        )}
         {matches.map((m) => (
           <div key={m.id} className="stack" style={{ gap: "0.25rem" }}>
             <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
               <span style={{ minWidth: 0, flex: 1 }}>
                 <strong style={{ color: m.winner_team !== null ? teamHex(m.winner_team) : "var(--text-dim)" }}>
-                  {m.winner_team !== null ? teamName(m.winner_team) : "Draw"}
+                  {m.winner_team !== null ? teamName(m.winner_team) : t("Draw", "Match nul")}
                 </strong>
                 <span className="muted">
                   {" "}
-                  · {formatRoomCode(m.room_code)} · {m.duration ?? "--:--"} · {m.total_shots} shots ·{" "}
+                  · {formatRoomCode(m.room_code)} · {m.duration ?? "--:--"} · {m.total_shots} {t("shots", "tirs")} ·{" "}
                   {new Date(m.finished_at).toLocaleString()}
                 </span>
                 {/* The list is otherwise unchanged by voiding, so without this the button below is
                     the only thing on the page that knows, and it reads as an offer rather than a
                     state. */}
                 {m.practice ? (
-                  <strong style={{ color: "var(--hit)" }}> · PRACTICE</strong>
+                  <strong style={{ color: "var(--hit)" }}> · {t("PRACTICE", "ENTRAÎNEMENT")}</strong>
                 ) : (
-                  m.voided && <strong style={{ color: "var(--danger)" }}> · VOIDED</strong>
+                  m.voided && <strong style={{ color: "var(--danger)" }}> · {t("VOIDED", "ANNULÉ")}</strong>
                 )}
               </span>
               {/* Opens the crew list for this match. Deleting a whole game because one name on it
@@ -147,7 +154,7 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                 style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none" }}
                 onClick={() => setOpenMatch((k) => (k === m.match_key ? null : m.match_key))}
               >
-                {openMatch === m.match_key ? "Hide crew" : "Crew"}
+                {openMatch === m.match_key ? t("Hide crew", "Masquer l'équipage") : t("Crew", "Équipage")}
               </button>
               {/* Finer still than the crew list: one square somebody marked. A mismarked square
                   can hold a timing record outright, and this is the only thing that can take it
@@ -157,7 +164,7 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                 style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none" }}
                 onClick={() => setOpenShots((k) => (k === m.match_key ? null : m.match_key))}
               >
-                {openShots === m.match_key ? "Hide shots" : "Shots"}
+                {openShots === m.match_key ? t("Hide shots", "Masquer les tirs") : t("Shots", "Tirs")}
               </button>
               {/* Sits between "Crew" and "Delete" in force, and is the only one of the three that
                   can be taken back. Every row stays exactly where it is; the site stops counting
@@ -171,7 +178,10 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                 disabled={busy || m.practice}
                 title={
                   m.practice
-                    ? "Declared a practice match before it was played. That can't be taken back."
+                    ? t(
+                        "Declared a practice match before it was played. That can't be taken back.",
+                        "Déclarée partie d'entraînement avant d'être jouée. Impossible à annuler."
+                      )
                     : undefined
                 }
                 style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none", opacity: m.practice ? 0.4 : undefined }}
@@ -181,12 +191,15 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                     onChanged();
                     const where = formatRoomCode(m.room_code);
                     return m.voided
-                      ? `${where} counts again.`
-                      : `Voided ${where} - it stays in the archive and counts for nothing.`;
+                      ? t(`${where} counts again.`, `${where} compte à nouveau.`)
+                      : t(
+                          `Voided ${where} - it stays in the archive and counts for nothing.`,
+                          `${where} annulée - elle reste dans les archives mais ne compte plus.`
+                        );
                   })
                 }
               >
-                {m.voided ? "Restore" : "Void"}
+                {m.voided ? t("Restore", "Restaurer") : t("Void", "Annuler")}
               </button>
               <button
                 className="danger"
@@ -196,11 +209,11 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                   void run(async () => {
                     await deleteMatchRecord(m.match_key);
                     onChanged();
-                    return `Deleted ${formatRoomCode(m.room_code)}.`;
+                    return t(`Deleted ${formatRoomCode(m.room_code)}.`, `${formatRoomCode(m.room_code)} supprimée.`);
                   })
                 }
               >
-                Delete
+                {t("Delete", "Supprimer")}
               </button>
             </div>
 
@@ -213,7 +226,10 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                     await removeParticipantFromMatch(m.match_key, nickname);
                     setCrewReload((n) => n + 1);
                     onChanged();
-                    return `Struck ${nickname} from ${formatRoomCode(m.room_code)}.`;
+                    return t(
+                      `Struck ${nickname} from ${formatRoomCode(m.room_code)}.`,
+                      `${nickname} rayé de ${formatRoomCode(m.room_code)}.`
+                    );
                   })
                 }
                 reload={crewReload}
@@ -230,7 +246,11 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                     await deleteMatchShot(shot);
                     setShotReload((n) => n + 1);
                     onChanged();
-                    return `Deleted ${shot.nickname}'s shot on ${shot.challenge_name ?? `square ${shot.cell_index}`}.`;
+                    const square = shot.challenge_name ?? t(`square ${shot.cell_index}`, `case ${shot.cell_index}`);
+                    return t(
+                      `Deleted ${shot.nickname}'s shot on ${square}.`,
+                      `Tir de ${shot.nickname} sur ${square} supprimé.`
+                    );
                   })
                 }
                 onRetime={(shot, seconds) =>
@@ -238,9 +258,12 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                     await updateMatchShotTime(shot, seconds);
                     setShotReload((n) => n + 1);
                     onChanged();
-                    const square = shot.challenge_name ?? `square ${shot.cell_index}`;
+                    const square = shot.challenge_name ?? t(`square ${shot.cell_index}`, `case ${shot.cell_index}`);
                     const was = shot.match_seconds === null ? "--:--" : clock(shot.match_seconds);
-                    return `Moved ${shot.nickname}'s shot on ${square} from ${was} to ${clock(seconds)}.`;
+                    return t(
+                      `Moved ${shot.nickname}'s shot on ${square} from ${was} to ${clock(seconds)}.`,
+                      `Tir de ${shot.nickname} sur ${square} déplacé de ${was} à ${clock(seconds)}.`
+                    );
                   })
                 }
                 reload={shotReload}
@@ -258,8 +281,13 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
             onClick={onShowMore}
           >
             {loadingMore
-              ? "Loading..."
-              : `Show more${total !== null ? ` (${total - matches.length} older)` : ""}`}
+              ? t("Loading...", "Chargement...")
+              : total !== null
+                ? t(
+                    `Show more (${total - matches.length} older)`,
+                    `Afficher plus (${total - matches.length} plus anciennes)`
+                  )
+                : t("Show more", "Afficher plus")}
           </button>
         )}
       </div>
@@ -270,8 +298,12 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
       {orphans > 0 && (
         <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.76rem", minWidth: 0, flex: 1 }}>
-            <strong style={{ color: "var(--hit)" }}>{orphans} orphaned record row{orphans === 1 ? "" : "s"}</strong> -
-            no parent match, but still counted on the leaderboard.
+            <strong style={{ color: "var(--hit)" }}>
+              {orphans === 1
+                ? t(`${orphans} orphaned record row`, `${orphans} ligne orpheline`)
+                : t(`${orphans} orphaned record rows`, `${orphans} lignes orphelines`)}
+            </strong>{" "}
+            - {t("no parent match, but still counted on the leaderboard.", "aucune partie parente, mais toujours comptée sur le classement.")}
           </span>
           <button
             className="danger"
@@ -281,10 +313,12 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
               const n = await deleteOrphans();
               setOrphans(await countOrphans().catch(() => 0));
               onChanged();
-              return `Cleared ${n} orphaned record${n === 1 ? "" : "s"}.`;
+              return n === 1
+                ? t(`Cleared ${n} orphaned record.`, `${n} ligne orpheline effacée.`)
+                : t(`Cleared ${n} orphaned records.`, `${n} lignes orphelines effacées.`);
             })}
           >
-            Clear orphans
+            {t("Clear orphans", "Effacer les orphelines")}
           </button>
         </div>
       )}
@@ -296,10 +330,10 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
         style={{ fontSize: "0.75rem" }}
         onClick={() => void run(async () => {
           await exportRecords();
-          return "Downloaded a JSON backup of every record.";
+          return t("Downloaded a JSON backup of every record.", "Sauvegarde JSON de tous les enregistrements téléchargée.");
         })}
       >
-        Download backup (JSON)
+        {t("Download backup (JSON)", "Télécharger la sauvegarde (JSON)")}
       </button>
 
       {/* -- Wipe everything --
@@ -313,9 +347,13 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
           {/* Offered when there are orphans even with zero matches - that combination is exactly
               the state where the list above looks empty but the leaderboard doesn't. */}
           <span className="muted" style={{ fontSize: "0.72rem" }}>
-            Type <code>WIPE</code> to erase every record row
-            {wipeCount > 0 ? ` (${wipeCount} match${wipeCount === 1 ? "" : "es"})` : ""}. This cannot
-            be undone.
+            {t("Type", "Tapez")} <code>WIPE</code>{" "}
+            {wipeCount > 0
+              ? t(
+                  `to erase every record row (${wipeCount} match${wipeCount === 1 ? "" : "es"}). This cannot be undone.`,
+                  `pour effacer chaque ligne d'enregistrement (${wipeCount} partie${wipeCount === 1 ? "" : "s"}). Action irréversible.`
+                )
+              : t("to erase every record row. This cannot be undone.", "pour effacer chaque ligne d'enregistrement. Action irréversible.")}
           </span>
           <div className="row" style={{ gap: "0.4rem" }}>
             <input
@@ -333,11 +371,13 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                   const n = await deleteAllMatchRecords();
                   setConfirmWipe("");
                   onChanged();
-                  return `Erased ${n} match record${n === 1 ? "" : "s"}.`;
+                  return n === 1
+                    ? t(`Erased ${n} match record.`, `${n} enregistrement de partie effacé.`)
+                    : t(`Erased ${n} match records.`, `${n} enregistrements de partie effacés.`);
                 })
               }
             >
-              Erase all records
+              {t("Erase all records", "Effacer tous les enregistrements")}
             </button>
           </div>
         </div>
@@ -346,30 +386,41 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
       {/* -- Live rooms -- */}
       <div className="stack" style={{ gap: "0.35rem", borderTop: "1px solid var(--panel-border)", paddingTop: "0.6rem" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-          <strong style={{ fontSize: "0.82rem" }}>Live rooms ({rooms.length}/15)</strong>
+          <strong style={{ fontSize: "0.82rem" }}>{t("Live rooms", "Parties en direct")} ({rooms.length}/15)</strong>
           <button
             disabled={busy}
             style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
             onClick={() => void run(async () => {
               const n = await pruneRooms();
               setRooms(await listRooms().catch(() => []));
-              return `Pruned ${n} stale room${n === 1 ? "" : "s"}.`;
+              return n === 1
+                ? t(`Pruned ${n} stale room.`, `${n} partie obsolète purgée.`)
+                : t(`Pruned ${n} stale rooms.`, `${n} parties obsolètes purgées.`);
             })}
           >
-            Prune stale
+            {t("Prune stale", "Purger les obsolètes")}
           </button>
         </div>
-        {rooms.length === 0 && <span className="muted" style={{ fontSize: "0.78rem" }}>No rooms open.</span>}
+        {rooms.length === 0 && (
+          <span className="muted" style={{ fontSize: "0.78rem" }}>{t("No rooms open.", "Aucune partie ouverte.")}</span>
+        )}
         {rooms.map((r) => (
           <div key={r.id} className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
             <span style={{ minWidth: 0, flex: 1 }}>
               <strong>{formatRoomCode(r.code)}</strong>
               <span className="muted">
                 {" "}
-                · {r.status} · {r.players} player{r.players === 1 ? "" : "s"} ·{" "}
+                · {r.status} ·{" "}
+                {r.players === 1
+                  ? t(`${r.players} player`, `${r.players} joueur`)
+                  : t(`${r.players} players`, `${r.players} joueurs`)}{" "}
+                ·{" "}
                 {/* serverNow, not Date.now: created_at is a Postgres timestamp, so a skewed PC
                     clock would otherwise report rooms as older or younger than they are. */}
-                {Math.round((serverNow() - new Date(r.created_at).getTime()) / 60000)}m old
+                {t(
+                  `${Math.round((serverNow() - new Date(r.created_at).getTime()) / 60000)}m old`,
+                  `${Math.round((serverNow() - new Date(r.created_at).getTime()) / 60000)}m`
+                )}
               </span>
             </span>
             <button
@@ -379,27 +430,29 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
               onClick={() => void run(async () => {
                 await deleteRoom(r.id);
                 setRooms(await listRooms().catch(() => []));
-                return `Deleted room ${formatRoomCode(r.code)}.`;
+                return t(`Deleted room ${formatRoomCode(r.code)}.`, `Partie ${formatRoomCode(r.code)} supprimée.`);
               })}
             >
-              Delete
+              {t("Delete", "Supprimer")}
             </button>
           </div>
         ))}
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          Deleting a room removes its players, fleets and attack log with it. Use it on a stuck
-          room that's holding one of the 15 slots.
+          {t(
+            "Deleting a room removes its players, fleets and attack log with it. Use it on a stuck room that's holding one of the 15 slots.",
+            "Supprimer une partie retire aussi ses joueurs, ses flottes et son journal de tirs. À utiliser sur une partie bloquée qui occupe une des 15 places."
+          )}
         </span>
       </div>
 
       {/* -- Admins -- */}
       <div className="stack" style={{ gap: "0.35rem", borderTop: "1px solid var(--panel-border)", paddingTop: "0.6rem" }}>
-        <strong style={{ fontSize: "0.82rem" }}>Administrators</strong>
+        <strong style={{ fontSize: "0.82rem" }}>{t("Administrators", "Administrateurs")}</strong>
         {admins.map((a) => (
           <div key={a.user_id} className="row" style={{ justifyContent: "space-between", gap: "0.5rem", fontSize: "0.78rem" }}>
             <span>
               {a.display_name ?? a.user_id.slice(0, 8)}
-              {a.is_owner && <span className="badge">owner</span>}
+              {a.is_owner && <span className="badge">{t("owner", "propriétaire")}</span>}
             </span>
             {/* Owners can only be removed by another owner - the rule RLS enforces, mirrored here
                 so the button isn't offered when the server would reject it. */}
@@ -411,11 +464,12 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                   void run(async () => {
                     await revokeAdmin(a.user_id);
                     await refreshAdmins();
-                    return `Removed ${a.display_name ?? "that account"}.`;
+                    const who = a.display_name ?? t("that account", "ce compte");
+                    return t(`Removed ${who}.`, `${who} retiré.`);
                   })
                 }
               >
-                Revoke
+                {t("Revoke", "Révoquer")}
               </button>
             )}
           </div>
@@ -439,16 +493,18 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
           <input
             value={grantName}
             onChange={(e) => setGrantName(e.target.value)}
-            placeholder="Twitch display name"
+            placeholder={t("Twitch display name", "Nom d'affichage Twitch")}
             style={{ flex: 1, minWidth: 0, fontSize: "0.78rem" }}
           />
           <button type="submit" disabled={busy} style={{ fontSize: "0.75rem", flex: "none" }}>
-            Make admin
+            {t("Make admin", "Nommer administrateur")}
           </button>
         </form>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          They must have signed in with Twitch here at least once, so the grant attaches to their
-          account rather than to a name.
+          {t(
+            "They must have signed in with Twitch here at least once, so the grant attaches to their account rather than to a name.",
+            "Ils doivent s'être connectés avec Twitch ici au moins une fois, afin que le droit s'attache à leur compte plutôt qu'à un nom."
+          )}
         </span>
       </div>
     </div>
@@ -472,6 +528,7 @@ function MatchCrew({
   onRemove: (nickname: string) => void;
   reload: number;
 }) {
+  const t = useT();
   const [crew, setCrew] = useState<MatchParticipant[] | null>(null);
 
   useEffect(() => {
@@ -484,11 +541,13 @@ function MatchCrew({
     };
   }, [matchKey, reload]);
 
-  if (crew === null) return <span className="muted" style={{ fontSize: "0.72rem" }}>Reading the crew list...</span>;
+  if (crew === null) {
+    return <span className="muted" style={{ fontSize: "0.72rem" }}>{t("Reading the crew list...", "Lecture de la liste de l'équipage...")}</span>;
+  }
   if (crew.length === 0) {
     return (
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        Nobody is recorded on this match.
+        {t("Nobody is recorded on this match.", "Personne n'est enregistré sur cette partie.")}
       </span>
     );
   }
@@ -509,26 +568,38 @@ function MatchCrew({
             <span style={{ color: teamHex(c.team) }}>{teamName(c.team)}</span>{" "}
             <strong>{c.nickname}</strong>
             {!c.user_id && (
-              <span className="badge" title="Not signed in - recorded by nickname only">
-                guest
+              <span className="badge" title={t("Not signed in - recorded by nickname only", "Non connecté - enregistré par surnom uniquement")}>
+                {t("guest", "invité")}
               </span>
             )}
             <span className="muted">
               {" "}
-              · {c.shots} shots · {c.hits} hits · {c.sunk} sunk · {c.draw ? "draw" : c.won ? "won" : "lost"}
+              · {c.shots} {t("shots", "tirs")} · {c.hits} {t("hits", "touchés")} · {c.sunk} {t("sunk", "coulés")} ·{" "}
+              {c.draw ? t("draw", "nul") : c.won ? t("won", "gagné") : t("lost", "perdu")}
             </span>
           </span>
           <button
             className="danger"
             disabled={busy}
             style={{ fontSize: "0.7rem", padding: "0.15rem 0.45rem", flex: "none" }}
-            title={`Remove ${c.nickname} from this match's records, leaving the match itself intact`}
+            title={t(
+              `Remove ${c.nickname} from this match's records, leaving the match itself intact`,
+              `Retirer ${c.nickname} des enregistrements de cette partie, en laissant la partie elle-même intacte`
+            )}
             onClick={() => {
-              if (!window.confirm(`Strike ${c.nickname} from this match? Their career row, shots and recap line go with it.`)) return;
+              if (
+                !window.confirm(
+                  t(
+                    `Strike ${c.nickname} from this match? Their career row, shots and recap line go with it.`,
+                    `Rayer ${c.nickname} de cette partie ? Sa ligne de carrière, ses tirs et sa ligne de récapitulatif partent avec.`
+                  )
+                )
+              )
+                return;
               onRemove(c.nickname);
             }}
           >
-            Remove
+            {t("Remove", "Retirer")}
           </button>
         </div>
       ))}
@@ -590,6 +661,7 @@ function MatchShots({
   onRetime: (shot: MatchShot, seconds: number) => void;
   reload: number;
 }) {
+  const t = useT();
   const [shots, setShots] = useState<MatchShot[] | null>(null);
   /** The row being retimed, and what's been typed into it so far. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -610,9 +682,15 @@ function MatchShots({
     setEditing(null);
   }, [matchKey, reload]);
 
-  if (shots === null) return <span className="muted" style={{ fontSize: "0.72rem" }}>Reading the shot log...</span>;
+  if (shots === null) {
+    return <span className="muted" style={{ fontSize: "0.72rem" }}>{t("Reading the shot log...", "Lecture du journal des tirs...")}</span>;
+  }
   if (shots.length === 0) {
-    return <span className="muted" style={{ fontSize: "0.72rem" }}>No shots recorded on this match.</span>;
+    return (
+      <span className="muted" style={{ fontSize: "0.72rem" }}>
+        {t("No shots recorded on this match.", "Aucun tir enregistré sur cette partie.")}
+      </span>
+    );
   }
 
   // Walked in fired order, so each row knows what the same player did last. Keyed by name and team
@@ -631,14 +709,27 @@ function MatchShots({
   function submitRetime(s: MatchShot) {
     const seconds = parseShotTime(draft);
     if (seconds === null) {
-      window.alert(`"${draft.trim()}" isn't a time. Give it as M:SS, or as a plain number of seconds.`);
+      window.alert(
+        t(
+          `"${draft.trim()}" isn't a time. Give it as M:SS, or as a plain number of seconds.`,
+          `"${draft.trim()}" n'est pas une durée valide. Indiquez-la sous la forme M:SS, ou en nombre de secondes.`
+        )
+      );
       return;
     }
     // The archived duration is the only outside check available on a hand-typed time, and it's a
     // soft one: a match whose start marker never landed has no duration at all, and the admin may
     // be correcting a shot precisely because the recorded clock is wrong.
     if (matchLength !== null && seconds > matchLength) {
-      if (!window.confirm(`${clock(seconds)} is after this match ended (${duration}). Set it anyway?`)) return;
+      if (
+        !window.confirm(
+          t(
+            `${clock(seconds)} is after this match ended (${duration}). Set it anyway?`,
+            `${clock(seconds)} est après la fin de cette partie (${duration}). Confirmer quand même ?`
+          )
+        )
+      )
+        return;
     }
     if (seconds === s.match_seconds) {
       setEditing(null);
@@ -671,7 +762,7 @@ function MatchShots({
                   if (e.key === "Enter") submitRetime(s);
                   if (e.key === "Escape") setEditing(null);
                 }}
-                placeholder="M:SS"
+                placeholder={t("M:SS", "M:SS")}
                 size={6}
                 style={{
                   fontSize: "0.74rem",
@@ -685,7 +776,7 @@ function MatchShots({
               // editable, so a second button beside Delete would only be another thing to misread.
               <button
                 disabled={busy}
-                title="Correct this shot's time"
+                title={t("Correct this shot's time", "Corriger l'heure de ce tir")}
                 onClick={() => {
                   setDraft(s.match_seconds === null ? "" : clock(s.match_seconds));
                   setEditing(s.id);
@@ -705,10 +796,18 @@ function MatchShots({
               </button>
             )}{" "}
             <span style={{ color: teamHex(s.team) }}>{s.nickname}</span>{" "}
-            <strong>{s.challenge_name ?? `square ${s.cell_index}`}</strong>{" "}
-            <span style={{ color: RESULT_COLOR[s.result] ?? "var(--text-dim)" }}>{s.result}</span>
+            <strong>{s.challenge_name ?? t(`square ${s.cell_index}`, `case ${s.cell_index}`)}</strong>{" "}
+            <span style={{ color: RESULT_COLOR[s.result] ?? "var(--text-dim)" }}>
+              {s.result === "sunk"
+                ? t("sunk", "coulé")
+                : s.result === "hit"
+                  ? t("hit", "touché")
+                  : s.result === "miss"
+                    ? t("miss", "manqué")
+                    : s.result}
+            </span>
             {gaps[i] !== null && (
-              <span className="muted" title="Gap since this player's previous shot">
+              <span className="muted" title={t("Gap since this player's previous shot", "Écart depuis le tir précédent de ce joueur")}>
                 {" "}
                 · +{clock(gaps[i]!)}
               </span>
@@ -724,14 +823,14 @@ function MatchShots({
                 style={{ fontSize: "0.7rem", padding: "0.15rem 0.45rem", flex: "none" }}
                 onClick={() => submitRetime(s)}
               >
-                Save
+                {t("Save", "Enregistrer")}
               </button>
               <button
                 disabled={busy}
                 style={{ fontSize: "0.7rem", padding: "0.15rem 0.45rem", flex: "none" }}
                 onClick={() => setEditing(null)}
               >
-                Cancel
+                {t("Cancel", "Annuler")}
               </button>
             </span>
           ) : (
@@ -739,29 +838,40 @@ function MatchShots({
             className="danger"
             disabled={busy}
             style={{ fontSize: "0.7rem", padding: "0.15rem 0.45rem", flex: "none" }}
-            title="Delete this one shot and take it back out of the totals"
+            title={t("Delete this one shot and take it back out of the totals", "Supprimer ce tir et le retirer des totaux")}
             onClick={() => {
-              const square = s.challenge_name ?? `square ${s.cell_index}`;
+              const square = s.challenge_name ?? t(`square ${s.cell_index}`, `case ${s.cell_index}`);
               // The sinking caveat is only raised when it applies: the archive never recorded whose
               // ship went down, so the defending fleet's loss count can't be walked back with it.
               const caveat =
                 s.result === "sunk"
-                  ? "\n\nThis shot sank a ship. The defending fleet's loss count can't be adjusted automatically, because the archive doesn't record whose ship it was."
+                  ? t(
+                      "\n\nThis shot sank a ship. The defending fleet's loss count can't be adjusted automatically, because the archive doesn't record whose ship it was.",
+                      "\n\nCe tir a coulé un navire. Le total de pertes de la flotte adverse ne peut pas être ajusté automatiquement, car l'archive n'enregistre pas de quel navire il s'agissait."
+                    )
                   : "";
-              if (!window.confirm(`Delete ${s.nickname}'s shot on ${square}? Their shot, hit and sink totals come down with it.${caveat}`)) return;
+              if (
+                !window.confirm(
+                  t(
+                    `Delete ${s.nickname}'s shot on ${square}? Their shot, hit and sink totals come down with it.${caveat}`,
+                    `Supprimer le tir de ${s.nickname} sur ${square} ? Ses totaux de tirs, touchés et coulés en seront réduits d'autant.${caveat}`
+                  )
+                )
+              )
+                return;
               onDelete(s);
             }}
           >
-            Delete
+            {t("Delete", "Supprimer")}
           </button>
           )}
         </div>
       ))}
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        One row is one square somebody marked. Deleting it takes the square out of the timing and
-        streak records and out of the Almanac, and walks back that player's shot, hit and sink
-        totals. To fix a mistimed mark, click its time instead: that keeps the kill and only moves
-        it.
+        {t(
+          "One row is one square somebody marked. Deleting it takes the square out of the timing and streak records and out of the Almanac, and walks back that player's shot, hit and sink totals. To fix a mistimed mark, click its time instead: that keeps the kill and only moves it.",
+          "Une ligne correspond à une case marquée par un joueur. La supprimer retire la case des records de timing et de série ainsi que de l'Almanach, et réduit d'autant les totaux de tirs, touchés et coulés de ce joueur. Pour corriger un horodatage erroné, cliquez plutôt sur son heure : cela conserve le tir et le déplace seulement."
+        )}
       </span>
     </div>
   );

@@ -1,4 +1,5 @@
 import { FIRE_HOLD_OPTIONS, FIRE_HOLD_HINT } from "../lib/fireHold";
+import { useT } from "../lib/language";
 import "./FireHoldSelect.css";
 
 /**
@@ -13,9 +14,10 @@ import "./FireHoldSelect.css";
  * sidebar), because this is not a setting anyone should have to switch layouts to reach.
  */
 export function FireHoldSelect({ value, onChange }: { value: number; onChange: (ms: number) => void }) {
+  const t = useT();
   return (
     <label className="fire-hold-select" title={FIRE_HOLD_HINT}>
-      <span>Fire</span>
+      <span>{t("Fire", "Tir")}</span>
       <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
         {FIRE_HOLD_OPTIONS.map((o) => (
           <option key={o.ms} value={o.ms}>

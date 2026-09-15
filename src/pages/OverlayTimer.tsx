@@ -8,6 +8,7 @@ import { formatDuration } from "../lib/matchTime";
 import { ClockBar } from "../components/ClockBar";
 import { readOpacity, MAX_DELAY_MS } from "../lib/overlayCast";
 import { readTextSize } from "../lib/overlayText";
+import { useT } from "../lib/language";
 import "./Overlay.css";
 import "./OverlayTimer.css";
 
@@ -34,8 +35,14 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
   // The room and the query string come from the URL, or from the persistent stream route that has
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
   const { code, params } = useOverlaySource(props);
+  const t = useT();
   const state = useRoom(code);
   const phase = useBattleClock(state.attacks, state.room);
+  const TR_PHASE_LABEL: Record<keyof typeof PHASE_LABEL, string> = {
+    starting: t("Randomization", "Randomisation"),
+    preparation: t("Preparation", "Préparation"),
+    match: t("Match", "Match"),
+  };
 
   /**
    * ?odds=1 - the win-probability band, under the clock.
@@ -109,7 +116,7 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
   return (
     <div className="ovt">
       <ClockBar
-        phaseLabel={phase ? PHASE_LABEL[phase.phase] : "Match"}
+        phaseLabel={phase ? TR_PHASE_LABEL[phase.phase] : t("Match", "Match")}
         clock={clock}
         fleets={teams.map((t) => ({ team: t, sunkHulls: sunkHullsFor(t) }))}
         shipDefs={room.ship_defs}

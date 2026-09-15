@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuthProfile } from "../hooks/useAuthProfile";
 import { fetchMyWatchLink, setWatchShowFleet, watchUrl } from "../lib/watchStream";
+import { useT } from "../lib/language";
 // For .obs-token and .obs-pick. Imported here rather than relied on from the page that renders this,
 // so the box keeps its own styling if it is ever dropped somewhere else.
 import "../pages/Streaming.css";
@@ -28,6 +29,7 @@ import "../pages/Streaming.css";
 export function WatchLinkBox() {
   const viewer = useAuthProfile();
   const signedIn = Boolean(viewer?.isTwitch);
+  const t = useT();
 
   /** `undefined` while loading, `null` for an account with no handle to build a link from. */
   const [handle, setHandle] = useState<string | null | undefined>(undefined);
@@ -88,12 +90,15 @@ export function WatchLinkBox() {
 
   return (
     <div className="panel stack" style={{ gap: "0.6rem", padding: "0.7rem" }}>
-      <strong style={{ fontSize: "0.86rem" }}>Watch link for your audience</strong>
+      <strong style={{ fontSize: "0.86rem" }}>{t("Watch link for your audience", "Lien de visionnage pour votre audience")}</strong>
 
       <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-        One link, for your panel or a <code>!watch</code> command. It always opens whatever match
-        you're in right now, from your seat - your hunting board and your fleet, the same two boards
-        you're playing off. It never goes stale, so you paste it once.
+        {t("One link, for your panel or a ", "Un seul lien, pour votre panneau ou une commande ")}
+        <code>!watch</code>
+        {t(
+          " command. It always opens whatever match you're in right now, from your seat - your hunting board and your fleet, the same two boards you're playing off. It never goes stale, so you paste it once.",
+          ". Il ouvre toujours le match dans lequel vous êtes en ce moment, depuis votre siège - votre plateau de recherche et votre flotte, les deux mêmes plateaux sur lesquels vous jouez. Il ne devient jamais obsolète, donc vous ne le collez qu'une seule fois."
+        )}
       </span>
 
       {/*
@@ -101,34 +106,41 @@ export function WatchLinkBox() {
         of a room link - and because a streamer needs to be able to tell their chat what it is.
       */}
       <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-        Viewers who follow it <strong>cannot see the other side</strong>. They don't join the room,
-        and reading anyone's ship positions needs a seat in it - so there's no setting for them to
-        find and nothing for you to police in chat.
+        {t("Viewers who follow it ", "Les spectateurs qui le suivent ")}
+        <strong>{t("cannot see the other side", "ne peuvent pas voir l'autre côté")}</strong>
+        {t(
+          ". They don't join the room, and reading anyone's ship positions needs a seat in it - so there's no setting for them to find and nothing for you to police in chat.",
+          ". Ils ne rejoignent pas la partie, et lire les positions des navires de qui que ce soit nécessite d'avoir une place dans la partie - il n'y a donc aucun réglage à trouver pour eux, et rien à surveiller pour vous dans le chat."
+        )}
       </span>
 
       {!signedIn ? (
         <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-          Sign in with Twitch to get one. The link is your Twitch name, so there's nothing to set up
-          - and an anonymous account has no permanent name to give out.
+          {t(
+            "Sign in with Twitch to get one. The link is your Twitch name, so there's nothing to set up - and an anonymous account has no permanent name to give out.",
+            "Connectez-vous avec Twitch pour en obtenir un. Le lien est votre nom Twitch, donc il n'y a rien à configurer - et un compte anonyme n'a pas de nom permanent à donner."
+          )}
         </span>
       ) : handle === undefined ? (
-        <span className="muted" style={{ fontSize: "0.72rem" }}>Loading...</span>
+        <span className="muted" style={{ fontSize: "0.72rem" }}>{t("Loading...", "Chargement...")}</span>
       ) : handle === null ? (
         <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-          Your Twitch name hasn't reached your profile yet. Sign out and back in once and it'll be
-          here.
+          {t(
+            "Your Twitch name hasn't reached your profile yet. Sign out and back in once and it'll be here.",
+            "Votre nom Twitch n'est pas encore arrivé sur votre profil. Déconnectez-vous et reconnectez-vous une fois, et il sera là."
+          )}
         </span>
       ) : (
         <>
           <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap", alignItems: "center" }}>
             <code className="obs-token">{url}</code>
             <button onClick={copy} style={{ fontSize: "0.74rem" }}>
-              {copied ? "Copied!" : "Copy"}
+              {copied ? t("Copied!", "Copié !") : t("Copy", "Copier")}
             </button>
             {/* Non-null because this branch only renders once `handle` is a string, which is the
                 one thing `url` is derived from - TypeScript cannot see the two are the same test. */}
             <a href={url!} target="_blank" rel="noreferrer" style={{ fontSize: "0.74rem" }}>
-              Open
+              {t("Open", "Ouvrir")}
             </a>
           </div>
 
@@ -145,16 +157,20 @@ export function WatchLinkBox() {
               onChange={(e) => void toggleFleet(e.target.checked)}
             />
             <span className="stack" style={{ gap: "0.1rem" }}>
-              <span style={{ fontSize: "0.76rem" }}>Show my ships to viewers</span>
+              <span style={{ fontSize: "0.76rem" }}>{t("Show my ships to viewers", "Montrer mes navires aux spectateurs")}</span>
               <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-                Off, your fleet board still shows every hit, miss and sinking you take - just not
-                where the hulls are.
+                {t(
+                  "Off, your fleet board still shows every hit, miss and sinking you take - just not where the hulls are.",
+                  "Désactivé, votre plateau de flotte affiche toujours chaque touche, chaque échec et chaque naufrage que vous subissez - simplement pas où sont les coques."
+                )}
               </span>
               {showFleet && (
                 <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
                   <strong>
-                    This link is public, so your opponent can open it too. With this on, they can see
-                    exactly where your ships are.
+                    {t(
+                      "This link is public, so your opponent can open it too. With this on, they can see exactly where your ships are.",
+                      "Ce lien est public, donc votre adversaire peut aussi l'ouvrir. Avec cette option activée, il peut voir exactement où sont vos navires."
+                    )}
                   </strong>
                 </span>
               )}

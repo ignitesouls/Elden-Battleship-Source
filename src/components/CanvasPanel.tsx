@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { clampBox, type PanelBox } from "../lib/panelLayout";
+import { useT } from "../lib/language";
 import "./CanvasPanel.css";
 
 interface Props {
@@ -29,6 +30,7 @@ interface Props {
  * resize rescales an arrangement instead of breaking it.
  */
 export function CanvasPanel({ title, box, canvas, onChange, flush, locked, onRestack, children }: Props) {
+  const t = useT();
   // The box as it was when the gesture started. Deltas apply to THIS, not to the live box - reading
   // the live one back each move compounds rounding and makes fast drags creep away from the cursor.
   const start = useRef<{ box: PanelBox; x: number; y: number } | null>(null);
@@ -103,8 +105,8 @@ export function CanvasPanel({ title, box, canvas, onChange, flush, locked, onRes
               type="button"
               className="canvas-panel-layer-btn"
               onClick={() => onRestack("back")}
-              title={`Send ${title} behind the other panels`}
-              aria-label={`Send ${title} to back`}
+              title={t(`Send ${title} behind the other panels`, `Envoyer ${title} derrière les autres panneaux`)}
+              aria-label={t(`Send ${title} to back`, `Envoyer ${title} vers l'arrière`)}
             >
               ▽
             </button>
@@ -112,8 +114,8 @@ export function CanvasPanel({ title, box, canvas, onChange, flush, locked, onRes
               type="button"
               className="canvas-panel-layer-btn"
               onClick={() => onRestack("front")}
-              title={`Bring ${title} in front of the other panels`}
-              aria-label={`Bring ${title} to front`}
+              title={t(`Bring ${title} in front of the other panels`, `Amener ${title} devant les autres panneaux`)}
+              aria-label={t(`Bring ${title} to front`, `Amener ${title} au premier plan`)}
             >
               △
             </button>

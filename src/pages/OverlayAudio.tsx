@@ -7,6 +7,7 @@ import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks, fatesConfirmed } from "../lib/deepWater";
 import { igonAnchor } from "../lib/challenges";
 import { playSfx, setVolumeOverride, setDeepOverride, onAudioBlocked, primeAudio } from "../lib/sfx";
+import { useT } from "../lib/language";
 import "./OverlayAudio.css";
 
 /**
@@ -46,6 +47,7 @@ export function OverlayAudio(props: OverlaySourceProps = {}) {
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
   const { code, params } = useOverlaySource(props);
   const state = useRoom(code);
+  const t = useT();
 
   /**
    * How loud, from the URL - because in an OBS Browser Source there is no other way to say it.
@@ -227,7 +229,10 @@ export function OverlayAudio(props: OverlaySourceProps = {}) {
    */
   return blocked ? (
     <button type="button" className="ova-blocked" onClick={unblock}>
-      Board audio is blocked - right-click this source in OBS, choose Interact, and click here once.
+      {t(
+        "Board audio is blocked - right-click this source in OBS, choose Interact, and click here once.",
+        "L'audio du plateau est bloqué - clic droit sur cette source dans OBS, choisissez Interact, puis cliquez ici une fois."
+      )}
     </button>
   ) : null;
 }

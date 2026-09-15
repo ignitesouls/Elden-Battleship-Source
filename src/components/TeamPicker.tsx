@@ -2,6 +2,7 @@ import { useState } from "react";
 import { setPlayerTeam, ensureFleet } from "../lib/rooms";
 import { TEAM_COLORS, teamName, teamHex } from "../lib/teamColors";
 import type { Player, Room } from "../types/battleship";
+import { useT } from "../lib/language";
 
 interface Props {
   room: Room;
@@ -20,6 +21,7 @@ interface Props {
  */
 export function TeamPicker({ room, playerId, currentTeam, players, onError }: Props) {
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   // Every color is selectable from the start; teams with nobody in them are just marked as such.
   const allTeams = TEAM_COLORS.map((_, i) => i);
@@ -46,13 +48,13 @@ export function TeamPicker({ room, playerId, currentTeam, players, onError }: Pr
 
   return (
     <div className="panel row" style={{ justifyContent: "center", gap: "0.75rem" }}>
-      <span className="muted">Your fleet:</span>
+      <span className="muted">{t("Your fleet:", "Votre flotte :")}</span>
       <select value={currentTeam ?? -1} disabled={busy} onChange={(e) => void change(Number(e.target.value))}>
-        <option value={-1}>Spectator</option>
-        {allTeams.map((t) => (
-          <option key={t} value={t}>
-            {teamName(t)}
-            {players.some((p) => p.team === t) ? "" : " (empty)"}
+        <option value={-1}>{t("Spectator", "Spectateur")}</option>
+        {allTeams.map((tm) => (
+          <option key={tm} value={tm}>
+            {teamName(tm)}
+            {players.some((p) => p.team === tm) ? "" : t(" (empty)", " (vide)")}
           </option>
         ))}
       </select>

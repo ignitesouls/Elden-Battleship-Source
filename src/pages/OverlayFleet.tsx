@@ -10,6 +10,7 @@ import { challengesForRoom } from "../lib/challenges";
 import { squaresRevealed } from "../lib/overlayReveal";
 import { readOpacity, readEmptyFade } from "../lib/overlayCast";
 import { teamHex } from "../lib/teamColors";
+import { useT } from "../lib/language";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import "./Overlay.css";
 import "./OverlayTiers.css";
@@ -55,6 +56,7 @@ export function OverlayFleet(props: OverlaySourceProps = {}) {
   // The room and the query string come from the URL, or from the persistent stream route that has
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
   const { code, params } = useOverlaySource(props);
+  const t = useT();
   const key = params.get("key") ?? "";
   /**
    * The persistent overlay's credential, when this source is one.
@@ -143,7 +145,11 @@ export function OverlayFleet(props: OverlaySourceProps = {}) {
   if (fleet === null) {
     return (
       <div className="ovf-frame" ref={frameRef}>
-        <div className="ovf-fault">{key ? "no fleet for this code" : "no ?key= in this URL"}</div>
+        <div className="ovf-fault">
+          {key
+            ? t("no fleet for this code", "aucune flotte pour ce code")
+            : t("no ?key= in this URL", "aucun ?key= dans cette URL")}
+        </div>
       </div>
     );
   }

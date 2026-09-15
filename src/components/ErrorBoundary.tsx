@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { BrandMark } from "./BrandMark";
+import { getLanguage } from "../lib/language";
 
 interface State {
   error: Error | null;
@@ -31,6 +32,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   render() {
     if (!this.state.error) return this.props.children;
 
+    // A class component can't call the useT() hook, so it reads the language store directly - the
+    // same value the hook wraps, just without the re-render subscription this component never needs
+    // (there's nothing to switch languages mid-render on the one screen that exists to say goodbye).
+    const lang = getLanguage();
+    const t = (en: string, fr: string) => (lang === "fr" ? fr : en);
+
     return (
       <div className="stack" style={{ width: "min(520px, 100%)", margin: "0 auto" }}>
         <div className="panel stack" style={{ alignItems: "center", textAlign: "center", gap: "0.6rem" }}>
@@ -38,10 +45,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
               screen that exists to deliver bad news the logo should not be the brightest thing
               in the panel. */}
           <BrandMark width="8rem" dim decorative />
-          <h2 style={{ margin: 0 }}>Something came loose</h2>
+          <h2 style={{ margin: 0 }}>{t("Something came loose", "Quelque chose s'est détaché")}</h2>
           <p className="muted" style={{ margin: 0 }}>
-            This screen hit an error and stopped. Your fleet and the match are fine: they live on
-            the server, not in this tab.
+            {t(
+              "This screen hit an error and stopped. Your fleet and the match are fine: they live on the server, not in this tab.",
+              "Cet écran a rencontré une erreur et s'est arrêté. Votre flotte et la partie sont en sécurité : elles vivent sur le serveur, pas dans cet onglet."
+            )}
           </p>
           <code style={{ fontSize: "0.72rem", color: "var(--text-dim)", overflowWrap: "anywhere" }}>
             {this.state.error.message}
@@ -54,9 +63,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
                 window.location.reload();
               }}
             >
-              Return to harbor
+              {t("Return to harbor", "Retour au port")}
             </button>
-            <button onClick={() => window.location.reload()}>Reload this screen</button>
+            <button onClick={() => window.location.reload()}>{t("Reload this screen", "Recharger cet écran")}</button>
           </div>
         </div>
       </div>

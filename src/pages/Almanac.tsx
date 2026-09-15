@@ -29,10 +29,12 @@ import {
 } from "../lib/almanac";
 import { SortHeader, useSortColumns, type SortColumn } from "../components/SortHeader";
 import { squarePace, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
+import { useT } from "../lib/language";
 
 const COL_LETTERS = "ABCDEFGHIJKLMNOPQR";
 
 export function Almanac() {
+  const t = useT();
   const [fleets, setFleets] = useState<MatchFleetRow[] | null>(null);
   const [allEvents, setAllEvents] = useState<MatchEventRow[]>([]);
   const [allParts, setAllParts] = useState<ParticipantRow[]>([]);
@@ -179,15 +181,15 @@ export function Almanac() {
   const squares = useMemo(() => mergeSquareStats(bossStats(activeEvents), freq), [activeEvents, freq]);
   const records = useMemo(() => fastestKills(activeEvents, 8), [activeEvents]);
 
-  if (fleets === null) return <p className="muted">Consulting the almanac...</p>;
+  if (fleets === null) return <p className="muted">{t("Consulting the almanac...", "Consultation de l'almanach...")}</p>;
 
   const hasData = activeFleets.length > 0 || activeEvents.length > 0;
 
   return (
     <div className="stack" style={{ width: "min(900px, 100%)", gap: "0.9rem" }}>
       <div style={{ textAlign: "center" }}>
-        <h1>Almanac</h1>
-        <p className="muted">Patterns across every match on one board.</p>
+        <h1>{t("Almanac", "Almanach")}</h1>
+        <p className="muted">{t("Patterns across every match on one board.", "Tendances sur toutes les parties d'un même plateau.")}</p>
       </div>
 
       {/* Outside the empty check, so a set with nothing charted can still be switched away from. */}
@@ -199,19 +201,19 @@ export function Almanac() {
             onClick={() => setView("patterns")}
             style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "patterns" ? "var(--accent)" : undefined }}
           >
-            Patterns
+            {t("Patterns", "Tendances")}
           </button>
           <button
             onClick={() => setView("captains")}
             style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "captains" ? "var(--accent)" : undefined }}
           >
-            Captains
+            {t("Captains", "Capitaines")}
           </button>
           <button
             onClick={() => setView("game")}
             style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "game" ? "var(--accent)" : undefined }}
           >
-            Per Game
+            {t("Per Game", "Par partie")}
           </button>
         </div>
       </div>
@@ -236,60 +238,60 @@ export function Almanac() {
         {!hasData ? (
           <div className="panel stack" style={{ alignItems: "center", textAlign: "center" }}>
             <p className="muted" style={{ margin: 0 }}>
-              Nothing charted yet. Finish a match and the almanac starts filling in.
+              {t("Nothing charted yet. Finish a match and the almanac starts filling in.", "Rien à afficher pour l'instant. Terminez une partie et l'almanach commence à se remplir.")}
             </p>
-            <Link to="/">Back to the harbor</Link>
+            <Link to="/">{t("Back to the harbor", "Retour au port")}</Link>
           </div>
         ) : (
           <>
             {shape.matches > 0 && (
               <div className="row" style={{ gap: "0.75rem", alignItems: "stretch", flexWrap: "wrap" }}>
                 <BigStat
-                  label="First-blood win rate"
+                  label={t("First-blood win rate", "Taux de victoire au premier sang")}
                   value={`${Math.round(shape.firstBloodWinRate * 100)}%`}
-                  sub={`${shape.firstBloodSample} decided matches`}
-                  hint="How often the side that lands the opening hit goes on to win"
+                  sub={`${shape.firstBloodSample} ${t("decided matches", "parties décisives")}`}
+                  hint={t("How often the side that lands the opening hit goes on to win", "À quelle fréquence le camp qui place le premier coup finit par gagner")}
                 />
                 {shape.bloodiest && (
                   <BigStat
-                    label="Bloodiest square"
+                    label={t("Bloodiest square", "Case la plus sanglante")}
                     value={shape.bloodiest.name}
-                    sub={`${shape.bloodiest.sinkings} ${shape.bloodiest.sinkings === 1 ? "ship" : "ships"} sunk on it`}
-                    hint="The square that has finished off the most ships"
+                    sub={`${shape.bloodiest.sinkings} ${shape.bloodiest.sinkings === 1 ? t("ship", "navire") : t("ships", "navires")} ${t("sunk on it", "coulés dessus")}`}
+                    hint={t("The square that has finished off the most ships", "La case qui a coulé le plus de navires")}
                   />
                 )}
                 {shape.medianMatchSeconds !== null && (
                   <BigStat
-                    label="Typical match"
+                    label={t("Typical match", "Partie type")}
                     value={fmt(shape.medianMatchSeconds)}
-                    sub={`median of ${shape.timedMatches} ${shape.timedMatches === 1 ? "match" : "matches"}`}
-                    hint="How long a match on this board usually runs"
+                    sub={`${t("median of", "médiane sur")} ${shape.timedMatches} ${shape.timedMatches === 1 ? t("match", "partie") : t("matches", "parties")}`}
+                    hint={t("How long a match on this board usually runs", "Durée habituelle d'une partie sur ce plateau")}
                   />
                 )}
                 <BigStat
-                  label="Flawless wins"
+                  label={t("Flawless wins", "Victoires sans perte")}
                   value={shape.flawlessWins}
-                  sub="won without losing a ship"
-                  hint="Victories where the winning fleet finished intact"
+                  sub={t("won without losing a ship", "gagnées sans perdre un navire")}
+                  hint={t("Victories where the winning fleet finished intact", "Victoires où la flotte gagnante a fini intacte")}
                 />
               </div>
             )}
 
             <div className="panel stack" style={{ gap: "0.6rem" }}>
               <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-                <h3 style={{ margin: 0 }}>Heatmap</h3>
+                <h3 style={{ margin: 0 }}>{t("Heatmap", "Carte de chaleur")}</h3>
                 <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
                   <button
                     onClick={() => setMode("ships")}
                     style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: mode === "ships" ? "var(--accent)" : undefined }}
                   >
-                    Where ships hide
+                    {t("Where ships hide", "Où se cachent les navires")}
                   </button>
                   <button
                     onClick={() => setMode("shots")}
                     style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: mode === "shots" ? "var(--accent)" : undefined }}
                   >
-                    Where people shoot
+                    {t("Where people shoot", "Où les gens tirent")}
                   </button>
                   {sizes.length > 1 &&
                     sizes.map((s) => (
@@ -306,8 +308,8 @@ export function Almanac() {
 
               <span className="muted" style={{ fontSize: "0.75rem" }}>
                 {mode === "ships"
-                  ? `Cells most often occupied by a ship - ${map.samples} fleets, ${map.total} ship squares.`
-                  : `Cells most often fired at - ${map.total} shots across ${map.samples} matches.`}
+                  ? `${t("Cells most often occupied by a ship", "Cases les plus souvent occupées par un navire")} - ${map.samples} ${t("fleets", "flottes")}, ${map.total} ${t("ship squares", "cases occupées")}.`
+                  : `${t("Cells most often fired at", "Cases les plus souvent visées")} - ${map.total} ${t("shots across", "tirs sur")} ${map.samples} ${t("matches", "parties")}.`}
               </span>
 
               <HeatGrid map={map} />
@@ -321,9 +323,9 @@ export function Almanac() {
 
             {records.length > 0 && (
               <div className="panel stack" style={{ gap: "0.25rem" }}>
-                <h3 style={{ margin: 0 }}>Quickest squares on record</h3>
+                <h3 style={{ margin: 0 }}>{t("Quickest squares on record", "Cases les plus rapides au tableau")}</h3>
                 <span className="muted" style={{ fontSize: "0.7rem" }}>
-                  Timed from the captain's previous square. Misses count.
+                  {t("Timed from the captain's previous square. Misses count.", "Chronométré depuis la case précédente du capitaine. Les tirs manqués comptent.")}
                 </span>
                 {records.map((r, i) => (
                   <div
@@ -333,13 +335,13 @@ export function Almanac() {
                   >
                     <span style={{ minWidth: 0 }}>
                       <span className="muted">{i + 1}. </span>
-                      <strong>{r.challenge ?? "Unknown"}</strong>
+                      <strong>{r.challenge ?? t("Unknown", "Inconnu")}</strong>
                       <span className="muted"> - {r.nickname}</span>
                       {/* Which square it was timed from: the pair IS the record, the same way the
                           record book's gap entry reads "X then Y". */}
-                      {r.previous && <span className="muted"> · after {r.previous}</span>}
-                      {r.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · sank a ship</span>}
-                      {r.result === "hit" && <span style={{ color: "var(--hit)" }}> · hit</span>}
+                      {r.previous && <span className="muted"> · {t("after", "après")} {r.previous}</span>}
+                      {r.result === "sunk" && <span style={{ color: "var(--sunk)" }}> · {t("sank a ship", "a coulé un navire")}</span>}
+                      {r.result === "hit" && <span style={{ color: "var(--hit)" }}> · {t("hit", "touché")}</span>}
                     </span>
                     <strong style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums" }}>{fmt(r.seconds)}</strong>
                   </div>
@@ -376,6 +378,7 @@ const HISTORY_PREVIEW = 12;
  * books existed, and this reads rows that were already sitting there.
  */
 function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; capped?: boolean }) {
+  const t = useT();
   const [showAll, setShowAll] = useState(false);
   if (matches.length === 0) return null;
 
@@ -383,11 +386,14 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
 
   return (
     <div className="panel stack" style={{ gap: "0.3rem" }}>
-      <h3 style={{ margin: 0 }}>Match history</h3>
+      <h3 style={{ margin: 0 }}>{t("Match history", "Historique des parties")}</h3>
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        {capped ? "The newest " : ""}
-        {matches.length} finished {matches.length === 1 ? "match" : "matches"}
-        {capped ? ` of the last ${ARCHIVE_LIST_LIMIT} played` : ""}. Open one for its recap and replay.
+        {capped ? t("The newest ", "Les ") : ""}
+        {matches.length} {matches.length === 1 ? t("finished match", "partie terminée") : t("finished matches", "parties terminées")}
+        {capped
+          ? t(` of the last ${ARCHIVE_LIST_LIMIT} played`, ` sur les ${ARCHIVE_LIST_LIMIT} dernières jouées`)
+          : ""}
+        . {t("Open one for its recap and replay.", "Ouvrez-en une pour son résumé et sa rediffusion.")}
       </span>
       {shown.map((m) => {
         const when = new Date(m.finished_at);
@@ -420,9 +426,9 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
               </strong>
               <span className="muted"> · </span>
               {m.winner_team === null ? (
-                <span className="muted">draw</span>
+                <span className="muted">{t("draw", "match nul")}</span>
               ) : (
-                <span style={{ color: teamHex(m.winner_team) }}>{teamName(m.winner_team)} won</span>
+                <span style={{ color: teamHex(m.winner_team) }}>{teamName(m.winner_team)} {t("won", "a gagné")}</span>
               )}
               {/* Beside the result rather than replacing it, because a practice match still HAD a
                   result and the row is still worth reading. What the tag adds is why you won't find
@@ -430,7 +436,7 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
               {m.practice && (
                 <span style={{ color: "var(--hit)", fontSize: "0.68rem", letterSpacing: "0.06em" }}>
                   {" "}
-                  · PRACTICE
+                  · {t("PRACTICE", "ENTRAÎNEMENT")}
                 </span>
               )}
               <div className="muted" style={{ fontSize: "0.68rem" }}>
@@ -438,7 +444,7 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
               </div>
             </span>
             <span className="muted" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-              {m.total_shots} shots
+              {m.total_shots} {t("shots", "tirs")}
               <div style={{ fontSize: "0.68rem" }}>{m.duration ?? ""}</div>
             </span>
           </Link>
@@ -449,7 +455,7 @@ function MatchHistory({ matches, capped }: { matches: ArchivedMatchListing[]; ca
           onClick={() => setShowAll((v) => !v)}
           style={{ alignSelf: "flex-start", fontSize: "0.72rem", marginTop: "0.3rem" }}
         >
-          {showAll ? "Show fewer" : `Show all ${matches.length}`}
+          {showAll ? t("Show fewer", "Afficher moins") : `${t("Show all", "Afficher tout")} ${matches.length}`}
         </button>
       )}
     </div>
@@ -471,15 +477,16 @@ function GamePicker({
   value: string | null;
   onChange: (key: string) => void;
 }) {
+  const t = useT();
   if (matches.length === 0) return null;
 
   return (
     <div className="panel stack" style={{ gap: "0.4rem" }}>
       <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0 }}>Choose a match</h3>
+        <h3 style={{ margin: 0 }}>{t("Choose a match", "Choisir une partie")}</h3>
         {value && (
           <Link to={`/match/${encodeURIComponent(value)}`} style={{ fontSize: "0.75rem" }}>
-            Open full recap →
+            {t("Open full recap →", "Voir le résumé complet →")}
           </Link>
         )}
       </div>
@@ -616,71 +623,98 @@ type SquareSortKey = "name" | "attempts" | "hitRate" | "median" | "appeared" | "
  * they care about, and that square is almost never in anybody's top eight. Sorting answers both:
  * click Ignored and the old "most ignored" board is the top of the column, only it keeps going.
  */
-const SQUARE_COLUMNS: SortColumn<SquareSortKey>[] = [
-  {
-    key: "name",
-    label: "Square",
-    align: "left",
-    firstDirection: "asc",
-    title: "The square as it reads on the board.",
-  },
-  {
-    key: "attempts",
-    label: "Shot at",
-    align: "right",
-    firstDirection: "desc",
-    title: "Times this square has been taken, across every match on this board. One per trigger-pull, hit or miss.",
-  },
-  {
-    key: "hitRate",
-    label: "Hit %",
-    align: "right",
-    firstDirection: "desc",
-    title: "Share of those shots that landed on an enemy ship. Says where people hide ships, not how hard the square is.",
-  },
-  {
-    key: "median",
-    label: "Median",
-    sublabel: "on the clock",
-    align: "right",
-    firstDirection: "asc",
-    title: "Median time into the match when this square falls. When people take it, not how long it takes to beat.",
-  },
-  {
-    key: "appeared",
-    label: "Seen",
-    align: "right",
-    firstDirection: "desc",
-    title: "Boards this square has appeared on, whether or not anybody shot at it.",
-  },
-  {
-    key: "ignored",
-    label: "Ignored",
-    align: "right",
-    firstDirection: "desc",
-    title: "Share of the boards it appeared on where nobody fired at it. 100% means it has never been taken.",
-  },
-  {
-    key: "opened",
-    label: "Opened",
-    align: "right",
-    firstDirection: "desc",
-    title: "Times this square was the very first shot of a match.",
-  },
-  {
-    // "Fastest" was a lie, and an expensive one: this is a position on the match clock, and the
-    // panel directly below it ranks squares by how long the FIGHT took, in the same m:ss format.
-    // Two numbers that look identical and mean opposite things. The heading now says which it is,
-    // the way the Median column's "on the clock" already did.
-    key: "fastest",
-    label: "Earliest",
-    sublabel: "on the clock",
-    align: "left",
-    firstDirection: "asc",
-    title:
-      "The earliest point in a match this square has ever fallen, and who took it. When it was reached, not how long the fight lasted.",
-  },
-];
+/**
+ * Built from `t` rather than held as a plain constant: the labels and tooltips are user-facing
+ * text, and this table config lives outside any component, so the translation function is passed
+ * in and called at the one place (SquaresTable) that actually has it.
+ */
+function squareColumns(t: (en: string, fr: string) => string): SortColumn<SquareSortKey>[] {
+  return [
+    {
+      key: "name",
+      label: t("Square", "Case"),
+      align: "left",
+      firstDirection: "asc",
+      title: t("The square as it reads on the board.", "La case telle qu'elle apparaît sur le plateau."),
+    },
+    {
+      key: "attempts",
+      label: t("Shot at", "Visée"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "Times this square has been taken, across every match on this board. One per trigger-pull, hit or miss.",
+        "Nombre de fois où cette case a été visée, sur toutes les parties de ce plateau. Un tir compte, qu'il touche ou non.",
+      ),
+    },
+    {
+      key: "hitRate",
+      label: t("Hit %", "% de réussite"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "Share of those shots that landed on an enemy ship. Says where people hide ships, not how hard the square is.",
+        "Part de ces tirs qui ont touché un navire ennemi. Indique où les gens cachent leurs navires, pas la difficulté de la case.",
+      ),
+    },
+    {
+      key: "median",
+      label: t("Median", "Médiane"),
+      sublabel: t("on the clock", "sur l'horloge"),
+      align: "right",
+      firstDirection: "asc",
+      title: t(
+        "Median time into the match when this square falls. When people take it, not how long it takes to beat.",
+        "Temps médian de la partie auquel cette case tombe. Indique quand elle est prise, pas le temps qu'il faut pour la vaincre.",
+      ),
+    },
+    {
+      key: "appeared",
+      label: t("Seen", "Vue"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "Boards this square has appeared on, whether or not anybody shot at it.",
+        "Plateaux sur lesquels cette case est apparue, que quelqu'un y ait tiré ou non.",
+      ),
+    },
+    {
+      key: "ignored",
+      label: t("Ignored", "Ignorée"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "Share of the boards it appeared on where nobody fired at it. 100% means it has never been taken.",
+        "Part des plateaux où elle est apparue sans que personne n'y tire. 100 % signifie qu'elle n'a jamais été prise.",
+      ),
+    },
+    {
+      key: "opened",
+      label: t("Opened", "Ouverture"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "Times this square was the very first shot of a match.",
+        "Nombre de fois où cette case a été le tout premier tir d'une partie.",
+      ),
+    },
+    {
+      // "Fastest" was a lie, and an expensive one: this is a position on the match clock, and the
+      // panel directly below it ranks squares by how long the FIGHT took, in the same m:ss format.
+      // Two numbers that look identical and mean opposite things. The heading now says which it is,
+      // the way the Median column's "on the clock" already did.
+      key: "fastest",
+      label: t("Earliest", "Plus tôt"),
+      sublabel: t("on the clock", "sur l'horloge"),
+      align: "left",
+      firstDirection: "asc",
+      title: t(
+        "The earliest point in a match this square has ever fallen, and who took it. When it was reached, not how long the fight lasted.",
+        "Le moment le plus tôt où cette case est tombée, et qui l'a prise. Quand elle a été atteinte, pas la durée du combat.",
+      ),
+    },
+  ];
+}
 
 /**
  * Ascending comparison for one column. The caller flips it for descending.
@@ -719,7 +753,9 @@ function squareMissing(row: SquareRow, key: SquareSortKey): boolean {
 }
 
 function SquaresTable({ rows }: { rows: SquareRow[] }) {
-  const { sort, direction, sortBy } = useSortColumns(SQUARE_COLUMNS, "attempts");
+  const t = useT();
+  const columns = squareColumns(t);
+  const { sort, direction, sortBy } = useSortColumns(columns, "attempts");
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -740,17 +776,18 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
   return (
     <div className="panel stack" style={{ gap: "0.4rem" }}>
       <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0 }}>Squares</h3>
+        <h3 style={{ margin: 0 }}>{t("Squares", "Cases")}</h3>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          {rows.length} squares seen{untouched > 0 ? ` · ${untouched} never taken` : ""}
+          {rows.length} {t("squares seen", "cases vues")}
+          {untouched > 0 ? ` · ${untouched} ${t("never taken", "jamais prises")}` : ""}
         </span>
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        Every square the board deals, shot at or not. Times are medians from when firing opens.
+        {t("Every square the board deals, shot at or not. Times are medians from when firing opens.", "Chaque case du plateau, visée ou non. Les temps sont des médianes depuis l'ouverture des tirs.")}
       </span>
       <div style={{ overflowX: "auto", maxHeight: "30rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-          <SortHeader columns={SQUARE_COLUMNS} sort={sort} direction={direction} onSort={sortBy} leading="#" />
+          <SortHeader columns={columns} sort={sort} direction={direction} onSort={sortBy} leading="#" />
           <tbody>
             {sorted.map((r, i) => {
               const num = { padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
@@ -765,7 +802,7 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
                   </td>
                   <td style={{ ...num, color: r.attempts === 0 ? "var(--text-dim)" : undefined }}>{r.attempts}</td>
                   <td style={num}>{r.hitRate !== null ? `${Math.round(r.hitRate * 100)}%` : "-"}</td>
-                  <td style={num} title={r.timed > 0 ? `${r.timed} timed ${r.timed === 1 ? "shot" : "shots"}` : undefined}>
+                  <td style={num} title={r.timed > 0 ? `${r.timed} ${r.timed === 1 ? t("timed shot", "tir chronométré") : t("timed shots", "tirs chronométrés")}` : undefined}>
                     {r.medianSeconds !== null ? fmt(r.medianSeconds) : "-"}
                   </td>
                   {/* A dash rather than 0 when the board could not be rebuilt: the match's room row
@@ -787,7 +824,7 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
         </table>
       </div>
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        Click a heading to sort; click again to flip. Hover a heading for what the number means.
+        {t("Click a heading to sort; click again to flip. Hover a heading for what the number means.", "Cliquez un en-tête pour trier ; cliquez à nouveau pour inverser. Survolez un en-tête pour voir ce que le chiffre signifie.")}
       </span>
     </div>
   );
@@ -795,52 +832,67 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
 
 type PaceSortKey = "name" | "matches" | "shots" | "median" | "average" | "best";
 
-const PACE_COLUMNS: SortColumn<PaceSortKey>[] = [
-  {
-    key: "name",
-    label: "Captain",
-    align: "left",
-    firstDirection: "asc",
-    title: "Signed-in captains are grouped by account; guests by nickname, so two guests sharing a name share a row. Click a name for their full record on this board.",
-  },
-  {
-    key: "matches",
-    label: "Matches",
-    align: "right",
-    firstDirection: "desc",
-    title: "Finished matches they have fired in on this board.",
-  },
-  {
-    key: "shots",
-    label: "Shots",
-    align: "right",
-    firstDirection: "desc",
-    title: "Squares taken across all of them.",
-  },
-  {
-    key: "median",
-    label: "Pace",
-    sublabel: "median",
-    align: "right",
-    firstDirection: "asc",
-    title: `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
-  },
-  {
-    key: "average",
-    label: "Pace",
-    sublabel: "average",
-    align: "right",
-    firstDirection: "asc",
-    title: "The same figure as a mean, worked out inside each match and then averaged across matches, so time between sessions never counts. Every gap counts, including the pair a duo boss fills at once.",
-  },
-  {
-    key: "best",
-    label: "Best match",
-    align: "right",
-    firstDirection: "asc",
-    title: "Their fastest single match by that average. Click it to open the match.",
-  },
-];
+/** Same reasoning as squareColumns above: built from `t`, called inside PaceTable where it's in scope. */
+function paceColumns(t: (en: string, fr: string) => string): SortColumn<PaceSortKey>[] {
+  return [
+    {
+      key: "name",
+      label: t("Captain", "Capitaine"),
+      align: "left",
+      firstDirection: "asc",
+      title: t(
+        "Signed-in captains are grouped by account; guests by nickname, so two guests sharing a name share a row. Click a name for their full record on this board.",
+        "Les capitaines connectés sont regroupés par compte, les invités par pseudo : deux invités partageant un nom partagent une ligne. Cliquez un nom pour son historique complet sur ce plateau.",
+      ),
+    },
+    {
+      key: "matches",
+      label: t("Matches", "Parties"),
+      align: "right",
+      firstDirection: "desc",
+      title: t("Finished matches they have fired in on this board.", "Parties terminées où ils ont tiré sur ce plateau."),
+    },
+    {
+      key: "shots",
+      label: t("Shots", "Tirs"),
+      align: "right",
+      firstDirection: "desc",
+      title: t("Squares taken across all of them.", "Cases prises sur l'ensemble de ces parties."),
+    },
+    {
+      key: "median",
+      label: t("Pace", "Rythme"),
+      sublabel: t("median", "médiane"),
+      align: "right",
+      firstDirection: "asc",
+      title: t(
+        `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
+        `Rythme par case - le temps entre deux cases prises, en médiane sur toutes les cases visées sur ce plateau. Le même chiffre qu'affiche le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître.`,
+      ),
+    },
+    {
+      key: "average",
+      label: t("Pace", "Rythme"),
+      sublabel: t("average", "moyenne"),
+      align: "right",
+      firstDirection: "asc",
+      title: t(
+        "The same figure as a mean, worked out inside each match and then averaged across matches, so time between sessions never counts. Every gap counts, including the pair a duo boss fills at once.",
+        "Le même chiffre en moyenne, calculé au sein de chaque partie puis moyenné entre les parties, pour que le temps entre deux sessions ne compte jamais. Chaque intervalle compte, y compris la paire qu'un boss en duo remplit d'un coup.",
+      ),
+    },
+    {
+      key: "best",
+      label: t("Best match", "Meilleure partie"),
+      align: "right",
+      firstDirection: "asc",
+      title: t(
+        "Their fastest single match by that average. Click it to open the match.",
+        "Leur partie la plus rapide selon cette moyenne. Cliquez pour ouvrir la partie.",
+      ),
+    },
+  ];
+}
 
 /** A pace row: the page's own average, plus the leaderboard's median where there is enough for one. */
 interface PaceRow extends PlayerPace {
@@ -884,7 +936,9 @@ function PaceTable({
   profiles: Map<string, Profile>;
   setId: SquareSetId;
 }) {
-  const { sort, direction, sortBy } = useSortColumns(PACE_COLUMNS, "median");
+  const t = useT();
+  const columns = paceColumns(t);
+  const { sort, direction, sortBy } = useSortColumns(columns, "median");
 
   const sorted = useMemo(() => {
     const withMedian: PaceRow[] = rows.map((r) => ({ ...r, median: medians.get(r.key) ?? null }));
@@ -904,17 +958,17 @@ function PaceTable({
   return (
     <div className="panel stack" style={{ gap: "0.4rem" }}>
       <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0 }}>Square pace</h3>
+        <h3 style={{ margin: 0 }}>{t("Square pace", "Rythme par case")}</h3>
         <span className="muted" style={{ fontSize: "0.7rem" }}>
-          {sorted.length} {sorted.length === 1 ? "captain" : "captains"}
+          {sorted.length} {sorted.length === 1 ? t("captain", "capitaine") : t("captains", "capitaines")}
         </span>
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
-        Time from one square falling to the next.
+        {t("Time from one square falling to the next.", "Temps entre deux cases prises.")}
       </span>
       <div style={{ overflowX: "auto", maxHeight: "26rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-          <SortHeader columns={PACE_COLUMNS} sort={sort} direction={direction} onSort={sortBy} leading="#" />
+          <SortHeader columns={columns} sort={sort} direction={direction} onSort={sortBy} leading="#" />
           <tbody>
             {sorted.map((r, i) => {
               const num = { padding: "0.2rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
@@ -957,8 +1011,10 @@ function PaceTable({
         </table>
       </div>
       <span className="muted" style={{ fontSize: "0.7rem" }}>
-        A median needs {MIN_GAPS_FOR_PACE} squares before it shows; the average appears from the
-        first match. Guests are grouped by nickname, so two people using the same name share a row.
+        {t(
+          `A median needs ${MIN_GAPS_FOR_PACE} squares before it shows; the average appears from the first match. Guests are grouped by nickname, so two people using the same name share a row.`,
+          `Une médiane nécessite ${MIN_GAPS_FOR_PACE} cases avant de s'afficher ; la moyenne apparaît dès la première partie. Les invités sont regroupés par pseudo, donc deux personnes utilisant le même nom partagent une ligne.`,
+        )}
       </span>
     </div>
   );

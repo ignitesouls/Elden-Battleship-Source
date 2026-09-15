@@ -37,6 +37,7 @@ import {
 } from "../lib/overlayCast";
 import { useCasterAux } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
+import { useLanguage, useT } from "../lib/language";
 import "./CasterControl.css";
 import "./OverlayTiers.css";
 import "./OverlayBoard.css";
@@ -139,6 +140,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   /** The player-stream boxes and how far behind each is running - see lib/castAux. */
   const aux = useCasterAux(code);
   const screens = useCastScreens(state.players);
+  const t = useT();
+  const lang = useLanguage();
 
   const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
@@ -689,12 +692,15 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   if (!room) {
     return (
       <div className="panel stack" style={{ width: "min(460px, 100%)" }}>
-        <h2 style={{ margin: 0 }}>No such room</h2>
+        <h2 style={{ margin: 0 }}>{t("No such room", "Aucune partie de ce type")}</h2>
         <p className="muted" style={{ margin: 0 }}>
-          {code ? formatRoomCode(code) : "That room"} isn't open. The control page follows a live
-          room, so there's nothing to drive yet.
+          {code ? formatRoomCode(code) : t("That room", "Cette partie")}{" "}
+          {t(
+            "isn't open. The control page follows a live room, so there's nothing to drive yet.",
+            "n'est pas ouverte. La page de contrôle suit une partie en direct, il n'y a donc rien à piloter pour l'instant."
+          )}
         </p>
-        <Link to="/">Return to harbor</Link>
+        <Link to="/">{t("Return to harbor", "Retour au port")}</Link>
       </div>
     );
   }
@@ -921,24 +927,28 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   return (
     <div className="cast">
       <div className="cast-head">
-        <h2 style={{ margin: 0 }}>Board control - {formatRoomCode(room.code)}</h2>
+        <h2 style={{ margin: 0 }}>
+          {t("Board control", "Contrôle du plateau")} - {formatRoomCode(room.code)}
+        </h2>
         <span className={`cast-status${ready ? " cast-status-live" : ""}`}>
-          {ready ? "connected" : "connecting..."}
+          {ready ? t("connected", "connecté") : t("connecting...", "connexion...")}
         </span>
         {/* The monitor below is a true 1:1 of a 1000x1000 source, so there is nothing left to
             report back and nothing to be out of step with. */}
         <span className="cast-status">
-          monitor {SOURCE_SIZE}x{SOURCE_SIZE}
+          {t("monitor", "moniteur")} {SOURCE_SIZE}x{SOURCE_SIZE}
         </span>
         <Link to={`/room/${room.code}`} style={{ fontSize: "0.85rem" }}>
-          Back to the room
+          {t("Back to the room", "Retour à la partie")}
         </Link>
       </div>
 
       {shipsMissing && (
         <div className="panel" style={{ borderColor: "var(--accent)", fontSize: "0.85rem" }}>
-          This view can't read any ship positions, so the board shows shots only. Ships appear once
-          fleets are placed, and only for someone signed in to the room.
+          {t(
+            "This view can't read any ship positions, so the board shows shots only. Ships appear once fleets are placed, and only for someone signed in to the room.",
+            "Cette vue ne peut lire aucune position de navire, donc le plateau n'affiche que les tirs. Les navires apparaissent une fois les flottes placées, et seulement pour quelqu'un connecté à la partie."
+          )}
         </div>
       )}
 
@@ -1005,7 +1015,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               dropMotion();
               set({ zoom: Math.round(next * 100) / 100 });
             }}
-            title="Drag to slide the stream view · wheel to zoom · 1-9 to step (4 presses edge to edge) · arrows to nudge"
+            title={t(
+              "Drag to slide the stream view · wheel to zoom · 1-9 to step (4 presses edge to edge) · arrows to nudge",
+              "Glisser pour déplacer la vue du flux · molette pour zoomer · 1-9 pour avancer (4 appuis d'un bord à l'autre) · flèches pour ajuster"
+            )}
           >
             {/*
               A 1:1 monitor, not a diagram of one.
@@ -1081,7 +1094,11 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                       ? (i) => {
                           const c = challenges[i];
                           if (!c) return null;
-                          return { label: c.short ?? c.name, region: c.region, color: c.color };
+                          return {
+                            label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+                            region: c.region,
+                            color: c.color,
+                          };
                         }
                       : undefined
                   }
@@ -1097,7 +1114,9 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               board hidden and then forgotten is a scene with a hole in it, so the monitor says so
               plainly.
             */}
-            {!view.visible && <div className="cast-hidden-veil">Hidden on stream</div>}
+            {!view.visible && (
+              <div className="cast-hidden-veil">{t("Hidden on stream", "Masqué à l'écran")}</div>
+            )}
           </div>
         </div>
 
@@ -1117,17 +1136,21 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
         */}
         <div className="cast-rail">
           <span className="muted cast-hint">
-            Drag to slide · wheel to zoom · <strong>1-9</strong> (numpad or top row) step in 8
-            directions, 4 presses edge to edge, 5 recentres · arrows nudge. On stream:{" "}
+            {t("Drag to slide · wheel to zoom · ", "Glisser pour déplacer · molette pour zoomer · ")}
+            <strong>1-9</strong>
+            {t(
+              " (numpad or top row) step in 8 directions, 4 presses edge to edge, 5 recentres · arrows nudge. On stream:",
+              " (pavé numérique ou rangée du haut) avance dans 8 directions, 4 appuis d'un bord à l'autre, 5 recentre · les flèches ajustent. À l'écran :"
+            )}{" "}
             <strong>
               {/* While the auto-pilot has the wheel, cx/cy are only where the board RESTS - naming
                   a square off them would be the readout describing a framing nobody is looking at.
                   What is true either way is that the desk is not the thing aiming. */}
               {camera.running
-                ? "the board is aiming itself"
+                ? t("the board is aiming itself", "le plateau s'oriente seul")
                 : zoomed
-                  ? `${view.zoom.toFixed(1)}x around ${cellLabel(centreCell, boardSize)}`
-                  : "the whole board"}
+                  ? `${view.zoom.toFixed(1)}x ${t("around", "autour de")} ${cellLabel(centreCell, boardSize)}`
+                  : t("the whole board", "tout le plateau")}
             </strong>
             {/* The square under the crosshair, named in full - a caster reads this out, and the
                 board itself only ever shows the shortened form. */}
@@ -1137,44 +1160,46 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
 
         <div className="cast-panel">
           <section>
-            <h3>View</h3>
+            <h3>{t("View", "Vue")}</h3>
             <div className="cast-buttons">
               <button
                 className={view.mode === "results" ? "primary" : ""}
                 onClick={() => set({ mode: "results" })}
-                title="Shots only - no ship positions on stream"
+                title={t("Shots only - no ship positions on stream", "Tirs seulement - aucune position de navire à l'écran")}
               >
-                Results only
+                {t("Results only", "Résultats seulement")}
               </button>
               <button
                 className={view.mode === "all" ? "primary" : ""}
                 onClick={() => set({ mode: "all" })}
-                title="Every fleet's ships on one board"
+                title={t("Every fleet's ships on one board", "Les navires de toutes les flottes sur un plateau")}
               >
-                All fleets
+                {t("All fleets", "Toutes les flottes")}
               </button>
-              {teams.map((t) => (
+              {teams.map((tm) => (
                 <button
-                  key={t}
-                  className={view.mode === t ? "primary" : ""}
-                  onClick={() => set({ mode: t })}
-                  style={{ color: teamHex(t) }}
-                  title={`Only ${teamName(t)}'s ships`}
+                  key={tm}
+                  className={view.mode === tm ? "primary" : ""}
+                  onClick={() => set({ mode: tm })}
+                  style={{ color: teamHex(tm) }}
+                  title={`${t("Only", "Seuls les navires de")} ${teamName(tm)}${t("'s ships", "")}`}
                 >
-                  {teamName(t)}
+                  {teamName(tm)}
                 </button>
               ))}
             </div>
             {view.mode !== "results" && room.status === "battle" && (
               <p className="cast-warn">
-                Ships are on stream during a live match. Your call, but don't leave it up over a
-                break.
+                {t(
+                  "Ships are on stream during a live match. Your call, but don't leave it up over a break.",
+                  "Les navires sont à l'écran pendant une partie en direct. À vous de voir, mais ne les laissez pas affichés pendant une pause."
+                )}
               </p>
             )}
           </section>
 
           <section>
-            <h3>Zoom</h3>
+            <h3>{t("Zoom", "Zoom")}</h3>
             <div className="cast-row">
               <input
                 type="range"
@@ -1187,8 +1212,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 onChange={(e) => set({ zoom: Number(e.target.value) })}
               />
               <span className="cast-zoom-value">{view.zoom.toFixed(1)}x</span>
-              <button onClick={() => set({ zoom: 1, cx: 0.5, cy: 0.5 })} title="Show the whole board">
-                Fit
+              <button onClick={() => set({ zoom: 1, cx: 0.5, cy: 0.5 })} title={t("Show the whole board", "Afficher tout le plateau")}>
+                {t("Fit", "Ajuster")}
               </button>
             </div>
 
@@ -1201,7 +1226,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               frame and there is genuinely nowhere to pan, and a control that greys out says that
               far better than one that silently does nothing.
             */}
-            <div className="cast-pad" role="group" aria-label="Aim the stream view">
+            <div className="cast-pad" role="group" aria-label={t("Aim the stream view", "Orienter la vue du flux")}>
               {PAD.map(([label, dx, dy, key]) => (
                 <button
                   key={key}
@@ -1210,8 +1235,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   onClick={() => (dx === 0 && dy === 0 ? recentre() : panBy(dx, dy, "jump"))}
                   title={
                     view.zoom <= MIN_ZOOM
-                      ? "Zoom in first - at 1x the whole board is already in frame"
-                      : `${dx === 0 && dy === 0 ? "Recentre" : "Step"} - keyboard ${key}`
+                      ? t("Zoom in first - at 1x the whole board is already in frame", "Zoomez d'abord - à 1x, tout le plateau est déjà à l'écran")
+                      : `${dx === 0 && dy === 0 ? t("Recentre", "Recentrer") : t("Step", "Avancer")} - ${t("keyboard", "clavier")} ${key}`
                   }
                 >
                   {label}
@@ -1240,7 +1265,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             because there is nothing above filling the square. See lib/textFit.
           */}
           <section>
-            <h3>Text size</h3>
+            <h3>{t("Text size", "Taille du texte")}</h3>
             <div className="cast-row">
               <input
                 type="range"
@@ -1251,19 +1276,21 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 className="eb-slider"
                 style={{ ["--eb-fill" as string]: ((view.text ?? 1) - MIN_TEXT_SIZE) / (1 - MIN_TEXT_SIZE) }}
                 onChange={(e) => set({ text: Number(e.target.value) })}
-                title="How much of each square the name fills"
+                title={t("How much of each square the name fills", "Quelle part de chaque case le nom remplit")}
               />
               <span className="cast-zoom-value">{Math.round((view.text ?? 1) * 100)}%</span>
-              <button onClick={() => set({ text: 1 })} title="Fill every square">
-                Fill
+              <button onClick={() => set({ text: 1 })} title={t("Fill every square", "Remplir chaque case")}>
+                {t("Fill", "Remplir")}
               </button>
             </div>
             <p className="cast-note muted">
-              Every square is sized to its own name, so short names come out large. This trims the
-              whole board together.
+              {t(
+                "Every square is sized to its own name, so short names come out large. This trims the whole board together.",
+                "Chaque case est dimensionnée selon son propre nom, donc les noms courts ressortent en grand. Ce curseur réduit tout le plateau ensemble."
+              )}
             </p>
           </section>
-          
+
 
           {/*
             Framing slots. Save is a separate small button rather than a long-press or a shift-click,
@@ -1272,7 +1299,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             framing you set up before the match and cannot get back.
           */}
           <section>
-            <h3>Framing presets</h3>
+            <h3>{t("Framing presets", "Préréglages de cadrage")}</h3>
             <div className="cast-presets">
               {presets.map((p, i) => (
                 <div className="cast-preset" key={i}>
@@ -1282,8 +1309,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                     onClick={() => recallPreset(i)}
                     title={
                       p
-                        ? `Recall ${p.zoom.toFixed(1)}x - keyboard Shift+${i + 1}`
-                        : "Empty - aim the board, then press Save"
+                        ? `${t("Recall", "Rappeler")} ${p.zoom.toFixed(1)}x - ${t("keyboard", "clavier")} Shift+${i + 1}`
+                        : t("Empty - aim the board, then press Save", "Vide - cadrez le plateau, puis appuyez sur Sauver")
                     }
                   >
                     {i + 1}
@@ -1292,16 +1319,16 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   <button
                     className="cast-preset-set"
                     onClick={() => (p ? clearPreset(i) : savePreset(i))}
-                    title={p ? "Forget this framing" : "Save the current framing here"}
+                    title={p ? t("Forget this framing", "Oublier ce cadrage") : t("Save the current framing here", "Sauver le cadrage actuel ici")}
                   >
-                    {p ? "clear" : "save"}
+                    {p ? t("clear", "effacer") : t("save", "sauver")}
                   </button>
                 </div>
               ))}
             </div>
             <p className="cast-note muted">
-              Saves the zoom and centre together. <strong>Shift+1-4</strong> recalls without
-              reaching for the mouse.
+              {t("Saves the zoom and centre together.", "Sauvegarde le zoom et le centre ensemble.")} <strong>Shift+1-4</strong>{" "}
+              {t("recalls without reaching for the mouse.", "rappelle sans avoir à toucher la souris.")}
             </p>
           </section>
 
@@ -1319,7 +1346,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             Every other aim control takes the wheel straight back - see dropMotion.
           */}
           <section>
-            <h3>Auto-pilot</h3>
+            <h3>{t("Auto-pilot", "Pilote automatique")}</h3>
             <label className="cast-check">
               <input
                 type="checkbox"
@@ -1337,7 +1364,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   });
                 }}
               />
-              <span>Let the board pan itself, clockwise</span>
+              <span>{t("Let the board pan itself, clockwise", "Laisser le plateau se déplacer seul, dans le sens horaire")}</span>
             </label>
             {view.motion && (
               <>
@@ -1351,18 +1378,27 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                     className="eb-slider"
                     style={{ ["--eb-fill" as string]: (lapSecs - MIN_LAP) / (MAX_LAP - MIN_LAP) }}
                     onChange={(e) => setLapSecs(Number(e.target.value))}
-                    title="How long one full lap of the four quadrants takes"
+                    title={t("How long one full lap of the four quadrants takes", "Durée d'un tour complet des quatre quadrants")}
                   />
                   <span className="cast-zoom-value">
                     {Math.floor(lapSecs / 60)}:{String(lapSecs % 60).padStart(2, "0")}
                   </span>
                 </div>
                 <p className="cast-note muted">
-                  2x on each quadrant in turn, holding still long enough to read it before moving
-                  on. {punchOn
-                    ? `Each new shot pulls it to that square's quadrant for ${punchSecs}s, then the lap carries on from there.`
-                    : "Punch in is off, so shots don't interrupt it."}{" "}
-                  Touching the aim, the zoom or a preset takes the wheel back where it stands.
+                  {t(
+                    "2x on each quadrant in turn, holding still long enough to read it before moving on.",
+                    "2x sur chaque quadrant à tour de rôle, en s'y tenant assez longtemps pour le lire avant de continuer."
+                  )}{" "}
+                  {punchOn
+                    ? t(
+                        `Each new shot pulls it to that square's quadrant for ${punchSecs}s, then the lap carries on from there.`,
+                        `Chaque nouveau tir l'amène sur le quadrant de cette case pendant ${punchSecs}s, puis le tour reprend à partir de là.`
+                      )
+                    : t("Punch in is off, so shots don't interrupt it.", "Le zoom-éclair est désactivé, donc les tirs ne l'interrompent pas.")}{" "}
+                  {t(
+                    "Touching the aim, the zoom or a preset takes the wheel back where it stands.",
+                    "Toucher la visée, le zoom ou un préréglage reprend la main là où elle se trouve."
+                  )}
                 </p>
               </>
             )}
@@ -1372,7 +1408,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             Follow the action. Off by default and it yields to the hand - see the note on `follow`.
           */}
           <section>
-            <h3>Follow the action</h3>
+            <h3>{t("Follow the action", "Suivre l'action")}</h3>
             <label className="cast-check">
               <input
                 type="checkbox"
@@ -1382,16 +1418,28 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 disabled={Boolean(view.motion)}
                 onChange={(e) => setFollow(e.target.checked)}
               />
-              <span>Swing to the newest shot</span>
+              <span>{t("Swing to the newest shot", "Se déplacer vers le dernier tir")}</span>
             </label>
             <p className="cast-note muted">
               {view.motion
-                ? "The auto-pilot is doing the following. Switch it off to swing the camera yourself."
+                ? t(
+                    "The auto-pilot is doing the following. Switch it off to swing the camera yourself.",
+                    "Le pilote automatique s'en charge. Désactivez-le pour déplacer la caméra vous-même."
+                  )
                 : punchOn
-                ? "Each shot takes the camera and holds it, lit in the firing fleet's colour."
+                ? t(
+                    "Each shot takes the camera and holds it, lit in the firing fleet's colour.",
+                    "Chaque tir prend la caméra et la maintient, éclairée dans la couleur de la flotte qui tire."
+                  )
                 : view.zoom <= MIN_ZOOM
-                  ? "Nothing to follow at 1x - the whole board is already in frame. Zoom in first."
-                  : "Slides the frame to each new shot without changing the zoom."}
+                  ? t(
+                      "Nothing to follow at 1x - the whole board is already in frame. Zoom in first.",
+                      "Rien à suivre à 1x - tout le plateau est déjà à l'écran. Zoomez d'abord."
+                    )
+                  : t(
+                      "Slides the frame to each new shot without changing the zoom.",
+                      "Déplace le cadre vers chaque nouveau tir sans changer le zoom."
+                    )}
             </p>
           </section>
 
@@ -1407,10 +1455,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             camera out from under them and then moving it back would be the opposite of helpful.
           */}
           <section>
-            <h3>Punch in</h3>
+            <h3>{t("Punch in", "Zoom-éclair")}</h3>
             <label className="cast-check">
               <input type="checkbox" checked={punchOn} onChange={(e) => setPunchOn(e.target.checked)} />
-              <span>Zoom to a highlight, then come back</span>
+              <span>{t("Zoom to a highlight, then come back", "Zoomer sur un moment fort, puis revenir")}</span>
             </label>
             {punchOn && (
               <>
@@ -1424,7 +1472,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                     className="eb-slider"
                     style={{ ["--eb-fill" as string]: (punchZoom - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM) }}
                     onChange={(e) => setPunchZoom(Number(e.target.value))}
-                    title="How far in a highlight zooms"
+                    title={t("How far in a highlight zooms", "Le niveau de zoom d'un moment fort")}
                   />
                   <span className="cast-zoom-value">{punchZoom.toFixed(1)}x</span>
                 </div>
@@ -1438,13 +1486,15 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                     className="eb-slider"
                     style={{ ["--eb-fill" as string]: (punchSecs - 2) / 13 }}
                     onChange={(e) => setPunchSecs(Number(e.target.value))}
-                    title="How long it holds before going back"
+                    title={t("How long it holds before going back", "Combien de temps ça tient avant de revenir")}
                   />
                   <span className="cast-zoom-value">{punchSecs}s</span>
                 </div>
                 <p className="cast-note muted">
-                  Returns to exactly the framing you were on. Touching the aim yourself cancels the
-                  return and leaves the square lit.
+                  {t(
+                    "Returns to exactly the framing you were on. Touching the aim yourself cancels the return and leaves the square lit.",
+                    "Revient exactement au cadrage où vous étiez. Toucher la visée vous-même annule le retour et laisse la case éclairée."
+                  )}
                 </p>
               </>
             )}
@@ -1455,10 +1505,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             a monitor, so "the one at D7" otherwise has no picture attached to it.
           */}
           <section>
-            <h3>Spotlight</h3>
+            <h3>{t("Spotlight", "Projecteur")}</h3>
             <label className="cast-check">
               <input type="checkbox" checked={spotting} onChange={(e) => setSpotting(e.target.checked)} />
-              <span>Click the board to point at a square</span>
+              <span>{t("Click the board to point at a square", "Cliquez sur le plateau pour pointer une case")}</span>
             </label>
             <div className="cast-buttons">
               <button
@@ -1467,9 +1517,9 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   cancelPunch();
                   set({ spot: null, spotColor: null });
                 }}
-                title="Put the light out"
+                title={t("Put the light out", "Éteindre le projecteur")}
               >
-                Clear spotlight
+                {t("Clear spotlight", "Effacer le projecteur")}
               </button>
               {view.spot?.length === 1 && challenges[view.spot[0]] && (
                 <span className="cast-spot-name">
@@ -1478,17 +1528,21 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               )}
             </div>
             <p className="cast-note muted">
-              With this on, a click points and a drag still pans. Click the lit square again to
-              clear it.
+              {t(
+                "With this on, a click points and a drag still pans. Click the lit square again to clear it.",
+                "Une fois activé, un clic pointe et un glissement déplace toujours la vue. Recliquez sur la case éclairée pour l'effacer."
+              )}
             </p>
 
             {hulls.length > 0 && (
               <>
-                <h3 className="cast-subhead">Ships</h3>
+                <h3 className="cast-subhead">{t("Ships", "Navires")}</h3>
                 {!canSpotShips && (
                   <p className="cast-warn">
-                    Results only is on, so no ship positions go to stream - including these.
-                    Switch the view to a fleet to spotlight a hull.
+                    {t(
+                      "Results only is on, so no ship positions go to stream - including these. Switch the view to a fleet to spotlight a hull.",
+                      "Résultats seulement est activé, donc aucune position de navire ne va à l'écran - y compris celles-ci. Passez la vue sur une flotte pour éclairer une coque."
+                    )}
                   </p>
                 )}
                 <div className="cast-hulls">
@@ -1508,7 +1562,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                           set({ spot: h.cells, spotColor: teamHex(h.team) });
                         }
                       }}
-                      title={canSpotShips ? "Ring this hull on stream" : "Not while the view is Results only"}
+                      title={canSpotShips ? t("Ring this hull on stream", "Encercler cette coque à l'écran") : t("Not while the view is Results only", "Pas tant que la vue est Résultats seulement")}
                     >
                       <span className="cast-hull-head" style={{ color: teamHex(h.team) }}>
                         {teamName(h.team)} · {h.name}
@@ -1531,14 +1585,14 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             which squares have been shot at and by whom - see lib/overlayMarkers.
           */}
           <section>
-            <h3>Result markers</h3>
+            <h3>{t("Result markers", "Marqueurs de résultat")}</h3>
             <label className="cast-check">
               <input
                 type="checkbox"
                 checked={view.markers !== false}
                 onChange={(e) => set({ markers: e.target.checked })}
               />
-              <span>Show hits, misses and wrecks</span>
+              <span>{t("Show hits, misses and wrecks", "Afficher les touches, les ratés et les épaves")}</span>
             </label>
             {view.markers !== false && teams.length > 1 && (
               <>
@@ -1546,54 +1600,56 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   <button
                     className={!view.markerTeams?.length ? "primary" : ""}
                     onClick={() => set({ markerTeams: null })}
-                    title="Every fleet's shots"
+                    title={t("Every fleet's shots", "Les tirs de toutes les flottes")}
                   >
-                    All shots
+                    {t("All shots", "Tous les tirs")}
                   </button>
-                  {teams.map((t) => {
-                    const only = view.markerTeams?.length === 1 && view.markerTeams[0] === t;
+                  {teams.map((tm) => {
+                    const only = view.markerTeams?.length === 1 && view.markerTeams[0] === tm;
                     return (
                       <button
-                        key={t}
+                        key={tm}
                         className={only ? "primary" : ""}
-                        onClick={() => set({ markerTeams: only ? null : [t] })}
-                        style={{ color: teamHex(t) }}
-                        title={`Only ${teamName(t)}'s shots get markers`}
+                        onClick={() => set({ markerTeams: only ? null : [tm] })}
+                        style={{ color: teamHex(tm) }}
+                        title={`${t("Only", "Seuls les tirs de")} ${teamName(tm)}${t("'s shots get markers", " sont marqués")}`}
                       >
-                        {teamName(t)}
+                        {teamName(tm)}
                       </button>
                     );
                   })}
                 </div>
                 <p className="cast-note muted">
-                  Whose <em>shots</em> are marked - separate from whose board is on screen.
+                  {t("Whose", "Les")} <em>{t("shots", "tirs")}</em> {t("are marked - separate from whose board is on screen.", "de qui sont marqués - indépendant de la flotte affichée à l'écran.")}
                 </p>
               </>
             )}
             {view.markers === false && (
               <p className="cast-note muted">
-                Squares keep their coloured outline, so the board still shows who has fired where.
-                The names get the whole square.
+                {t(
+                  "Squares keep their coloured outline, so the board still shows who has fired where. The names get the whole square.",
+                  "Les cases gardent leur contour coloré, donc le plateau montre toujours qui a tiré où. Les noms occupent toute la case."
+                )}
               </p>
             )}
           </section>
 
           {chases.length > 0 && (
             <section>
-              <h3>Records in play</h3>
+              <h3>{t("Records in play", "Records en jeu")}</h3>
               <RecordChases chases={chases} showTeams title="" />
             </section>
           )}
 
           <section>
-            <h3>Board</h3>
+            <h3>{t("Board", "Plateau")}</h3>
             <div className="cast-buttons">
               <button
                 className={view.visible ? "" : "danger"}
                 onClick={() => set({ visible: !view.visible })}
-                title="Blank the board source without removing it from the scene"
+                title={t("Blank the board source without removing it from the scene", "Vider la source du plateau sans la retirer de la scène")}
               >
-                {view.visible ? "Hide board" : "Board hidden"}
+                {view.visible ? t("Hide board", "Masquer le plateau") : t("Board hidden", "Plateau masqué")}
               </button>
             </div>
           </section>
@@ -1606,7 +1662,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             moments that need the screen back completely.
           */}
           <section>
-            <h3>Transparency</h3>
+            <h3>{t("Transparency", "Transparence")}</h3>
             <div className="cast-row">
               <input
                 type="range"
@@ -1617,20 +1673,20 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 className="eb-slider"
                 style={{ ["--eb-fill" as string]: view.opacity }}
                 onChange={(e) => set({ opacity: Number(e.target.value) })}
-                title="How solid the board is on stream"
+                title={t("How solid the board is on stream", "À quel point le plateau est opaque à l'écran")}
               />
               <span className="cast-zoom-value">
-                {view.opacity <= 0 ? "hidden" : `${Math.round(view.opacity * 100)}%`}
+                {view.opacity <= 0 ? t("hidden", "masqué") : `${Math.round(view.opacity * 100)}%`}
               </span>
-              <button onClick={() => set({ opacity: 1 })} title="Back to a solid board">
-                Solid
+              <button onClick={() => set({ opacity: 1 })} title={t("Back to a solid board", "Revenir à un plateau opaque")}>
+                {t("Solid", "Opaque")}
               </button>
             </div>
             <p className="cast-note muted">
-              Fades the water. Square names and shots hold back about halfway to solid, and the
-              frame and grid lines barely move, so a faint board still reads as a board. The monitor
-              above shows the same fade, over this page's background rather than gameplay - real
-              footage is busier than this.
+              {t(
+                "Fades the water. Square names and shots hold back about halfway to solid, and the frame and grid lines barely move, so a faint board still reads as a board. The monitor above shows the same fade, over this page's background rather than gameplay - real footage is busier than this.",
+                "Estompe l'eau. Les noms des cases et les tirs restent visibles jusqu'à environ mi-chemin de l'opacité maximale, et le cadre et les lignes de grille bougent à peine, donc un plateau pâle reste lisible comme un plateau. Le moniteur ci-dessus montre le même estompage, sur le fond de cette page plutôt que sur le gameplay - les images réelles sont plus chargées que ça."
+              )}
             </p>
           </section>
 
@@ -1644,7 +1700,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             Browser sources list. Only ADDS latency - a Twitch stream cannot be made earlier.
           */}
           <section>
-            <h3>Player streams</h3>
+            <h3>{t("Player streams", "Flux des joueurs")}</h3>
             <div className="cast-row">
               <input
                 type="range"
@@ -1655,7 +1711,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 className="eb-slider"
                 style={{ ["--eb-fill" as string]: (view.delayMs ?? 0) / MAX_DELAY_MS }}
                 onChange={(e) => set({ delayMs: Number(e.target.value) })}
-                title="How long the board and clock are held back to line up with the streams"
+                title={t("How long the board and clock are held back to line up with the streams", "Combien de temps le plateau et le chronomètre sont retardés pour s'aligner avec les flux")}
               />
               <span className="cast-zoom-value">
                 {((view.delayMs ?? 0) / 1000).toFixed(1)}s
@@ -1663,14 +1719,14 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               <button
                 disabled={aux.slowestMs === null}
                 onClick={() => set({ delayMs: Math.min(MAX_DELAY_MS, Math.round(aux.slowestMs ?? 0)) })}
-                title="Set the hold to the slowest stream's current latency"
+                title={t("Set the hold to the slowest stream's current latency", "Régler le retard sur la latence actuelle du flux le plus lent")}
               >
-                Match streams
+                {t("Match streams", "Aligner les flux")}
               </button>
             </div>
             <div className="cast-buttons">
-              <button onClick={() => aux.resync()} title="Reload every player stream at once">
-                Resync all
+              <button onClick={() => aux.resync()} title={t("Reload every player stream at once", "Recharger tous les flux des joueurs à la fois")}>
+                {t("Resync all", "Resynchroniser tout")}
               </button>
             </div>
             {screens.length > 0 && (
@@ -1683,10 +1739,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                         {s.name ?? teamName(s.team)}
                       </span>
                       <span className="cast-screen-lat">
-                        {ms === undefined ? "-" : `${(ms / 1000).toFixed(1)}s behind`}
+                        {ms === undefined ? "-" : `${(ms / 1000).toFixed(1)}${t("s behind", "s de retard")}`}
                       </span>
-                      <button className="cast-screen-resync" onClick={() => aux.resync(s.slot)} title="Reload just this stream">
-                        resync
+                      <button className="cast-screen-resync" onClick={() => aux.resync(s.slot)} title={t("Reload just this stream", "Recharger uniquement ce flux")}>
+                        {t("resync", "resynchroniser")}
                       </button>
                     </div>
                   );
@@ -1694,46 +1750,45 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               </div>
             )}
             <p className="cast-note muted">
-              Latency is read from each box every few seconds. If one stream drifts on its own, add a{" "}
-              <strong>Render Delay</strong> filter to that Screen source in OBS to nudge it back.
+              {t("Latency is read from each box every few seconds. If one stream drifts on its own, add a", "La latence est lue sur chaque boîte toutes les quelques secondes. Si un flux dérive de son côté, ajoutez un filtre")}{" "}
+              <strong>{t("Render Delay", "Render Delay")}</strong> {t("filter to that Screen source in OBS to nudge it back.", "à cette source Screen dans OBS pour le recaler.")}
             </p>
           </section>
 
           <section>
-            <h3>Browser sources</h3>
+            <h3>{t("Browser sources", "Sources navigateur")}</h3>
             <p className="muted cast-note">
-              Add each as a Browser Source in OBS. The board follows this page - its transparency,
-              text size, zoom and framing all come from here, which is why none of them are baked
-              into its URL. The clock and the colour key run on their own, so they take the
-              transparency and text size as they stand right now - move a slider afterwards and the
-              board follows by itself, while those two want copying again.
+              {t(
+                "Add each as a Browser Source in OBS. The board follows this page - its transparency, text size, zoom and framing all come from here, which is why none of them are baked into its URL. The clock and the colour key run on their own, so they take the transparency and text size as they stand right now - move a slider afterwards and the board follows by itself, while those two want copying again.",
+                "Ajoutez chacune comme une Browser Source dans OBS. Le plateau suit cette page - sa transparence, sa taille de texte, son zoom et son cadrage viennent tous d'ici, c'est pourquoi rien de tout cela n'est figé dans son URL. Le chronomètre et la clé de couleur tournent de leur côté, donc ils prennent la transparence et la taille de texte telles qu'elles sont en ce moment - déplacez un curseur ensuite et le plateau suit tout seul, alors que ces deux-là demandent d'être recopiés."
+              )}
             </p>
-            <SourceRow label="Board" url={boardUrl} size="1000 x 1000" note="square - the board fits the shorter side" />
+            <SourceRow label={t("Board", "Plateau")} url={boardUrl} size="1000 x 1000" note={t("square - the board fits the shorter side", "carré - le plateau s'ajuste au côté le plus court")} />
             {/* Taller than the player's 1200 x 200 because the odds band sits under the clock and
                 the whole bar scales to fit its source - give it 200 and the clock shrinks to make
                 room for the thing that was meant to be an addition. */}
             <SourceRow
-              label="Caster clock"
+              label={t("Caster clock", "Chronomètre du commentateur")}
               url={timerUrl}
               size="1200 x 300"
-              note="the match clock, every fleet's hulls, and the odds bar - casters only"
+              note={t("the match clock, every fleet's hulls, and the odds bar - casters only", "le chronomètre de la partie, les coques de chaque flotte, et la barre de cotes - commentateurs seulement")}
             />
             {/* Sized for the full width of a 1080p canvas, because that is where it goes - a strip
                 along the bottom edge. It scales down to whatever it's given, so the number is a
                 starting point rather than a requirement. */}
             <SourceRow
-              label="Key"
+              label={t("Key", "Clé")}
               url={keyUrl}
               size="1920 x 90"
-              note="a thin strip for the bottom edge - add ?plate=0 for no backing"
+              note={t("a thin strip for the bottom edge - add ?plate=0 for no backing", "une fine bande pour le bord inférieur - ajoutez ?plate=0 pour ne pas avoir de fond")}
             />
             {/* Nothing to look at and nothing to aim, so it takes no frame from this page at all -
                 it reads the room directly, exactly as the clock and the key do. */}
             <SourceRow
-              label="Audio"
+              label={t("Audio", "Audio")}
               url={audioUrl}
               size="100 x 100"
-              note="the board's sound - no picture. Tick 'Control audio via OBS' for its own fader"
+              note={t("the board's sound - no picture. Tick 'Control audio via OBS' for its own fader", "le son du plateau - pas d'image. Cochez « Control audio via OBS » pour son propre fader")}
             />
           </section>
         </div>

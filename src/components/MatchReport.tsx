@@ -10,6 +10,7 @@ import { paceLabel } from "../lib/squarePace";
 import { archiveMatch } from "../lib/archiveMatch";
 import { supabase } from "../lib/supabase";
 import { teamName, teamHex } from "../lib/teamColors";
+import { useLanguage, useT } from "../lib/language";
 import { BrandMark } from "./BrandMark";
 import { BalanceReadout } from "./BalanceReadout";
 import { asMatchBalance } from "../lib/matchBalance";
@@ -27,6 +28,8 @@ interface Props {
 
 export function MatchReport({ room, players, attacks, deepHides, fleets, activeTeamsList }: Props) {
   const [copied, setCopied] = useState(false);
+  const lang = useLanguage();
+  const t = useT();
   /**
    * Every team's ships, read back out of the archive.
    *
@@ -193,24 +196,26 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
             winner's name still catches it. */}
         <BrandMark width="9rem" />
         <h1 style={{ margin: 0 }}>
-          {report.draw ? "Mutual Destruction" : `${teamName(report.winnerTeam ?? 0)} Wins`}
+          {report.draw
+            ? t("Mutual Destruction", "Destruction mutuelle")
+            : `${teamName(report.winnerTeam ?? 0)} ${t("Wins", "gagne")}`}
         </h1>
         <span className="muted">
-          Match time {report.duration} · {report.totalShots} shots fired
+          {t("Match time", "Durée du match")} {report.duration} · {report.totalShots} {t("shots fired", "tirs effectués")}
         </span>
         {/* Inside the screenshot panel on purpose. This recap is what gets posted to Discord after a
             match, and a practice run posted without the label is a result somebody will read as
             real - then go looking for on the leaderboard. */}
         {room.practice && (
           <span style={{ color: "var(--hit)", fontSize: "0.82rem" }}>
-            <strong>Practice match</strong> - saved in full, counted in nothing.
+            <strong>{t("Practice match", "Match d'entraînement")}</strong> - {t("saved in full, counted in nothing.", "enregistré en entier, mais ne compte pour rien.")}
           </span>
         )}
       </div>
 
       {report.awards.length > 0 && (
         <div className="panel stack" style={{ gap: "0.5rem", width: "min(560px, 100%)" }}>
-          <h3 style={{ margin: 0 }}>Honors</h3>
+          <h3 style={{ margin: 0 }}>{t("Honors", "Honneurs")}</h3>
           {report.awards.map((a) => (
             <div key={a.title} className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>
               <span style={{ fontSize: "1.2rem" }}>{a.emoji}</span>
@@ -228,7 +233,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
       )}
 
       <div className="panel stack" style={{ gap: "0.5rem", width: "min(560px, 100%)" }}>
-        <h3 style={{ margin: 0 }}>Scoreboard</h3>
+        <h3 style={{ margin: 0 }}>{t("Scoreboard", "Tableau des scores")}</h3>
         {statsByTeam.map((team) => (
           <div key={team} className="stack" style={{ gap: "0.2rem" }}>
             <strong style={{ color: teamHex(team), fontSize: "0.9rem" }}>{teamName(team)}</strong>
@@ -236,20 +241,23 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
                 <thead>
                   <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                    <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.4rem" }}>Player</th>
-                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Shots</th>
-                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Hits</th>
-                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Miss</th>
-                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Sunk</th>
-                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Acc.</th>
+                    <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Player", "Joueur")}</th>
+                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Shots", "Tirs")}</th>
+                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Hits", "Touchés")}</th>
+                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Miss", "Ratés")}</th>
+                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Sunk", "Coulés")}</th>
+                    <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Acc.", "Préc.")}</th>
                     {/* The only column here that is about how somebody PLAYS rather than how well
                         they shoot - two captains with identical aim can be an hour apart over a
                         match, and nothing else on this table would ever say so. */}
                     <th
                       style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
-                      title="Their typical square, start to finish: the median gap between their shots. Under fire-on-kill a shot IS a kill, so that gap is one boss."
+                      title={t(
+                        "Their typical square, start to finish: the median gap between their shots. Under fire-on-kill a shot IS a kill, so that gap is one boss.",
+                        "Leur case habituelle, du début à la fin : l'écart médian entre leurs tirs. Avec le tir-sur-mise-à-mort, un tir EST une mise à mort, donc cet écart est un boss."
+                      )}
                     >
-                      Pace
+                      {t("Pace", "Rythme")}
                     </th>
                   </tr>
                 </thead>
@@ -285,7 +293,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                     // two lucky shots the same as a teammate's forty.
                     const roster = report.stats.filter((s) => s.team === team);
                     if (roster.length < 2) return null;
-                    const t = roster.reduce(
+                    const totals = roster.reduce(
                       (acc, s) => ({
                         shots: acc.shots + s.shots,
                         hits: acc.hits + s.hits,
@@ -297,12 +305,12 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                     const cell = { padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" as const };
                     return (
                       <tr style={{ textAlign: "right", borderTop: "1px solid var(--panel-border)", color: "var(--text-dim)" }}>
-                        <td style={{ textAlign: "left", padding: "0.15rem 0.4rem" }}>Fleet total</td>
-                        <td style={cell}>{t.shots}</td>
-                        <td style={cell}>{t.hits}</td>
-                        <td style={cell}>{t.misses}</td>
-                        <td style={cell}>{t.sunk}</td>
-                        <td style={cell}>{t.shots > 0 ? Math.round((t.hits / t.shots) * 100) : 0}%</td>
+                        <td style={{ textAlign: "left", padding: "0.15rem 0.4rem" }}>{t("Fleet total", "Total de la flotte")}</td>
+                        <td style={cell}>{totals.shots}</td>
+                        <td style={cell}>{totals.hits}</td>
+                        <td style={cell}>{totals.misses}</td>
+                        <td style={cell}>{totals.sunk}</td>
+                        <td style={cell}>{totals.shots > 0 ? Math.round((totals.hits / totals.shots) * 100) : 0}%</td>
                         {/* Deliberately empty. Accuracy totals because hits and shots add up; a
                             pace does not - a fleet's typical square is the median of everybody's
                             gaps pooled, which is neither the sum nor the average of the three
@@ -317,12 +325,12 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
             </div>
           </div>
         ))}
-        {report.stats.length === 0 && <span className="muted">Nobody fired a shot.</span>}
+        {report.stats.length === 0 && <span className="muted">{t("Nobody fired a shot.", "Personne n'a tiré.")}</span>}
       </div>
 
       {/* Text, not a glyph - matching the toolbar. */}
       <button onClick={copy} className="primary">
-        {copied ? "Copied to clipboard!" : "Copy match report"}
+        {copied ? t("Copied to clipboard!", "Copié dans le presse-papiers !") : t("Copy match report", "Copier le rapport de match")}
       </button>
 
       {/* Between the scoreboard and the boards, which is where the question comes up: the
@@ -342,10 +350,10 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
       />
 
       <div className="stack" style={{ alignItems: "center", gap: "0.4rem", width: "100%" }}>
-        <h3 style={{ margin: 0 }}>Final fleets</h3>
+        <h3 style={{ margin: 0 }}>{t("Final fleets", "Flottes finales")}</h3>
         {fleetsHidden ? (
           <span className="muted" style={{ fontSize: "0.8rem" }}>
-            No ship positions on record for this match.
+            {t("No ship positions on record for this match.", "Aucune position de navire enregistrée pour ce match.")}
           </span>
         ) : (
           <div className="row" style={{ gap: "1.5rem", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start" }}>
@@ -366,8 +374,8 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
                   const c = challenges[i];
                   if (!c) return null;
                   return {
-                    label: c.short ?? c.name,
-                    title: c.title ?? c.name,
+                    label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+                    title: (lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name,
                     region: c.region,
                     color: c.color,
                   };
@@ -378,7 +386,7 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
         )}
         {fleetsPartial && (
           <span className="muted" style={{ fontSize: "0.78rem" }}>
-            Some fleets couldn't be read back. Those boards show shots only.
+            {t("Some fleets couldn't be read back. Those boards show shots only.", "Certaines flottes n'ont pas pu être relues. Ces plateaux n'affichent que les tirs.")}
           </span>
         )}
       </div>

@@ -17,6 +17,7 @@ import {
 } from "../lib/fleetDraw";
 import { playSfx } from "../lib/sfx";
 import { teamHex, teamName } from "../lib/teamColors";
+import { useT } from "../lib/language";
 import type { Player } from "../types/battleship";
 import "./FleetDraw.css";
 
@@ -47,20 +48,26 @@ const MAX_FILES = 4;
 
 type Mode = "wander" | "descend" | "under" | "fling" | "moored";
 
-/** What washes up in a bottle. Nothing here is a hint; they are all jokes. */
-const BOTTLE_NOTES = [
-  "Try finger, but hole.",
-  "Praise the message, ye who read.",
-  "Behold, dog!",
-  "Time for crab.",
-  "Seek stronger foes elsewhere.",
-  "Message from a drowned crew: still no land.",
-  "I was here. It was wet.",
-  "Turn back. The tentacles are worse further out.",
-  "Whoever finds this owes me a rematch.",
-  "No shot is wasted if you learn from it.",
-  "Visions of grace, but mostly fog.",
-  "Fort, night.",
+/**
+ * What washes up in a bottle. Nothing here is a hint; they are all jokes.
+ *
+ * Each entry is an [en, fr] pair rather than a plain string, since this list lives outside the
+ * component and has no hook to call t() with - the pair is picked apart at the call site instead,
+ * where t() is in scope.
+ */
+const BOTTLE_NOTES: [string, string][] = [
+  ["Try finger, but hole.", "Essaie doigt, mais trou."],
+  ["Praise the message, ye who read.", "Loué soit le message, ô lecteur."],
+  ["Behold, dog!", "Admirez, chien !"],
+  ["Time for crab.", "L'heure du crabe."],
+  ["Seek stronger foes elsewhere.", "Cherchez des ennemis plus forts ailleurs."],
+  ["Message from a drowned crew: still no land.", "Message d'un équipage noyé : toujours pas de terre en vue."],
+  ["I was here. It was wet.", "J'étais ici. C'était mouillé."],
+  ["Turn back. The tentacles are worse further out.", "Faites demi-tour. Les tentacules empirent plus loin."],
+  ["Whoever finds this owes me a rematch.", "Quiconque trouve ceci me doit une revanche."],
+  ["No shot is wasted if you learn from it.", "Aucun tir n'est perdu si on en tire une leçon."],
+  ["Visions of grace, but mostly fog.", "Visions de grâce, mais surtout du brouillard."],
+  ["Fort, night.", "Fort, la nuit."],
 ];
 
 interface Ship {
@@ -127,7 +134,10 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
   const [teams, setTeams] = useState(2);
   const [presenting, setPresenting] = useState(false);
   const [draw, setDraw] = useState<{ plan: DrawPlan; names: string[]; startedAt: number } | null>(null);
-  const [status, setStatus] = useState(isHost ? "Pick your teams, then draw." : "Waiting for the host to draw.");
+  const t = useT();
+  const [status, setStatus] = useState(
+    isHost ? t("Pick your teams, then draw.", "Choisissez vos équipes, puis tirez.") : t("Waiting for the host to draw.", "En attente du tirage de l'hôte."),
+  );
 
   const sailing = useMemo(() => roster.filter((n) => !benched[n]), [roster, benched]);
 
@@ -147,13 +157,13 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
     (m: DrawMessage) => {
       setDraw({ plan: planDraw(m.seed, m.names.length, m.teams), names: m.names, startedAt: performance.now() });
       setTeams(m.teams);
-      setStatus("The sea opens amidships.");
+      setStatus(t("The sea opens amidships.", "La mer s'ouvre en son centre."));
       onOpenChange(true);
       // The horn the room already knows as "something is about to happen" -
       // it opens the firing phase, and this is the same kind of moment.
       playSfx("prepare");
     },
-    [onOpenChange],
+    [onOpenChange, t],
   );
 
   useEffect(() => {
@@ -166,7 +176,12 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
         // is wrong instead - a reload is the whole fix, this being a static
         // site with no state to migrate.
         else if (isStaleDrawMessage(payload)) {
-          setStatus("That draw came from a different version. Both of you reload the page.");
+          setStatus(
+            t(
+              "That draw came from a different version. Both of you reload the page.",
+              "Ce tirage vient d'une version différente. Rechargez la page tous les deux.",
+            ),
+          );
         }
       })
       .subscribe();
@@ -175,7 +190,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       void supabase.removeChannel(ch);
       channelRef.current = null;
     };
-  }, [roomId, applyMessage]);
+  }, [roomId, applyMessage, t]);
 
   const startDraw = useCallback(() => {
     if (!isHost || sailing.length < 2 || sailing.length < teams) return;
@@ -192,8 +207,8 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
 
   const reset = useCallback(() => {
     setDraw(null);
-    setStatus(isHost ? "Back in open water." : "Waiting for the host to draw.");
-  }, [isHost]);
+    setStatus(isHost ? t("Back in open water.", "De retour en pleine mer.") : t("Waiting for the host to draw.", "En attente du tirage de l'hôte."));
+  }, [isHost, t]);
 
   /* ---- things you can poke ----------------------------------------------- */
 
@@ -218,20 +233,21 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       const react: Record<PropKind, () => void> = {
         bottle: () => {
           playSfx("bottle");
-          say(hit.x, hit.y - 34, BOTTLE_NOTES[bubbleId.current % BOTTLE_NOTES.length], "note");
+          const [en, fr] = BOTTLE_NOTES[bubbleId.current % BOTTLE_NOTES.length];
+          say(hit.x, hit.y - 34, t(en, fr), "note");
         },
         tentacle: () => playSfx("tentacle"),
         // No cue of his own, and he does not get to borrow one - the joke is
         // that something enormous surfaces and it is only him.
-        patches: () => say(hit.x, hit.y - 40, "SORRY!", "shout"),
+        patches: () => say(hit.x, hit.y - 40, t("SORRY!", "DÉSOLÉ !"), "shout"),
         dutchman: () => {
           playSfx("dutchman");
-          say(hit.x, hit.y - 66, "A sail, and nothing under it", "ghost");
+          say(hit.x, hit.y - 66, t("A sail, and nothing under it", "Une voile, et rien dessous."), "ghost");
         },
       };
       react[hit.kind]();
     },
-    [say],
+    [say, t],
   );
 
   /* ---- full screen ------------------------------------------------------- */
@@ -670,7 +686,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       // is still crossing the water for a second or two afterwards.
       if (draw !== null && cheeredFor.current !== draw && ships.every((s) => s.mode === "moored")) {
         cheeredFor.current = draw;
-        setStatus("Teams set.");
+        setStatus(t("Teams set.", "Équipes définies."));
         playSfx("victory");
       }
 
@@ -690,7 +706,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
       window.removeEventListener("resize", onResize);
       sceneRef.current = null;
     };
-  }, [names, draw, teams, presenting, open]);
+  }, [names, draw, teams, presenting, open, t]);
 
   /* ---- chrome ------------------------------------------------------------ */
 
@@ -702,7 +718,7 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
   if (!open) return null;
 
   return (
-    <div className={`fd-modal${presenting ? " presenting" : ""}`} role="dialog" aria-label="Fleet draw">
+    <div className={`fd-modal${presenting ? " presenting" : ""}`} role="dialog" aria-label={t("Fleet draw", "Tirage des flottes")}>
       <div className="fd-stage" ref={stageRef} onClick={onStageClick}>
         <canvas ref={canvasRef} className="fd-sea" />
 
@@ -756,27 +772,27 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
           {isHost ? (
             <>
               <button className="fd-act" onClick={startDraw} disabled={!canDraw}>
-                {draw === null ? "Draw teams" : "Draw again"}
+                {draw === null ? t("Draw teams", "Tirer les équipes") : t("Draw again", "Tirer à nouveau")}
               </button>
               <button className="fd-act ghost" onClick={reset} disabled={draw === null}>
-                Open water
+                {t("Open water", "Pleine mer")}
               </button>
             </>
           ) : (
             <span className="fd-status">{status}</span>
           )}
           <button className="fd-act ghost" onClick={togglePresent}>
-            {presenting ? "Exit full screen" : "Full screen"}
+            {presenting ? t("Exit full screen", "Quitter le plein écran") : t("Full screen", "Plein écran")}
           </button>
-          <button className="fd-act ghost" onClick={() => onOpenChange(false)}>Close</button>
+          <button className="fd-act ghost" onClick={() => onOpenChange(false)}>{t("Close", "Fermer")}</button>
         </div>
       </div>
 
       {isHost && !presenting && (
         <div className="fd-controls">
           <div className="fd-field">
-            <span className="fd-label">Teams</span>
-            <div className="fd-seg" role="group" aria-label="Number of teams">
+            <span className="fd-label">{t("Teams", "Équipes")}</span>
+            <div className="fd-seg" role="group" aria-label={t("Number of teams", "Nombre d'équipes")}>
               {Array.from({ length: MAX_TEAMS - MIN_TEAMS + 1 }, (_, i) => i + MIN_TEAMS).map((t) => (
                 <button
                   key={t}
@@ -792,7 +808,9 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
           </div>
 
           <div className="fd-field fd-grow">
-            <span className="fd-label">Who sails — click to bench ({sailing.length} sailing)</span>
+            <span className="fd-label">
+              {t("Who sails — click to bench", "Qui navigue — cliquez pour mettre sur la touche")} ({sailing.length} {t("sailing", "en mer")})
+            </span>
             <div className="fd-chips">
               {roster.map((n) => (
                 <button
@@ -813,9 +831,12 @@ export function FleetDraw({ roomId, players, isHost, open, onOpenChange }: Props
 
           <p className="fd-note">
             {draw === null
-              ? `Drawn teams are shown here only — nobody is moved. Read them out and let the room pick. Takes about ${Math.round(estimateDrawMs(sailing.length) / 1000)}s.`
-              : `Standing draw: ${Array.from({ length: teams }, (_, t) =>
-                  `${teamName(DRAW_TEAM_COLORS[t])} ${draw.plan.assignment.filter((a) => a === t).length}`,
+              ? `${t(
+                  "Drawn teams are shown here only — nobody is moved. Read them out and let the room pick. Takes about",
+                  "Les équipes tirées sont affichées ici seulement — personne n'est déplacé. Annoncez-les et laissez la table choisir. Environ",
+                )} ${Math.round(estimateDrawMs(sailing.length) / 1000)}s.`
+              : `${t("Standing draw:", "Tirage en cours :")} ${Array.from({ length: teams }, (_, ti) =>
+                  `${teamName(DRAW_TEAM_COLORS[ti])} ${draw.plan.assignment.filter((a) => a === ti).length}`,
                 ).join(" · ")}`}
           </p>
         </div>

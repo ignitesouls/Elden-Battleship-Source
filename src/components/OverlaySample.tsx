@@ -3,6 +3,7 @@ import { FindCard } from "./FindCard";
 import { ClockBar, type ClockFleet } from "./ClockBar";
 import { KeyStrip } from "./KeyStrip";
 import { legendItems } from "../lib/legend";
+import { useT } from "../lib/language";
 import type { Region } from "../lib/challenges";
 import type { Challenge } from "../lib/squareSetFormat";
 import type { DeepMark } from "../lib/deepWater";
@@ -149,6 +150,7 @@ export function OverlaySample({
   /** The desk's scene rather than a crew's: odds on the clock, and no fleet panel. */
   isCaster: boolean;
 }) {
+  const t = useT();
   /**
    * The legend, from the same function the real key strip is built from.
    *
@@ -275,7 +277,7 @@ export function OverlaySample({
           what a streamer has no way to judge from a duration in seconds. */}
       {alertMark ? (
         <div className="ovp-alert">
-          <FindCard mark={alertMark} who="Your crew" team={1} where="D7" />
+          <FindCard mark={alertMark} who={t("Your crew", "Votre équipe")} team={1} where="D7" />
         </div>
       ) : null}
     </div>

@@ -1,5 +1,6 @@
 import { teamHex } from "../lib/teamColors";
 import type { RecordChase } from "../lib/recordChase";
+import { useT } from "../lib/language";
 
 interface Props {
   chases: RecordChase[];
@@ -18,13 +19,14 @@ interface Props {
  * A broken record gets the accent colour and reads as done; a chase stays quiet and states the gap,
  * because the useful sentence mid-match is "two more hits", not "you are on 17".
  */
-export function RecordChases({ chases, showTeams, title = "Records in play" }: Props) {
+export function RecordChases({ chases, showTeams, title }: Props) {
+  const t = useT();
   if (chases.length === 0) return null;
 
   return (
     <div className="panel stack" style={{ gap: "0.35rem", padding: "0.5rem 0.6rem" }}>
       <span className="muted" style={{ fontSize: "0.7rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-        {title}
+        {title ?? t("Records in play", "Records en cours")}
       </span>
       {chases.map((c) => (
         <div

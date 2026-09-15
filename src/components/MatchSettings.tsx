@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useT } from "../lib/language";
 import { updateRoomSettings } from "../lib/rooms";
 import { formatDuration } from "../lib/matchTime";
 import { SQUARE_SET_LIST, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET } from "../lib/challenges";
@@ -45,6 +46,7 @@ interface Props {
 export function MatchSettings({ room, isHost, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const t = useT();
 
   const boardSize = room.board_size;
   const cells = boardSize * boardSize;
@@ -127,17 +129,17 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   // panel, and "which board are we actually playing" is now a thing somebody chose.
   const cutSuffix = set.id !== shownSet.id && set.cutLabel ? ` - ${set.cutLabel.toLowerCase()}` : "";
   const summary =
-    (practice ? "Practice · " : "") +
-    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ships`} · ${shownSet.label}${cutSuffix} · ${formatDuration(
+    (practice ? `${t("Practice", "Entraînement")} · ` : "") +
+    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ${t("ships", "navires")}`} · ${shownSet.label}${cutSuffix} · ${formatDuration(
       prepSeconds
-    )} prep`;
+    )} ${t("prep", "prépa")}`;
 
   // Everyone sees the settings; only the host gets the buttons. A spectator or a player who
   // wandered in deserves to know what they're about to play without having to ask.
   if (!isHost) {
     return (
       <div className="panel row" style={{ gap: "0.5rem", alignItems: "baseline" }}>
-        <span className="muted" style={{ fontSize: "0.78rem" }}>Match settings</span>
+        <span className="muted" style={{ fontSize: "0.78rem" }}>{t("Match settings", "Paramètres du match")}</span>
         <span style={{ fontSize: "0.82rem" }}>{summary}</span>
       </div>
     );
@@ -146,7 +148,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   return (
     <div className="panel stack" style={{ gap: "0.55rem" }}>
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} style={{ fontSize: "0.82rem" }}>
-        {open ? "▾" : "▸"} Match settings
+        {open ? "▾" : "▸"} {t("Match settings", "Paramètres du match")}
         <span className="muted"> - {summary}</span>
       </button>
 
@@ -154,7 +156,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
         <div className="stack" style={{ gap: "0.6rem", paddingLeft: "0.2rem" }}>
           {/* Resizing carries the fleet across rather than leaving a 10x10 Classic fleet on a 5x5
               board, where 17 ship squares in 25 cells cannot even be placed. */}
-          <Field label="Board size">
+          <Field label={t("Board size", "Taille du plateau")}>
             {BOARD_SIZES.map((n) => (
               <Choice
                 key={n}
@@ -163,9 +165,14 @@ export function MatchSettings({ room, isHost, onError }: Props) {
                 unavailable={n > sizeCap}
                 title={
                   n > sizeCap
-                    ? `${shownSet.label} has ${squarePool(set)} squares - a ${n}x${n} board would deal ${
-                        n * n - squarePool(set)
-                      } of them twice. Its biggest board is ${sizeCap}x${sizeCap}.`
+                    ? t(
+                        `${shownSet.label} has ${squarePool(set)} squares - a ${n}x${n} board would deal ${
+                          n * n - squarePool(set)
+                        } of them twice. Its biggest board is ${sizeCap}x${sizeCap}.`,
+                        `${shownSet.label} compte ${squarePool(set)} cases - un plateau ${n}x${n} en placerait ${
+                          n * n - squarePool(set)
+                        } deux fois. Son plus grand plateau est ${sizeCap}x${sizeCap}.`
+                      )
                     : undefined
                 }
                 onClick={() =>
@@ -181,12 +188,19 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               where a 2v2 lobby finds out why the two biggest sizes went away. */}
           {sizeCap < BOARD_SIZES[BOARD_SIZES.length - 1] && (
             <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
-              {shownSet.label} has {squarePool(set)} squares, so it fills a {sizeCap}x{sizeCap} board at
-              most. A bigger board would put the same square in two places.
+              {t(
+                `${shownSet.label} has ${squarePool(set)} squares, so it fills a ${sizeCap}x${sizeCap} board at most. A bigger board would put the same square in two places.`,
+                `${shownSet.label} compte ${squarePool(set)} cases, donc il remplit au plus un plateau ${sizeCap}x${sizeCap}. Un plateau plus grand placerait la même case à deux endroits.`
+              )}
             </span>
           )}
 
-          <Field label={`Fleet - ${shipDefs.length} ships, ${shipCells} squares (${Math.round((shipCells / cells) * 100)}% of the board)`}>
+          <Field
+            label={`${t("Fleet", "Flotte")} - ${shipDefs.length} ${t("ships", "navires")}, ${shipCells} ${t(
+              "squares",
+              "cases"
+            )} (${Math.round((shipCells / cells) * 100)}% ${t("of the board", "du plateau")})`}
+          >
             {Object.keys(FLEET_PRESETS).map((k) => (
               <Choice
                 key={k}
@@ -205,7 +219,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
           {/* One button per set a person can choose. A set that comes in cuts is one button here
               and picks its full board; which cut is the row below, because the cuts are the same
               board and putting them in this row would mean two buttons reading "Bosses". */}
-          <Field label="Squares">
+          <Field label={t("Squares", "Cases")}>
             {SQUARE_SET_LIST.map((s) => (
               <Choice
                 key={s.id}
@@ -232,7 +246,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               The caption is the ACTIVE cut's own blurb, which is why the set-level blurb this row
               replaced isn't also printed: on a set with cuts, what you are playing is the cut. */}
           {cuts.length > 1 && (
-            <Field label={shownSet.cutsLabel ?? "Squares dealt"}>
+            <Field label={shownSet.cutsLabel ?? t("Squares dealt", "Cases distribuées")}>
               {cuts.map((c) => (
                 <Choice key={c.id} active={set.id === c.id} busy={busy} onClick={() => chooseSet(c.id)}>
                   {c.cutLabel} - {squarePool(c)}
@@ -244,7 +258,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
             {cuts.length > 1 ? set.blurb : shownSet.blurb}
           </span>
 
-          <Field label="Preparation time before firing opens (minutes)">
+          <Field label={t("Preparation time before firing opens (minutes)", "Temps de préparation avant l'ouverture des tirs (minutes)")}>
             <select
               value={prepSeconds}
               disabled={busy}
@@ -253,7 +267,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               {prepChoices.map((seconds) => (
                 <option key={seconds} value={seconds}>
                   {prepLabel(seconds)}
-                  {seconds === 0 ? " - none" : ""}
+                  {seconds === 0 ? ` - ${t("none", "aucune")}` : ""}
                 </option>
               ))}
             </select>
@@ -271,12 +285,12 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               hidden here - a match that could be declared practice after the result is in would let
               the host delete any game they lost. The panel is only rendered in the lobby anyway, so
               the trigger is guarding against a stale tab, not against this code. */}
-          <Field label="Record">
+          <Field label={t("Record", "Enregistrement")}>
             <Choice active={!practice} busy={busy} onClick={() => void apply({ practice: false })}>
-              Counts
+              {t("Counts", "Compte")}
             </Choice>
             <Choice active={practice} busy={busy} onClick={() => void apply({ practice: true })}>
-              Practice
+              {t("Practice", "Entraînement")}
             </Choice>
           </Field>
           <span
@@ -284,8 +298,14 @@ export function MatchSettings({ room, isHost, onError }: Props) {
             style={{ fontSize: "0.72rem", marginTop: "-0.35rem", color: practice ? "var(--hit)" : undefined }}
           >
             {practice
-              ? "Nothing from this match reaches the leaderboard, anyone's career, the record book or the boss stats. It still gets a full recap you can open afterwards. Settled now - it can't be changed once the match starts, or undone after."
-              : "A real match: every square, every win and every time counts. Switch to Practice for a test run or a demo, and none of it will."}
+              ? t(
+                  "Nothing from this match reaches the leaderboard, anyone's career, the record book or the boss stats. It still gets a full recap you can open afterwards. Settled now - it can't be changed once the match starts, or undone after.",
+                  "Rien de ce match n'atteint le classement, la carrière de personne, le livre des records ou les statistiques de boss. Il aura tout de même un récapitulatif complet consultable ensuite. Décidé maintenant - ça ne peut plus être changé une fois le match commencé, ni annulé après."
+                )
+              : t(
+                  "A real match: every square, every win and every time counts. Switch to Practice for a test run or a demo, and none of it will.",
+                  "Un vrai match : chaque case, chaque victoire et chaque temps compte. Passez en Entraînement pour un essai ou une démo, et rien de tout ça ne comptera."
+                )}
           </span>
 
           {/* These sets are written for a 25-square bingo card. Dealt onto 144 cells there aren't
@@ -293,19 +313,24 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               than let it be discovered as two squares wanting the same boss. */}
           {shortfall > 0 && (
             <span className="muted" style={{ fontSize: "0.72rem", color: "var(--hit)" }}>
-              {shownSet.label} covers {cleanFill} of {cells} squares cleanly. The last {shortfall} will
-              repeat goals already on the board. A smaller board fits it better.
+              {t(
+                `${shownSet.label} covers ${cleanFill} of ${cells} squares cleanly. The last ${shortfall} will repeat goals already on the board. A smaller board fits it better.`,
+                `${shownSet.label} couvre ${cleanFill} cases sur ${cells} sans répétition. Les ${shortfall} dernières répéteront des objectifs déjà sur le plateau. Un plateau plus petit lui convient mieux.`
+              )}
             </span>
           )}
 
           {shipCells > cells * 0.35 && (
             <span className="muted" style={{ fontSize: "0.72rem", color: "var(--hit)" }}>
-              That fleet fills a lot of a {boardSize}x{boardSize} board, so placement may be cramped.
+              {t(
+                `That fleet fills a lot of a ${boardSize}x${boardSize} board, so placement may be cramped.`,
+                `Cette flotte remplit une grande partie d'un plateau ${boardSize}x${boardSize}, le placement risque d'être serré.`
+              )}
             </span>
           )}
 
           <span className="muted" style={{ fontSize: "0.72rem" }}>
-            Changing the board or fleet clears any ships already placed.
+            {t("Changing the board or fleet clears any ships already placed.", "Changer le plateau ou la flotte efface tous les navires déjà placés.")}
           </span>
         </div>
       )}

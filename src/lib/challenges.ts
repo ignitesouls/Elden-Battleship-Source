@@ -5,6 +5,8 @@ import {
   SQUARE_SETS,
   DEFAULT_SQUARE_SET,
   squareTitle,
+  squareTitleFr,
+  shortLabel,
   type Challenge,
   type SquareSetId,
   type Region,
@@ -89,14 +91,44 @@ export function challengesForRoom(
   const next = dealSeed(roomId, setId, seed);
   const dealt =
     set.format === "bingo"
-      ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors)
+      ? buildBingoBoard(
+          set.data,
+          count,
+          next,
+          set.shortNames,
+          set.regions,
+          set.colors,
+          set.namesFr,
+          set.tooltipsFr,
+          set.shortNamesFr,
+          set.optionsFr
+        )
       : buildFlatBoard(set.data, count, next);
   // Applied after the deal and never during it, so the sequence of next() calls above is untouched.
   // Consuming the PRNG differently would re-deal every live board and strand every archived one.
   const board = applyBoardPerm(dealt, perm);
   // Hover text is settled here rather than at each board, because how a square reads on hover
   // depends on which set it came from and this is the last point that knows. See squareTitle.
-  return board.map((c) => ({ ...c, title: squareTitle(c, set) }));
+  //
+  // French is resolved in the same place for the same reason, and additively. A bingo board has
+  // already resolved `nameFr`/`tooltipFr` through its own %variable% pipeline (see buildBingoBoard)
+  // and those values win; a flat set never does that resolution, so its Fr text is a plain lookup
+  // by the square's own (English, archived-identity) name here instead - never derived from it, so
+  // a square with no translation yet simply carries no Fr text and titleFr comes back undefined,
+  // which every renderer must read as "show the English title instead". See squareTitleFr.
+  return board.map((c) => {
+    const nameFr = c.nameFr ?? set.namesFr?.[c.name];
+    const withFr: Challenge = {
+      ...c,
+      nameFr,
+      // Keyed by the English TOOLTIP text, not the name - see the matching note in buildBingoBoard.
+      tooltipFr: c.tooltipFr ?? (c.tooltip ? set.tooltipsFr?.[c.tooltip] : undefined),
+      // Same authored-wins, else shortLabel(nameFr), else nothing rule buildBingoBoard applies -
+      // bingo boards already resolved this themselves (c.shortFr wins below), a flat set never did.
+      shortFr: c.shortFr ?? set.shortNamesFr?.[c.name] ?? (nameFr !== undefined ? shortLabel(nameFr) : undefined),
+    };
+    return { ...withFr, title: squareTitle(c, set), titleFr: squareTitleFr(withFr, set) };
+  });
 }
 
 /**

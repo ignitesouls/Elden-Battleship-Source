@@ -15,6 +15,7 @@ import {
   type ArchivedMatchDetail,
 } from "../lib/matchArchive";
 import { teamName, teamHex } from "../lib/teamColors";
+import { useLanguage, useT } from "../lib/language";
 import { formatRoomCode } from "../lib/roomCode";
 import { matchEpithet } from "../lib/matchName";
 import { paceLabel } from "../lib/squarePace";
@@ -46,6 +47,8 @@ export function ArchivedMatch() {
   const matchKey = key ? decodeURIComponent(key) : "";
   const [detail, setDetail] = useState<ArchivedMatchDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  const lang = useLanguage();
+  const t = useT();
 
   useEffect(() => {
     let cancelled = false;
@@ -123,15 +126,15 @@ export function ArchivedMatch() {
     return m;
   }, [detail]);
 
-  if (failed) return <p className="error-text">Couldn't load that match.</p>;
-  if (!detail) return <LoadingScreen>Loading match...</LoadingScreen>;
+  if (failed) return <p className="error-text">{t("Couldn't load that match.", "Impossible de charger ce match.")}</p>;
+  if (!detail) return <LoadingScreen>{t("Loading match...", "Chargement du match...")}</LoadingScreen>;
 
   const { report, fleets, events } = detail;
   if (!report && fleets.length === 0 && events.length === 0) {
     return (
       <div className="stack" style={{ alignItems: "center", gap: "0.8rem" }}>
-        <p className="muted">Nothing on record under that key.</p>
-        <Link to="/almanac">Back to the Almanac</Link>
+        <p className="muted">{t("Nothing on record under that key.", "Rien d'enregistré sous cette clé.")}</p>
+        <Link to="/almanac">{t("Back to the Almanac", "Retour à l'almanach")}</Link>
       </div>
     );
   }
@@ -202,8 +205,8 @@ export function ArchivedMatch() {
     const c = challenges?.[i];
     if (c) {
       return {
-        label: c.short ?? c.name,
-        title: c.title ?? c.name,
+        label: (lang === "fr" ? c.shortFr ?? c.nameFr : undefined) ?? c.short ?? c.name,
+        title: (lang === "fr" ? c.titleFr : undefined) ?? c.title ?? c.name,
         region: c.region,
         color: c.color,
       };
@@ -238,17 +241,22 @@ export function ArchivedMatch() {
                 stats: report.summary?.stats ?? [],
                 awards: report.summary?.awards ?? [],
               })
-            : "Match record"}
+            : t("Match record", "Fiche du match")}
         </h1>
         <span className="muted">
-          {report ? (draw ? "Mutual destruction · " : `${teamName(report.winner_team ?? 0)} won · `) : ""}
-          Room {formatRoomCode(report?.room_code ?? matchKey.split(":")[0] ?? "")}
+          {report
+            ? draw
+              ? `${t("Mutual destruction", "Destruction mutuelle")} · `
+              : `${teamName(report.winner_team ?? 0)} ${t("won", "a gagné")} · `
+            : ""}
+          {t("Room", "Salle")} {formatRoomCode(report?.room_code ?? matchKey.split(":")[0] ?? "")}
           {when ? ` · ${when.toLocaleDateString()} ${when.toLocaleTimeString()}` : ""}
           {setLabel ? ` · ${setLabel}` : ""}
         </span>
         {report && (
           <span className="muted">
-            Match time {report.duration ?? "unknown"} · {report.total_shots} shots fired
+            {t("Match time", "Durée du match")} {report.duration ?? t("unknown", "inconnue")} ·{" "}
+            {report.total_shots} {t("shots fired", "tirs effectués")}
           </span>
         )}
         {/* Why a voided match still has a page at all, said on the page itself.
@@ -265,13 +273,17 @@ export function ArchivedMatch() {
             accusation where there is nothing to accuse. */}
         {report?.practice ? (
           <span style={{ color: "var(--hit)", fontSize: "0.82rem", maxWidth: "34rem" }}>
-            <strong>Practice match</strong> - declared before it was played, archived in full,
-            counted in nothing.
+            <strong>{t("Practice match", "Match d'entraînement")}</strong> -{" "}
+            {t(
+              "declared before it was played, archived in full, counted in nothing.",
+              "déclaré avant d'être joué, archivé en entier, mais ne compte pour rien."
+            )}
           </span>
         ) : (
           report?.voided && (
             <span style={{ color: "var(--danger)", fontSize: "0.82rem", maxWidth: "34rem" }}>
-              <strong>Voided</strong> - archived in full, counted in nothing.
+              <strong>{t("Voided", "Annulé")}</strong> -{" "}
+              {t("archived in full, counted in nothing.", "archivé en entier, mais ne compte pour rien.")}
             </span>
           )
         )}
@@ -279,7 +291,7 @@ export function ArchivedMatch() {
 
       {awards.length > 0 && (
         <div className="panel stack" style={{ gap: "0.5rem", width: "min(560px, 100%)" }}>
-          <h3 style={{ margin: 0 }}>Honors</h3>
+          <h3 style={{ margin: 0 }}>{t("Honors", "Honneurs")}</h3>
           {awards.map((a) => (
             <div key={a.title} className="row" style={{ gap: "0.6rem", alignItems: "baseline" }}>
               <span style={{ fontSize: "1.2rem" }}>{a.emoji}</span>
@@ -298,7 +310,7 @@ export function ArchivedMatch() {
 
       {stats.length > 0 && (
         <div className="panel stack" style={{ gap: "0.5rem", width: "min(560px, 100%)" }}>
-          <h3 style={{ margin: 0 }}>Scoreboard</h3>
+          <h3 style={{ margin: 0 }}>{t("Scoreboard", "Tableau des scores")}</h3>
           {[...new Set(stats.map((s) => s.team))]
             .sort((a, b) => a - b)
             .map((team) => (
@@ -308,17 +320,20 @@ export function ArchivedMatch() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
                     <thead>
                       <tr style={{ color: "var(--text-dim)", textAlign: "right" }}>
-                        <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.4rem" }}>Player</th>
-                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Shots</th>
-                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Hits</th>
-                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Miss</th>
-                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Sunk</th>
-                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>Acc.</th>
+                        <th style={{ textAlign: "left", fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Player", "Joueur")}</th>
+                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Shots", "Tirs")}</th>
+                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Hits", "Touchés")}</th>
+                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Miss", "Ratés")}</th>
+                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Sunk", "Coulés")}</th>
+                        <th style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}>{t("Acc.", "Préc.")}</th>
                         <th
                           style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
-                          title="Their typical square, start to finish: the median gap between their shots."
+                          title={t(
+                            "Their typical square, start to finish: the median gap between their shots.",
+                            "Leur case habituelle, du début à la fin : l'écart médian entre leurs tirs."
+                          )}
                         >
-                          Pace
+                          {t("Pace", "Rythme")}
                         </th>
                       </tr>
                     </thead>
@@ -362,8 +377,10 @@ export function ArchivedMatch() {
           <TheDeep entries={deep.finds} boardSize={boardSize} cthulhu={deep.cthulhu} />
           {deep.salvaged && deep.finds.length > 0 && (
             <span className="muted" style={{ fontSize: "0.78rem" }}>
-              Older than the Deep Water records. These are the finds its honors named; there may
-              have been more.
+              {t(
+                "Older than the Deep Water records. These are the finds its honors named; there may have been more.",
+                "Antérieur aux registres des Profondeurs. Voici les découvertes que ses honneurs nomment ; il pourrait y en avoir eu d'autres."
+              )}
             </span>
           )}
         </div>
@@ -379,14 +396,14 @@ export function ArchivedMatch() {
           <MatchReplay replay={replay} cellText={cellText} deepCells={deepByCell} />
         ) : teams.length === 0 ? (
           <>
-            <h3 style={{ margin: 0 }}>Final fleets</h3>
+            <h3 style={{ margin: 0 }}>{t("Final fleets", "Flottes finales")}</h3>
             <span className="muted" style={{ fontSize: "0.8rem" }}>
-              No boards on record for this match.
+              {t("No boards on record for this match.", "Aucun plateau enregistré pour ce match.")}
             </span>
           </>
         ) : (
           <>
-            <h3 style={{ margin: 0 }}>Final fleets</h3>
+            <h3 style={{ margin: 0 }}>{t("Final fleets", "Flottes finales")}</h3>
             <div className="row" style={{ gap: "1.5rem", flexWrap: "wrap", justifyContent: "center", alignItems: "flex-start" }}>
               {teams.map((team) => (
                 <BoardGrid
@@ -406,21 +423,24 @@ export function ArchivedMatch() {
         )}
         {!challenges && (
           <span className="muted" style={{ fontSize: "0.78rem" }}>
-            Older than the board records. Only the squares somebody fired at are named.
+            {t(
+              "Older than the board records. Only the squares somebody fired at are named.",
+              "Antérieur aux registres du plateau. Seules les cases visées sont nommées."
+            )}
           </span>
         )}
       </div>
 
       {report?.report_text && (
         <details className="panel" style={{ width: "min(560px, 100%)" }}>
-          <summary style={{ cursor: "pointer" }}>Text report</summary>
+          <summary style={{ cursor: "pointer" }}>{t("Text report", "Rapport texte")}</summary>
           <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.78rem", margin: "0.6rem 0 0" }}>
             {report.report_text}
           </pre>
         </details>
       )}
 
-      <Link to="/almanac">Back to the Almanac</Link>
+      <Link to="/almanac">{t("Back to the Almanac", "Retour à l'almanach")}</Link>
       <SiteFooter />
     </div>
   );

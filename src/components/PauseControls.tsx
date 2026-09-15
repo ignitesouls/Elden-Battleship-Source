@@ -3,6 +3,7 @@ import { usePauseInfo } from "../hooks/useBattlePhase";
 import { readyToResume } from "../lib/matchPause";
 import { pauseMatch, requestPause, resumeMatch, setPauseReady, settlePause } from "../lib/rooms";
 import { playSfx } from "../lib/sfx";
+import { useT } from "../lib/language";
 import type { Player, Room } from "../types/battleship";
 import "./PauseControls.css";
 
@@ -20,9 +21,6 @@ import "./PauseControls.css";
  * Nothing here touches the fire path. Shots keep landing through a pause on purpose; see the note at
  * the top of lib/matchPause.ts for why that is the house rule rather than an oversight.
  */
-
-/** The one instruction anybody has to act on, and the reason the freeze is five seconds late. */
-const HOUSE_RULE = "Finish your fight, then quit out.";
 
 interface Props {
   room: Room;
@@ -44,6 +42,7 @@ export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
   const pause = usePauseInfo(room);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   const me = players.find((p) => p.id === myPlayerId);
   const onFleet = me != null && me.team !== null;
@@ -72,21 +71,21 @@ export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
         >
           {/* Four states, four labels. "Cancel pause" is the warning window: the clock has not
               actually stopped yet, so calling it off leaves no window to record and no trace. */}
-          {pause.phase === "running" && "Pause match"}
-          {pause.phase === "pausing" && "Cancel pause"}
-          {pause.phase === "paused" && "Resume match"}
-          {pause.phase === "resuming" && "Resuming..."}
+          {pause.phase === "running" && t("Pause match", "Mettre en pause")}
+          {pause.phase === "pausing" && t("Cancel pause", "Annuler la pause")}
+          {pause.phase === "paused" && t("Resume match", "Reprendre la partie")}
+          {pause.phase === "resuming" && t("Resuming...", "Reprise...")}
         </button>
       ) : (
         <button
           disabled={busy || pause.phase !== "running"}
           style={{ width: "100%" }}
-          title="Chimes for everyone and puts your name up. The host decides."
+          title={t("Chimes for everyone and puts your name up. The host decides.", "Sonne pour tout le monde et affiche votre nom. L'hôte décide.")}
           onClick={() => run(() => requestPause(myPlayerId))}
         >
           {/* Still live once a request is in: somebody who has been waiting three minutes should be
               able to say so again, and requestPause writes a fresh timestamp that chimes again. */}
-          {me?.pause_requested_at ? "Ask again for a pause" : "Request pause"}
+          {me?.pause_requested_at ? t("Ask again for a pause", "Redemander une pause") : t("Request pause", "Demander une pause")}
         </button>
       )}
 
@@ -99,7 +98,7 @@ export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
           style={{ width: "100%" }}
           onClick={() => run(() => setPauseReady(myPlayerId, !iAmReady))}
         >
-          {iAmReady ? "✓ Ready - stand down" : "Ready up"}
+          {iAmReady ? t("✓ Ready - stand down", "✓ Prêt - se retirer") : t("Ready up", "Se préparer")}
         </button>
       )}
 
@@ -112,6 +111,7 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
   const pause = usePauseInfo(room);
   const requests = outstandingRequests(players);
   const crew = crewOf(players);
+  const t = useT();
 
   /**
    * Requests that were already on screen when this mounted.
@@ -183,8 +183,12 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
     // deciding whether to stop a match, and "Kaiden" is a far better basis for that than "1".
     return (
       <div className="panel pause-banner">
-        <span className="pause-requests">{requestLine(requests)}</span>
-        <span className="muted">{isHost ? "Pause match is in the controls." : "Waiting for the host."}</span>
+        <span className="pause-requests">{requestLine(requests, t)}</span>
+        <span className="muted">
+          {isHost
+            ? t("Pause match is in the controls.", "Le bouton de pause est dans les commandes.")
+            : t("Waiting for the host.", "En attente de l'hôte.")}
+        </span>
       </div>
     );
   }
@@ -195,16 +199,20 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
   return (
     <div className={`panel pause-banner${counting ? " is-counting" : ""}`}>
       <span className="pause-banner-title display">
-        {pause.phase === "pausing" && "Pausing in"}
-        {pause.phase === "paused" && "Match paused"}
-        {pause.phase === "resuming" && "Resuming in"}
+        {pause.phase === "pausing" && t("Pausing in", "Pause dans")}
+        {pause.phase === "paused" && t("Match paused", "Partie en pause")}
+        {pause.phase === "resuming" && t("Resuming in", "Reprise dans")}
       </span>
 
       {counting && <span className="pause-banner-count">{Math.max(0, Math.ceil(pause.countdown))}</span>}
 
       {/* Kept up for the whole pause rather than only the countdown: somebody who got into a fight
           AFTER the clock stopped is in exactly the situation this sentence is about. */}
-      {pause.phase !== "resuming" && <span className="pause-banner-rule">{HOUSE_RULE}</span>}
+      {pause.phase !== "resuming" && (
+        <span className="pause-banner-rule">
+          {t("Finish your fight, then quit out.", "Terminez votre combat, puis quittez.")}
+        </span>
+      )}
 
       {pause.phase === "paused" && crew.length > 0 && (
         <>
@@ -213,20 +221,23 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
               <span
                 key={p.id}
                 className={`pause-roster-name${p.pause_ready ? " is-ready" : ""}`}
-                title={p.pause_ready ? "Ready" : "Not ready yet"}
+                title={p.pause_ready ? t("Ready", "Prêt") : t("Not ready yet", "Pas encore prêt")}
               >
                 {p.pause_ready ? "✓ " : ""}
                 {p.nickname}
-                {p.id === myPlayerId ? " (you)" : ""}
+                {p.id === myPlayerId ? t(" (you)", " (vous)") : ""}
               </span>
             ))}
           </div>
           <span className="muted">
             {readyToResume(crew)
               ? isHost
-                ? "Everyone is ready. Resume when you are."
-                : "Everyone is ready. Waiting for the host."
-              : `Waiting on ${waiting.length} ${waiting.length === 1 ? "player" : "players"}.`}
+                ? t("Everyone is ready. Resume when you are.", "Tout le monde est prêt. Reprenez quand vous voulez.")
+                : t("Everyone is ready. Waiting for the host.", "Tout le monde est prêt. En attente de l'hôte.")
+              : t(
+                  `Waiting on ${waiting.length} ${waiting.length === 1 ? "player" : "players"}.`,
+                  `En attente de ${waiting.length} joueur${waiting.length === 1 ? "" : "s"}.`
+                )}
           </span>
         </>
       )}
@@ -235,9 +246,16 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
 }
 
 /** "Kaiden has requested a pause." - or the two-and-more forms of the same sentence. */
-function requestLine(requests: Player[]): string {
+function requestLine(requests: Player[], t: (en: string, fr: string) => string): string {
   const names = requests.map((p) => p.nickname);
-  if (names.length === 1) return `${names[0]} has requested a pause.`;
-  if (names.length === 2) return `${names[0]} and ${names[1]} have requested a pause.`;
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)} have requested a pause.`;
+  if (names.length === 1) return t(`${names[0]} has requested a pause.`, `${names[0]} a demandé une pause.`);
+  if (names.length === 2)
+    return t(
+      `${names[0]} and ${names[1]} have requested a pause.`,
+      `${names[0]} et ${names[1]} ont demandé une pause.`
+    );
+  return t(
+    `${names.slice(0, -1).join(", ")} and ${names.at(-1)} have requested a pause.`,
+    `${names.slice(0, -1).join(", ")} et ${names.at(-1)} ont demandé une pause.`
+  );
 }
