@@ -1,0 +1,1 @@
+var e=new Map;function t(t,n){let r=e.get(t);if(r&&Date.now()-r.at<3e5)return r.rows;let i=n().then(n=>(n.length===0&&e.delete(t),n),n=>{throw e.delete(t),n});return e.set(t,{at:Date.now(),rows:i}),i}function n(){e.clear()}function r(t){for(let n of[...e.keys()])n.startsWith(t)&&e.delete(n)}export{n,r,t};
