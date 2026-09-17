@@ -3,6 +3,7 @@
 -- OTHER team's old ship placements silently survived. team_ready had no delete policy at all,
 -- so stale ready/eliminated flags always survived too. Run in the SQL Editor.
 
+drop policy if exists "fleets reset by host" on fleets;
 create policy "fleets reset by host" on fleets for update using (
   exists (
     select 1 from players host
@@ -12,6 +13,7 @@ create policy "fleets reset by host" on fleets for update using (
   )
 );
 
+drop policy if exists "team_ready delete by host" on team_ready;
 create policy "team_ready delete by host" on team_ready for delete using (
   exists (
     select 1 from players host

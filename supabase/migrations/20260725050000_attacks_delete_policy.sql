@@ -4,4 +4,5 @@
 --
 -- Verified empirically: before this policy, a host's delete returned no error and left all
 -- rows in place; after it, the rows are actually removed.
+drop policy if exists "attacks delete" on attacks;
 create policy "attacks delete" on attacks for delete using (true);

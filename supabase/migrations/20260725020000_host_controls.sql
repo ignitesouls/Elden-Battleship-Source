@@ -2,6 +2,7 @@
 -- "players delete own" policy only allows self-removal; this adds host removal
 -- as an additional (OR'd) delete policy. Run in the SQL Editor of your existing project.
 
+drop policy if exists "players delete by host" on players;
 create policy "players delete by host" on players for delete using (
   exists (
     select 1 from players host

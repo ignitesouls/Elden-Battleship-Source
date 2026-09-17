@@ -38,4 +38,11 @@ create policy "team_ready update own team" on team_ready for update using (
   )
 );
 
-alter publication supabase_realtime add table team_ready;
+-- Guarded because adding a table already in the publication is an error, not a no-op -
+-- initial_schema.sql already adds team_ready when this runs on a fresh database.
+do $$
+begin
+  alter publication supabase_realtime add table team_ready;
+exception
+  when duplicate_object then null;
+end $$;
