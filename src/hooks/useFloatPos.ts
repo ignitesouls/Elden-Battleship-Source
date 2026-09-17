@@ -15,26 +15,39 @@ export interface FloatPos {
 }
 
 /**
- * Forces a card fully back onto the screen.
+ * The strip along the top of the viewport the card is not allowed into.
+ *
+ * TopBar is position: fixed, 2.2rem tall, and stacks above this card (z-index 30 vs 25). A card
+ * whose header is dragged up under it can't be grabbed to move again and its ✕ can't be clicked -
+ * the bar is on top and swallows the pointer, and the card is stranded for good. So the clamp keeps
+ * the card's top edge below the bar. A shade over 2.2rem at a 16px root, with a few px to spare so
+ * the header never tucks flush against the bar's underside.
+ */
+const TOP_KEEPOUT_PX = 40;
+
+/**
+ * Forces a card fully back onto the screen, and clear of the fixed top bar.
  *
  * Measured against the real element rather than clamped to 0..1, because the fraction says where
  * the card's top-left goes and the card has width: a card at x = 0.98 is a sliver of border in the
  * corner with its header - the only thing you can grab it by - off the screen entirely. Run on drag
  * and on window resize, so shrinking the window drags a parked card back into reach instead of
- * stranding it.
+ * stranding it. The TOP_KEEPOUT_PX floor on the y bound is the same idea aimed at the top bar: see
+ * the note there for the unrecoverable state it exists to prevent.
  *
- * A card taller or wider than the viewport pins to the top-left rather than being pushed negative:
- * Math.max(0, ...) on the bound is what keeps the header reachable in that case, since the header
- * is at the card's top edge and the overflow hangs off the bottom.
+ * A card taller or wider than the viewport pins to the top-left corner of the allowed area rather
+ * than being pushed under the bar or off the left edge: Math.max on each bound is what keeps the
+ * header reachable in that case, since the header is at the card's top edge and the overflow hangs
+ * off the bottom.
  */
 export function clampToViewport(pos: FloatPos, el: HTMLElement | null): FloatPos {
   const vw = window.innerWidth || 1;
   const vh = window.innerHeight || 1;
   const maxX = Math.max(0, vw - (el?.offsetWidth ?? 0));
-  const maxY = Math.max(0, vh - (el?.offsetHeight ?? 0));
+  const maxY = Math.max(TOP_KEEPOUT_PX, vh - (el?.offsetHeight ?? 0));
   return {
     x: Math.min(maxX, Math.max(0, pos.x * vw)) / vw,
-    y: Math.min(maxY, Math.max(0, pos.y * vh)) / vh,
+    y: Math.min(maxY, Math.max(TOP_KEEPOUT_PX, pos.y * vh)) / vh,
   };
 }
 

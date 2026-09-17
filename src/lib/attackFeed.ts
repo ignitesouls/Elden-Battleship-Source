@@ -13,15 +13,23 @@ export interface FeedShot {
 
 /**
  * One player action produces one `attacks` row per opposing team, all inserted in a single
- * statement - so they share an identical created_at. Grouping on that collapses them back
- * into the single shot the player actually took.
+ * statement - so they share an identical created_at, and one row per (shot, opposing team) is
+ * exactly what belongs under one shot.
+ *
+ * Keyed on attacker + square alone, not on that shared created_at, so a square this attacker has
+ * more than one row against - which attacks_one_shot_per_square now keeps from ever happening
+ * again, but a match archived before that migration can still carry one - reads as the single shot
+ * it was, not two. Within a shot, rows are deduped per defender_team for the same reason: a repeat
+ * row against a defender already resolved copies that defender's own earlier verdict verbatim (see
+ * resolve_attack), so counting both would double a hit, a miss or a kill that only happened once.
  */
 export function groupIntoShots(attacks: Attack[], players: Player[]): FeedShot[] {
   const byShot = new Map<string, FeedShot>();
+  const defendersSeen = new Map<string, Set<number>>();
 
   // Negative indices are bookkeeping rows (the match-start marker), not shots anyone fired.
   for (const a of attacks.filter((x) => x.cell_index >= 0)) {
-    const key = `${a.attacker_player_id ?? a.attacker_team}|${a.cell_index}|${a.created_at}`;
+    const key = `${a.attacker_player_id ?? a.attacker_team}|${a.cell_index}`;
     let shot = byShot.get(key);
     if (!shot) {
       const player = players.find((p) => p.id === a.attacker_player_id);
@@ -34,8 +42,17 @@ export function groupIntoShots(attacks: Attack[], players: Player[]): FeedShot[]
         rows: [],
       };
       byShot.set(key, shot);
+      defendersSeen.set(key, new Set());
     }
-    shot.rows.push(a);
+    // The earliest row is the one that actually landed; a later duplicate only ever repeats its
+    // verdict, so the shot itself is timed by when it first happened.
+    if (a.created_at < shot.at) shot.at = a.created_at;
+
+    const seen = defendersSeen.get(key)!;
+    if (!seen.has(a.defender_team)) {
+      seen.add(a.defender_team);
+      shot.rows.push(a);
+    }
   }
 
   return [...byShot.values()].sort((x, y) => y.at.localeCompare(x.at));

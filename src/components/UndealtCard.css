@@ -86,13 +86,38 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin: 0;
   padding: 0.3rem 0.5rem 0.4rem;
+}
+
+/*
+ * One block per region, in run order. The colour arrives on .bg-region-* (BoardGrid.css), which
+ * only sets the --bg-region custom property - the heading and the names below read it for `color`,
+ * so the card groups and tints by exactly the same regions the board does rather than repeating its
+ * hex values here.
+ */
+.undealt-group-head {
+  margin: 0.5rem 0 0.12rem;
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bg-region, var(--text-dim));
+}
+
+/* The first block sits directly under the header divider, so it doesn't want the leading gap. */
+.undealt-group:first-child .undealt-group-head {
+  margin-top: 0;
+}
+
+.undealt-items {
+  margin: 0;
+  padding: 0;
   list-style: none;
 }
 
 .undealt-item {
   font-size: 0.68rem;
   line-height: 1.45;
-  color: var(--text);
+  /* Falls back to plain text for an untagged square - the trailing headless block. */
+  color: var(--bg-region, var(--text));
 }

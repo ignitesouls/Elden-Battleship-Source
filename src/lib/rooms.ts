@@ -551,12 +551,20 @@ export async function startBattle(roomId: string): Promise<BalanceOutcome> {
   // (not fire-and-forget) because an RLS rejection here used to fail silently - see the
   // "attacks insert start marker" policy - leaving every client stuck with no STARTING/
   // PREPARATION/MATCH anchor until the first real shot landed.
-  const { error: markerErr } = await supabase.from("attacks").insert({
-    room_id: roomId,
-    cell_index: MATCH_START_MARKER,
-    attacker_team: -1,
-    defender_team: -1,
-  });
+  //
+  // Upsert rather than insert: attacks_one_shot_per_square is one row per (room, attacker_team,
+  // defender_team, cell_index), and every marker this function ever writes for this room has the
+  // same four values. A bare insert would turn "startBattle explicitly tolerates a duplicate
+  // caller" (see above) into a hard error on the second call.
+  const { error: markerErr } = await supabase.from("attacks").upsert(
+    {
+      room_id: roomId,
+      cell_index: MATCH_START_MARKER,
+      attacker_team: -1,
+      defender_team: -1,
+    },
+    { onConflict: "room_id,attacker_team,defender_team,cell_index", ignoreDuplicates: true }
+  );
   if (markerErr) throw markerErr;
 
   // Belt and braces on the clock, and BEFORE the status flip so there is no frame in which the room
@@ -663,9 +671,18 @@ export async function sendAttack(
     }));
   if (base.length === 0) return;
 
+  // Upsert, not insert: attacks_one_shot_per_square makes a repeat fire at a square this fleet has
+  // already shot a no-op rather than a duplicate row. The firedRef/outgoing guards in BattlePhase
+  // close the gap before realtime echoes a row back for the common case; this is what makes the
+  // rare miss - two crewmates clicking together, a double-click landing before the echo - harmless
+  // instead of a second wound. See the 20260914 migration for why the race exists at all.
+  const onConflict = "room_id,attacker_team,defender_team,cell_index";
   const { error } = await supabase
     .from("attacks")
-    .insert(base.map((r) => ({ ...r, attacker_player_id: attackerPlayerId })));
+    .upsert(base.map((r) => ({ ...r, attacker_player_id: attackerPlayerId })), {
+      onConflict,
+      ignoreDuplicates: true,
+    });
   if (!error) return;
 
   // Firing must never hard-fail just because the feed migration hasn't been applied yet:
@@ -674,7 +691,9 @@ export async function sendAttack(
   const missingColumn = /attacker_player_id/i.test(error.message);
   if (!missingColumn) throw error;
 
-  const { error: retryError } = await supabase.from("attacks").insert(base);
+  const { error: retryError } = await supabase
+    .from("attacks")
+    .upsert(base, { onConflict, ignoreDuplicates: true });
   if (retryError) throw retryError;
 }
 

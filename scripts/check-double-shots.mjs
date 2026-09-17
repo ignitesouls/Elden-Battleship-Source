@@ -15,6 +15,15 @@
  * FAILS on a project that hasn't had 20260803000000_idempotent_shot_resolution.sql applied - that's
  * the point. Remedy: the "one square, one wound" step of supabase/migrations/20260803000000_idempotent_shot_resolution.sql.
  *
+ * A second, later bug lived one layer up from this: nothing stopped that second row from being
+ * INSERTED in the first place, only from damaging anything once it landed. A caller that checks
+ * "have I already fired here" by reading `attacks` and then inserting is a check-then-act race,
+ * and auto-fire's mod resends every currently-set kill flag on every poll by design - see the
+ * 20260914 migration for the live match this produced dozens of true duplicate rows in. This file
+ * also checks that a repeat fire from the same fleet leaves exactly one row behind, which is what
+ * attacks_one_shot_per_square (20260914_one_attack_per_square.sql) is for. FAILS on a project
+ * without that index too.
+ *
  * Read-write: creates one throwaway room and deletes it again. Archives nothing, so the record
  * books are untouched.
  *
@@ -80,17 +89,40 @@ const charlie = await session('charlie')
 const code = `TESTDUP${Date.now().toString(36).toUpperCase().slice(-4)}`
 let roomId = null
 
-/** Inserts a shot and resolves it, returning the resolved row. */
+/**
+ * Inserts a shot and resolves it, returning the resolved row - mirroring sendAttack(), including
+ * the upsert: attacks_one_shot_per_square means a repeat fire at a square this fleet already has a
+ * row against inserts nothing, so there is no new id to resolve. That case reads the existing row
+ * back instead (already resolved, since every call in this script runs to completion before the
+ * next one starts).
+ */
 async function fire(who, team, cell, defender) {
   const { data, error } = await who.client
     .from('attacks')
-    .insert({ room_id: roomId, cell_index: cell, attacker_team: team, defender_team: defender })
+    .upsert(
+      { room_id: roomId, cell_index: cell, attacker_team: team, defender_team: defender },
+      { onConflict: 'room_id,attacker_team,defender_team,cell_index', ignoreDuplicates: true }
+    )
     .select()
-    .single()
   if (error) throw new Error(`${who.name} fire ${cell}: ${error.message}`)
-  const { error: rpcErr } = await who.client.rpc('resolve_attack', { p_attack_id: data.id })
+
+  if (data.length === 0) {
+    const { data: existing, error: existingErr } = await who.client
+      .from('attacks')
+      .select()
+      .eq('room_id', roomId)
+      .eq('attacker_team', team)
+      .eq('defender_team', defender)
+      .eq('cell_index', cell)
+      .single()
+    if (existingErr) throw new Error(`${who.name} lookup ${cell}: ${existingErr.message}`)
+    return existing
+  }
+
+  const [inserted] = data
+  const { error: rpcErr } = await who.client.rpc('resolve_attack', { p_attack_id: inserted.id })
   if (rpcErr) throw new Error(`resolve ${cell}: ${rpcErr.message}`)
-  const { data: row } = await who.client.from('attacks').select().eq('id', data.id).single()
+  const { data: row } = await who.client.from('attacks').select().eq('id', inserted.id).single()
   return row
 }
 
@@ -164,6 +196,22 @@ try {
     fleet.ship_hits_remaining[0] === 4,
     `hits_remaining=${fleet.ship_hits_remaining[0]}, expected 4`
   )
+
+  {
+    const { data: rows, error } = await alpha.client
+      .from('attacks')
+      .select('id')
+      .eq('room_id', roomId)
+      .eq('attacker_team', 0)
+      .eq('defender_team', 1)
+      .eq('cell_index', CARRIER[0])
+    if (error) throw error
+    check(
+      'the repeat did NOT leave a second row behind',
+      rows.length === 1,
+      `${rows.length} row(s) for that square, expected 1`
+    )
+  }
 
   // -- 2. a different fleet fires at the same square ------------------------
   const crossTeam = await fire(charlie, 2, CARRIER[0], 1)

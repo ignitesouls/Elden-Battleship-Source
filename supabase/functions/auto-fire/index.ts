@@ -302,9 +302,16 @@ Deno.serve(async (req) => {
         ).toISOString()
 
         // Same shape a click produces: one row per opposing fleet, resolved individually.
+        //
+        // Upsert, not insert: `alreadyFired` is a snapshot read at the top of this request, so a
+        // poll that overlaps one still in flight for the same kill - the mod resends every
+        // currently-set flag on every poll, precisely so a slow or dropped request heals on the
+        // next one - can read that snapshot before the earlier request's row lands. Without
+        // attacks_one_shot_per_square backing this up, that race inserted a second row at a square
+        // already fired at; with it, the second insert is a no-op instead of a duplicate.
         const { data: inserted, error: insertError } = await admin
           .from('attacks')
-          .insert(
+          .upsert(
             defenders.map((defender_team) => ({
               room_id: room.id,
               cell_index: cell,
@@ -312,11 +319,19 @@ Deno.serve(async (req) => {
               defender_team,
               attacker_player_id: seat.id,
               created_at: at,
-            }))
+            })),
+            { onConflict: 'room_id,attacker_team,defender_team,cell_index', ignoreDuplicates: true }
           )
           .select('id')
         if (insertError) {
           skipped.push({ flag, reason: 'insert_failed' })
+          continue
+        }
+        if (!inserted || inserted.length === 0) {
+          // Every defender's row already existed - a race with another poll (or a manual click
+          // that beat the mod to it) got here first. Nothing landed, so there is nothing to resolve.
+          alreadyFired.add(cell)
+          skipped.push({ flag, reason: 'already_fired' })
           continue
         }
 
