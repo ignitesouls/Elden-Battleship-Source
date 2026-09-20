@@ -42,13 +42,20 @@ import type { MatchEventRow } from "./almanac";
  * the opposite of the thing it claimed to measure. No amount of flooring the gap fixes that - the
  * floor only moves the price of the fake.
  *
- * What survives, and what a new record should be made of:
+ * As of 9/20, auto-mark exists and every timing record - first blood and first sinking included -
+ * only counts a shot the mod fired off a real kill event (see `earliest()` and the `auto` column on
+ * `attacks`/`match_events`). Before that column existed, first blood and first sinking were the two
+ * timing records that survived hand-marking anyway: a late manual mark can only ever make somebody
+ * look slower, never faster, which is a different failure mode from the gap records above. That
+ * reasoning still holds - this isn't undoing it, it's just no longer the thing doing the work, since
+ * every timing record now runs on the same auto-only rule instead of half of them needing a reader
+ * to remember which half was exempt and why.
+ *
+ * What survives on marking alone, with no auto requirement, and what a new record should be made of:
  *
  *   - counts and outcomes - shots, hits, sunk, who won - which the server re-derives from the room's
  *     own attack log rather than trusting a client, so no marking habit changes them;
- *   - what a square WAS, and what a match handed out for it;
- *   - and the two timings measured from a fixed start, first blood and first sinking, where a late
- *     mark can only ever make somebody look slower.
+ *   - what a square WAS, and what a match handed out for it.
  */
 
 export interface RecordHolder {
@@ -199,6 +206,8 @@ interface ArchivedShot {
   challenge: string | null;
   /** The best outcome across every fleet this one shot landed on. */
   result: "miss" | "hit" | "sunk";
+  /** Whether the mod fired this off a kill event, rather than a manual click. */
+  auto: boolean;
 }
 
 /**
@@ -240,6 +249,7 @@ export function archivedShots(events: MatchEventRow[]): ArchivedShot[] {
       cellIndex: e.cell_index,
       challenge: e.challenge_name ?? null,
       result,
+      auto: e.auto ?? false,
     });
   }
 
@@ -356,10 +366,19 @@ function winStreaks(rows: ParticipantRow[]): { longest: Candidate[]; active: Can
   return { longest, active };
 }
 
-/** The earliest shot of a given kind in each match, per player. */
+/**
+ * The earliest shot of a given kind in each match, per player.
+ *
+ * Restricted to auto-fired shots - see the note at the top of this file. A late manual mark could
+ * only ever make somebody look slower, which is why first blood and first sinking used to be the
+ * two timing records that survived hand-marking. Auto-mark is the mandatory path for speed as of
+ * 9/20 anyway, so this now matches every other timing record instead of being the one exception
+ * a reader had to be told about.
+ */
 function earliest(shots: ArchivedShot[], wanted: (s: ArchivedShot) => boolean): Candidate[] {
   const first = new Map<string, ArchivedShot>();
   for (const shot of shots) {
+    if (!shot.auto) continue;
     if (!wanted(shot)) continue;
     const id = `${shot.matchKey}|${shot.key}`;
     const held = first.get(id);
@@ -585,7 +604,7 @@ export function buildRecordBook(
       id: "first-blood",
       emoji: "🧨",
       label: "Quickest first blood",
-      note: "measured from the moment firing opened",
+      note: "measured from the moment firing opened - auto-marked squares only, since 9/20",
       ...rank(
         earliest(shots, (s) => s.result !== "miss"),
         (c) => ({ display: clock(c.value) }),
@@ -596,6 +615,7 @@ export function buildRecordBook(
       id: "first-sinking",
       emoji: "🗡️",
       label: "Quickest sinking",
+      note: "auto-marked squares only, since 9/20",
       ...rank(
         earliest(shots, (s) => s.result === "sunk"),
         (c) => ({ display: clock(c.value) }),

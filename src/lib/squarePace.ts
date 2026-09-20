@@ -55,21 +55,26 @@ function median(values: number[]): number | null {
  *
  * Only gaps count, never a player's opening shot - the clock before that is the lobby, the placement
  * phase and whatever the room was doing, not their work on a square.
+ *
+ * As of 9/20, a gap also needs both ends auto-fired - same rule as almanac.timedSquares, and the same
+ * reason: a manually-clicked square's timestamp is whenever the player got around to marking it, not
+ * when it actually fell, so a gap with a manual end is timing a click and not a fight.
  */
 export function squarePace(events: MatchEventRow[]): Map<string, number> {
   const gaps = new Map<string, number[]>();
-  const previous = new Map<string, number>();
+  const previous = new Map<string, { seconds: number; auto: boolean }>();
 
   // archivedShots sorts by match, then by time, which is exactly the order a gap is measured in.
   for (const shot of archivedShots(events)) {
     const run = `${shot.matchKey}|${shot.key}`;
     const before = previous.get(run);
-    previous.set(run, shot.seconds);
+    previous.set(run, { seconds: shot.seconds, auto: shot.auto });
     if (before === undefined) continue;
+    if (!before.auto || !shot.auto) continue;
 
     const list = gaps.get(shot.key);
-    if (list) list.push(shot.seconds - before);
-    else gaps.set(shot.key, [shot.seconds - before]);
+    if (list) list.push(shot.seconds - before.seconds);
+    else gaps.set(shot.key, [shot.seconds - before.seconds]);
   }
 
   const out = new Map<string, number>();

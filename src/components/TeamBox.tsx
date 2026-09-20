@@ -60,28 +60,36 @@ export function TeamBox({ team, players, shipDefs, sunkHulls, eliminated, isMine
         ))}
       </div>
 
-      {/* Longest hull first, each carrying its length - see lib/fleetOrder. A bare name asks the
-          reader to already know that a Cruiser is three squares, which is exactly what somebody
-          watching their first match doesn't, and the sizes are what the whole roster is read for:
-          "they're down to a Destroyer" only means something next to the 5 at the other end. */}
-      {sunkHulls && (
-        <div className="row" style={{ gap: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
-          {fleetByLength(shipDefs).map(({ def, index }) => {
-            const sunk = sunkHulls[index];
-            return (
-              <span
-                key={index}
-                style={{
-                  textDecoration: sunk ? "line-through" : undefined,
-                  color: sunk ? "var(--text-dim)" : "var(--text)",
-                }}
-              >
-                {def.name} - {def.size}
-              </span>
-            );
-          })}
-        </div>
-      )}
+      {sunkHulls && <HullStrip shipDefs={shipDefs} sunkHulls={sunkHulls} />}
+    </div>
+  );
+}
+
+/**
+ * Longest hull first, each carrying its length - see lib/fleetOrder. A bare name asks the reader to
+ * already know that a Cruiser is three squares, which is exactly what somebody watching their first
+ * match doesn't, and the sizes are what the whole roster is read for: "they're down to a Destroyer"
+ * only means something next to the 5 at the other end.
+ *
+ * Its own component because the roster scoreboard draws the same strip under each fleet's players.
+ */
+export function HullStrip({ shipDefs, sunkHulls }: { shipDefs: ShipDefinition[]; sunkHulls: boolean[] }) {
+  return (
+    <div className="row" style={{ gap: "0.3rem 0.6rem", fontSize: "0.75rem" }}>
+      {fleetByLength(shipDefs).map(({ def, index }) => {
+        const sunk = sunkHulls[index];
+        return (
+          <span
+            key={index}
+            style={{
+              textDecoration: sunk ? "line-through" : undefined,
+              color: sunk ? "var(--text-dim)" : "var(--text)",
+            }}
+          >
+            {def.name} - {def.size}
+          </span>
+        );
+      })}
     </div>
   );
 }

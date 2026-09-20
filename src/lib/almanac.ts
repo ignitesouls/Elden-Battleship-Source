@@ -30,6 +30,8 @@ export interface MatchEventRow {
   board_seed?: string | null;
   /** How the balancer rearranged that deal, if it did. Null for every unbalanced match. */
   board_perm?: number[] | null;
+  /** Whether the mod fired this shot off a kill event, rather than a manual click. */
+  auto?: boolean;
 }
 
 /** Minimal shape of a participant row, for the cross-table stats below. */
@@ -128,6 +130,12 @@ function median(xs: number[]): number | null {
  * that fight takes exactly as long whether or not an enemy ship turned out to be hiding under it -
  * hit and miss describe the opponent's placement, not the player's run. Counting only hits would
  * throw away most of the sample and bias what's left toward whichever bosses sat on ships.
+ *
+ * Timings, but not attempts/hits/sunk, are further held to auto-fired shots only, as of 9/20 - see
+ * the note at the top of recordBook.ts. `attempts`, `hits` and `sunk` are the server's own read of
+ * whether a square resolved, unaffected by who marked it or when; `medianSeconds`, `fastest` and
+ * `slowest` are built from a manually-clickable timestamp, and it's that column a reader is trusting
+ * when they read "fastest".
  */
 export function bossStats(events: MatchEventRow[]): BossStat[] {
   const byName = new Map<string, { attempts: number; hits: number; sunk: number; times: { s: number; who: string }[] }>();
@@ -143,7 +151,7 @@ export function bossStats(events: MatchEventRow[]): BossStat[] {
     b.attempts++;
     if (e.result === "hit" || e.result === "sunk") b.hits++;
     if (e.result === "sunk") b.sunk++;
-    if (e.match_seconds !== null && e.match_seconds >= 0) {
+    if (e.auto && e.match_seconds !== null && e.match_seconds >= 0) {
       b.times.push({ s: e.match_seconds, who: e.nickname });
     }
   }
@@ -192,13 +200,18 @@ export interface QuickSquareRecord {
  * against a median square of about two and a half minutes, because it was really a list of who got
  * their first square in quickest.
  *
- * The two exclusions are squarePace's, for squarePace's reasons:
+ * The exclusions are squarePace's, for squarePace's reasons, plus one of this board's own:
  *
  *   - an opening shot has nothing to be measured back from. The clock before it is the lobby, the
  *     placement phase, and whatever fight the captain was already in when firing opened - not work
  *     on that square. Opening squares have their own record, "Quickest first blood".
  *   - a gap under MIN_GAP_SECONDS is one duo fight filling two squares, or a banked kill fired next
  *     to the following one. Neither is a fast square, and either would sit at the top forever.
+ *   - either end of the gap being a manual click. Under fire-on-kill the timestamp IS the kill time,
+ *     but only when the mod reported it - a manually-clicked square carries whatever moment the
+ *     player happened to click, which can trail the real kill by however long they felt like. A gap
+ *     built off even one manual end is timing a click, not a fight, and does not belong next to ones
+ *     that are.
  *
  * Built on archivedShots so a three-team match counts each trigger-pull once: the archive writes one
  * row per opposing fleet, and gaps taken off raw rows would be a string of zeroes.
@@ -206,13 +219,14 @@ export interface QuickSquareRecord {
 function timedSquares(events: MatchEventRow[]): QuickSquareRecord[] {
   const out: QuickSquareRecord[] = [];
   // archivedShots sorts by match, then by time - exactly the order a gap is measured in.
-  const previous = new Map<string, { seconds: number; challenge: string | null }>();
+  const previous = new Map<string, { seconds: number; challenge: string | null; auto: boolean }>();
 
   for (const shot of archivedShots(events)) {
     const run = `${shot.matchKey}|${shot.key}`;
     const before = previous.get(run);
-    previous.set(run, { seconds: shot.seconds, challenge: shot.challenge });
+    previous.set(run, { seconds: shot.seconds, challenge: shot.challenge, auto: shot.auto });
     if (before === undefined) continue;
+    if (!before.auto || !shot.auto) continue;
 
     const gap = shot.seconds - before.seconds;
     if (gap < MIN_GAP_SECONDS) continue;

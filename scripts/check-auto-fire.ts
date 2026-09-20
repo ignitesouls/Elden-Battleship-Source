@@ -217,7 +217,7 @@ try {
 
   const { data: rows } = await alpha.client
     .from('attacks')
-    .select('cell_index, attacker_team, defender_team, attacker_player_id, result, created_at')
+    .select('cell_index, attacker_team, defender_team, attacker_player_id, result, created_at, auto')
     .eq('room_id', roomId)
     .eq('cell_index', cell)
 
@@ -225,6 +225,10 @@ try {
   check('attributed to the firing player', rows?.every((r) => r.attacker_player_id !== null) ?? false)
   check('fired by the right team', rows?.every((r) => r.attacker_team === 0) ?? false)
   check('no row left pending', rows?.every((r) => r.result !== 'pending') ?? false)
+  // The one column that tells the Almanac's timing boards this shot's clock can be trusted - see
+  // the 20260920 migration. A manual click never sets it, so this is the whole difference between
+  // the two paths as far as anything downstream can tell.
+  check('marked as auto-fired', rows?.every((r) => r.auto === true) ?? false)
 
   // Guarded: with no rows the remaining checks have nothing to say, and a crash here would bury the
   // real failure above under a stack trace.

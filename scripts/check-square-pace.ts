@@ -37,8 +37,13 @@ function check(label: string, ok: boolean, detail = '') {
   if (!ok) failures++
 }
 
-/** One trigger-pull, written once per opposing fleet exactly as the archive stores it. */
-function ev(match: string, who: string, cell: number, seconds: number, fleets = 1): MatchEventRow[] {
+/**
+ * One trigger-pull, written once per opposing fleet exactly as the archive stores it.
+ *
+ * Defaults to auto-fired: squarePace() now requires both ends of a gap to be, and none of the cases
+ * here are testing that distinction - pass `auto: false` explicitly for one that is.
+ */
+function ev(match: string, who: string, cell: number, seconds: number, fleets = 1, auto = true): MatchEventRow[] {
   return Array.from({ length: fleets }, () => ({
     match_key: match,
     user_id: null,
@@ -50,6 +55,7 @@ function ev(match: string, who: string, cell: number, seconds: number, fleets = 
     match_seconds: seconds,
     board_size: 10,
     finished_at: '2026-08-01T12:00:00.000Z',
+    auto,
   })) as MatchEventRow[]
 }
 
@@ -101,6 +107,32 @@ const key = (who: string) => `name:${who.toLowerCase()}`
     `a gap under ${MIN_GAP_SECONDS}s is not counted`,
     pace.get(key('Ada')) === 100,
     `${pace.get(key('Ada'))}s - a counted 1s gap would drag this well below 100`
+  )
+}
+
+// -- 4b. a manually-marked end breaks the gap, since 9/20 -------------------
+{
+  // Same steady run as case 1, but the third mark (cell 3, at 120s) was a manual click rather than
+  // an auto-fired kill. Both gaps touching it - 60s in, 60s out - must drop out, while the untouched
+  // gaps around them still count.
+  const times = [0, 60, 120, 180, 240, 300]
+  const events = run('m1', 'Ada', times).map((e, i) => (i === 2 ? { ...e, auto: false } : e))
+  const pace = squarePace(events)
+  check(
+    'a gap touching a manual mark is not counted',
+    pace.get(key('Ada')) === undefined,
+    `${pace.get(key('Ada'))}s - only 3 of 5 gaps survive, under MIN_GAPS_FOR_PACE`
+  )
+
+  // Widen the run so enough auto-only gaps survive to still clear the floor.
+  const wider = run('m1', 'Ada', [0, 60, 120, 180, 240, 300, 360, 420]).map((e, i) =>
+    i === 2 ? { ...e, auto: false } : e
+  )
+  const widePace = squarePace(wider)
+  check(
+    'and the gaps that never touch it still count',
+    widePace.get(key('Ada')) === 60,
+    `${widePace.get(key('Ada'))}s`
   )
 }
 
@@ -162,21 +194,28 @@ const key = (who: string) => `name:${who.toLowerCase()}`
 {
   const base = Date.parse('2026-08-27T20:00:00.000Z')
   const at = (min: number) => new Date(base + min * 60_000).toISOString()
-  /** One trigger-pull, in the shape groupIntoShots hands over. */
-  const shot = (min: number, i: number) => ({
+  /**
+   * One trigger-pull, in the shape groupIntoShots hands over.
+   *
+   * Auto-fired by default, for the same reason ev() above is: the scoreboard now applies the
+   * leaderboard's rule that both ends of a gap must be, and none of the cases but the last are
+   * testing that distinction.
+   */
+  const shot = (min: number, i: number, auto = true) => ({
     key: `k${i}`,
     at: at(min),
     attackerTeam: 0,
     who: 'Ada',
     cellIndex: i,
-    rows: [{ attacker_player_id: 'ada', attacker_team: 0, cell_index: i, result: 'miss', created_at: at(min) }],
+    rows: [{ attacker_player_id: 'ada', attacker_team: 0, cell_index: i, result: 'miss', created_at: at(min), auto }],
   })
   const players = [{ id: 'ada', nickname: 'Ada', team: 0 }]
   // Newest first, which is the order groupIntoShots produces - and the order that would measure
   // every gap in the match backwards if the scoreboard forgot to sort.
-  const fired = (mins: number[]) => mins.map(shot).reverse()
-  const paceOf = (mins: number[], room?: unknown) =>
-    buildPlayerStats(players as never, fired(mins) as never, room as never)[0].pace
+  const fired = (mins: number[], manual: number[] = []) =>
+    mins.map((m, i) => shot(m, i, !manual.includes(i))).reverse()
+  const paceOf = (mins: number[], room?: unknown, manual: number[] = []) =>
+    buildPlayerStats(players as never, fired(mins, manual) as never, room as never)[0].pace
 
   // Gaps of 2, 3, 2, 4, 2 minutes.
   const steady = [0, 2, 5, 7, 11, 13]
@@ -203,6 +242,15 @@ const key = (who: string) => `name:${who.toLowerCase()}`
   const walls = [0, 12, 24, 36, 48, 60]
   check('a pause is not billed to the captain', paceOf(walls, paused) === 120, `${paceOf(walls, paused)}s`)
   check('and without one it would be', paceOf(walls) === 720, `${paceOf(walls)}s`)
+
+  // The live roster and the leaderboard must agree about a clicked square: its timestamp is when it
+  // was clicked, so the two gaps touching it drop out, and the rest still count.
+  const longer = [0, 2, 5, 7, 11, 13, 15]
+  check('a manual shot in the middle costs the two gaps around it', paceOf(longer, undefined, [2]) === null,
+    `${paceOf(longer, undefined, [2])} - only 4 of 6 gaps survive, under MIN_GAPS_FOR_PACE`)
+  check('and with enough left the pace is still there', paceOf([...longer, 17, 19], undefined, [2]) === 120,
+    `${paceOf([...longer, 17, 19], undefined, [2])}s`)
+  check('a crew that clicked every square has no pace at all', paceOf(steady, undefined, [0, 1, 2, 3, 4, 5]) === null)
 }
 
 console.log(failures === 0 ? '\nall square pace checks passed' : `\n${failures} square pace check(s) failed`)

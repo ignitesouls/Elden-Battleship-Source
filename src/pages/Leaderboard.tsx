@@ -126,8 +126,8 @@ function buildColumns(t: (en: string, fr: string) => string): SortColumn<SortKey
       align: "right",
       firstDirection: "asc",
       title: t(
-        `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. Needs ${MIN_GAPS_FOR_PACE} squares before it shows.`,
-        `Rythme - le temps entre la chute d'une case et la suivante, en médiane sur toutes les cases visées sur ce plateau. Nécessite ${MIN_GAPS_FOR_PACE} cases avant de s'afficher.`
+        `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. Needs ${MIN_GAPS_FOR_PACE} squares before it shows. Only counts squares marked after 9/20, when auto-mark became a prerequisite for speed records.`,
+        `Rythme - le temps entre la chute d'une case et la suivante, en médiane sur toutes les cases visées sur ce plateau. Nécessite ${MIN_GAPS_FOR_PACE} cases avant de s'afficher. Ne compte que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse.`
       ),
     },
   ];

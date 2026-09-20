@@ -206,8 +206,8 @@ export function PlayerStats() {
               label={t("Square pace (median)", "Rythme par case (médian)")}
               value={fmtTime(myMedianPace)}
               title={t(
-                `The time from one square falling to the next, as a median. The same number the leaderboard ranks on. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
-                `Le temps entre deux cases, en médiane. Le même chiffre que celui utilisé pour le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître.`
+                `The time from one square falling to the next, as a median. The same number the leaderboard ranks on. Needs ${MIN_GAPS_FOR_PACE} squares before it appears. Only counts squares marked after 9/20, when auto-mark became a prerequisite for speed records.`,
+                `Le temps entre deux cases, en médiane. Le même chiffre que celui utilisé pour le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître. Ne compte que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse.`
               )}
             />
           )}
@@ -237,6 +237,11 @@ export function PlayerStats() {
           <h3 style={{ margin: 0 }}>{t("Personal bests", "Meilleurs temps")}</h3>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
             {t("Each timed from their previous square. Misses count.", "Chacun chronométré depuis la case précédente. Les tirs manqués comptent.")}
+            {" "}
+            {t(
+              "Only counting squares marked after 9/20, when auto-mark became a prerequisite for speed records.",
+              "Ne compte que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse."
+            )}
           </span>
           {bestKills.map((k, i) => (
             <div

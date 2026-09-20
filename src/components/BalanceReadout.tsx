@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { fetchFairnessGaps, fairnessOf, ordinal, type MatchBalance } from "../lib/matchBalance";
+import { teamName } from "../lib/teamColors";
 import { useT } from "../lib/language";
+
+/** Seconds as m:ss, the way every other duration in the app is written. */
+function mmss(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 /**
  * How fair the board was, on the recap.
@@ -11,15 +18,18 @@ import { useT } from "../lib/language";
  * out as. It reads the number the balancer recorded at the moment it dealt the board; nothing is
  * computed here and no square is ever priced in a browser.
  *
- * -- One number ------------------------------------------------------------------------------------
+ * -- One number, plus the one line that names it -----------------------------------------------------
  *
- * A percentile and the line saying what it is a rank against. That is the whole panel.
+ * A percentile, the line saying what it is a rank against, and - underneath - a plain sentence
+ * naming which fleet the played gap favoured and by how much. That is the whole panel.
  *
  * It used to carry two bars - the gap before shuffling and after - a band chip reading "Even" or
  * "Slight edge", a line naming the fleet that came out ahead, and a second line for the find gap.
  * Five elements, of which THREE were the same number: the played gap drawn as a bar, banded into a
  * word, and ranked into a percentile. One fact wearing three hats reads as noise, and the bars were
  * the worst of it - two bare durations with no unit named, which a reader takes for match times.
+ * The sentence below the percentile is the one piece of that worth keeping: it is the only place
+ * that says whose edge it was, in plain words rather than a bar or a chip.
  *
  * What the cut is really about: none of those numbers is a duration anybody experienced. A rank gap
  * is the widest same-rank spread between two sorted profiles, so "3:30" is not three and a half
@@ -97,6 +107,15 @@ export function BalanceReadout({
           {gaps === null
             ? t("Ranking this board...", "Classement de ce plateau en cours...")
             : t("Nothing to rank this against yet.", "Rien à comparer pour l'instant.")}
+        </span>
+      )}
+
+      {typeof balance.aheadTeam === "number" && balance.played > 0 && (
+        <span className="muted" style={{ fontSize: "0.72rem" }}>
+          {t(
+            `As played, ${teamName(balance.aheadTeam)} held a ${mmss(balance.played)} advantage.`,
+            `Comme jouée, ${teamName(balance.aheadTeam)} avait un avantage de ${mmss(balance.played)}.`
+          )}
         </span>
       )}
     </div>

@@ -326,6 +326,11 @@ export function Almanac() {
                 <h3 style={{ margin: 0 }}>{t("Quickest squares on record", "Cases les plus rapides au tableau")}</h3>
                 <span className="muted" style={{ fontSize: "0.7rem" }}>
                   {t("Timed from the captain's previous square. Misses count.", "Chronométré depuis la case précédente du capitaine. Les tirs manqués comptent.")}
+                  {" "}
+                  {t(
+                    "Only counting squares marked after 9/20, when auto-mark became a prerequisite for speed records.",
+                    "Ne compte que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse."
+                  )}
                 </span>
                 {records.map((r, i) => (
                   <div
@@ -784,6 +789,11 @@ function SquaresTable({ rows }: { rows: SquareRow[] }) {
       </div>
       <span className="muted" style={{ fontSize: "0.72rem" }}>
         {t("Every square the board deals, shot at or not. Times are medians from when firing opens.", "Chaque case du plateau, visée ou non. Les temps sont des médianes depuis l'ouverture des tirs.")}
+        {" "}
+        {t(
+          "Times only count squares marked after 9/20, when auto-mark became a prerequisite for speed records.",
+          "Les temps ne comptent que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse."
+        )}
       </span>
       <div style={{ overflowX: "auto", maxHeight: "30rem", overflowY: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
@@ -866,8 +876,8 @@ function paceColumns(t: (en: string, fr: string) => string): SortColumn<PaceSort
       align: "right",
       firstDirection: "asc",
       title: t(
-        `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears.`,
-        `Rythme par case - le temps entre deux cases prises, en médiane sur toutes les cases visées sur ce plateau. Le même chiffre qu'affiche le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître.`,
+        `Square pace - the time from one square falling to the next, as a median across every square they have fired on this board. The same number the leaderboard shows. Needs ${MIN_GAPS_FOR_PACE} squares before it appears. Only counts squares marked after 9/20, when auto-mark became a prerequisite for speed records.`,
+        `Rythme par case - le temps entre deux cases prises, en médiane sur toutes les cases visées sur ce plateau. Le même chiffre qu'affiche le classement. Nécessite ${MIN_GAPS_FOR_PACE} cases avant d'apparaître. Ne compte que les cases marquées après le 20/09, date à laquelle le marquage automatique est devenu obligatoire pour les records de vitesse.`,
       ),
     },
     {

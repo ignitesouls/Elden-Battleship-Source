@@ -25,7 +25,8 @@ import { sunkCellOrientations, eliminatedTeamsFromAttacks, sunkHullFlags } from 
 import { AttackFeed } from "../components/AttackFeed";
 import { groupIntoShots } from "../lib/attackFeed";
 import { deepWater, deepMarks, fatesConfirmed, type DeepHide } from "../lib/deepWater";
-import { TeamBox } from "../components/TeamBox";
+import { RosterScoreboard } from "../components/RosterScoreboard";
+import { buildPlayerStats } from "../lib/matchReport";
 import { HostTakeover } from "../components/HostTakeover";
 import { formatRoomCode } from "../lib/roomCode";
 import { useBattlePhaseName, useBattleClock } from "../hooks/useBattlePhase";
@@ -717,6 +718,18 @@ function SpectatorView({
   // fleet that lost its last hull and closed the tab never gets to write.
   const eliminatedTeams = eliminatedTeamsFromAttacks(attacks, shipDefs.length);
 
+  // Every competitor's hits, misses, accuracy and pace for the rosters. Attack rows are public, so
+  // nothing here is a peek that "Attacks only" mode promises not to give. The pause columns are
+  // lifted out so a room update that touches nothing about the clock doesn't recompute it.
+  const pause = useMemo(
+    () => ({ pause_at: room.pause_at, resume_at: room.resume_at, pause_log: room.pause_log }),
+    [room.pause_at, room.resume_at, room.pause_log]
+  );
+  const rosterStats = useMemo(
+    () => buildPlayerStats(players, groupIntoShots(attacks, players), pause),
+    [attacks, players, pause]
+  );
+
   /**
    * Every fleet's square counters, resolved to chips a board can print.
    *
@@ -824,20 +837,20 @@ function SpectatorView({
     };
   };
 
-  /** The fleet cards, shared by the rail and the canvas so the two can't drift apart. */
-  const rosters = activeTeamsList.map((t) => (
-    <TeamBox
-      key={t}
-      team={t}
+  /** The fleet scoreboard, shared by the rail and the canvas so the two can't drift apart. */
+  const rosters = (
+    <RosterScoreboard
+      teams={activeTeamsList}
       players={players}
+      stats={rosterStats}
       shipDefs={shipDefs}
       // Read off the resolved attack log, exactly as a player's own roster is - never from the
       // fleet rows, so the roster says the same thing in "Attacks only" mode as it does with
       // every ship revealed.
-      sunkHulls={sunkHullFlags(attacks, t, shipDefs)}
-      eliminated={eliminatedTeams.has(t)}
+      sunkHullsFor={(team) => sunkHullFlags(attacks, team, shipDefs)}
+      isEliminated={(team) => eliminatedTeams.has(team)}
     />
-  ));
+  );
 
   return (
     <div className="spectate">

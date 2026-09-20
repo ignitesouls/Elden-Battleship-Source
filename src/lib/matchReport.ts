@@ -79,7 +79,7 @@ export function buildPlayerStats(
   const byPlayer = new Map<string, PlayerStats>();
   /** Every gap between one captain's consecutive shots, in seconds on the match clock. */
   const gaps = new Map<string, number[]>();
-  const previous = new Map<string, number>();
+  const previous = new Map<string, { at: number; auto: boolean }>();
 
   // Seed from the roster first, so a player who never pulled the trigger still shows on the
   // scoreboard (as a row of zeroes) and can still be handed an award, rather than vanishing
@@ -111,13 +111,19 @@ export function buildPlayerStats(
 
     // Where their previous square fell. A captain's first shot opens no gap: the time before it is
     // the lobby and the placement phase, not work on a square.
+    //
+    // A gap also needs both ends auto-fired - the same rule as squarePace, and for the same reason: a
+    // clicked square is stamped with whenever the player got round to clicking it, so a gap with a
+    // manual end is timing a click and not a fight. Every row of one shot is written by the same call
+    // and agrees on this, which is why archive_match can take bool_and; `every` is the same read.
     const at = matchMs(shot.at, pause) / 1000;
+    const auto = shot.rows.every((r) => r.auto === true);
     const last = previous.get(key);
-    previous.set(key, at);
-    if (last !== undefined) {
+    previous.set(key, { at, auto });
+    if (last !== undefined && last.auto && auto) {
       const list = gaps.get(key);
-      if (list) list.push(at - last);
-      else gaps.set(key, [at - last]);
+      if (list) list.push(at - last.at);
+      else gaps.set(key, [at - last.at]);
     }
     let s = byPlayer.get(key);
     if (!s) {

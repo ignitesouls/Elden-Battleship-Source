@@ -235,7 +235,7 @@ const FLEET_COLUMNS = "match_key,team,board_size,placements,ship_defs,room_id,fi
  * `match_board_sources` and put back on the rows below - see fetchMatchEvents.
  */
 const EVENT_COLUMNS =
-  "match_key,user_id,nickname,team,cell_index,challenge_name,result,match_seconds,board_size,finished_at,square_set";
+  "match_key,user_id,nickname,team,cell_index,challenge_name,result,match_seconds,board_size,finished_at,square_set,auto";
 
 /** Fields careers, the leaderboard, captain cards and scouting read off a participation row. */
 const PARTICIPANT_COLUMNS =

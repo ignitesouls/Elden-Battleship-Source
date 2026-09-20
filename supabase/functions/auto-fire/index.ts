@@ -319,6 +319,9 @@ Deno.serve(async (req) => {
               defender_team,
               attacker_player_id: seat.id,
               created_at: at,
+              // Marks this shot as timed off a real kill event rather than a manual click - see
+              // the 20260920 migration. Only this path should ever set it.
+              auto: true,
             })),
             { onConflict: 'room_id,attacker_team,defender_team,cell_index', ignoreDuplicates: true }
           )

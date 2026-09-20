@@ -59,7 +59,13 @@ function part(over: Partial<ParticipantRow> & { nickname: string; match_key: str
   }
 }
 
-/** One archived event row - i.e. one shot AGAINST ONE FLEET, which is the distinction that matters. */
+/**
+ * One archived event row - i.e. one shot AGAINST ONE FLEET, which is the distinction that matters.
+ *
+ * Defaults to auto-fired: most cases here are not about the auto/manual distinction at all, and
+ * earliest() (first blood, first sinking) now requires it - see the note at the top of recordBook.ts.
+ * Pass `auto: false` explicitly for a case that is testing that exclusion.
+ */
 function ev(
   matchKey: string,
   nickname: string,
@@ -67,7 +73,8 @@ function ev(
   seconds: number,
   result: string,
   defenderCount = 1,
-  challenge: string | null = null
+  challenge: string | null = null,
+  auto = true
 ): MatchEventRow[] {
   return Array.from({ length: defenderCount }, () => ({
     match_key: matchKey,
@@ -80,6 +87,7 @@ function ev(
     match_seconds: seconds,
     board_size: 10,
     finished_at: '2026-08-01T12:00:00.000Z',
+    auto,
   }))
 }
 
@@ -340,6 +348,17 @@ const holderOf = (book: ReturnType<typeof buildRecordBook>, id: string) => find(
   check('and it reads as a clock', holderOf(book, 'first-blood')?.display === '0:42', holderOf(book, 'first-blood')?.display)
   check('quickest sinking is the earliest sinking', holderOf(book, 'first-sinking')?.nickname === 'Ada', holderOf(book, 'first-sinking')?.display)
   check('a match with only misses sets no timing record', !find(book, 'first-blood')?.chasers.some((c) => c.nickname === 'Cy'))
+
+  // A manually-clicked square carries whatever moment the player got around to marking it, not the
+  // moment it actually died - see the note at the top of recordBook.ts. A 0:01 from a manual click
+  // must not be allowed to bump Bo's genuine 0:42 auto-fired kill off the book, even fired by Bo
+  // himself in the very match that already holds the record.
+  const withManual = buildRecordBook(rows, [...events, ...ev('m2', 'Bo', 6, 1, 'hit', 1, null, false)])
+  check(
+    'a manually-marked shot cannot set the record',
+    holderOf(withManual, 'first-blood')?.display === '0:42',
+    holderOf(withManual, 'first-blood')?.display ?? 'nobody'
+  )
 }
 
 // -- 8. the rarest honor --------------------------------------------------

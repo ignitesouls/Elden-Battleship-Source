@@ -338,4 +338,10 @@ export interface Attack {
   sunk_horizontal: boolean | null;
   created_at: string;
   resolved_at: string | null;
+  /**
+   * Fired by the auto-fire edge function rather than clicked. Optional because rows from before the
+   * auto_fire_only_timing migration don't carry it, and those read as manual - which is what the
+   * pace rule wants of a shot whose timestamp can't be trusted as the kill time.
+   */
+  auto?: boolean;
 }

@@ -10,7 +10,7 @@ import { PauseBanner, PauseControls } from "../../components/PauseControls";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { MatchInfoBox } from "../../components/MatchInfoBox";
-import { TeamBox } from "../../components/TeamBox";
+import { RosterScoreboard } from "../../components/RosterScoreboard";
 import { AttackFeed } from "../../components/AttackFeed";
 import { MatchClock } from "../../components/MatchClock";
 import { BoardLegend } from "../../components/BoardLegend";
@@ -451,6 +451,19 @@ export function BattlePhase({
     return recordChases(book, liveTallies(buildPlayerStats(players, shots), shots, userIdFor), myTeam);
   }, [book, attacks, players, myTeam]);
 
+  // What the roster scoreboard reads. The three pause columns are lifted into their own memoised
+  // object for the reason the book above gives about the room: useRoom replaces the whole row on
+  // every realtime update, and re-deriving every player's numbers for a change to something
+  // unrelated would be the same waste. Pace is the one figure here that cares about a stopped clock.
+  const pause = useMemo(
+    () => ({ pause_at: room.pause_at, resume_at: room.resume_at, pause_log: room.pause_log }),
+    [room.pause_at, room.resume_at, room.pause_log]
+  );
+  const rosterStats = useMemo(
+    () => buildPlayerStats(players, groupIntoShots(attacks, players), pause),
+    [attacks, players, pause]
+  );
+
   // Announced once each, and primed on the first pass so a refresh mid-match doesn't replay a record
   // that fell ten minutes ago.
   const announcedRecords = useRef<Set<string> | null>(null);
@@ -718,40 +731,28 @@ export function BattlePhase({
   // windows the player never positioned, and a saved layout would stop being valid at a different
   // lobby size.
   const teamBoxes = (
-    <>
-      <TeamBox
-        team={myTeam}
-        players={players}
-        shipDefs={shipDefs}
-        // Straight off our own fleet row, which is already one flag per hull - the authoritative
-        // answer for the one fleet this browser is allowed to read in full.
-        sunkHulls={myFleet.ship_sunk}
-        eliminated={mySunkCount === shipDefs.length}
-        isMine
-        myPlayerId={myPlayerId}
-      />
-      {opponentTeams.map((team) => (
-        <TeamBox
-          key={team}
-          team={team}
-          players={players}
-          shipDefs={shipDefs}
-          /*
-           * The whole log, not just this crew's `outgoing`.
-           *
-           * Reading our own shots alone made this the only roster in the app that disagreed with
-           * the others: the spectator screen, the caster's crew view and both overlays have always
-           * counted every fleet's losses from the full log. In a three-cornered match that meant a
-           * rival we had never fired on showed at full strength here while a stream watching the
-           * same room showed them half sunk. Two fleets make no difference - every shot at this
-           * team is ours - so nothing about a normal match changes.
-           */
-          sunkHulls={sunkHullFlags(attacks, team, shipDefs)}
-          eliminated={eliminated.has(team)}
-          myPlayerId={myPlayerId}
-        />
-      ))}
-    </>
+    <RosterScoreboard
+      teams={[myTeam, ...opponentTeams]}
+      players={players}
+      stats={rosterStats}
+      shipDefs={shipDefs}
+      myTeam={myTeam}
+      myPlayerId={myPlayerId}
+      isEliminated={(team) => (team === myTeam ? mySunkCount === shipDefs.length : eliminated.has(team))}
+      /*
+       * Our own fleet reads straight off our own fleet row, which is already one flag per hull - the
+       * authoritative answer for the one fleet this browser is allowed to read in full.
+       *
+       * Every other fleet reads off the WHOLE log, not just this crew's `outgoing`. Reading our own
+       * shots alone made this the only roster in the app that disagreed with the others: the
+       * spectator screen, the caster's crew view and both overlays have always counted every fleet's
+       * losses from the full log. In a three-cornered match that meant a rival we had never fired on
+       * showed at full strength here while a stream watching the same room showed them half sunk. Two
+       * fleets make no difference - every shot at this team is ours - so nothing about a normal
+       * match changes.
+       */
+      sunkHullsFor={(team) => (team === myTeam ? myFleet.ship_sunk : sunkHullFlags(attacks, team, shipDefs))}
+    />
   );
 
   /**
