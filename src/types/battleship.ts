@@ -100,6 +100,18 @@ export interface Room {
    * right way round for a flag whose whole job is to take a match OUT of the record.
    */
   practice?: boolean;
+  /**
+   * The bracket match this room is playing, when it is an official tournament match. Optional like every
+   * column added after launch; absent (or null) is an ordinary room. Set only by the official-match
+   * functions - see 20260922010000_official_matches.
+   */
+  tournament_match_id?: string | null;
+  /** Whether each team of the match has entered its entry code. Both must, before the match can start. */
+  official_a_confirmed?: boolean;
+  official_b_confirmed?: boolean;
+  /** Which fleet (team index) each of the two teams sits on. Bound by whoever sits first. */
+  official_team_a?: number | null;
+  official_team_b?: number | null;
 }
 
 /** One stretch of stopped clock, written by the host once the window closes. */

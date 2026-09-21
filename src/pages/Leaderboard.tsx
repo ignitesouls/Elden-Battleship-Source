@@ -13,6 +13,7 @@ import { useStoredToggle } from "../hooks/useStoredToggle";
 import type { MatchEventRow } from "../lib/almanac";
 import { SiteFooter } from "../components/SiteFooter";
 import { useT } from "../lib/language";
+import { OfficialRecord } from "../components/OfficialRecord";
 
 type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
 
@@ -273,6 +274,8 @@ export function Leaderboard() {
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
         <h1>{t("Leaderboard", "Classement")}</h1>
+        {/* Appears only once the first tournament has gone live - see OfficialRecord. */}
+        <OfficialRecord />
         <p className="muted">{t("Career records for one board at a time.", "Records de carrière, un plateau à la fois.")}</p>
       </div>
 

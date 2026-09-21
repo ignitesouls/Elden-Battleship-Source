@@ -6,6 +6,7 @@ import { getLastNickname, storeLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { SiteFooter } from "../components/SiteFooter";
+import { EventBanners } from "../components/EventBanners";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
 import { formatRoomCode } from "../lib/roomCode";
@@ -160,6 +161,10 @@ export function Home() {
         </h1>
         <p className="muted">{t("Place your fleet, take aim, sink your rivals.", "Placez votre flotte, visez, coulez vos rivaux.")}</p>
       </div>
+
+      {/* Tournament notices sit above the join form because an open signup is the one thing on this
+          page a visitor might not know to look for. Nothing renders while there is nothing to say. */}
+      <EventBanners />
 
       {!isSupabaseConfigured && (
         <div className="panel" style={{ borderColor: "var(--danger)" }}>

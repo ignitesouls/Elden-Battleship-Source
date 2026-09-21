@@ -1,0 +1,114 @@
+/* Tournament screens: the front-page banners, the event page, and the admin panel.
+   Built from the app's existing pieces (.panel, .stack, .row, .muted, .badge); this file only adds
+   what those don't have. */
+
+/* A link wearing the brass primary button's clothes - "Sign up" is a destination, so it stays a real
+   anchor (middle-clickable, shareable) but has to read as the thing to press. */
+a.link-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #241703;
+  font-weight: 600;
+}
+
+a.link-button.primary:hover {
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+}
+
+/* Banners take the brass edge that says "this is the thing on offer", and the colour of the state:
+   live is the ember of a hit, a finished event is the settled green of a won board. Only the border
+   and the top highlight change, so a stack of them reads as a set rather than a rainbow. */
+.event-banner {
+  border-color: rgba(217, 164, 65, 0.55);
+  padding: 1rem 1.25rem;
+}
+
+.event-banner--live {
+  border-color: rgba(255, 156, 40, 0.7);
+}
+
+.event-banner--finished {
+  border-color: rgba(63, 157, 122, 0.7);
+}
+
+.event-banner--invite {
+  border-color: rgba(159, 216, 255, 0.6);
+}
+
+/* Small status pills. Extends .badge rather than replacing it. */
+.badge.badge--good {
+  color: #7fd8b0;
+  border-color: rgba(63, 157, 122, 0.6);
+}
+
+.badge.badge--warn {
+  color: var(--accent-bright);
+  border-color: rgba(217, 164, 65, 0.6);
+}
+
+.badge.badge--bad {
+  color: #ff9c9c;
+  border-color: rgba(212, 80, 63, 0.6);
+}
+
+/* Lists of teams, roster members and matches: quiet rows with a hairline between them. */
+.t-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.t-list > * + * {
+  border-top: 1px solid rgba(30, 65, 87, 0.7);
+}
+
+.t-item {
+  padding: 0.5rem 0;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+/* The entry code is meant to be read aloud, typed and copied, so it is large, spaced and monospaced. */
+.entry-code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.25em;
+  color: var(--accent-bright);
+  background: #061620;
+  border: 1px dashed rgba(217, 164, 65, 0.5);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  user-select: all;
+}
+
+textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: #061620;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text);
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The score in a match row: fixed-width digits so a column of them lines up. */
+.t-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 3.2ch;
+  text-align: center;
+}
+
+.t-winner {
+  color: var(--accent-bright);
+  font-weight: 600;
+}

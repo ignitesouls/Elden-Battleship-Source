@@ -44,7 +44,12 @@ interface Props {
  * size is baked into fleets that players have already laid out.
  */
 export function MatchSettings({ room, isHost, onError }: Props) {
-  const [busy, setBusy] = useState(false);
+  const [working, setBusy] = useState(false);
+  // An official match takes the tournament's settings and keeps them (the database refuses any change -
+  // see guard_official_room), so every control here reads as busy rather than offering a change that
+  // would only be refused.
+  const official = !!room.tournament_match_id;
+  const busy = working || official;
   const [open, setOpen] = useState(false);
   const t = useT();
 

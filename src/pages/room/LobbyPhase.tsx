@@ -5,6 +5,7 @@ import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
 import { MatchSettings } from "../../components/MatchSettings";
+import { OfficialMatchPanel } from "../../components/OfficialMatchPanel";
 import { TeamPicker } from "../../components/TeamPicker";
 import { FleetDraw } from "../../components/FleetDraw";
 import { BrandMark } from "../../components/BrandMark";
@@ -57,7 +58,11 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
   // TeamPicker, which owns the switching itself.
   const usedTeams = activeTeams(players);
 
-  const canStart = usedTeams.length >= 2;
+  // An official match cannot start until both teams have entered their entry codes. The database
+  // refuses it too (see guard_official_room); this is the button saying so before it is pressed.
+  const awaitingCodes =
+    !!room.tournament_match_id && !(room.official_a_confirmed && room.official_b_confirmed);
+  const canStart = usedTeams.length >= 2 && !awaitingCodes;
 
   async function handleStart() {
     setBusy(true);
@@ -272,6 +277,10 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
           the host usually sets it before anyone picks. */}
       <MatchSettings room={room} isHost={myPlayer.is_host} onError={setError} />
 
+      {/* Exists only while a tournament is running (and, to make a room official, only for the host).
+          On an ordinary day this renders nothing at all. */}
+      <OfficialMatchPanel room={room} isHost={myPlayer.is_host} onError={setError} />
+
       <TeamPicker
         room={room}
         playerId={myPlayer.id}
@@ -394,7 +403,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
         <button className="primary" disabled={busy || !canStart} onClick={handleStart}>
           {canStart
             ? t("Start ship placement", "Commencer le placement des navires")
-            : t("Need at least 2 fleets with players", "Il faut au moins 2 flottes avec des joueurs")}
+            : awaitingCodes
+              ? t("Waiting for both teams to enter their entry codes", "En attente des codes d'entrée des deux équipes")
+              : t("Need at least 2 fleets with players", "Il faut au moins 2 flottes avec des joueurs")}
         </button>
       ) : (
         <div className="muted" style={{ textAlign: "center" }}>

@@ -36,6 +36,12 @@ const Almanac = lazy(() => import("./pages/Almanac").then((m) => ({ default: m.A
 const ArchivedMatch = lazy(() => import("./pages/ArchivedMatch").then((m) => ({ default: m.ArchivedMatch })));
 const Admin = lazy(() => import("./pages/Admin").then((m) => ({ default: m.Admin })));
 const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.Support })));
+// An event's page is read over days, between matches - never mid-game - so it stays out of the bundle
+// the game path loads, same as the other browsing pages.
+const Event = lazy(() => import("./pages/Event").then((m) => ({ default: m.Event })));
+// Administrators only, used a handful of times a year - so it stays out of every bundle but its own.
+const AdminStartEvent = lazy(() => import("./pages/AdminStartEvent").then((m) => ({ default: m.AdminStartEvent })));
+const AdminEventDesk = lazy(() => import("./pages/AdminEventDesk").then((m) => ({ default: m.AdminEventDesk })));
 // Read once, on the day somebody starts streaming, and never again - so it has no business being in
 // the bundle a player firing at a board downloads. It drags in the scene generator and the sample.
 const Streaming = lazy(() => import("./pages/Streaming").then((m) => ({ default: m.Streaming })));
@@ -142,9 +148,17 @@ function App() {
           {/* Guarded inside the page, not here - the route has to exist for everyone so that an
               admin following a link into a fresh tab lands on it before the session is checked. */}
           <Route path="/admin" element={<Admin />} />
+          {/* Starting an event. Guarded inside the page like /admin, and enforced by the database
+              function it calls - see pages/AdminStartEvent. */}
+          <Route path="/admin/event/:id/start" element={<AdminStartEvent />} />
+          {/* Running an event week to week: overdue, results, the next round, teams, pairing. */}
+          <Route path="/admin/event/:id" element={<AdminEventDesk />} />
           {/* Reached from the footer on every page that has one, always in a new tab, so that
               reporting a bug never costs somebody the match they were reporting it about. */}
           <Route path="/support" element={<Support />} />
+          {/* One tournament: the sign-up page while signup is open, the schedule and results after.
+              The same link for the event's whole life - see pages/Event. */}
+          <Route path="/event/:id" element={<Event />} />
           {/* The two things a streamer sets up once: the persistent OBS overlay, and auto-marking.
               Reached from the top bar beside the bug report - see components/OutreachLinks. */}
           <Route path="/streaming" element={<Streaming />} />

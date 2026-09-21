@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminPanel } from "../components/AdminPanel";
+import { AdminTournaments } from "../components/AdminTournaments";
 import { BalanceStats } from "../components/BalanceStats";
 import { EgressPanel } from "../components/EgressPanel";
 import { LoadingScreen } from "../components/BrandMark";
@@ -95,6 +96,11 @@ export function Admin() {
         <h1>{t("Admin", "Admin")}</h1>
         <p className="muted">{t("Records, live rooms, administrators, board balance and egress.", "Dossiers, parties en direct, administrateurs, équité des plateaux et bande passante.")}</p>
       </div>
+
+      {/* Events run for weeks and need attention on their own schedule, so they sit first. Renders
+          fine before the tournament migrations are applied: it just reports the error and stays out
+          of the way of everything below. */}
+      <AdminTournaments />
 
       <AdminPanel
         matches={matches}
