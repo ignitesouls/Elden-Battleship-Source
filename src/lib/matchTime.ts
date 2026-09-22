@@ -1,5 +1,5 @@
-import { pausedMsAt, RUNNING, type PauseFields, type PauseInfo } from "./matchPause";
-import type { Attack } from "../types/battleship";
+import { pausedMsAt, RUNNING, type PauseFields, type PauseInfo } from "./matchPause.ts";
+import type { Attack } from "../types/battleship.ts";
 
 /**
  * Sentinel cell index for the "match started" marker row written into `attacks`.

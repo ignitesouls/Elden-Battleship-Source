@@ -32,6 +32,8 @@ import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
 import { buildFlatBoard } from '../../../src/lib/squareSetFormat.ts'
 import { applyBoardPerm } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
+import { MATCH_START_MARKER, matchTimings, battlePhaseAt } from '../../../src/lib/matchTime.ts'
+import { pauseInfoAt, pausedMsAt, type PauseFields } from '../../../src/lib/matchPause.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
 import bossData2v2 from '../../../src/data/battleshipChallenges2v2.json' with { type: 'json' }
 import bossFlags from '../../../src/data/bossFlags.json' with { type: 'json' }
@@ -142,6 +144,22 @@ function boardIndex(
 const CONNECTED = new Set(['hit', 'sunk'])
 
 /**
+ * Pace's own two thresholds, copied rather than imported - see the comment on `pace` inside
+ * liveStats for why. Keep these equal to MIN_GAP_SECONDS in src/lib/recordBook.ts and
+ * MIN_GAPS_FOR_PACE in src/lib/squarePace.ts, by hand, whenever either changes.
+ */
+const MIN_GAP_SECONDS = 10
+const MIN_GAPS_FOR_PACE = 5
+
+/** The middle value, averaging the two middles on an even count - same rule as squarePace's median. */
+function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+/**
  * The player's running score for this match, in the website's own terms.
  *
  * One shot counts once no matter how many boards it landed on, and counts as a hit if it connected
@@ -154,27 +172,59 @@ const CONNECTED = new Set(['hit', 'sunk'])
  * there is no reset to detect between matches, and so the number can never disagree with the
  * scoreboard.
  */
-async function tallyFor(
+async function liveStats(
   admin: SupabaseClient,
   roomId: string,
-  playerId: string
-): Promise<{ hits: number; misses: number; shots: number; accuracy: number | null }> {
+  playerId: string,
+  pause: PauseFields
+): Promise<{ hits: number; misses: number; shots: number; accuracy: number | null; pace: number | null }> {
   const { data } = await admin
     .from('attacks')
-    .select('cell_index, result')
+    .select('cell_index, result, created_at, auto')
     .eq('room_id', roomId)
     .eq('attacker_player_id', playerId)
     .gte('cell_index', 0) // negative cells are bookkeeping markers, never real shots
 
   const connected = new Map<number, boolean>()
+  // One entry per square this player has fired at, keyed the same way `connected` is. created_at
+  // and auto agree across every defender row one shot writes (see the upsert below), so the first
+  // row seen for a cell is as good as any of the others.
+  const squares = new Map<number, { atMs: number; auto: boolean }>()
   for (const row of data ?? []) {
     const was = connected.get(row.cell_index) ?? false
     connected.set(row.cell_index, was || CONNECTED.has(row.result))
+    if (!squares.has(row.cell_index)) {
+      squares.set(row.cell_index, { atMs: Date.parse(row.created_at), auto: row.auto === true })
+    }
   }
 
   const shots = connected.size
   let hits = 0
   for (const hit of connected.values()) if (hit) hits++
+
+  /**
+   * Median seconds between this player's consecutive squares, on the website's match clock rather
+   * than IGT - the same measurement lib/squarePace.ts makes of the archive and buildPlayerStats()
+   * makes of a finished match, applied live.
+   *
+   * Not imported from squarePace.ts: that module pulls in recordBook.ts, which pulls in
+   * matchReport.ts, both built for the browser and neither safe to evaluate inside an edge
+   * function. The rule itself is copied instead - drop a gap under MIN_GAP_SECONDS (a duo boss or a
+   * banked kill, not a fast square), require both ends auto-fired (a clicked square is stamped with
+   * whenever someone got round to clicking it, not the kill time), and take the median once there
+   * are MIN_GAPS_FOR_PACE of them.
+   */
+  const clockMs = (atMs: number) => atMs - pausedMsAt(pause, atMs)
+  const ordered = [...squares.values()].sort((a, b) => a.atMs - b.atMs)
+  const gaps: number[] = []
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1]
+    const cur = ordered[i]
+    if (!prev.auto || !cur.auto) continue
+    const gapSeconds = (clockMs(cur.atMs) - clockMs(prev.atMs)) / 1000
+    if (gapSeconds >= MIN_GAP_SECONDS) gaps.push(gapSeconds)
+  }
+  const pace = gaps.length >= MIN_GAPS_FOR_PACE ? median(gaps) : null
 
   return {
     hits,
@@ -182,6 +232,42 @@ async function tallyFor(
     shots,
     // Null rather than 0 before the first shot: nothing has missed yet, and the overlay shows a dash.
     accuracy: shots > 0 ? Math.round((hits / shots) * 100) : null,
+    pace,
+  }
+}
+
+/** What the DLL renders in place of IGT. */
+interface ClockPayload {
+  phase: 'starting' | 'preparation' | 'match' | 'paused'
+  /** Seconds left in the STARTING/PREPARATION countdown, or elapsed since MATCH began. Never both. */
+  seconds: number
+  /** False while the room is stopped - see PauseInfo.stopped in lib/matchPause. */
+  running: boolean
+}
+
+/**
+ * The website's match clock, in the shape the overlay renders. Mirrors what MatchDock's clock panel
+ * shows a player already - see lib/matchTime.battlePhaseAt - so a player glancing between the two
+ * never catches them disagreeing.
+ *
+ * Sent as elapsed/remaining seconds rather than a start timestamp, on purpose: a player's PC clock
+ * being wrong must not throw the in-game number off, and the DLL is expected to count these forward
+ * itself between replies rather than re-deriving them from wall time.
+ *
+ * `null` before the start marker exists, which the caller reads as "say nothing" - the same case
+ * that hides the ingest tally line entirely.
+ */
+function computeClock(room: { starting_seconds?: number; prep_seconds?: number } & PauseFields, startedAt: string | null, nowMs: number): ClockPayload | null {
+  if (!startedAt) return null
+  const pause = pauseInfoAt(room, nowMs)
+  const info = battlePhaseAt(startedAt, nowMs, matchTimings(room), pause)
+  if (!info) return null
+  return {
+    // The warning window before a pause takes hold (PauseInfo's "pausing" phase) still counts as
+    // running here, same as it does on the website: the clock has not actually stopped yet.
+    phase: pause.stopped ? 'paused' : info.phase,
+    seconds: Math.max(0, Math.round(info.phase === 'match' ? info.matchElapsed : info.countdown)),
+    running: !pause.stopped,
   }
 }
 
@@ -224,7 +310,9 @@ Deno.serve(async (req) => {
     const { data: battles } = seated.length
       ? await admin
           .from('rooms')
-          .select('id, board_size, square_set, seed, board_perm')
+          // The extra five columns past board_perm are the website's own match clock: starting_seconds
+          // and prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
+          .select('id, board_size, square_set, seed, board_perm, starting_seconds, prep_seconds, pause_at, resume_at, pause_log')
           .in(
             'id',
             seated.map((s) => s.room_id)
@@ -355,11 +443,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    // The start marker, room-wide rather than keyed to this player - see MATCH_START_MARKER. Every
+    // room reaches 'battle' with one already written (startBattle checks the insert before flipping
+    // status), so a live match missing one here is the rare room from before the marker existed.
+    const { data: markerRow } = await admin
+      .from('attacks')
+      .select('created_at')
+      .eq('room_id', room.id)
+      .eq('cell_index', MATCH_START_MARKER)
+      .limit(1)
+      .maybeSingle()
+
     return jsonResponse({
       ok: true,
       fired,
       skipped,
-      tally: await tallyFor(admin, room.id, seat.id),
+      tally: await liveStats(admin, room.id, seat.id, room),
+      clock: computeClock(room, markerRow?.created_at ?? null, Date.now()),
     })
   } catch (err) {
     return jsonResponse({ ok: false, error: 'internal', detail: String(err) }, 500)

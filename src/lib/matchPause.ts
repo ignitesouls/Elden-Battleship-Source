@@ -1,4 +1,4 @@
-import type { PauseWindow, Room } from "../types/battleship";
+import type { PauseWindow, Room } from "../types/battleship.ts";
 
 /**
  * Stopping the match clock.
