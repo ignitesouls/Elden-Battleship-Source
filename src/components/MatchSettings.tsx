@@ -5,7 +5,16 @@ import { formatDuration } from "../lib/matchTime";
 import { SQUARE_SET_LIST, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET } from "../lib/challenges";
 import { squarePool, maxBoardSize, clampBoardSize } from "../lib/challenges";
 import { strictFill } from "../lib/squareSetFormat";
-import { BOARD_SIZES, FLEET_PRESETS, DEFAULT_FLEET_PRESET, fleetFor, presetNameOf } from "../types/battleship";
+import {
+  BOARD_SIZES,
+  CUSTOM_HULLS,
+  customFleet,
+  customFleetFits,
+  fleetCounts,
+  fleetFor,
+  isDefaultFleet,
+  refitFleet,
+} from "../types/battleship";
 import type { Room } from "../types/battleship";
 
 /**
@@ -56,7 +65,13 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   const boardSize = room.board_size;
   const cells = boardSize * boardSize;
   const shipDefs = room.ship_defs;
-  const preset = presetNameOf(shipDefs, boardSize);
+  const defaultFleet = isDefaultFleet(shipDefs, boardSize);
+  // Custom is on when the room's fleet isn't the default, OR when the host has opened the counters
+  // and not changed anything yet - an untouched count IS the default fleet, and without this the
+  // button would snap back to Default the moment it was pressed.
+  const [customPicked, setCustomPicked] = useState(false);
+  const custom = customPicked || !defaultFleet;
+  const counts = fleetCounts(shipDefs);
   const prepSeconds = room.prep_seconds ?? 240;
 
   // A room carrying a length this menu can't offer - set before the choices changed, or by hand -
@@ -109,7 +124,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
       square_set: id,
       ...(size === boardSize
         ? {}
-        : { board_size: size, ship_defs: fleetFor(size, preset ?? DEFAULT_FLEET_PRESET) }),
+        : { board_size: size, ship_defs: refitFleet(shipDefs, boardSize, size) }),
     });
   }
 
@@ -135,7 +150,11 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   const cutSuffix = set.id !== shownSet.id && set.cutLabel ? ` - ${set.cutLabel.toLowerCase()}` : "";
   const summary =
     (practice ? `${t("Practice", "Entraînement")} · ` : "") +
-    `${boardSize}x${boardSize} · ${preset ?? `${shipDefs.length} ${t("ships", "navires")}`} · ${shownSet.label}${cutSuffix} · ${formatDuration(
+    `${boardSize}x${boardSize} · ${
+      defaultFleet
+        ? t("default fleet", "flotte par défaut")
+        : `${t("custom fleet", "flotte personnalisée")}, ${shipDefs.length} ${t("ships", "navires")}`
+    } ·${shownSet.label}${cutSuffix} · ${formatDuration(
       prepSeconds
     )} ${t("prep", "prépa")}`;
 
@@ -180,9 +199,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
                       )
                     : undefined
                 }
-                onClick={() =>
-                  void apply({ board_size: n, ship_defs: fleetFor(n, preset ?? DEFAULT_FLEET_PRESET) })
-                }
+                onClick={() => void apply({ board_size: n, ship_defs: refitFleet(shipDefs, boardSize, n) })}
               >
                 {n}x{n}
               </Choice>
@@ -206,20 +223,68 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               "cases"
             )} (${Math.round((shipCells / cells) * 100)}% ${t("of the board", "du plateau")})`}
           >
-            {Object.keys(FLEET_PRESETS).map((k) => (
-              <Choice
-                key={k}
-                active={preset === k}
-                busy={busy}
-                onClick={() => void apply({ ship_defs: fleetFor(boardSize, k) })}
-              >
-                {k}
-              </Choice>
-            ))}
+            <Choice
+              active={!custom}
+              busy={busy}
+              onClick={() => {
+                setCustomPicked(false);
+                if (!defaultFleet) void apply({ ship_defs: fleetFor(boardSize) });
+              }}
+            >
+              {t("Default", "Par défaut")}
+            </Choice>
+            <Choice active={custom} busy={busy} onClick={() => setCustomPicked(true)}>
+              {t("Custom", "Personnalisée")}
+            </Choice>
           </Field>
-          <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
-            {shipDefs.map((s) => `${s.name} (${s.size})`).join(" · ")}
-          </span>
+          {/* The default fleet scales with the board, so it is listed rather than counted. A custom
+              fleet is a count per hull, written to the room on every press like the rest of this
+              panel. + stops at half the board (customFleetFits) and - at the last ship. */}
+          {custom ? (
+            <div className="stack" style={{ gap: "0.3rem" }}>
+              {CUSTOM_HULLS.map((h) => {
+                const n = counts[h.name];
+                const more = customFleet({ ...counts, [h.name]: n + 1 });
+                const less = customFleet({ ...counts, [h.name]: n - 1 });
+                return (
+                  <div key={h.name} className="row" style={{ gap: "0.4rem", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.8rem", flex: "1 1 auto" }}>
+                      {h.name} ({h.size})
+                    </span>
+                    <button
+                      disabled={busy || n === 0 || !customFleetFits(less, boardSize)}
+                      onClick={() => void apply({ ship_defs: less })}
+                      aria-label={`${t("One fewer", "Un de moins")} ${h.name}`}
+                      style={{ minWidth: "2rem" }}
+                    >
+                      −
+                    </button>
+                    <span style={{ minWidth: "1.5rem", textAlign: "center", fontSize: "0.85rem" }}>{n}</span>
+                    <button
+                      disabled={busy || !customFleetFits(more, boardSize)}
+                      title={
+                        customFleetFits(more, boardSize)
+                          ? undefined
+                          : t(
+                              `A custom fleet can cover at most half of a ${boardSize}x${boardSize} board.`,
+                              `Une flotte personnalisée peut couvrir au plus la moitié d'un plateau ${boardSize}x${boardSize}.`
+                            )
+                      }
+                      onClick={() => void apply({ ship_defs: more })}
+                      aria-label={`${t("One more", "Un de plus")} ${h.name}`}
+                      style={{ minWidth: "2rem" }}
+                    >
+                      +
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
+              {shipDefs.map((s) => `${s.name} (${s.size})`).join(" · ")}
+            </span>
+          )}
 
           {/* One button per set a person can choose. A set that comes in cuts is one button here
               and picks its full board; which cut is the row below, because the cuts are the same

@@ -145,8 +145,10 @@ export const BOARD_SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
  * busy one - the extra squares were going into another Cruiser rather than another hull to hunt.
  * The point of Armada is that shots land more often, so it rounds up.
  *
- * Declaration order IS the order the buttons render in (Object.keys preserves insertion order for
- * string keys).
+ * Only Armada is offered in the lobby now. Nobody picked Skirmish or Classic, so the fleet setting
+ * became "the default" (Armada) or a fully custom fleet - see customFleet. The other two densities
+ * stay in the table because the board checks still measure against them, and a fleetFor call that
+ * names one still gets what it asked for.
  */
 export const FLEET_PRESETS: Record<string, number> = {
   Skirmish: 0.11,
@@ -154,7 +156,7 @@ export const FLEET_PRESETS: Record<string, number> = {
   Armada: 0.24,
 };
 
-export const DEFAULT_FLEET_PRESET = "Classic";
+export const DEFAULT_FLEET_PRESET = "Armada";
 
 /**
  * Ship names by length.
@@ -268,6 +270,64 @@ export function presetNameOf(shipDefs: ShipDefinition[], boardSize: number): str
  */
 export function fleetPresetsFor(boardSize: number): Record<string, ShipDefinition[]> {
   return Object.fromEntries(Object.keys(FLEET_PRESETS).map((k) => [k, fleetFor(boardSize, k)]));
+}
+
+/** Whether this fleet is the default one for this board size - the thing a host gets without choosing. */
+export function isDefaultFleet(shipDefs: ShipDefinition[], boardSize: number): boolean {
+  return presetNameOf(shipDefs, boardSize) === DEFAULT_FLEET_PRESET;
+}
+
+/**
+ * The hulls a host can count out for a custom fleet, longest first - the five with sprite art, the
+ * same five SHIP_NAMES draws from. Cruiser and Submarine are both 3 long and counted separately,
+ * because they are different ships on the board.
+ */
+export const CUSTOM_HULLS: ShipDefinition[] = [
+  { name: "Carrier", size: 5 },
+  { name: "Battleship", size: 4 },
+  { name: "Cruiser", size: 3 },
+  { name: "Submarine", size: 3 },
+  { name: "Destroyer", size: 2 },
+];
+
+/**
+ * The most of the board a custom fleet may cover.
+ *
+ * A hard ceiling rather than a warning, because randomPlacements retries until the fleet fits and a
+ * fleet that cannot fit would retry forever. Half the board still places easily; the lobby warns
+ * that it will be cramped well before this (at 35%).
+ */
+export const CUSTOM_FLEET_MAX_SHARE = 0.5;
+
+/** How many of each CUSTOM_HULLS entry a fleet holds, by name. A hull outside the five is ignored. */
+export function fleetCounts(shipDefs: ShipDefinition[]): Record<string, number> {
+  const counts: Record<string, number> = Object.fromEntries(CUSTOM_HULLS.map((h) => [h.name, 0]));
+  for (const d of shipDefs) if (d.name in counts) counts[d.name]++;
+  return counts;
+}
+
+/** A fleet from a count per hull, longest hulls first. */
+export function customFleet(counts: Record<string, number>): ShipDefinition[] {
+  return CUSTOM_HULLS.flatMap((h) => Array.from({ length: Math.max(0, counts[h.name] ?? 0) }, () => ({ ...h })));
+}
+
+/** Whether a custom fleet is allowed on a board this size: at least one ship, at most half the board. */
+export function customFleetFits(shipDefs: ShipDefinition[], boardSize: number): boolean {
+  const cells = shipDefs.reduce((n, s) => n + s.size, 0);
+  return shipDefs.length > 0 && cells <= boardSize * boardSize * CUSTOM_FLEET_MAX_SHARE;
+}
+
+/**
+ * The fleet a room carries onto a board of a new size.
+ *
+ * The default fleet is rebuilt for the new size, since it scales with the board. A custom one is
+ * the host's own count and is kept as it is - unless it would cover more of the smaller board than
+ * a custom fleet may, in which case the room falls back to the default rather than dealing a fleet
+ * nobody can place.
+ */
+export function refitFleet(shipDefs: ShipDefinition[], fromSize: number, toSize: number): ShipDefinition[] {
+  if (!isDefaultFleet(shipDefs, fromSize) && customFleetFits(shipDefs, toSize)) return shipDefs;
+  return fleetFor(toSize);
 }
 
 export interface MatchReportRow {
