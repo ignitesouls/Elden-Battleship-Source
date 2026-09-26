@@ -168,6 +168,13 @@ export function BattlePhase({
    */
   const [undealtOpen, setUndealtOpen] = useState(true);
 
+  /**
+   * The colour group the key is being hovered over, picked out on both boards (see highlightKey in
+   * BoardGrid). Lifted to here because the key and the boards are in different corners of the
+   * screen - the dock or the sidebar for one, the canvas panels for the other.
+   */
+  const [legendHover, setLegendHover] = useState<string | null>(null);
+
   const { marks, toggle: toggleMark, clear: clearPencilMarks } = usePencilMarks(room.code);
 
   /**
@@ -697,6 +704,7 @@ export function BattlePhase({
           color: c.color,
         };
       }}
+      highlightKey={legendHover}
     />
   );
 
@@ -721,6 +729,8 @@ export function BattlePhase({
         if (!c) return null;
         return { region: c.region, color: c.color };
       }}
+      // Lit alongside the fire board, which answers "which of my hulls sit in Limgrave?" too.
+      highlightKey={legendHover}
       maxVh={fill ? undefined : 34}
       maxVw={fill ? undefined : 26}
       fill={fill}
@@ -963,6 +973,8 @@ export function BattlePhase({
             onToggleUndealt={() => setUndealtOpen(!undealtOpen)}
             holdMs={fireHoldMs}
             onChangeHoldMs={setFireHoldMs}
+            highlightKey={legendHover}
+            onHighlight={setLegendHover}
           />
         </div>
       ) : (
@@ -1038,7 +1050,12 @@ export function BattlePhase({
               {teamBoxes}
               {/* Below the rosters, above the controls: fleet status is what you watch, this is
                   what you refer to. Renders nothing on a square set that tints nothing. */}
-              <BoardLegend challenges={challenges} setId={room.square_set} />
+              <BoardLegend
+                challenges={challenges}
+                setId={room.square_set}
+                highlightKey={legendHover}
+                onHighlight={setLegendHover}
+              />
               {controls}
             </div>
           </div>

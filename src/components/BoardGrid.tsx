@@ -202,6 +202,16 @@ interface BoardGridProps {
    * the same ratio leaves "Dane" as four small characters in a mostly empty box. See lib/textFit.
    */
   growText?: boolean;
+  /**
+   * One colour group to pick out, named by the same key the colour key uses for it - a region, or a
+   * keyword set's hex (see legendItems). Squares in it are ringed in their own colour and every other
+   * square dims, so a player hovering "Limgrave" in the key sees at a glance where Limgrave lies.
+   *
+   * Matched against cellText, falling back to cellTint, so it works on the fire board and the fleet
+   * board alike without the caller having to work out which cells those are. Null or omitted for
+   * the plain board.
+   */
+  highlightKey?: string | null;
 }
 
 const COL_LETTERS = "ABCDEFGHIJKLMNOPQR";
@@ -302,6 +312,7 @@ export function BoardGrid({
   spotCells,
   spotColor,
   growText = false,
+  highlightKey,
 }: BoardGridProps) {
   const t = useT();
 
@@ -673,6 +684,10 @@ export function BoardGrid({
     // unfired square - .bg-cell-tinted is written so a result fill wins - but the class goes on
     // regardless, because the variable it carries is what the fill reads once the square is cleared.
     const tint = cellTint?.(i);
+    // In the group the colour key is pointing at. The key names a group by region or by hex, and a
+    // square carries exactly one of the two, so whichever it has is the thing to compare.
+    const group = text ?? tint;
+    const highlit = Boolean(highlightKey) && (group?.region ?? group?.color) === highlightKey;
     const mark = markedCells?.get(i);
     // One cross, from either source. The board's deduction is the only thing that still makes these;
     // a "ruled" mark is a hand-made one left in a player's storage from when middle-click did it, and
@@ -721,10 +736,15 @@ export function BoardGrid({
           interactive ? "" : " bg-cell-inert"
         }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}${
           tint ? ` bg-cell-tinted${tint.region ? ` bg-region-${tint.region}` : ""}` : ""
-        }${spot ? " bg-cell-spot" : ""}`}
+        }${spot ? " bg-cell-spot" : ""}${
+          // The ring is drawn in the group's own colour, read off --bg-region. A tinted square has
+          // that on the button already; a named one only has it on its text, so it's put here too.
+          highlit ? ` bg-cell-highlight${!tint && group?.region ? ` bg-region-${group.region}` : ""}` : ""
+        }`}
         style={{
           gridRow: row,
           gridColumn: col,
+          ...(highlit && !tint && group?.color ? { ["--bg-region" as string]: group.color } : null),
           // Keyword-tinted sets have no class to hang a colour on, so theirs arrives as a hex and
           // goes into the same variable .bg-region-* sets - exactly as the square NAMES do a few
           // lines below, and for the same reason.
@@ -905,7 +925,7 @@ export function BoardGrid({
       <div className={`bg-grid-scroll${fill ? " bg-grid-scroll-fill" : ""}`}>
         <div
           ref={gridRef}
-          className={`bg-grid${fill ? " bg-grid-fill" : ""}`}
+          className={`bg-grid${fill ? " bg-grid-fill" : ""}${highlightKey ? " bg-grid-highlighting" : ""}`}
           role="grid"
           aria-label={label ?? t("Game board", "Plateau de jeu")}
           style={{

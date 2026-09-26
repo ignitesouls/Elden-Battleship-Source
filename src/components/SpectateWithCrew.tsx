@@ -63,6 +63,8 @@ interface Props {
    * would be nonsense. Same absence, two completely different sentences.
    */
   noFleetNote?: ReactNode;
+  /** The colour group the page's key is picking out, lit on both boards. See highlightKey in BoardGrid. */
+  highlightKey?: string | null;
 }
 
 /** Vertical room the "riding with" line and the policy warning take out of the stage. */
@@ -92,6 +94,7 @@ export function SpectateWithCrew({
   stage,
   wrapBoard,
   noFleetNote,
+  highlightKey,
 }: Props) {
   const boardSize = room.board_size;
   const shipDefs = room.ship_defs;
@@ -228,6 +231,7 @@ export function SpectateWithCrew({
       // every one of these sits on a square this crew fired into.
       autoRuledCells={deadWater}
       deepCells={deepCells}
+      highlightKey={highlightKey}
       {...sizing}
     />
   );
@@ -240,6 +244,7 @@ export function SpectateWithCrew({
       ships={ownShips}
       sunkOrientation={takenSunk}
       cellText={cellText}
+      highlightKey={highlightKey}
       {...sizing}
     />
   );

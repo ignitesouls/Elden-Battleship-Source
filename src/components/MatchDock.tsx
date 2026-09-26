@@ -58,6 +58,9 @@ interface Props {
   /** How long a square must be held before it fires, in ms. Never zero - see lib/fireHold. */
   holdMs: number;
   onChangeHoldMs: (ms: number) => void;
+  /** The colour group the key is picking out on the boards, and its setter. See BoardLegend. */
+  highlightKey?: string | null;
+  onHighlight?: (key: string | null) => void;
 }
 
 /**
@@ -95,12 +98,20 @@ export function MatchDock({
   onToggleUndealt,
   holdMs,
   onChangeHoldMs,
+  highlightKey,
+  onHighlight,
 }: Props) {
   const t = useT();
   return (
     <div className="match-dock">
       {/* Renders nothing on a square set that tints nothing (Ringus), and the bar closes up. */}
-      <BoardLegend challenges={challenges} setId={squareSet} inline />
+      <BoardLegend
+        challenges={challenges}
+        setId={squareSet}
+        inline
+        highlightKey={highlightKey}
+        onHighlight={onHighlight}
+      />
 
       {/* Pushes everything after it to the right edge. A plain spacer rather than margin-left:auto
           on the next item, because that item is conditional - the key is absent on an untinted set

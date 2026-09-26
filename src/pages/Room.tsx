@@ -641,6 +641,8 @@ function SpectatorView({
    * corner they like should find it there whichever page they open.
    */
   const [undealtOpen, setUndealtOpen] = useState(true);
+  /** The colour group the key in the bar is being hovered over, lit on every board shown. */
+  const [legendHover, setLegendHover] = useState<string | null>(null);
 
   /**
    * Everything in the water, for the caster (see lib/deepWater.ts).
@@ -959,7 +961,13 @@ function SpectatorView({
         {/* Same key the fleets have along the bottom of their own screen. A caster reading a board
             they didn't build needs it more than anyone, and in the bar it costs a line nothing else
             was using. Renders nothing on a set that tints nothing. */}
-        <BoardLegend challenges={challenges} setId={room.square_set} inline />
+        <BoardLegend
+          challenges={challenges}
+          setId={room.square_set}
+          inline
+          highlightKey={legendHover}
+          onHighlight={setLegendHover}
+        />
 
         <span className="spectate-bar-spacer" />
 
@@ -1082,6 +1090,7 @@ function SpectatorView({
               counts={countsByTeam.get(ridingWith!)}
               deep={deep}
               stage={stage}
+              highlightKey={legendHover}
               wrapBoard={(id, title, node) => (
                 <CanvasPanel key={id} {...panelProps(id, title)} flush>
                   {node}
@@ -1099,6 +1108,7 @@ function SpectatorView({
                   counts={countsByTeam.get(team)}
                   cellText={cellText}
                   deepCells={deepCells}
+                  highlightKey={legendHover}
                   // The panel is the budget here, so the board takes its shape from what the
                   // caster dragged rather than from a square derived off the viewport.
                   fill
@@ -1151,6 +1161,7 @@ function SpectatorView({
             counts={countsByTeam.get(ridingWith!)}
             deep={deep}
             stage={stage}
+            highlightKey={legendHover}
           />
         ) : (
           <div className="spectate-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
@@ -1175,6 +1186,7 @@ function SpectatorView({
                 maxVh={`${side}px`}
                 maxVw={`${side}px`}
                 cellText={cellText}
+                highlightKey={legendHover}
               />
             ))}
           </div>

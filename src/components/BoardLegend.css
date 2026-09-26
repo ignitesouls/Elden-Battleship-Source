@@ -41,6 +41,31 @@
   white-space: nowrap;
 }
 
+/* An entry that picks its group out on the board when hovered - see onHighlight in BoardLegend. */
+.board-legend-item-live {
+  cursor: default;
+  padding: 0.05rem 0.25rem;
+  margin: -0.05rem -0.25rem;
+  border-radius: 3px;
+}
+
+.board-legend-item-live:hover,
+.board-legend-item-live:focus-visible,
+.board-legend-item-active {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.board-legend-hint {
+  flex: none;
+  font-size: 0.62rem;
+  font-weight: normal;
+  font-style: italic;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 /* Colour comes from --bg-region: set by the .bg-region-* class alongside it on a region-tagged set,
    or written inline from the square's own hex on a keyword-tinted one. Either way it is the same
    variable the square names are painted with, so a swatch can never disagree with the board it

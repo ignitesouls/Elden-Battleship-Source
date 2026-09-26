@@ -286,6 +286,27 @@
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/**
+ * One colour group picked out from the colour key - see highlightKey in BoardGrid.
+ *
+ * Both halves are needed. A ring alone is lost among a hundred coloured names, and dimming alone
+ * leaves a player comparing brightnesses; together the group is the only lit thing on the board.
+ * The dim is a filter rather than an overlay because ::before is the axis shadow's and ::after the
+ * fire hold's. Only an unfired square takes the wash - a result fill is saying something more
+ * important, and the ring still marks it.
+ */
+.bg-grid-highlighting .bg-cell:not(.bg-cell-highlight) {
+  filter: brightness(0.45) saturate(0.6);
+}
+
+.bg-grid-highlighting .bg-cell-highlight {
+  box-shadow: inset 0 0 0 2px var(--bg-region, var(--accent));
+}
+
+.bg-grid-highlighting .bg-cell-highlight:not(.bg-hit):not(.bg-miss):not(.bg-sunk) {
+  background: color-mix(in srgb, var(--bg-region, var(--accent)) 24%, var(--cell));
+}
+
 .bg-cell-holding::after {
   content: "";
   position: absolute;
