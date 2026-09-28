@@ -11,7 +11,11 @@
 
    Fixed rather than in the flow for the same reason it always was: a block that pushed the board
    down a hundred pixels while somebody was aiming would cause the exact misclick it exists to
-   prevent. */
+   prevent.
+
+   Centred is only where it starts, though: once the match settles into a pause the player can drag it
+   off whatever they want to look at (the offset is applied inline, on top of the centring transform)
+   and, after readying, close it. Every pause starts back in the middle. */
 .pause-banner {
   position: fixed;
   top: 50%;
@@ -64,9 +68,53 @@
   font-weight: 600;
 }
 
-/* The one part that takes the pointer back, for its per-name "Ready"/"Not ready yet" tooltips. Safe
-   to do here and nowhere else: the roster is drawn only in the settled `paused` state, when nobody
-   is firing anyway - during the countdown, when they are, the banner is click-through all over. */
+/* The grip and close strip. Drawn only in the settled `paused` state, like everything else here that
+   takes the pointer back - during either countdown the banner stays click-through all over. */
+.pause-banner-bar {
+  pointer-events: auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.4rem -0.5rem 0;
+}
+
+.pause-banner-grip {
+  flex: 1;
+  cursor: grab;
+  /* Without this a touch drag scrolls the page instead of moving the banner. */
+  touch-action: none;
+  user-select: none;
+  color: var(--text-dim);
+  line-height: 1;
+  padding: 0.2rem 0;
+  border-radius: 4px;
+}
+
+.pause-banner-grip:hover {
+  background: var(--panel-raised);
+}
+
+.pause-banner-grip:active {
+  cursor: grabbing;
+}
+
+.pause-banner-close {
+  padding: 0.1rem 0.5rem;
+  line-height: 1.2;
+}
+
+.pause-banner-ready,
+.pause-banner-error {
+  pointer-events: auto;
+}
+
+.pause-banner-ready {
+  min-width: 12rem;
+}
+
+/* Takes the pointer back for its per-name "Ready"/"Not ready yet" tooltips. Only drawn in the
+   settled `paused` state, like the grip and the Ready button. */
 .pause-roster {
   pointer-events: auto;
   display: flex;

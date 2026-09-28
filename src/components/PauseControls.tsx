@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePauseInfo } from "../hooks/useBattlePhase";
-import { readyToResume } from "../lib/matchPause";
+import { readyToResume, type PauseInfo } from "../lib/matchPause";
 import { pauseMatch, requestPause, resumeMatch, setPauseReady, settlePause } from "../lib/rooms";
 import { playSfx } from "../lib/sfx";
 import { useT } from "../lib/language";
@@ -12,7 +12,9 @@ import "./PauseControls.css";
  *
  * Two exports because the feature lives in two places on screen and neither is optional: the buttons
  * belong in the control column with everything else a player can do, and the notice belongs over the
- * boards, where somebody staring at a square they are about to click will actually see it.
+ * boards, where somebody staring at a square they are about to click will actually see it. Once the
+ * match has settled into a pause the notice also carries Ready up, and can be dragged aside and -
+ * once you're ready - closed, since by then it is sitting on a board people still want to read.
  *
  * Both are always mounted - PauseBanner returns null when there is nothing to say - because the
  * sounds and the host's bookkeeping hang off it, and a component that only mounts once a pause
@@ -38,6 +40,36 @@ function outstandingRequests(players: Player[]): Player[] {
   return players.filter((p) => Boolean(p.pause_requested_at));
 }
 
+/**
+ * Which pause this screen has closed the banner for, keyed by the room's pause_at.
+ *
+ * Module-level rather than component state because two components read it - the banner hides, and
+ * the control column offers it back - and they are siblings in two different pages. Keying it by
+ * pause_at is what makes the next pause open the banner again without anybody having to reset it.
+ * Local to this tab on purpose: closing the notice is a personal choice, not something the room sees.
+ */
+let closedFor: string | null = null;
+const closedListeners = new Set<() => void>();
+
+function setClosedFor(pauseAt: string | null) {
+  closedFor = pauseAt;
+  closedListeners.forEach((fn) => fn());
+}
+
+function subscribeClosed(fn: () => void) {
+  closedListeners.add(fn);
+  return () => closedListeners.delete(fn);
+}
+
+/**
+ * Closed only while the match sits in `paused`. The resume countdown brings it back regardless: that
+ * is the moment somebody tabbed out to the game has to look up, and the horn alone is easy to miss.
+ */
+function useBannerClosed(room: Room, phase: PauseInfo["phase"]): boolean {
+  const current = useSyncExternalStore(subscribeClosed, () => closedFor);
+  return phase === "paused" && room.pause_at != null && current === room.pause_at;
+}
+
 export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
   const pause = usePauseInfo(room);
   const [busy, setBusy] = useState(false);
@@ -45,8 +77,7 @@ export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
   const t = useT();
 
   const me = players.find((p) => p.id === myPlayerId);
-  const onFleet = me != null && me.team !== null;
-  const iAmReady = me?.pause_ready === true;
+  const closed = useBannerClosed(room, pause.phase);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -89,16 +120,11 @@ export function PauseControls({ room, players, myPlayerId, isHost }: Props) {
         </button>
       )}
 
-      {/* Readying up is a crew job. A spectating host resumes the match without ever readying, and a
-          spectator has nothing to be ready for - the roster in the banner counts fleets only. */}
-      {pause.phase === "paused" && onFleet && (
-        <button
-          className={iAmReady ? undefined : "primary"}
-          disabled={busy}
-          style={{ width: "100%" }}
-          onClick={() => run(() => setPauseReady(myPlayerId, !iAmReady))}
-        >
-          {iAmReady ? t("✓ Ready - stand down", "✓ Prêt - se retirer") : t("Ready up", "Se préparer")}
+      {/* Readying up lives on the banner now, so a player who closed it needs a way back to it -
+          otherwise standing down again would mean waiting for the resume countdown to reopen it. */}
+      {closed && (
+        <button style={{ width: "100%" }} onClick={() => setClosedFor(null)}>
+          {t("Show pause screen", "Afficher l'écran de pause")}
         </button>
       )}
 
@@ -177,6 +203,71 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
     });
   }, [isHost, pause.phase, room]);
 
+  const closed = useBannerClosed(room, pause.phase);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * How far the player has dragged the banner off centre, for this pause only.
+   *
+   * Tagged with the pause_at it was dragged during, so a new pause opens back in the middle without
+   * an effect to reset it: an offset from an older pause simply reads as zero.
+   */
+  const [drag, setDrag] = useState<{ pauseAt: string | null; dx: number; dy: number }>({
+    pauseAt: null,
+    dx: 0,
+    dy: 0,
+  });
+  const offset = drag.pauseAt === room.pause_at ? drag : { dx: 0, dy: 0 };
+  const bannerRef = useRef<HTMLDivElement>(null);
+  // Offset and on-screen rect as they were when the grab started; deltas apply to these, the same
+  // way CanvasPanel does it, so a fast drag cannot creep away from the cursor.
+  const grab = useRef<{ x: number; y: number; dx: number; dy: number; rect: DOMRect } | null>(null);
+
+  function beginDrag(e: React.PointerEvent<HTMLElement>) {
+    if (e.button !== 0 || !bannerRef.current) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    grab.current = {
+      x: e.clientX,
+      y: e.clientY,
+      dx: offset.dx,
+      dy: offset.dy,
+      rect: bannerRef.current.getBoundingClientRect(),
+    };
+  }
+
+  function moveDrag(e: React.PointerEvent<HTMLElement>) {
+    const g = grab.current;
+    if (!g) return;
+    // Clamped so the whole banner stays on screen - a notice dragged off the edge is one nobody can
+    // get back, and the close button only exists once you've readied.
+    const mx = Math.min(Math.max(e.clientX - g.x, -g.rect.left), window.innerWidth - g.rect.right);
+    const my = Math.min(Math.max(e.clientY - g.y, -g.rect.top), window.innerHeight - g.rect.bottom);
+    setDrag({ pauseAt: room.pause_at ?? null, dx: g.dx + mx, dy: g.dy + my });
+  }
+
+  function endDrag(e: React.PointerEvent<HTMLElement>) {
+    grab.current = null;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
+  const me = players.find((p) => p.id === myPlayerId);
+  const onFleet = me != null && me.team !== null;
+  const iAmReady = me?.pause_ready === true;
+
+  async function toggleReady() {
+    setBusy(true);
+    setError(null);
+    try {
+      await setPauseReady(myPlayerId, !iAmReady);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (pause.phase === "running") {
     if (requests.length === 0) return null;
     // No pause called yet, but somebody is asking for one. Named rather than counted: the host is
@@ -193,11 +284,46 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
     );
   }
 
+  if (closed) return null;
+
   const counting = pause.phase === "pausing" || pause.phase === "resuming";
   const waiting = crew.filter((p) => p.pause_ready !== true);
+  // Only a settled pause can be picked up. During the warning countdown people are still firing, and
+  // a grip over the board could eat a click; the resume countdown is short and should be looked at.
+  const settled = pause.phase === "paused";
+  // A spectator has nothing to ready for, so they may close it whenever; the crew once they're ready.
+  const canClose = settled && (!onFleet || iAmReady);
 
   return (
-    <div className={`panel pause-banner${counting ? " is-counting" : ""}`}>
+    <div
+      ref={bannerRef}
+      className={`panel pause-banner${counting ? " is-counting" : ""}`}
+      style={{ transform: `translate(calc(-50% + ${offset.dx}px), calc(-50% + ${offset.dy}px))` }}
+    >
+      {settled && (
+        <div className="pause-banner-bar">
+          <span
+            className="pause-banner-grip"
+            title={t("Drag to move", "Glisser pour déplacer")}
+            onPointerDown={beginDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
+            ⠿
+          </span>
+          {canClose && (
+            <button
+              className="pause-banner-close"
+              title={t("Close - it comes back for the resume countdown", "Fermer - il revient pour le compte à rebours de reprise")}
+              onClick={() => setClosedFor(room.pause_at ?? null)}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       <span className="pause-banner-title display">
         {pause.phase === "pausing" && t("Pausing in", "Pause dans")}
         {pause.phase === "paused" && t("Match paused", "Partie en pause")}
@@ -241,6 +367,16 @@ export function PauseBanner({ room, players, myPlayerId, isHost }: Props) {
           </span>
         </>
       )}
+
+      {/* Readying up is a crew job. A spectating host resumes the match without ever readying, and a
+          spectator has nothing to be ready for - the roster above counts fleets only. */}
+      {settled && onFleet && (
+        <button className={`pause-banner-ready${iAmReady ? "" : " primary"}`} disabled={busy} onClick={toggleReady}>
+          {iAmReady ? t("✓ Ready - stand down", "✓ Prêt - se retirer") : t("Ready up", "Se préparer")}
+        </button>
+      )}
+
+      {error && <div className="error-text pause-banner-error">{error}</div>}
     </div>
   );
 }
