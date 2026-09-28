@@ -33,6 +33,8 @@ export interface EventDetail {
   name: string;
   description: string;
   status: EventStatus;
+  /** A test event: made-up teams, visible to administrators only. */
+  is_test: boolean;
   team_size: number;
   max_roster: number;
   max_entrants: number | null;
@@ -128,6 +130,8 @@ export async function fetchFrontPageEvents(serverNowMs: number): Promise<EventSu
       "id, name, status, signup_closes_at, starts_at, finished_at, champion:tournament_entrants!tournaments_champion_id_fkey(name)",
     )
     .or(`status.in.(signup,live),and(status.eq.finished,finished_at.gte.${cutoff})`)
+    // The database already hides test events from everyone else; this keeps them off an admin's front page too.
+    .eq("is_test", false)
     .order("created_at", { ascending: false })
     .limit(20);
   if (error) fail(error);
@@ -158,7 +162,7 @@ export async function fetchMyInbox(): Promise<InboxInvite[]> {
 // ===========================================================================
 
 const EVENT_COLUMNS =
-  "id, name, description, status, team_size, max_roster, max_entrants, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
+  "id, name, description, status, is_test, team_size, max_roster, max_entrants, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
 
 function toDetail(row: Record<string, unknown>): EventDetail {
   const champion = row.champion as { name: string } | { name: string }[] | null;
@@ -167,6 +171,7 @@ function toDetail(row: Record<string, unknown>): EventDetail {
     name: row.name as string,
     description: (row.description as string) ?? "",
     status: row.status as EventStatus,
+    is_test: (row.is_test as boolean | undefined) ?? false,
     team_size: row.team_size as number,
     max_roster: row.max_roster as number,
     max_entrants: (row.max_entrants as number | null) ?? null,
@@ -389,9 +394,23 @@ export async function cancelEvent(id: string, reason: string): Promise<void> {
   if (error) fail(error);
 }
 
+/**
+ * Deletes a draft, a cancelled event, or a test event, with its teams and bracket. Official games already
+ * played in it stay on the players' records - the database keeps those, it only drops the event.
+ */
 export async function deleteEvent(id: string): Promise<void> {
-  const { error } = await supabase.from("tournaments").delete().eq("id", id);
+  const { error } = await supabase.rpc("delete_tournament", { p_tournament: id });
   if (error) fail(error);
+}
+
+/**
+ * Makes a test event: made-up, already-approved teams, open for signup so it can be started at once,
+ * and visible to administrators only whatever happens to it.
+ */
+export async function createTestEvent(name: string, teams: number, teamSize: number): Promise<string> {
+  const { data, error } = await supabase.rpc("create_test_tournament", { p_name: name.trim(), p_teams: teams, p_team_size: teamSize });
+  if (error) fail(error);
+  return data as string;
 }
 
 export interface AdminTeamRow extends TeamRow {
@@ -458,7 +477,8 @@ export async function startEvent(
 
 /** The events that are running right now. Official matches only exist while at least one is. */
 export async function fetchLiveEvents(): Promise<Array<{ id: string; name: string }>> {
-  const { data, error } = await supabase.from("tournaments").select("id, name").eq("status", "live").order("created_at");
+  // Test events are visible to an admin but have no real players, so they are never offered here.
+  const { data, error } = await supabase.from("tournaments").select("id, name").eq("status", "live").eq("is_test", false).order("created_at");
   if (error) fail(error);
   return (data ?? []) as Array<{ id: string; name: string }>;
 }

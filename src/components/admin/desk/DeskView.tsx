@@ -58,6 +58,7 @@ export function DeskView({ eventId }: { eventId: string }) {
       <div style={{ textAlign: "center" }}>
         <h1>{event.name}</h1>
         <div className="row" style={{ justifyContent: "center" }}>
+          {event.is_test && <span className="badge badge--warn" title={t("Only administrators can see this event", "Seuls les administrateurs voient cet événement")}>{t("TEST", "TEST")}</span>}
           <span className={`badge ${event.status === "live" ? "badge--warn" : event.status === "finished" ? "badge--good" : event.status === "cancelled" ? "badge--bad" : ""}`}>{event.status}</span>
           {event.status === "live" && (
             <span className="muted">

@@ -154,6 +154,7 @@ export function Event() {
       <div style={{ textAlign: "center" }}>
         <h1>{open ? signupHeadline(event.name, lang) : event.name}</h1>
         <div className="row" style={{ justifyContent: "center" }}>
+          {event.is_test && <span className="badge badge--warn" title={t("Only administrators can see this event", "Seuls les administrateurs voient cet événement")}>{t("TEST", "TEST")}</span>}
           <StatusBadge event={event} open={open} />
           <span className="muted">
             {event.team_size === 1

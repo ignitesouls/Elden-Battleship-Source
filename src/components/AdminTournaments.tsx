@@ -6,6 +6,7 @@ import {
   adminTeams,
   cancelEvent,
   createEvent,
+  createTestEvent,
   deleteEvent,
   regenerateEntryCode,
   setEventStatus,
@@ -35,6 +36,7 @@ export function AdminTournaments() {
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [making, setMaking] = useState<null | "event" | "test">(null);
 
   const load = useCallback(async () => {
     try {
@@ -70,7 +72,18 @@ export function AdminTournaments() {
       <h3>{t("Tournaments", "Tournois")}</h3>
       {error && <div className="error-text">{error}</div>}
 
-      <NewEventForm busy={busy} act={act} />
+      {making === null ? (
+        <div className="row">
+          <button onClick={() => setMaking("event")}>{t("New event", "Nouvel événement")}</button>
+          <button onClick={() => setMaking("test")} title={t("Made-up teams, visible to administrators only - for trying the controls", "Équipes fictives, visibles des administrateurs seulement - pour essayer les commandes")}>
+            {t("New test event", "Nouvel événement de test")}
+          </button>
+        </div>
+      ) : making === "event" ? (
+        <NewEventForm busy={busy} act={act} onClose={() => setMaking(null)} />
+      ) : (
+        <TestEventForm busy={busy} act={act} onClose={() => setMaking(null)} />
+      )}
 
       {events === null ? (
         <p className="muted" style={{ margin: 0 }}>{t("Loading...", "Chargement...")}</p>
@@ -98,23 +111,14 @@ export function AdminTournaments() {
 
 type Act = (action: () => Promise<unknown>) => Promise<void>;
 
-function NewEventForm({ busy, act }: { busy: boolean; act: Act }) {
+function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose: () => void }) {
   const t = useT();
-  const [shown, setShown] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [teamSize, setTeamSize] = useState(2);
   const [subs, setSubs] = useState(1);
   const [maxTeams, setMaxTeams] = useState("");
   const [closes, setCloses] = useState("");
-
-  if (!shown) {
-    return (
-      <div>
-        <button onClick={() => setShown(true)}>{t("New event", "Nouvel événement")}</button>
-      </div>
-    );
-  }
 
   const valid = name.trim().length >= 3 && teamSize >= 1 && teamSize <= 10 && subs >= 0;
 
@@ -167,21 +171,67 @@ function NewEventForm({ busy, act }: { busy: boolean; act: Act }) {
                 max_entrants: maxTeams ? Number(maxTeams) : null,
                 signup_closes_at: closes ? new Date(closes).toISOString() : null,
               });
-              setShown(false);
-              setName("");
-              setDescription("");
-              setMaxTeams("");
-              setCloses("");
+              onClose();
             })
           }
         >
           {t("Create draft", "Créer le brouillon")}
         </button>
-        <button onClick={() => setShown(false)}>{t("Cancel", "Annuler")}</button>
+        <button onClick={onClose}>{t("Cancel", "Annuler")}</button>
       </div>
       <span className="muted" style={{ fontSize: "0.75rem" }}>
         {t("A new event is a draft: only administrators can see it until you open signup.", "Un nouvel événement est un brouillon : seuls les administrateurs le voient tant que vous n'ouvrez pas les inscriptions.")}
       </span>
+    </div>
+  );
+}
+
+/** A throwaway event with made-up teams, for trying the controls where nobody else can see. */
+function TestEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose: () => void }) {
+  const t = useT();
+  const [name, setName] = useState("Test event");
+  const [teams, setTeams] = useState(8);
+  const [teamSize, setTeamSize] = useState(2);
+
+  const valid = name.trim().length >= 3 && teams >= 2 && teams <= 64 && teamSize >= 1 && teamSize <= 10;
+
+  return (
+    <div className="stack" style={{ gap: "0.6rem", border: "1px dashed var(--panel-border)", borderRadius: 8, padding: "0.9rem" }}>
+      <span className="muted" style={{ fontSize: "0.85rem" }}>
+        {t(
+          "A test event runs on the real controls but only administrators can see it - it never shows on the front page or in the official-match lobby. Its teams are made up and already approved, so you can start it straight away. Nobody can play an official match in it: enter results on the desk. Delete it whenever you like.",
+          "Un événement de test utilise les vraies commandes mais seuls les administrateurs le voient - il n'apparaît jamais sur la page d'accueil ni dans le salon des matchs officiels. Ses équipes sont fictives et déjà approuvées, vous pouvez donc le lancer tout de suite. Aucun match officiel ne peut s'y jouer : saisissez les résultats depuis le bureau. Supprimez-le quand vous voulez.",
+        )}
+      </span>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <label className="stack" style={{ gap: "0.25rem" }}>
+          <span className="muted">{t("Name", "Nom")}</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+        </label>
+        <label className="stack" style={{ gap: "0.25rem" }}>
+          <span className="muted">{t("Teams", "Équipes")}</span>
+          <input type="number" min={2} max={64} value={teams} onChange={(e) => setTeams(Number(e.target.value))} style={{ width: "5rem" }} />
+        </label>
+        <label className="stack" style={{ gap: "0.25rem" }}>
+          <span className="muted">{t("Team size", "Taille d'équipe")}</span>
+          <input type="number" min={1} max={10} value={teamSize} onChange={(e) => setTeamSize(Number(e.target.value))} style={{ width: "5rem" }} />
+        </label>
+      </div>
+      <div className="row">
+        <button
+          className="primary"
+          disabled={busy || !valid}
+          onClick={() =>
+            void act(async () => {
+              await createTestEvent(name, teams, teamSize);
+              onClose();
+            })
+          }
+        >
+          {t("Create test event", "Créer l'événement de test")}
+        </button>
+        <button onClick={onClose}>{t("Cancel", "Annuler")}</button>
+      </div>
     </div>
   );
 }
@@ -199,12 +249,37 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
     : <span className="badge badge--bad">{t("cancelled", "annulé")}</span>;
 
   const canCancel = event.status === "draft" || event.status === "signup" || event.status === "live";
+  // The same rule delete_tournament enforces; this only decides whether to offer the button.
+  const canDelete = event.is_test || event.status === "draft" || event.status === "cancelled";
+
+  /**
+   * A draft or a test event goes on a plain confirm. A cancelled event may have been played in, so its
+   * name has to be typed out - there is no undo.
+   */
+  function confirmDelete(): boolean {
+    if (event.is_test || event.status === "draft") {
+      return window.confirm(t(`Delete "${event.name}" for good?`, `Supprimer « ${event.name} » définitivement ?`));
+    }
+    const typed = window.prompt(
+      t(
+        `Deleting "${event.name}" removes its teams and bracket for good. Official games already played in it still count on players' records.\n\nType the event's name to delete it:`,
+        `Supprimer « ${event.name} » efface définitivement ses équipes et son tableau. Les matchs officiels déjà joués comptent toujours dans les résultats des joueurs.\n\nTapez le nom de l'événement pour le supprimer :`,
+      ),
+    );
+    if (typed === null) return false;
+    if (typed.trim() !== event.name) {
+      window.alert(t("That isn't the event's name - nothing was deleted.", "Ce n'est pas le nom de l'événement - rien n'a été supprimé."));
+      return false;
+    }
+    return true;
+  }
 
   return (
     <div style={{ border: "1px solid var(--panel-border)", borderRadius: 8, padding: "0.8rem" }} className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <span className="row">
           <strong>{event.name}</strong>
+          {event.is_test && <span className="badge badge--warn">{t("TEST", "TEST")}</span>}
           {badge}
           <span className="muted">
             {event.team_size === 1 ? t("individual", "individuel") : t(`teams of ${event.team_size}`, `équipes de ${event.team_size}`)}
@@ -245,12 +320,12 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
             {t("Back to draft", "Repasser en brouillon")}
           </button>
         )}
-        {event.status === "draft" && (
+        {canDelete && (
           <button
             className="danger"
             disabled={busy}
             onClick={() => {
-              if (window.confirm(t(`Delete "${event.name}" for good?`, `Supprimer « ${event.name} » définitivement ?`))) void act(() => deleteEvent(event.id));
+              if (confirmDelete()) void act(() => deleteEvent(event.id));
             }}
           >
             {t("Delete", "Supprimer")}

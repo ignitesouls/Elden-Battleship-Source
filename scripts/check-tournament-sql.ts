@@ -210,12 +210,15 @@ async function rules() {
   const eve = await person('eve')
   const plain = await person('plain', { twitch: false })
 
+  // A test event goes live first, so the check below also proves that one doesn't count.
+  const testId = await testEvents(admin, eve)
+
   // Before any event has gone live the Official stat category must not exist. This can only be
   // asserted on a database with no live event in it already (a crashed earlier run, say), so it says
   // so rather than failing for a reason that is not the code's.
-  const alreadyLive = (await svc.from('tournaments').select('id', { count: 'exact', head: true }).not('went_live_at', 'is', null)).count ?? 0
+  const alreadyLive = (await svc.from('tournaments').select('id', { count: 'exact', head: true }).not('went_live_at', 'is', null).eq('is_test', false)).count ?? 0
   if (alreadyLive === 0) {
-    check('the Official stat is off until an event has gone live', (await eve.client.rpc('official_stats_enabled')).data === false)
+    check('the Official stat is off until an event has gone live - a live test event does not count', (await eve.client.rpc('official_stats_enabled')).data === false)
   } else {
     console.log(`  skip  the Official stat is off until an event has gone live - ${alreadyLive} event(s) already live in this database`)
   }
@@ -543,6 +546,7 @@ async function rules() {
   await laterStages(admin)
   await officialMatches(admin)
   await concurrentEvents(admin)
+  await deleting(admin, eve, testId)
 
   const draftEvent = await newTournament({ status: 'draft', name: `Draft ${run}` })
   allowed('a draft can be cancelled too', (await admin.client.rpc('cancel_tournament', { p_tournament: draftEvent.id })).error)
@@ -1866,6 +1870,116 @@ async function concurrentEvents(admin: Person) {
   check('each event kept its own champion',
     (await svc.from('tournaments').select('champion_id').eq('id', a.id).single()).data!.champion_id === a.team.get('X1') &&
       (await svc.from('tournaments').select('champion_id').eq('id', b.id).single()).data!.champion_id === b.team.get('X2'))
+}
+
+// ===========================================================================================
+// Test events, and deleting an event
+// ===========================================================================================
+/** Makes a test event and starts it; returns its id, still live, for deleting() to finish off. */
+async function testEvents(admin: Person, visitor: Person): Promise<string> {
+  console.log('\nTest events - made-up teams, administrators only')
+  const anon = createClient(API, ANON, clientOpts)
+  const ONLY = /Only an administrator can make a test event/
+  const args = { p_name: `Test ${run}`, p_teams: 4, p_team_size: 2 }
+  refused('a player cannot make a test event', (await visitor.client.rpc('create_test_tournament', args)).error, ONLY)
+  refused('...nor can an anonymous visitor', (await anon.rpc('create_test_tournament', args)).error, ONLY)
+  refused('it needs at least two teams', (await admin.client.rpc('create_test_tournament', { ...args, p_teams: 1 })).error, /between 2 and 64 teams/)
+  refused('...and a team size from 1 to 10', (await admin.client.rpc('create_test_tournament', { ...args, p_team_size: 11 })).error, /between 1 and 10 players/)
+
+  const made = await admin.client.rpc('create_test_tournament', { ...args, p_name: `  Test ${run}  ` })
+  allowed('an admin can make one', made.error)
+  const id = made.data as string
+  if (!id) throw new Error('no test event to go on with')
+  createdTournaments.push(id)
+
+  const ev = (await svc.from('tournaments').select('name, status, is_test, team_size, max_roster').eq('id', id).single()).data
+  check('it is a test event taking signups, with one roster place to spare for a substitution',
+    ev?.is_test === true && ev.status === 'signup' && ev.team_size === 2 && ev.max_roster === 3 && ev.name === `Test ${run}`, JSON.stringify(ev))
+  const teams = ((await svc
+    .from('tournament_entrants')
+    .select('id, status, captain_user_id, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code)')
+    .eq('tournament_id', id)).data ?? []) as Array<{
+    id: string
+    status: string
+    captain_user_id: string
+    roster: Array<{ user_id: string; display_name: string; is_captain: boolean }>
+    secrets: { entry_code: string | null } | Array<{ entry_code: string | null }> | null
+  }>
+  check('it has four approved teams', teams.length === 4 && teams.every((t) => t.status === 'approved'), JSON.stringify(teams.map((t) => t.status)))
+  check('...each of two made-up players, the captain among them',
+    teams.every((t) => t.roster.length === 2 && t.roster.filter((r) => r.is_captain && r.user_id === t.captain_user_id).length === 1 &&
+      t.roster.every((r) => r.display_name.startsWith('Tester '))))
+  const codes = teams.map((t) => (Array.isArray(t.secrets) ? t.secrets[0]?.entry_code : t.secrets?.entry_code) ?? null)
+  check('...and each holding its own entry code, as an approved team does', codes.every(Boolean) && new Set(codes).size === 4, JSON.stringify(codes))
+  check('none of the made-up players is a real account',
+    ((await svc.from('profiles').select('id').in('id', teams.flatMap((t) => t.roster.map((r) => r.user_id)))).data ?? []).length === 0)
+
+  const sees = async (who: SupabaseClient) => ((await who.from('tournaments').select('id').eq('id', id)).data ?? []).length === 1
+  check('a player cannot see it, though it is taking signups', !(await sees(visitor.client)))
+  check('...nor can an anonymous visitor', !(await sees(anon)))
+  check('...but an admin can', await sees(admin.client))
+  const FIXED = /fixed when it is created/
+  refused('it cannot be made public', (await admin.client.from('tournaments').update({ is_test: false }).eq('id', id)).error, FIXED)
+  const real = await newTournament({ status: 'draft', name: `Real ${run}` })
+  refused('...and a real event cannot be turned into a test one', (await admin.client.from('tournaments').update({ is_test: true }).eq('id', real.id)).error, FIXED)
+
+  const seeds = teams.map((t) => t.id)
+  const format = suggestFormat(seeds.length).format
+  const schedule = suggestSchedule(format, seeds.length, new Date().toISOString()).schedule
+  const plan = planStart(format, seeds, schedule)
+  if (!plan.ok) throw new Error(`plan: ${plan.problems.join(', ')}`)
+  allowed('it starts like any other event',
+    (await admin.client.rpc('start_tournament', { p_tournament: id, p_format: format, p_schedule: schedule, p_seeds: seeds, p_matches: toMatchRows(plan.plan.matches) })).error)
+  check('...and goes live', (await svc.from('tournaments').select('status, went_live_at').eq('id', id).single()).data?.status === 'live')
+  check('its bracket is hidden from players', ((await visitor.client.from('tournament_matches').select('id').eq('tournament_id', id)).data ?? []).length === 0)
+  const ready = (await svc.from('tournament_matches').select('id').eq('tournament_id', id).eq('status', 'ready').limit(1)).data?.[0]?.id
+  allowed('an admin can enter a result in it', (await admin.client.rpc('set_tournament_match_score', { p_match: ready, p_score_a: 1, p_score_b: 0 })).error)
+  return id
+}
+
+async function deleting(admin: Person, visitor: Person, testId: string) {
+  console.log('\nDeleting an event')
+  const ONLY = /Only an administrator can delete an event/
+  const NOT_YET = /Only a draft or a cancelled event can be deleted/
+  const koFormat: TournamentFormat = { qualifier: { format: 'none' }, knockout: { format: 'single', bestOf: 1, thirdPlace: false, grandFinalReset: false } }
+
+  /** Everything an event owns, counted - all zero once it is deleted. */
+  const leftovers = async (id: string) => {
+    const ents = ((await svc.from('tournament_entrants').select('id').eq('tournament_id', id)).data ?? []).map((e) => e.id as string)
+    const [t, m, s, r] = await Promise.all([
+      svc.from('tournaments').select('id', { count: 'exact', head: true }).eq('id', id),
+      svc.from('tournament_matches').select('id', { count: 'exact', head: true }).eq('tournament_id', id),
+      svc.from('tournament_entrant_secrets').select('entrant_id', { count: 'exact', head: true }).eq('tournament_id', id),
+      svc.from('tournament_roster').select('user_id', { count: 'exact', head: true }).in('entrant_id', ents.length ? ents : ['00000000-0000-0000-0000-000000000000']),
+    ])
+    return (t.count ?? 0) + ents.length + (m.count ?? 0) + (s.count ?? 0) + (r.count ?? 0)
+  }
+
+  // The case that matters: cancelled part-way through, a result already in its (now frozen) bracket.
+  const doomed = await makeLiveEvent(admin, 'Doomed', koFormat, ['D1', 'D2', 'D3', 'D4'])
+  await addMatches(doomed, buildKnockout(['D1', 'D2', 'D3', 'D4'], koFormat.knockout!))
+  const doomedIds = await matchIds(doomed)
+  allowed('(setup) a semifinal is played', (await admin.client.rpc('set_tournament_match_score', { p_match: doomedIds.get('W1-0'), p_score_a: 1, p_score_b: 0 })).error)
+
+  refused('a running event cannot be deleted - it has to be cancelled first',
+    (await admin.client.rpc('delete_tournament', { p_tournament: doomed.id })).error, NOT_YET)
+  const direct = await admin.client.from('tournaments').delete().eq('id', doomed.id).select()
+  check('...not even by deleting the row directly', (direct.data ?? []).length === 0 && (await leftovers(doomed.id)) > 0, msg(direct.error))
+
+  allowed('(setup) the event is cancelled', (await admin.client.rpc('cancel_tournament', { p_tournament: doomed.id })).error)
+  refused('a player cannot delete it', (await visitor.client.rpc('delete_tournament', { p_tournament: doomed.id })).error, ONLY)
+  refused('an event that does not exist cannot be deleted',
+    (await admin.client.rpc('delete_tournament', { p_tournament: '00000000-0000-0000-0000-000000000000' })).error, /no such event/)
+  allowed('an admin can delete the cancelled event, frozen bracket and all', (await admin.client.rpc('delete_tournament', { p_tournament: doomed.id })).error)
+  check('...and nothing of it is left: event, teams, rosters, entry codes, bracket', (await leftovers(doomed.id)) === 0)
+
+  const done = await newTournament({ status: 'finished', name: `Done for good ${run}` })
+  refused('a finished event cannot be deleted', (await admin.client.rpc('delete_tournament', { p_tournament: done.id })).error, NOT_YET)
+  const draft = await newTournament({ status: 'draft', name: `Unwanted ${run}` })
+  allowed('a draft still can be', (await admin.client.rpc('delete_tournament', { p_tournament: draft.id })).error)
+
+  allowed('a test event can be deleted while it is running', (await admin.client.rpc('delete_tournament', { p_tournament: testId })).error)
+  check('...and nothing of it is left either', (await leftovers(testId)) === 0)
 }
 
 // ===========================================================================================
