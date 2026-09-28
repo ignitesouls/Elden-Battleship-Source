@@ -1,0 +1,116 @@
+/**
+ * The casting scene preview: a 16:9 frame standing in for the 1920x1080 OBS canvas.
+ *
+ * Every layer is placed in percentages from lib/castSceneLayout, and sized in cqw against this box,
+ * so the preview holds its proportions at any panel width. Stacking follows DOM order, which follows
+ * the order the downloaded scene stacks its sources in.
+ */
+.csp {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  background: #050d14;
+  container-type: inline-size;
+}
+
+.csp > * {
+  position: absolute;
+}
+
+.csp-art {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+/* A stand-in player stream: gameplay footage, with the same name plate the real source draws. */
+.csp-screen {
+  background-color: #2b2a26;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+/* The real plate is 1.5rem / 0.95rem on a 1920-wide canvas - restated in cqw so it scales with the frame. */
+.csp-plate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1cqw;
+  padding: 0.25cqw 0.5cqw 0.3cqw 0.4cqw;
+  background: rgba(6, 16, 24, 0.74);
+  border-left: 0.2cqw solid var(--csp-accent, #8fb3c8);
+  border-bottom-right-radius: 0.4cqw;
+}
+
+.csp-name {
+  font-family: var(--font-display);
+  font-size: 1.25cqw;
+  font-weight: 700;
+  line-height: 1.05;
+  color: #f2f7fa;
+  white-space: nowrap;
+}
+
+.csp-stats {
+  font-family: var(--font-display);
+  font-size: 0.8cqw;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #cfe0ea;
+  white-space: nowrap;
+}
+
+.csp-board {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.csp-board .bg-cell {
+  cursor: default;
+}
+
+.csp-board .bg-wrap,
+.csp-board .bg-grid-scroll {
+  max-width: none;
+  overflow: visible;
+}
+
+/* A stand-in webcam: a dim box that says whose camera goes there. */
+.csp-cam {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(143, 179, 200, 0.28) 0 14%, transparent 15%),
+    radial-gradient(ellipse at 50% 85%, rgba(143, 179, 200, 0.22) 0 30%, transparent 31%),
+    #16232e;
+}
+
+.csp-cam span {
+  position: absolute;
+  bottom: 12%;
+  font-size: 1cqw;
+  color: #9fb6c6;
+  white-space: nowrap;
+}
+
+.csp-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.csp-alert .ove-card {
+  width: 16cqw;
+  font-size: 1cqw;
+}

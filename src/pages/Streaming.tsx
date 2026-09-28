@@ -14,22 +14,12 @@ import {
   maskOverlayToken,
   rotateOverlayToken,
   sourcesFor,
-  streamCastUrl,
   streamSourceUrl,
   type SceneKind,
   type SceneSettings,
 } from "../lib/streamOverlay";
-import { SCENE_CANVAS, buildObsScene, buildCastCollection, castSceneFilename, previewBox, sceneFilename } from "../lib/obsScene";
-import {
-  screenRects,
-  boardRect,
-  clockRect,
-  castCamRects,
-  casterCamRects,
-  frac,
-  type CastLayoutConfig,
-} from "../lib/castSceneLayout";
-import { MAX_DELAY_MS } from "../lib/overlayCast";
+import { SCENE_CANVAS, buildObsScene, previewBox, sceneFilename } from "../lib/obsScene";
+import { CasterSceneSetup } from "../components/CasterSceneSetup";
 import type { DeepMark } from "../lib/deepWater";
 import { useT } from "../lib/language";
 import "./Streaming.css";
@@ -104,136 +94,6 @@ function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
       })}
       <span className="obs-map-note">
         {SCENE_CANVAS.w} x {SCENE_CANVAS.h} {t("- where each source lands.", "- où chaque source se place.")}
-      </span>
-    </div>
-  );
-}
-
-/** The casting scene's map: numbered stream boxes, the board, the clock - and the break scene beside it. */
-function CastSceneMap({ config }: { config: CastLayoutConfig }) {
-  const t = useT();
-  const boxes = screenRects(config);
-  const board = boardRect();
-  const clock = clockRect();
-  const castCams = castCamRects();
-  const cams = casterCamRects();
-  const box = (r: { x: number; y: number; w: number; h: number }, label: string, key: string) => {
-    const f = frac(r);
-    return (
-      <div
-        key={key}
-        className="obs-map-box"
-        style={{ left: `${f.left * 100}%`, top: `${f.top * 100}%`, width: `${f.width * 100}%`, height: `${f.height * 100}%` }}
-      >
-        <span>{label}</span>
-      </div>
-    );
-  };
-  return (
-    <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
-      <div className="obs-map" role="img" aria-label={t("The casting scene", "La scène de commentaire")}>
-        {boxes.map((r, i) => box(r, `${i + 1}`, `s${i}`))}
-        {box(board, t("Board", "Plateau"), "board")}
-        {box(clock, t("Clock", "Horloge"), "clock")}
-        {castCams.map((r, i) => box(r, i === 0 ? t("Caster", "Commentateur") : t("Co-caster", "Co-commentateur"), `cc${i}`))}
-        <span className="obs-map-note">EB Cast - {SCENE_CANVAS.w} x {SCENE_CANVAS.h}</span>
-      </div>
-      <div className="obs-map" role="img" aria-label={t("The camera-break scene", "La scène de pause caméra")}>
-        {cams.map((r, i) => box(r, i === 0 ? t("Caster", "Commentateur") : t("Co-caster", "Co-commentateur"), `c${i}`))}
-        <span className="obs-map-note">EB Casters - {t("the break", "la pause")}</span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The casting set scene: a whole broadcast layout in one import, plus a camera-break scene.
- *
- * Its own box rather than a third "who's streaming" option, because it is a different shape of thing
- * - it is not a menu of elements a caster arranges, it is one composed scene keyed to the room's
- * roster. It reuses the same overlay token as the box above.
- */
-function CastingSceneBox({ base, token }: { base: string; token: string }) {
-  const t = useT();
-  const [teams, setTeams] = useState(2);
-  const [perTeam, setPerTeam] = useState(3);
-  const [delayMs, setDelayMs] = useState(0);
-  const config: CastLayoutConfig = { teams, perTeam };
-
-  function download() {
-    const collection = buildCastCollection({ base, token, config, delayMs });
-    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = castSceneFilename();
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="panel stack" style={{ gap: "0.6rem", padding: "0.7rem" }}>
-      <strong style={{ fontSize: "0.86rem" }}>{t("Casting set scene", "Ensemble de scènes de commentaire")}</strong>
-      <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-        {t("One import, two scenes:", "Un import, deux scènes :")} <strong>EB Cast</strong>{" "}
-        {t(
-          "boxes every player's Twitch stream around the board with a live hit / miss / accuracy line under each, and",
-          "encadre le flux Twitch de chaque joueur autour du plateau avec une ligne touché / manqué / précision en direct sous chacun, et"
-        )}{" "}
-        <strong>EB Casters</strong>{" "}
-        {t(
-          "is a camera frame for the breaks. The boxes fill themselves from whoever is in your room. Drive it from the caster desk - the delay slider there lines the board up with the streams.",
-          "est un cadre caméra pour les pauses. Les cadres se remplissent tout seuls selon qui est dans votre partie. Pilotez-le depuis le poste de commentaire - le curseur de décalage là-bas aligne le plateau sur les flux."
-        )}
-      </span>
-
-      <div className="row" style={{ gap: "0.8rem", flexWrap: "wrap" }}>
-        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          {t("Fleets on camera", "Flottes à l'écran")}
-          <select value={teams} onChange={(e) => setTeams(Number(e.target.value))}>
-            {[2, 3, 4].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          {t("Players per fleet", "Joueurs par flotte")}
-          <select value={perTeam} onChange={(e) => setPerTeam(Number(e.target.value))}>
-            {[1, 2, 3, 4].map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <label className="stack" style={{ gap: "0.15rem", fontSize: "0.74rem" }}>
-          {t("Stream delay", "Décalage du flux")}
-          <span className="row" style={{ gap: "0.4rem", alignItems: "center" }}>
-            <input
-              type="range"
-              min={0}
-              max={MAX_DELAY_MS}
-              step={100}
-              value={delayMs}
-              onChange={(e) => setDelayMs(Number(e.target.value))}
-            />
-            <span className="muted" style={{ fontSize: "0.7rem" }}>{(delayMs / 1000).toFixed(1)}s</span>
-          </span>
-        </label>
-      </div>
-
-      <CastSceneMap config={config} />
-
-      <button onClick={download} style={{ fontSize: "0.82rem" }}>
-        {t("Download casting scene", "Télécharger la scène de commentaire")}
-      </button>
-      <span style={{ fontSize: "0.68rem", lineHeight: 1.4, color: "var(--hit)" }}>
-        <strong>{t("Arrange it after you import.", "Disposez-la après l'import.")}</strong>{" "}
-        {t("Same as above - a re-download is a new pair of scenes, not an update.", "Comme ci-dessus - un nouveau téléchargement crée une nouvelle paire de scènes, pas une mise à jour.")}
-      </span>
-      <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-        {t(
-          "The player boxes are Twitch embeds, muted and capped to 480p. If one stream drifts, add a Render Delay filter to that Screen source in OBS. The caster and co-caster boxes - two along the bottom of EB Cast, two big ones in EB Casters - are cut-outs: put your webcams behind them.",
-          "Les cadres joueurs sont des flux Twitch intégrés, muets et limités à 480p. Si un flux se décale, ajoutez un filtre Render Delay à cette source Screen dans OBS. Les cadres commentateur et co-commentateur - deux en bas d'EB Cast, deux grands dans EB Casters - sont des découpes : placez vos webcams derrière."
-        )}
       </span>
     </div>
   );
@@ -426,19 +286,21 @@ export function Streaming() {
                   {t("Caster", "Commentateur")}
                 </button>
               </div>
-              <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-                {isCaster
-                  ? t(
-                      "The desk: the board you aim from the control page, and the clock with the odds bar in it. Join a room as a spectator and the scene follows you in.",
-                      "Le poste : le plateau que vous visez depuis la page de contrôle, et l'horloge avec la barre de cotes. Rejoignez une partie en spectateur et la scène vous suit."
-                    )
-                  : t(
-                      "Your own scene - the board you're playing off, and the clock. Your fleet is filled in when the match starts, so you can change crews without touching anything.",
-                      "Votre propre scène - le plateau sur lequel vous jouez, et l'horloge. Votre flotte se remplit au début de la partie, vous pouvez donc changer d'équipe sans rien toucher."
-                    )}
-              </span>
+              {!isCaster && (
+                <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+                  {t(
+                    "Your own scene - the board you're playing off, and the clock. Your fleet is filled in when the match starts, so you can change crews without touching anything.",
+                    "Votre propre scène - le plateau sur lequel vous jouez, et l'horloge. Votre flotte se remplit au début de la partie, vous pouvez donc changer d'équipe sans rien toucher."
+                  )}
+                </span>
+              )}
             </div>
 
+            {/* A caster gets the whole broadcast layout - see components/CasterSceneSetup. */}
+            {isCaster ? (
+              <CasterSceneSetup base={base} token={token} />
+            ) : (
+            <>
             {/* -- the look ------------------------------------------------------------------- */}
             <OverlaySample
               opacity={opacity}
@@ -576,19 +438,6 @@ export function Streaming() {
               )}
             </span>
 
-            {isCaster && (
-              <div className="stack" style={{ gap: "0.15rem" }}>
-                <span style={{ fontSize: "0.78rem" }}>{t("Control page", "Page de contrôle")}</span>
-                <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-                  {t("Open", "Ouvrez")} <a href={streamCastUrl(base, token)}>{t("your caster desk", "votre poste de commentaire")}</a>{" "}
-                  {t(
-                    "in a normal browser window, not in OBS. It drives the Board source - zoom, pan, spotlight, markers, and how solid the scene looks - and it follows you between rooms like the sources do.",
-                    "dans une fenêtre de navigateur normale, pas dans OBS. Il pilote la source Board - zoom, panoramique, projecteur, marqueurs, et la transparence de la scène - et il vous suit d'une partie à l'autre comme les autres sources."
-                  )}
-                </span>
-              </div>
-            )}
-
             {/* -- the advanced half ---------------------------------------------------------- */}
             <details className="stack" style={{ gap: "0.4rem" }}>
               <summary style={{ fontSize: "0.78rem", cursor: "pointer" }}>
@@ -610,6 +459,8 @@ export function Streaming() {
                 />
               ))}
             </details>
+            </>
+            )}
 
             {/* -- the token ------------------------------------------------------------------ */}
             <div className="stack" style={{ gap: "0.3rem" }}>
@@ -665,10 +516,6 @@ export function Streaming() {
           {t("box inside a room hands out URLs for that room alone.", "à l'intérieur d'une partie distribue des URL pour cette partie uniquement.")}
         </span>
       </div>
-
-      {/* The casting set scene - a whole broadcast layout, for whoever is running the desk. Needs
-          the same overlay token as the box above. */}
-      {signedIn && typeof token === "string" && <CastingSceneBox base={base} token={token} />}
 
       {/*
         -- the audience, last -------------------------------------------------------------------

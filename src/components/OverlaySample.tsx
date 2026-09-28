@@ -113,6 +113,83 @@ const VISUALS: Record<number, CellVisual> = {
 };
 
 /**
+ * The sample board on its own - the real BoardGrid wearing the browser source's classes. Shared with
+ * the casting preview (components/CastScenePreview), which sets it in the frame art's board hole.
+ */
+export function SampleBoard({
+  opacity,
+  emptyFade,
+  textSize,
+  size,
+  className,
+}: {
+  opacity: number;
+  emptyFade: number;
+  textSize: number;
+  /** The board's edge, as a CSS length - a container unit, so it holds its share of the frame. */
+  size: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`ovb-board ovl-fade${className ? ` ${className}` : ""}`}
+      style={{
+        ["--ovb-cells" as string]: SIZE,
+        ["--ovb-text" as string]: textSize,
+      }}
+    >
+      <div
+        className="ovl-fade-stage"
+        style={{
+          ["--ovl-a-bg" as string]: opacity,
+          ["--ovl-a-empty" as string]: emptyFade,
+        }}
+      >
+        <BoardGrid
+          boardSize={SIZE}
+          cellVisual={(i) => VISUALS[i] ?? "empty"}
+          maxVh={size}
+          maxVw={size}
+          textBoost={textSize}
+          growText
+          // The wreck, so a sunk hull has something to burn on - the three squares above.
+          ships={[{ row: 3, col: 2, size: 3, horizontal: true, shipName: "Cruiser", colorHex: "#e08a3c" }]}
+          sunkOrientation={new Map([[20, true], [21, true], [22, true]])}
+          cellText={(i) => {
+            const sq = SQUARES[i];
+            return sq ? { label: sq.label, region: sq.region } : null;
+          }}
+          // The region wash on unfired squares - the thing the unfired-squares slider thins.
+          cellTint={(i) => {
+            const sq = SQUARES[i];
+            return sq ? { region: sq.region } : null;
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The sample scorebug on its own. Fills whatever box it is put in - see components/ClockBar. */
+export function SampleClock({ isCaster, opacity, textSize }: { isCaster: boolean; opacity: number; textSize: number }) {
+  return (
+    <ClockBar
+      phaseLabel="Match"
+      clock="18:42"
+      fleets={FLEETS}
+      shipDefs={SHIPS}
+      highlightTeam={isCaster ? null : 1}
+      showFleets
+      // The band is a caster's instrument, so it appears on a caster's scene and nowhere else -
+      // which is the difference the box is otherwise only able to describe in words.
+      odds={isCaster ? ODDS : null}
+      opacity={opacity}
+      textSize={textSize}
+    />
+  );
+}
+
+/**
  * A sample of the real thing, driven by the sliders above it.
  *
  * -- Why this is fabricated rather than the live board ---------------------------------------------
@@ -180,57 +257,10 @@ export function OverlaySample({
 
       {/* The scorebug, across the top. Real one, real fit - see components/ClockBar. */}
       <div className="ovp-clock">
-        <ClockBar
-          phaseLabel="Match"
-          clock="18:42"
-          fleets={FLEETS}
-          shipDefs={SHIPS}
-          highlightTeam={isCaster ? null : 1}
-          showFleets
-          // The band is a caster's instrument, so it appears on a caster's scene and nowhere else -
-          // which is the difference the box is otherwise only able to describe in words.
-          odds={isCaster ? ODDS : null}
-          opacity={opacity}
-          textSize={textSize}
-        />
+        <SampleClock isCaster={isCaster} opacity={opacity} textSize={textSize} />
       </div>
 
-      <div
-        className="ovp-board ovb-board ovl-fade"
-        style={{
-          ["--ovb-cells" as string]: SIZE,
-          ["--ovb-text" as string]: textSize,
-        }}
-      >
-        <div
-          className="ovl-fade-stage"
-          style={{
-            ["--ovl-a-bg" as string]: opacity,
-            ["--ovl-a-empty" as string]: emptyFade,
-          }}
-        >
-          <BoardGrid
-            boardSize={SIZE}
-            cellVisual={(i) => VISUALS[i] ?? "empty"}
-            maxVh={BOARD}
-            maxVw={BOARD}
-            textBoost={textSize}
-            growText
-            // The wreck, so a sunk hull has something to burn on - the three squares above.
-            ships={[{ row: 3, col: 2, size: 3, horizontal: true, shipName: "Cruiser", colorHex: "#e08a3c" }]}
-            sunkOrientation={new Map([[20, true], [21, true], [22, true]])}
-            cellText={(i) => {
-              const sq = SQUARES[i];
-              return sq ? { label: sq.label, region: sq.region } : null;
-            }}
-            // The region wash on unfired squares - the thing the unfired-squares slider thins.
-            cellTint={(i) => {
-              const sq = SQUARES[i];
-              return sq ? { region: sq.region } : null;
-            }}
-          />
-        </div>
-      </div>
+      <SampleBoard className="ovp-board" opacity={opacity} emptyFade={emptyFade} textSize={textSize} size={BOARD} />
 
       {/* The crew's own fleet panel. Not on a caster's scene, because a caster has no fleet - the
           source needs a rejoin code and only its owner has one. See OverlayFleet. */}

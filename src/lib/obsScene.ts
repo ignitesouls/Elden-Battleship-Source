@@ -9,7 +9,6 @@ import {
   boardRect,
   clockRect,
   CAST_CANVAS,
-  type CastLayoutConfig,
 } from "./castSceneLayout.ts";
 
 /**
@@ -365,85 +364,172 @@ function castSource(id: string, element: StreamSource["element"], obsName: strin
   };
 }
 
-export interface CastCollectionOptions {
+/** The find alert's hold when nothing else is asked for, in seconds - OverlayEgg's own default. */
+const CAST_DEFAULT_ALERT_SECS = 6;
+
+export interface CastSceneOptions {
   /** Origin + path the URLs are built against - `window.location` in the page, a constant in a test. */
   base: string;
   /** The caster's overlay token. Every source in both scenes carries it and nothing else. */
   token: string;
-  config: CastLayoutConfig;
   /**
    * The overlay hold, in milliseconds, written onto the clock's URL as `?delay=` so it sits back
    * where the players' streams are. The driven board reads its hold live from the control page, so
    * it takes nothing here. 0 writes nothing.
    */
   delayMs?: number;
+  /** The clock's transparency, 0..1. 1 writes nothing. */
+  clockOpacity?: number;
+  /** The clock's text size multiplier. 1 writes nothing. */
+  clockText?: number;
+  /** Add the find alert, over the board. On unless turned off. */
+  finds?: boolean;
+  /** How long a find holds the screen, in seconds. */
+  alertSecs?: number;
+  /** Add the board's sound as its own source, for the OBS mixer. On unless turned off. */
+  sound?: boolean;
+}
+
+export interface CastCollectionOptions extends CastSceneOptions {
   /** Injectable ids, so a check can build the same collection twice and diff it. */
   newId?: () => string;
 }
 
+/** One source in the casting collection: which scene it is in, what it is, and where it goes. */
+export interface CastPart {
+  scene: "main" | "break";
+  entry: SceneEntry;
+  at: SourcePlacement;
+  /** What the setup page says it is, for a caster building the scene by hand. */
+  what: string;
+}
+
 /**
- * The two-scene casting collection.
+ * Every source in the casting collection, in stacking order (bottom of each scene first).
  *
- * The screen boxes are one Browser Source each - `EB Screen 1..N`, pinned by `?slot=` - because a
+ * The one list both halves of the setup page read: the download builds its file from it, and the
+ * build-it-yourself list prints it row by row. So a caster wiring the scene up by hand gets exactly
+ * the sources, sizes and positions the file would have given them.
+ *
+ * The screen boxes are one Browser Source each - `EB Screen 1..6`, pinned by `?slot=` - because a
  * caster wants to refresh a hitched stream on its own (see lib/castAux). Native size is the box's
  * own pixels, so the Twitch embed inside renders at the size it is shown rather than being scaled.
  */
-export function buildCastCollection({ base, token, config, delayMs = 0, newId }: CastCollectionOptions) {
-  const uuid = newId ?? (() => crypto.randomUUID());
+export function castSceneParts({
+  base,
+  token,
+  delayMs = 0,
+  clockOpacity = 1,
+  clockText = 1,
+  finds = true,
+  alertSecs = CAST_DEFAULT_ALERT_SECS,
+  sound = true,
+}: CastSceneOptions): CastPart[] {
   const url = (path: string) => `${base}#/stream/${path}`;
 
-  const boxes = screenRects(config);
+  const boxes = screenRects();
   const board = boardRect();
   const clock = clockRect();
+  // The clock scales itself to fit its source, so the source is given the banner's own shape at a
+  // 1200-wide native size and scaled down onto it.
+  const clockNativeH = Math.round((1200 * clock.h) / clock.w);
 
-  /** One scene's worth of {entry, placement} pairs, in reading order (drawn bottom-up). */
-  const mainParts = [
-    ...boxes.map((box, i) => ({
-      entry: {
-        source: castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, Math.round(box.w), Math.round(box.h)),
-        url: url(`screen?token=${token}&slot=${i}`),
-      },
-      at: { x: Math.round(box.x), y: Math.round(box.y), scale: 1 },
-    })),
-    {
-      entry: { source: castSource("board", "board", "EB Board", 1000, 1000), url: url(`board?token=${token}`) },
-      at: { x: Math.round(board.x), y: Math.round(board.y), scale: board.w / 1000 },
-    },
-    {
-      entry: {
-        source: castSource("clock", "timer", "EB Caster Clock", 1200, 300),
-        url: url(`timer?token=${token}&odds=1${delayMs > 0 ? `&delay=${Math.round(delayMs)}` : ""}`),
-      },
-      at: { x: Math.round(clock.x), y: Math.round(clock.y), scale: clock.w / 1200 },
-    },
-    // The two caster boxes along the bottom of the channel - bordered cut-outs the caster drops
-    // their own and the co-caster's webcam behind, exactly as in the reference. Full-canvas source
-    // that positions its own boxes; last in the list so its borders sit on top.
-    {
-      entry: {
-        source: castSource("cast-cams", "frame", "EB Caster Boxes", CAST_CANVAS.w, CAST_CANVAS.h),
-        url: url(`frame?token=${token}&layout=cast`),
-      },
-      at: { x: 0, y: 0, scale: 1 },
-    },
-  ];
+  // Only settings that are doing something are written - same rule as streamSourceUrl.
+  const clockQuery = new URLSearchParams({ token, odds: "1" });
+  if (delayMs > 0) clockQuery.set("delay", String(Math.round(delayMs)));
+  if (clockOpacity !== 1) clockQuery.set("opacity", clockOpacity.toFixed(2));
+  if (clockText !== 1) clockQuery.set("text", String(clockText));
+  const eggQuery = new URLSearchParams({ token });
+  if (alertSecs !== CAST_DEFAULT_ALERT_SECS) eggQuery.set("secs", String(alertSecs));
 
-  const breakParts = [
-    {
-      entry: {
-        source: castSource("frame", "frame", "EB Caster Cams", CAST_CANVAS.w, CAST_CANVAS.h),
-        url: url(`frame?token=${token}&layout=casters`),
-      },
-      at: { x: 0, y: 0, scale: 1 },
-    },
-  ];
+  // The find alert, centred over the board so it lands on the thing everyone is watching.
+  const EGG = 600;
 
-  /** Builds one scene object and its browser sources from a list of parts. */
+  const parts: CastPart[] = [];
+  const add = (scene: CastPart["scene"], source: StreamSource, path: string, at: SourcePlacement, what: string) =>
+    parts.push({ scene, entry: { source, url: url(path) }, at, what });
+
+  // -- EB Cast, bottom up: what shows through the holes, the frame art over it, then the two things
+  // that sit on top of the art - the find alert and the clock on the banner. The clock is last on
+  // purpose: the banner is opaque, so anything above it in the stack would be hidden.
+  if (sound) {
+    add(
+      "main",
+      { ...castSource("audio", "audio", "EB Audio", 100, 100), audio: true },
+      `audio?token=${token}`,
+      { x: 0, y: 0, scale: 1 },
+      "the board's sound, no picture - its own fader in the OBS mixer"
+    );
+  }
+  boxes.forEach((box, i) =>
+    add(
+      "main",
+      castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, Math.round(box.w), Math.round(box.h)),
+      `screen?token=${token}&slot=${i}`,
+      { x: Math.round(box.x), y: Math.round(box.y), scale: 1 },
+      `player ${i + 1}'s Twitch stream and live hit / miss / accuracy (${i < 3 ? "left" : "right"} column)`
+    )
+  );
+  add(
+    "main",
+    castSource("board", "board", "EB Board", 1000, 1000),
+    `board?token=${token}`,
+    { x: Math.round(board.x), y: Math.round(board.y), scale: board.w / 1000 },
+    "the board, driven from your caster desk"
+  );
+  add(
+    "main",
+    castSource("cast-cams", "frame", "EB Frame", CAST_CANVAS.w, CAST_CANVAS.h),
+    `frame?token=${token}&layout=cast`,
+    { x: 0, y: 0, scale: 1 },
+    "the match frame art - everything else shows through its holes"
+  );
+  if (finds) {
+    add(
+      "main",
+      castSource("egg", "egg", "EB Finds", EGG, EGG),
+      `egg?${eggQuery.toString()}`,
+      { x: Math.round(board.x + (board.w - EGG) / 2), y: Math.round(board.y + (board.h - EGG) / 2), scale: 1 },
+      "empty until someone finds something, then the find card over the board"
+    );
+  }
+  add(
+    "main",
+    castSource("clock", "timer", "EB Caster Clock", 1200, clockNativeH),
+    `timer?${clockQuery.toString()}`,
+    { x: Math.round(clock.x), y: Math.round(clock.y), scale: clock.w / 1200 },
+    "the match clock, fleet hulls and odds, on the banner above the board"
+  );
+
+  // -- EB Casters: the break frame, over the webcams the caster adds behind it.
+  add(
+    "break",
+    castSource("frame", "frame", "EB Caster Cams", CAST_CANVAS.w, CAST_CANVAS.h),
+    `frame?token=${token}&layout=casters`,
+    { x: 0, y: 0, scale: 1 },
+    "the break frame art - your webcams go behind its two boxes"
+  );
+
+  return parts;
+}
+
+/** The two-scene casting collection, built from castSceneParts. */
+export function buildCastCollection({ newId, ...options }: CastCollectionOptions) {
+  const uuid = newId ?? (() => crypto.randomUUID());
+  const parts = castSceneParts(options);
+  const mainParts = parts.filter((p) => p.scene === "main");
+  const breakParts = parts.filter((p) => p.scene === "break");
+
+  /**
+   * Builds one scene object and its browser sources from a list of parts.
+   *
+   * Not reversed, unlike buildObsScene: OBS's file is bottom-of-the-stack first and the parts are
+   * already listed bottom-up, and here the order is load-bearing - the clock sits on the frame art's
+   * opaque banner, so it has to be the last item or the art hides it.
+   */
   function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement }>) {
     const withIds = parts.map((p) => ({ ...p, uuid: uuid() }));
-    const items = [...withIds]
-      .reverse()
-      .map((p, i) => sceneItem(p.entry, p.uuid, p.at, i + 1));
+    const items = withIds.map((p, i) => sceneItem(p.entry, p.uuid, p.at, i + 1));
     const sceneObj = {
       prev_ver: PREV_VER,
       name,

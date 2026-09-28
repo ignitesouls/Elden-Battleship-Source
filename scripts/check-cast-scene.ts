@@ -16,10 +16,11 @@ import {
   castCamRects,
   casterCamRects,
   castSceneRects,
-  columnCounts,
   CAST_CANVAS,
+  CAST_SEATS,
+  type Rect,
 } from "../src/lib/castSceneLayout.ts";
-import { buildCastCollection, CAST_SCENE_MAIN, CAST_SCENE_BREAK } from "../src/lib/obsScene.ts";
+import { buildCastCollection, castSceneParts, CAST_SCENE_MAIN, CAST_SCENE_BREAK } from "../src/lib/obsScene.ts";
 
 let fails = 0;
 function ok(name: string, cond: boolean) {
@@ -35,42 +36,29 @@ function counter() {
   return () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
 }
 
-const CONFIGS = [2, 3, 4].flatMap((teams) => [1, 2, 3, 4].map((perTeam) => ({ teams, perTeam })));
+const onCanvas = (r: Rect) => r.x >= 0 && r.y >= 0 && r.x + r.w <= CAST_CANVAS.w && r.y + r.h <= CAST_CANVAS.h;
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 console.log("layout - nothing off the canvas");
-for (const cfg of CONFIGS) {
-  const rects = castSceneRects(cfg);
-  const inside = rects.every(
-    (r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= CAST_CANVAS.w + 0.5 && r.y + r.h <= CAST_CANVAS.h + 0.5
-  );
-  ok(`${cfg.teams}x${cfg.perTeam}: every box is on the canvas`, inside);
-}
-ok(
-  "the caster-cam boxes are on the canvas",
-  casterCamRects().every(
-    (r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= CAST_CANVAS.w + 0.5 && r.y + r.h <= CAST_CANVAS.h + 0.5
-  )
-);
+ok("every box in the match scene is on the canvas", castSceneRects().every(onCanvas));
+ok("the break-scene cams are on the canvas", casterCamRects().every(onCanvas));
 
 console.log("\nlayout - the shape holds");
-for (const cfg of CONFIGS) {
-  const boxes = screenRects(cfg);
-  ok(`${cfg.teams}x${cfg.perTeam}: one box per competitor`, boxes.length === cfg.teams * cfg.perTeam);
-  const { left } = columnCounts(cfg);
-  const leftCol = boxes.slice(0, left);
-  const rightCol = boxes.slice(left);
+{
+  const boxes = screenRects();
+  ok("one box per competitor, two fleets of three", boxes.length === CAST_SEATS);
+  const leftCol = boxes.slice(0, CAST_SEATS / 2);
+  const rightCol = boxes.slice(CAST_SEATS / 2);
   // Left column sits left of centre, right column right of it - so the two crews are on opposite
   // sides of the board rather than stacked in one place.
   ok(
-    `${cfg.teams}x${cfg.perTeam}: the two columns are on opposite sides`,
+    "the two columns are on opposite sides",
     leftCol.every((r) => r.x + r.w < CAST_CANVAS.w / 2) && rightCol.every((r) => r.x > CAST_CANVAS.w / 2)
   );
-  // Boxes in a column do not overlap each other.
-  const sorted = [...leftCol].sort((a, b) => a.y - b.y);
-  ok(
-    `${cfg.teams}x${cfg.perTeam}: stacked boxes do not overlap`,
-    sorted.every((r, i) => i === 0 || r.y >= sorted[i - 1].y + sorted[i - 1].h - 0.5)
-  );
+  // The rects are the frame art's holes, and holes never overlap - two that did would mean a
+  // mis-measured number, and one source drawn over another.
+  const all = castSceneRects();
+  ok("no two boxes in the match scene overlap", all.every((a, i) => all.every((b, j) => i === j || !overlaps(a, b))));
 }
 
 console.log("\nlayout - the channel: clock, board, caster cams top to bottom");
@@ -78,9 +66,9 @@ console.log("\nlayout - the channel: clock, board, caster cams top to bottom");
   const board = boardRect();
   const clock = clockRect();
   const cams = castCamRects();
-  const wide = screenRects({ teams: 2, perTeam: 4 });
-  const leftEdge = Math.max(...wide.slice(0, 4).map((r) => r.x + r.w));
-  const rightEdge = Math.min(...wide.slice(4).map((r) => r.x));
+  const wide = screenRects();
+  const leftEdge = Math.max(...wide.slice(0, CAST_SEATS / 2).map((r) => r.x + r.w));
+  const rightEdge = Math.min(...wide.slice(CAST_SEATS / 2).map((r) => r.x));
   ok("the board sits between the columns", board.x >= leftEdge && board.x + board.w <= rightEdge);
   ok("the clock sits between the columns", clock.x >= leftEdge && clock.x + clock.w <= rightEdge);
   ok("the clock is above the board", clock.y + clock.h <= board.y);
@@ -98,7 +86,7 @@ console.log("\nlayout - the channel: clock, board, caster cams top to bottom");
 
 console.log("\ncollection - shape");
 {
-  const file = buildCastCollection({ base: BASE, token: TOKEN, config: { teams: 2, perTeam: 3 }, newId: counter() });
+  const file = buildCastCollection({ base: BASE, token: TOKEN, newId: counter() });
   const scenes = file.sources.filter((s) => s.id === "scene");
   const browsers = file.sources.filter((s) => s.id === "browser_source");
 
@@ -109,8 +97,26 @@ console.log("\ncollection - shape");
   );
   ok("the collection opens on the cast layout", file.current_scene === CAST_SCENE_MAIN);
   ok("scene_order lists both scenes", file.scene_order.length === 2);
-  // EB Cast: 6 screens + board + clock + the bottom caster-box frame. EB Casters: the break frame.
-  ok("one browser source per box", browsers.length === 6 + 2 + 1 + 1);
+  // EB Cast: 6 screens + board + clock + the match frame + finds + audio. EB Casters: the break frame.
+  ok("one browser source per box", browsers.length === 6 + 2 + 1 + 2 + 1);
+  ok(
+    "only the audio source is routed to the mixer",
+    browsers.filter((s) => (s.settings as { reroute_audio: boolean }).reroute_audio).map((s) => s.name).join() === "EB Audio"
+  );
+
+  // The match frame's banner is opaque and the clock sits on it, so the clock has to be stacked over
+  // the frame - the other way round, the art hides the clock and nothing errors. OBS's file lists
+  // items bottom of the stack first, so the clock comes after the frame.
+  const main = scenes.find((s) => s.name === CAST_SCENE_MAIN)!;
+  const order = (main.settings as { items: { source_uuid: string }[] }).items.map(
+    (i) => browsers.find((b) => b.uuid === i.source_uuid)?.name
+  );
+  ok("the clock is stacked above the frame art", order.indexOf("EB Caster Clock") > order.indexOf("EB Frame"));
+  ok("the clock is the top item", order[order.length - 1] === "EB Caster Clock");
+  ok(
+    "the frame art is stacked above every screen and the board",
+    order.filter((n) => n?.startsWith("EB Screen") || n === "EB Board").every((n) => order.indexOf(n) < order.indexOf("EB Frame"))
+  );
   ok("every source name is unique", new Set(browsers.map((s) => s.name)).size === browsers.length);
 
   const uuids = new Set(browsers.map((s) => s.uuid));
@@ -135,7 +141,7 @@ console.log("\ncollection - shape");
 
 console.log("\ncollection - the URLs");
 {
-  const file = buildCastCollection({ base: BASE, token: TOKEN, config: { teams: 2, perTeam: 3 }, newId: counter() });
+  const file = buildCastCollection({ base: BASE, token: TOKEN, newId: counter() });
   const urls = file.sources
     .filter((s) => s.id === "browser_source")
     .map((s) => (s.settings as { url: string }).url);
@@ -156,15 +162,14 @@ console.log("\ncollection - the URLs");
   ok("the clock carries no delay when none was asked for", !/[?&]delay=/.test(clock));
 
   const frames = urls.filter((u) => u.includes("#/stream/frame?"));
-  ok("two frame sources - the bottom caster boxes and the break scene", frames.length === 2);
-  ok("one frame is the in-scene caster boxes", frames.some((u) => /[?&]layout=cast(&|$)/.test(u)));
+  ok("two frame sources - the match frame and the break scene", frames.length === 2);
+  ok("one frame is the match frame", frames.some((u) => /[?&]layout=cast(&|$)/.test(u)));
   ok("one frame is the break screen", frames.some((u) => /[?&]layout=casters(&|$)/.test(u)));
 }
 {
   const file = buildCastCollection({
     base: BASE,
     token: TOKEN,
-    config: { teams: 2, perTeam: 3 },
     delayMs: 4200,
     newId: counter(),
   });
@@ -175,9 +180,40 @@ console.log("\ncollection - the URLs");
   ok("a delay is written onto the clock's URL", /[?&]delay=4200/.test(clock));
 }
 
+console.log("\ncollection - the caster's settings");
+{
+  const off = buildCastCollection({ base: BASE, token: TOKEN, finds: false, sound: false, newId: counter() });
+  const names = off.sources.filter((s) => s.id === "browser_source").map((s) => s.name);
+  ok("turning off finds and sound drops those two sources", !names.includes("EB Finds") && !names.includes("EB Audio"));
+  ok("and leaves the rest", names.length === 6 + 2 + 1 + 1);
+
+  const tuned = castSceneParts({ base: BASE, token: TOKEN, clockOpacity: 0.8, clockText: 1.25, alertSecs: 10 });
+  const clockUrl = tuned.find((p) => p.entry.source.obsName === "EB Caster Clock")!.entry.url;
+  ok("clock transparency is written onto the clock", /[?&]opacity=0\.80/.test(clockUrl));
+  ok("clock text size is written onto the clock", /[?&]text=1\.25/.test(clockUrl));
+  const eggUrl = tuned.find((p) => p.entry.source.obsName === "EB Finds")!.entry.url;
+  ok("the alert time is written onto the finds source", /[?&]secs=10/.test(eggUrl));
+
+  const plain = castSceneParts({ base: BASE, token: TOKEN });
+  ok(
+    "default settings write nothing extra",
+    plain.every((p) => !/[?&](opacity|text|secs|delay)=/.test(p.entry.url))
+  );
+  ok(
+    "the find alert sits over the board",
+    (() => {
+      const egg = plain.find((p) => p.entry.source.obsName === "EB Finds")!;
+      const b = boardRect();
+      const cx = egg.at.x + egg.entry.source.width / 2;
+      const cy = egg.at.y + egg.entry.source.height / 2;
+      return Math.abs(cx - (b.x + b.w / 2)) <= 1 && Math.abs(cy - (b.y + b.h / 2)) <= 1;
+    })()
+  );
+}
+
 console.log("\ncollection - deterministic");
 {
-  const opts = { base: BASE, token: TOKEN, config: { teams: 2, perTeam: 3 }, delayMs: 3000 };
+  const opts = { base: BASE, token: TOKEN, delayMs: 3000 };
   const a = JSON.stringify(buildCastCollection({ ...opts, newId: counter() }));
   const b = JSON.stringify(buildCastCollection({ ...opts, newId: counter() }));
   ok("the same inputs build the same file", a === b);

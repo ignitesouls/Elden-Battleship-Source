@@ -1,53 +1,30 @@
 import { useEffect } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
-import { casterCamRects, castCamRects, frac, type Rect } from "../lib/castSceneLayout";
+import { CAST_ART } from "../lib/castSceneLayout";
 import "./OverlayFrame.css";
 
 /**
- * Bordered camera cut-outs for a casting scene - drawn from the same rects the layout module and
- * the OBS scene generator use, so the boxes on screen are exactly where the scene expects the
- * caster to put their webcams.
+ * The frame art for a casting scene, as a full-canvas source.
  *
  * -- Two layouts ----------------------------------------------------------------------------------
  *
- * `?layout=cast`    the two boxes along the bottom of the main EB Cast scene, under the board -
- *                   just borders, transparent, no logo. This is the source that lives in the match
- *                   scene alongside the player boxes and the board.
+ * `?layout=cast`    the match frame (battleship-overlays.png): holes for the six player streams, the
+ *                   board and the two caster cams, and the water banner the clock sits on.
  *
- * `?layout=casters` the break scene: two big portrait boxes with the wordmark under them, for the
- *                   parts of a broadcast that are not a match. `?bg=deep` adds a sea-tone wash for
- *                   a frame meant to stand on its own rather than over footage.
+ * `?layout=casters` the break frame (battleship-casters.png): two big camera holes over the sea, with
+ *                   the wordmark, for the parts of a broadcast that are not a match.
  *
- * -- The boxes are holes ------------------------------------------------------------------------
+ * -- The holes ------------------------------------------------------------------------------------
  *
- * Each box is a transparent cut-out with a bright border. The cameras go BEHIND this in the scene
- * and show through. Nothing here captures or composites video; it only says where the boxes are.
- * It carries no live data and needs no room - a caster shows the break scene precisely when there
- * is no match.
+ * The art's holes are transparent. The streams, the board and the webcams go BEHIND this in the scene
+ * and show through; lib/castSceneLayout holds the same holes as rects, so the scene puts each source
+ * exactly under its hole. Nothing here captures or composites video. It carries no live data and
+ * needs no room - a caster shows the break scene precisely when there is no match.
  */
-
-const LOGO = `${import.meta.env.BASE_URL}logo.png`;
-
-function CamBox({ rect }: { rect: Rect }) {
-  const f = frac(rect);
-  return (
-    <div
-      className="ovf-cam"
-      style={{
-        left: `${f.left * 100}%`,
-        top: `${f.top * 100}%`,
-        width: `${f.width * 100}%`,
-        height: `${f.height * 100}%`,
-      }}
-    />
-  );
-}
 
 export function OverlayFrame(props: OverlaySourceProps = {}) {
   const { params } = useOverlaySource(props);
-  const layout = params.get("layout") ?? "casters";
-  const bg = params.get("bg");
-  const isBreak = layout !== "cast";
+  const isBreak = (params.get("layout") ?? "casters") !== "cast";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -59,14 +36,11 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
     };
   }, []);
 
-  const rects = isBreak ? casterCamRects() : castCamRects();
+  const art = `${import.meta.env.BASE_URL}${isBreak ? CAST_ART.break : CAST_ART.match}`;
 
   return (
-    <div className={`ovf${isBreak && bg ? ` ovf-bg-${bg}` : ""}`}>
-      {rects.map((r, i) => (
-        <CamBox key={i} rect={r} />
-      ))}
-      {isBreak && <img className="ovf-logo" src={LOGO} alt="Elden Battleship" />}
+    <div className="ovf">
+      <img className="ovf-art" src={art} alt="" />
     </div>
   );
 }
