@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Battleship on an Elden Ring board, in a browser. Built for tournament play.",
-  "license": "GPL-3.0-or-later",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "vite",
     "dev:local": "vite --mode localdb",

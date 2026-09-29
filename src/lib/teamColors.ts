@@ -1,20 +1,28 @@
-// Ported from EldenBingoCommon/BingoConstants.cs TeamColors, so the web version
-// matches the desktop app's team identity at a glance.
 export interface TeamColor {
   name: string;
   hex: string;
 }
 
+/**
+ * The fleet palette, picked for this board: every colour has to hold its own against the navy
+ * water (--bg, --cell) and stay clear of the other colours the board already uses for something
+ * else - brass for the accent, orange for a hit, deep blue for a miss. That last one is why Blue is
+ * brighter than a plain navy would be; a blue fleet's sail should never read as open water.
+ *
+ * The order is load-bearing. Teams are stored as indices into this list, so moving an entry
+ * repaints every archived match and every custom team name, and fleetDraw's DRAW_TEAM_COLORS
+ * points into it by position. Change a hex freely; never reorder.
+ */
 export const TEAM_COLORS: TeamColor[] = [
-  { name: "Red", hex: "#be1210" },
-  { name: "Blue", hex: "#095ca8" },
-  { name: "Green", hex: "#05950f" },
-  { name: "Orange", hex: "#cd8004" },
-  { name: "Purple", hex: "#8723d0" },
-  { name: "Cyan", hex: "#4ecccc" },
-  { name: "Pink", hex: "#ed73d8" },
-  { name: "Brown", hex: "#835016" },
-  { name: "Yellow", hex: "#d7c300" },
+  { name: "Red", hex: "#c62b22" },
+  { name: "Blue", hex: "#2f6fd8" },
+  { name: "Green", hex: "#2f9a3f" },
+  { name: "Orange", hex: "#dc6b1d" },
+  { name: "Purple", hex: "#8b41d2" },
+  { name: "Cyan", hex: "#2cbcc2" },
+  { name: "Pink", hex: "#df5aa9" },
+  { name: "Brown", hex: "#8d5b2c" },
+  { name: "Yellow", hex: "#e2ce2b" },
 ];
 
 /**

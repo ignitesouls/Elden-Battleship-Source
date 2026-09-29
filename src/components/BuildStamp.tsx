@@ -11,9 +11,9 @@ declare const __BUILD_ID__: string;
  * the honest answer is often "no". Comparing this string beats guessing.
  *
  * It used to carry a copyright line too, on the reasoning that this is the one element already
- * tiny and out of the way enough to host one. That was solving a problem nobody had - the licence
- * is in LICENSE, and a notice burned into the corner of every screen of a fan project was never
- * doing any work. The build id is the part that earns its place.
+ * tiny and out of the way enough to host one. That was solving a problem nobody had - copyright
+ * applies without a notice, and one burned into the corner of every screen of a fan project was
+ * never doing any work. The build id is the part that earns its place.
  *
  * Kept dim and tiny so it never competes with the board, and selectable so the build id can be
  * pasted straight into chat.

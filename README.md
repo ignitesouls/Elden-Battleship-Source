@@ -160,22 +160,21 @@ Environment variables are baked in at build time, so `npm run deploy` has to run
   (Scadubingo League) and **Ringus**, by [IgniteSouls](https://github.com/ignitesouls).
 - **Bosses**, by KCBrazos.
 
-The square sets are other people's work and are included with permission. They are not covered
-by this project's licence. The colour-name companion files (`*ColorNames.json`) are this
+The square sets are other people's work and are included with permission. They belong to their
+authors, not to this project. The colour-name companion files (`*ColorNames.json`) are this
 project's, added so a keyword-tinted set can print a readable key.
 
 **EldenBingo.** This project grew out of [EldenBingo](https://github.com/awsker/EldenBingo) by
 Asker, the desktop Bingo app the tournament scene was already using, and where the Battleship
 mode was first built as an addition to it. The web app carries none of its C#, but it is not
-independent of it: the Battleship rules here were written by reading that implementation,
-`teamColors.ts` is a port of its `BingoConstants.cs` colour table so a player's colour means the
-same thing in both, and `squareSetFormat.ts` reads its squareset format. EldenBingo is GPL-3, and
-so is this — see the licence note below.
+independent of it: the Battleship rules here were written by reading that implementation, and
+`squareSetFormat.ts` reads its squareset format. The fleet colours were once a port of its
+`BingoConstants.cs` table; they were redrawn from scratch in September 2026 and no longer are.
 
 This repository began as a clone of it, so commits before August 2026 contain the EldenBingo
 C# source, which is Asker's work and GPL-3. That desktop project has since been removed, as it
 was not built, shipped or maintained, and nothing here depends on it. Everything from that
-point on is this project's own, under the licence below.
+point on is this project's own.
 
 **Elden Ring** is FromSoftware's. Boss names, region names and everything else drawn from the
 game belong to them. This is an unofficial fan project, not affiliated with or endorsed by
@@ -183,26 +182,8 @@ FromSoftware or Bandai Namco.
 
 ## Licence
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+None. No licence is granted, so nobody has permission to copy, modify, host or redistribute any
+part of this project.
 
-It was MIT until August 2026. The change was made because this project grew out of EldenBingo,
-which is GPL-3: the game rules were written by reading its Battleship implementation, the fleet
-colours came from its constants, and the squareset file format is its format. How much of that
-counts as a derivative work is genuinely arguable. Mechanics are ideas, a colour table is closer
-to data than to expression, and file formats generally aren't protected at all. Matching the
-upstream licence means nobody has to decide. It also puts this in line with every other Ignite
-project, all of which are GPL-3.
-
-### Using this?
-
-Please do. Fork it, run it for your own event, take pieces out of it. The only ask is that
-changes you distribute stay open under the same licence, which is what GPL means in practice.
-
-Running a modified copy as a website is **not** distribution, so hosting your own version
-obliges you to publish nothing. That is deliberate; AGPL was the alternative and it seemed a
-heavier promise than this needs.
-
-Say hello anyway — open an issue, or find me as KCBrazos on GitHub. Knowing where this ends up
-is most of what makes it worth maintaining, and if you are running a tournament on it I would
-rather hear what is broken from you than guess. If you are building on it rather than running
-it, a link back is appreciated.
+It was MIT until August 2026 and GPL-3.0-or-later until September 2026. Copies obtained under
+those licences keep them; nothing published after the change does.

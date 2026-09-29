@@ -14,8 +14,8 @@ import "./SiteFooter.css";
  * present. The bottom of the page is where a reader looks for it and where it costs nothing.
  *
  * There is deliberately no copyright line or licence name beside it. Both used to sit here and
- * neither did any work - the licence lives in LICENSE where anyone who cares will look, and a
- * copyright notice on a fan project's front page is posturing. The disclaimer is the part that earns
+ * neither did any work - there is no licence to name, copyright applies without a notice, and a
+ * copyright line on a fan project's front page is posturing. The disclaimer is the part that earns
  * its place outright: fan projects live on tolerance rather than on licences, and saying plainly what
  * this is not costs almost nothing.
  *
@@ -29,8 +29,8 @@ export function SiteFooter() {
     <div className="site-footer">
       <span className="foot-fine">
         {t(
-          "Free and open source. Unofficial fan project, not affiliated with FromSoftware or Bandai Namco.",
-          "Gratuit et open source. Projet de fan non officiel, sans lien avec FromSoftware ou Bandai Namco."
+          "Unofficial fan project, not affiliated with FromSoftware or Bandai Namco.",
+          "Projet de fan non officiel, sans lien avec FromSoftware ou Bandai Namco."
         )}
       </span>
     </div>
