@@ -235,13 +235,13 @@ Deno.serve(async (req) => {
     //
     // Read here rather than trusted from the caller, and read once for both modes, because "counts
     // for nothing" has to mean nothing: the index must not offer a voided key, and a score call
-    // must skip one however it was asked for. One indexed read over a column that is false nearly
-    // everywhere, so it costs a round trip and nothing else.
+    // must skip one however it was asked for. voided_matches rather than match_reports.voided: the
+    // 30-day sweep deletes reports, voided ones with them, and the matches go on counting - see
+    // 20261003000000_durable_voids.sql.
     const { data: voidedRows, error: voidedErr } = await admin
-      .from('match_reports')
+      .from('voided_matches')
       .select('match_key')
-      .eq('voided', true)
-    if (voidedErr) throw new Error('match_reports: ' + voidedErr.message)
+    if (voidedErr) throw new Error('voided_matches: ' + voidedErr.message)
     const voided = new Set((voidedRows ?? []).map((r) => (r as { match_key: string }).match_key))
 
     const body = (await req.json().catch(() => ({}))) as {

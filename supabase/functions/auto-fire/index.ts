@@ -177,7 +177,7 @@ async function liveStats(
   roomId: string,
   playerId: string,
   pause: PauseFields
-): Promise<{ hits: number; misses: number; shots: number; accuracy: number | null; pace: number | null }> {
+): Promise<LiveTally> {
   const { data } = await admin
     .from('attacks')
     .select('cell_index, result, created_at, auto')
@@ -186,6 +186,9 @@ async function liveStats(
     .gte('cell_index', 0) // negative cells are bookkeeping markers, never real shots
 
   const connected = new Map<number, boolean>()
+  // Hulls, not shots: one `sunk` row per fleet finished, summed - the same count archive_match()
+  // writes to match_participants.sunk, so a live sunk can be held against an archived one.
+  let sunk = 0
   // One entry per square this player has fired at, keyed the same way `connected` is. created_at
   // and auto agree across every defender row one shot writes (see the upsert below), so the first
   // row seen for a cell is as good as any of the others.
@@ -193,6 +196,7 @@ async function liveStats(
   for (const row of data ?? []) {
     const was = connected.get(row.cell_index) ?? false
     connected.set(row.cell_index, was || CONNECTED.has(row.result))
+    if (row.result === 'sunk') sunk++
     if (!squares.has(row.cell_index)) {
       squares.set(row.cell_index, { atMs: Date.parse(row.created_at), auto: row.auto === true })
     }
@@ -233,6 +237,192 @@ async function liveStats(
     // Null rather than 0 before the first shot: nothing has missed yet, and the overlay shows a dash.
     accuracy: shots > 0 ? Math.round((hits / shots) * 100) : null,
     pace,
+    sunk,
+  }
+}
+
+interface LiveTally {
+  hits: number
+  misses: number
+  shots: number
+  accuracy: number | null
+  pace: number | null
+  sunk: number
+}
+
+/**
+ * Accuracy's floor, copied from MIN_SHOTS_FOR_ACCURACY in src/lib/recordBook.ts for the same reason
+ * the pace thresholds above are copied. Below it a game neither holds an accuracy PB nor beats one.
+ */
+const MIN_SHOTS_FOR_ACCURACY = 5
+
+/**
+ * A captain's best single game on the boss board, for the overlay's PB line.
+ *
+ * The same records the website's "Single-game bests" panel reads off the record book, rebuilt from
+ * the same two tables: hits, sunk and accuracy from match_participants, pace from match_events.
+ * `accuracyRatio` is kept unrounded so a PB of 83.4% is not "beaten" by 83.1%.
+ *
+ * Pace is the best per-match MEDIAN, built exactly like the live tally's pace - auto-fired squares at
+ * both ends, gaps under MIN_GAP_SECONDS dropped, MIN_GAPS_FOR_PACE of them needed - because the whole
+ * point of the line is to hold the two against each other. That is a different number from the
+ * website's "Best match", which is a mean; see the career panel in PlayerStats.tsx.
+ */
+interface PersonalBests {
+  hits: number | null
+  sunk: number | null
+  accuracyRatio: number | null
+  pace: number | null
+}
+
+/**
+ * PBs per captain per room, so they are read once per match rather than on every one-second poll.
+ *
+ * Safe to hold for the life of the match: the rows are archived games, and the match being played
+ * is not one of them until it finishes - by which time the room is no longer in battle and nothing
+ * asks for it. The TTL only bounds memory on a long-lived instance; a cold one simply reads again.
+ */
+const PB_TTL_MS = 30 * 60 * 1000
+const pbCache = new Map<string, { at: number; bests: PersonalBests }>()
+
+/** PostgREST caps a read at 1000 rows; a career's shot log is well past that. */
+async function allRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const SIZE = 1000
+  const out: T[] = []
+  for (let from = 0; ; from += SIZE) {
+    const { data, error } = await page(from, from + SIZE - 1)
+    if (error) throw error
+    out.push(...(data ?? []))
+    if (!data || data.length < SIZE) return out
+  }
+}
+
+/**
+ * Every stored id that folds into the boss board: null (rooms from before square sets) and both
+ * cuts. They are one board for records, exactly as displaySquareSet folds them on the website.
+ */
+const BOSS_BOARD_FILTER = `square_set.is.null,square_set.in.(${Object.keys(BOSS_SETS).join(',')})`
+
+async function personalBests(admin: SupabaseClient, userId: string): Promise<PersonalBests> {
+  const [voided, games, events] = await Promise.all([
+    // The durable list, which outlives the 30-day sweep of match_reports - see 20261003000000.
+    admin.from('voided_matches').select('match_key'),
+    allRows<{ match_key: string; shots: number; hits: number; sunk: number }>((from, to) =>
+      admin
+        .from('match_participants')
+        .select('match_key, shots, hits, sunk')
+        .eq('user_id', userId)
+        .or(BOSS_BOARD_FILTER)
+        .order('match_key')
+        .range(from, to)
+    ),
+    allRows<{ match_key: string; cell_index: number; match_seconds: number | null }>((from, to) =>
+      admin
+        .from('match_events')
+        .select('match_key, cell_index, match_seconds')
+        .eq('participant_key', userId)
+        .eq('auto', true)
+        .gte('cell_index', 0)
+        .or(BOSS_BOARD_FILTER)
+        // The order match_events_participant_idx is built in, so paging walks the index rather than
+        // sorting a career's worth of rows - and `id` makes it a total order, so no page skips a row.
+        .order('finished_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    ),
+  ])
+  // Voided games count for nothing anywhere on the site, PBs included - see lib/voidedMatches.
+  const struck = new Set((voided.data ?? []).map((r) => r.match_key))
+
+  const bests: PersonalBests = { hits: null, sunk: null, accuracyRatio: null, pace: null }
+  for (const g of games) {
+    if (struck.has(g.match_key)) continue
+    if (g.hits > 0) bests.hits = Math.max(bests.hits ?? 0, g.hits)
+    if (g.sunk > 0) bests.sunk = Math.max(bests.sunk ?? 0, g.sunk)
+    if (g.shots >= MIN_SHOTS_FOR_ACCURACY && g.hits > 0) {
+      bests.accuracyRatio = Math.max(bests.accuracyRatio ?? 0, g.hits / g.shots)
+    }
+  }
+
+  // One time per square per match: a shot writes a row per opposing fleet, all on the same clock.
+  const squareTimes = new Map<string, Map<number, number>>()
+  for (const e of events) {
+    if (struck.has(e.match_key) || e.match_seconds === null) continue
+    let cells = squareTimes.get(e.match_key)
+    if (!cells) squareTimes.set(e.match_key, (cells = new Map()))
+    if (!cells.has(e.cell_index)) cells.set(e.cell_index, e.match_seconds)
+  }
+  for (const cells of squareTimes.values()) {
+    // Only auto rows were read, so every neighbouring pair here is auto at both ends - but a manual
+    // square between two auto ones is missing from this list, which joins its neighbours into one
+    // long gap. That can only make a pace slower, never faster, so it cannot hand out a false PB.
+    const times = [...cells.values()].sort((a, b) => a - b)
+    const gaps: number[] = []
+    for (let i = 1; i < times.length; i++) {
+      const gap = times[i] - times[i - 1]
+      if (gap >= MIN_GAP_SECONDS) gaps.push(gap)
+    }
+    if (gaps.length < MIN_GAPS_FOR_PACE) continue
+    const pace = median(gaps)!
+    if (bests.pace === null || pace < bests.pace) bests.pace = pace
+  }
+  return bests
+}
+
+/**
+ * The PB line's payload, or null to leave `pb` out of the reply entirely.
+ *
+ * Null on a captain's first game (nothing archived to beat) and on ANY failure. This rides on the
+ * same request that fires shots, and a PB lookup going wrong must never be the reason a kill's reply
+ * comes back as an error - the shots have already landed by the time this runs.
+ *
+ * `pb_beaten` is decided here rather than in the DLL so the floors and the which-way-is-better
+ * rules live in one place. A stat is only beaten against a PB that exists, and strictly - a tie
+ * goes to the earlier game, as it does in the record book.
+ */
+async function pbPayload(
+  admin: SupabaseClient,
+  userId: string,
+  roomId: string,
+  tally: LiveTally
+): Promise<{ pb: Record<string, number | null>; pb_beaten: string[] } | null> {
+  try {
+    const key = `${userId}|${roomId}`
+    const now = Date.now()
+    let hit = pbCache.get(key)
+    if (!hit || now - hit.at > PB_TTL_MS) {
+      hit = { at: now, bests: await personalBests(admin, userId) }
+      pbCache.set(key, hit)
+      for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
+    }
+    const b = hit.bests
+    if (b.hits === null && b.sunk === null && b.accuracyRatio === null && b.pace === null) return null
+
+    const beaten: string[] = []
+    if (b.hits !== null && tally.hits > b.hits) beaten.push('hits')
+    if (b.sunk !== null && tally.sunk > b.sunk) beaten.push('sunk')
+    if (
+      b.accuracyRatio !== null &&
+      tally.shots >= MIN_SHOTS_FOR_ACCURACY &&
+      tally.hits / tally.shots > b.accuracyRatio
+    ) {
+      beaten.push('accuracy')
+    }
+    if (b.pace !== null && tally.pace !== null && tally.pace < b.pace) beaten.push('pace')
+
+    return {
+      pb: {
+        hits: b.hits,
+        sunk: b.sunk,
+        accuracy: b.accuracyRatio === null ? null : Math.round(b.accuracyRatio * 100),
+        pace: b.pace === null ? null : Math.round(b.pace),
+      },
+      pb_beaten: beaten,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -454,11 +644,17 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle()
 
+    const tally = await liveStats(admin, room.id, seat.id, room)
+    // Spread rather than assigned, so a captain with no PBs gets no `pb` key at all - which is how
+    // the overlay knows to draw no PB line, and how an older DLL never sees a field it can't read.
+    const pb = await pbPayload(admin, tokenRow.user_id, room.id, tally)
+
     return jsonResponse({
       ok: true,
       fired,
       skipped,
-      tally: await liveStats(admin, room.id, seat.id, room),
+      tally,
+      ...(pb ?? {}),
       clock: computeClock(room, markerRow?.created_at ?? null, Date.now()),
     })
   } catch (err) {

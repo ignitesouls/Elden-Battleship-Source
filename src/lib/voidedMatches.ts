@@ -8,8 +8,10 @@ import { supabase } from "./supabase";
  * leaderboard, square pace, the record book, the boss stats, the heatmaps and the board-fairness
  * sweep all read past it.
  *
- * The flag lives on `match_reports.voided` rather than in a constant here so a match can be struck
- * from the Admin panel without a deploy - see the migration for the case it was built for.
+ * The list lives in the `voided_matches` table rather than in a constant here so a match can be
+ * struck without a deploy. It used to be read off `match_reports.voided`, but the 30-day sweep
+ * deletes reports - voided ones too - while the stats rows stay, so a void quietly undid itself after
+ * a month and an older match could not be voided at all. See 20261003000000_durable_voids.sql.
  *
  * -- Why this is a separate read -------------------------------------------------------------------
  *
@@ -31,7 +33,7 @@ let pending: Promise<Set<string>> | null = null;
 export function fetchVoidedMatches(): Promise<Set<string>> {
   if (!pending) {
     pending = (async () => {
-      const { data, error } = await supabase.from("match_reports").select("match_key").eq("voided", true);
+      const { data, error } = await supabase.from("voided_matches").select("match_key");
       // An empty set on failure, which fails towards showing a stat rather than hiding one. A
       // network blip should not silently rewrite the leaderboard, and the next page load retries.
       if (error || !data) {

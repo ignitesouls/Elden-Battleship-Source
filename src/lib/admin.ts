@@ -143,15 +143,28 @@ export async function deleteMatchRecord(matchKey: string): Promise<void> {
  * otherwise see a success and a list that never changed.
  */
 export async function setMatchVoided(matchKey: string, voided: boolean): Promise<void> {
-  const { error } = await supabase.from("match_reports").update({ voided }).eq("match_key", matchKey);
+  // The report's own flag first, while there still is a report: the recap page and the admin list
+  // read it. Zero rows updated is the normal case for a swept match, not a failure. First, because it
+  // is the write that refuses to un-void a practice match - doing it second would lift the durable
+  // void and only then be told no.
+  const { error: reportErr } = await supabase.from("match_reports").update({ voided }).eq("match_key", matchKey);
+  if (reportErr) throw reportErr;
+
+  // voided_matches is what every stat reads, and the only place a void survives the 30-day sweep
+  // of match_reports - it is also the only place a match older than that CAN be voided, since its
+  // report is already gone. See 20261003000000_durable_voids.sql.
+  const write = voided
+    ? supabase.from("voided_matches").upsert({ match_key: matchKey }, { onConflict: "match_key", ignoreDuplicates: true })
+    : supabase.from("voided_matches").delete().eq("match_key", matchKey);
+  const { error } = await write;
   if (error) throw error;
 
   const { data } = await supabase
-    .from("match_reports")
-    .select("voided")
+    .from("voided_matches")
+    .select("match_key")
     .eq("match_key", matchKey)
     .maybeSingle();
-  if ((data as { voided?: boolean } | null)?.voided !== voided) {
+  if (Boolean(data) !== voided) {
     const state = voided ? "counting" : "voided";
     throw new Error("That match is still " + state + " - check you're still an admin.");
   }

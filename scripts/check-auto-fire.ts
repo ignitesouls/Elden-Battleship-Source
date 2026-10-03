@@ -353,6 +353,20 @@ try {
       after?.misses === before?.misses,
       `misses ${before?.misses} -> ${after?.misses}`
     )
+    // The overlay's PB line holds this against match_participants.sunk, which counts hulls - so
+    // one fleet's hull going down is exactly one, and nothing before it counted any.
+    check(
+      'the tally counts the sunk hull',
+      before?.sunk === 0 && after?.sunk === 1,
+      `sunk ${before?.sunk} -> ${after?.sunk}`
+    )
+    // A scratch user has archived nothing, so there is no PB to draw: the key must be absent rather
+    // than present-and-empty, which is how the overlay knows to leave the PB line off entirely.
+    check(
+      'a captain with no archived games gets no pb',
+      !('pb' in sank.body) && !('pb_beaten' in sank.body),
+      Object.keys(sank.body).join(', ')
+    )
     // Anchored to the hit count the sink SHOULD have produced, not to the one that came back.
     // Recomputing accuracy from the endpoint's own `hits` only proves it can divide: that version of
     // this check sat here reporting "25% from 1/4" while the two above it were failing.

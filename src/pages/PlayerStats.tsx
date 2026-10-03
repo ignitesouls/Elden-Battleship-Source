@@ -16,6 +16,7 @@ import {
 } from "../lib/careerStats";
 import { SiteFooter } from "../components/SiteFooter";
 import { squarePace, MIN_GAPS_FOR_PACE } from "../lib/squarePace";
+import { buildRecordBook } from "../lib/recordBook";
 import { useT } from "../lib/language";
 
 export function PlayerStats() {
@@ -82,6 +83,22 @@ export function PlayerStats() {
   const myMedianPace = useMemo(() => squarePace(boardEvents).get(playerKey) ?? null, [boardEvents, playerKey]);
   const bestKills = useMemo(() => playerBestKills(boardEvents, playerKey, 5), [boardEvents, playerKey]);
   const killLog = useMemo(() => playerKills(boardEvents, playerKey).slice(0, 15), [boardEvents, playerKey]);
+
+  /**
+   * This captain's own record book: the site-wide one, handed nothing but their games, so each
+   * record's "holder" is their best single game at it. Same rules, floors and tie-break as the
+   * Leaderboard's, which is the point - a personal best can never disagree with the record it is
+   * a personal best at.
+   *
+   * The wooden spoon stays out. A personal worst is not a best, and the book only carries it as a
+   * joke at the scale of the whole board. Unset records are dropped rather than shown as unclaimed:
+   * on one captain's page "nobody yet" just means "not you yet", which says nothing.
+   */
+  const singleGameBests = useMemo(() => {
+    if (!rows) return [];
+    const mine = rows.filter((r) => participantKey(r) === playerKey);
+    return buildRecordBook(mine, boardEvents, shownSet).filter((r) => r.id !== "worst-accuracy" && r.holder);
+  }, [rows, boardEvents, shownSet, playerKey]);
 
   const view = useMemo(() => {
     if (!rows) return null;
@@ -231,6 +248,53 @@ export function PlayerStats() {
           )}
         </div>
       </div>
+
+      {singleGameBests.length > 0 && (
+        <div className="panel stack" style={{ gap: "0.3rem" }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
+            <h3 style={{ margin: 0 }}>{t("Single-game bests", "Records sur une partie")}</h3>
+            {/* Into the Almanac rather than rated here: ratings rank a game against every other game
+                on the board, and this page deliberately loads one captain's shot log, not the board's. */}
+            <Link
+              to={`/almanac?view=fame&set=${encodeURIComponent(shownSet)}&captain=${encodeURIComponent(playerKey)}`}
+              style={{ fontSize: "0.75rem" }}
+            >
+              {t("Best battles →", "Meilleures batailles →")}
+            </Link>
+          </div>
+          <span className="muted" style={{ fontSize: "0.7rem" }}>
+            {t(
+              "Their best game at each record in the Record Book. Ties go to the earlier game. Click one to open that match.",
+              "Leur meilleure partie pour chaque record du Livre des records. En cas d'égalité, la plus ancienne l'emporte. Cliquez pour ouvrir le match."
+            )}
+          </span>
+          {singleGameBests.map((r) => {
+            const h = r.holder!;
+            return (
+              <Link
+                key={r.id}
+                to={`/match/${encodeURIComponent(h.matchKey)}`}
+                className="row"
+                style={{ gap: "0.5rem", alignItems: "baseline", fontSize: "0.82rem", textDecoration: "none", color: "var(--text)" }}
+              >
+                <span aria-hidden style={{ flexShrink: 0 }}>{r.emoji}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {r.label}
+                  <span className="muted" style={{ fontSize: "0.7rem" }}>
+                    {" · "}
+                    {[h.detail, new Date(h.finishedAt).toLocaleDateString([], { month: "short", day: "numeric" })]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <strong style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {h.display}
+                </strong>
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       {bestKills.length > 0 && (
         <div className="panel stack" style={{ gap: "0.25rem" }}>

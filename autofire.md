@@ -183,9 +183,23 @@ margin worth cheating for.
   "ok": true,
   "fired":   [ { "flag": 1042360800, "cell": 37, "result": "hit" } ],
   "skipped": [ { "flag": 31150800, "reason": "already_fired" } ],
-  "tally":   { "hits": 8, "misses": 4, "shots": 12, "accuracy": 67 }
+  "tally":   { "hits": 8, "misses": 4, "shots": 12, "accuracy": 67, "pace": 151, "sunk": 2 },
+  "pb":      { "hits": 19, "sunk": 4, "accuracy": 83, "pace": 132 },
+  "pb_beaten": ["accuracy"],
+  "clock":   { "phase": "match", "seconds": 2857, "running": true }
 }
 ```
+
+`pb` is the captain's best single game on the boss board (both cuts, folded), from archived,
+non-voided games: most hits, most hulls sunk, best accuracy over 5+ shots, and best per-match median
+pace built exactly like `tally.pace`, so the two compare like with like. Any one of them is `null`
+until it has been set. **The `pb` and `pb_beaten` keys are absent altogether** for a captain with
+nothing archived, and whenever the lookup fails: it runs after the shots have fired, so it can only
+ever cost the PB line, never the report. It is read once per room and cached for the match.
+
+`pb_beaten` names the stats this game already beats, strictly (a tie goes to the earlier game, as
+in the record book), and only against a PB that exists. Accuracy needs 5 shots here too; pace is
+lower-is-better. The server decides this so the overlay still computes nothing.
 
 Or on rejection:
 

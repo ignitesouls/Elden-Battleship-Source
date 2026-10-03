@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import { TheDeep } from "../components/TheDeep";
-import { challengesForRoom, squareSet, type Region } from "../lib/challenges";
+import { challengesForRoom, squareSet, displaySquareSet, type Region } from "../lib/challenges";
+import { useBattleRatings, ratingKey } from "../hooks/useBattleRatings";
 import type { DeepMark } from "../lib/deepWater";
 import {
   fetchArchivedMatch,
@@ -70,6 +71,13 @@ export function ArchivedMatch() {
   const boardSize = detail ? archivedBoardSize(detail) : 10;
   const source = detail ? archivedBoardSource(detail) : { roomId: null, seed: null, perm: null };
   const setId = detail ? archivedSquareSet(detail) : null;
+  // Folded, because ratings rank a game against its whole tab: both cuts of the boss board are one.
+  const ratings = useBattleRatings(detail ? matchKey : null, setId ? displaySquareSet(setId) : null);
+  // The trophy goes to the best-rated captain, but only where there was somebody to beat - the same
+  // rule as the Hall of Fame's MVP tag, which it mirrors.
+  const topRating = ratings
+    ? [...ratings.values()].reduce<number | null>((best, r) => (best === null || r.rating > best ? r.rating : best), null)
+    : null;
 
   /**
    * The squares this match was played on.
@@ -335,14 +343,31 @@ export function ArchivedMatch() {
                         >
                           {t("Pace", "Rythme")}
                         </th>
+                        <th
+                          style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
+                          title={t(
+                            "Battle rating, 0-100, against every game on this board: squares weighted by how long and how rare they are, per hour (50%), sunk (20%), hits (15%), the win (10%), accuracy (5%). The same number as the Almanac's Hall of Fame.",
+                            "Note de bataille, 0-100, face à toutes les parties de ce plateau : cases pondérées par durée et rareté, par heure (50 %), coulés (20 %), touchés (15 %), la victoire (10 %), précision (5 %). Le même chiffre que le Panthéon de l'almanach."
+                          )}
+                        >
+                          {t("Rating", "Note")}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {stats
                         .filter((s) => s.team === team)
-                        .map((s) => (
+                        .map((s) => {
+                          const rated = ratings?.get(ratingKey(s.team, s.nickname));
+                          const top = rated !== undefined && rated.mvp && rated.rating === topRating;
+                          return (
                           <tr key={s.nickname} style={{ textAlign: "right" }}>
-                            <td style={{ textAlign: "left", padding: "0.15rem 0.4rem" }}>{s.nickname}</td>
+                            <td style={{ textAlign: "left", padding: "0.15rem 0.4rem" }}>
+                              {s.nickname}
+                              {top && (
+                                <span title={t("Highest-rated captain in the match", "Capitaine le mieux noté de la partie")}> 🏆</span>
+                              )}
+                            </td>
                             <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>{s.shots}</td>
                             <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums", color: "var(--hit)" }}>
                               {s.hits}
@@ -362,8 +387,21 @@ export function ArchivedMatch() {
                             <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
                               {s.pace != null ? paceLabel(s.pace) : "-"}
                             </td>
+                            {/* Blank while the feeds load, a dash for a captain the rating could not
+                                read (no shot log, or a voided match). */}
+                            <td
+                              style={{
+                                padding: "0.15rem 0.4rem",
+                                fontVariantNumeric: "tabular-nums",
+                                fontWeight: 700,
+                                color: top ? "var(--accent)" : undefined,
+                              }}
+                            >
+                              {ratings === null ? "" : rated ? rated.rating : "-"}
+                            </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>

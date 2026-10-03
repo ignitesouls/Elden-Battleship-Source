@@ -294,7 +294,13 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
 
       {/* Orphans: rows in the satellite tables whose parent report is gone. Surfaced separately
           because the list above is built from match_reports, so an orphan is invisible there while
-          still counting on the leaderboard, which reads match_participants directly. */}
+          still counting on the leaderboard, which reads match_participants directly.
+
+          Nearly all of them are NOT debris. prune_stale_rooms() deletes every report older than 30
+          days and keeps the stats rows, so most of the archive's matches are "orphans" by this
+          count - and clearing them wipes those matches out of every stat for good. The wording says
+          so, and the button asks first. A single bad match is voided from the Almanac's Hall of
+          Fame instead, which works on swept matches too. */}
       {orphans > 0 && (
         <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", alignItems: "center" }}>
           <span className="muted" style={{ fontSize: "0.76rem", minWidth: 0, flex: 1 }}>
@@ -303,20 +309,34 @@ export function AdminPanel({ matches, total = null, onShowMore, loadingMore, rev
                 ? t(`${orphans} orphaned record row`, `${orphans} ligne orpheline`)
                 : t(`${orphans} orphaned record rows`, `${orphans} lignes orphelines`)}
             </strong>{" "}
-            - {t("no parent match, but still counted on the leaderboard.", "aucune partie parente, mais toujours comptée sur le classement.")}
+            - {t(
+              "matches older than 30 days, whose recap page has been cleared. They still count in every stat. To strike one match, void it from the Almanac's Hall of Fame.",
+              "parties de plus de 30 jours dont le résumé a été effacé. Elles comptent toujours dans toutes les statistiques. Pour retirer une partie, annulez-la depuis le Panthéon de l'almanach."
+            )}
           </span>
           <button
             className="danger"
             disabled={busy}
             style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", flex: "none" }}
-            onClick={() => void run(async () => {
+            onClick={() => {
+              if (
+                !window.confirm(
+                  t(
+                    `Delete ${orphans} rows for good? These are real matches older than 30 days. They will disappear from the leaderboard, the Almanac and every record, and there is no undo.`,
+                    `Supprimer définitivement ${orphans} lignes ? Ce sont de vraies parties de plus de 30 jours. Elles disparaîtront du classement, de l'almanach et de tous les records, sans retour possible.`
+                  )
+                )
+              )
+                return;
+              void run(async () => {
               const n = await deleteOrphans();
               setOrphans(await countOrphans().catch(() => 0));
               onChanged();
               return n === 1
                 ? t(`Cleared ${n} orphaned record.`, `${n} ligne orpheline effacée.`)
                 : t(`Cleared ${n} orphaned records.`, `${n} lignes orphelines effacées.`);
-            })}
+              });
+            }}
           >
             {t("Clear orphans", "Effacer les orphelines")}
           </button>

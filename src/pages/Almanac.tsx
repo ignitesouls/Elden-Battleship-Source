@@ -1,13 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fetchMatchFleets, fetchMatchEvents, fetchParticipants, fetchProfiles, profileName, type Profile } from "../lib/profiles";
 import { fetchArchivedMatches, ARCHIVE_LIST_LIMIT, type ArchivedMatchListing } from "../lib/matchArchive";
 import { buildScoutingReports } from "../lib/scouting";
 import { CaptainCards } from "../components/CaptainCards";
+import { HallOfFame, BattleLine } from "../components/HallOfFame";
+import { squareWeights, rateBattles, type BattleRating } from "../lib/battleRating";
+import { setMatchVoided, useAdminStatus } from "../lib/admin";
+import { boardResolver } from "../hooks/useBattleRatings";
 import type { ParticipantRow } from "../lib/careerStats";
 import { matchName } from "../lib/matchName";
 import { teamName, teamHex } from "../lib/teamColors";
-import { challengesForRoom, detectSquareSet, rowSquareSet, busiestSquareSet, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
+import { detectSquareSet, rowSquareSet, busiestSquareSet, squareSet, displaySquareSet, DEFAULT_SQUARE_SET, type SquareSetId } from "../lib/challenges";
 import { SquareSetTabs } from "../components/SquareSetTabs";
 import { SiteFooter } from "../components/SiteFooter";
 import {
@@ -41,11 +45,53 @@ export function Almanac() {
   const [profiles, setProfiles] = useState<Map<string, Profile>>(new Map());
   const [mode, setMode] = useState<"ships" | "shots">("ships");
   const [size, setSize] = useState<number | null>(null);
-  const [setId, setSetId] = useState<SquareSetId | null>(null);
+  // A captain's page links straight into their Hall of Fame entries - ?view=fame&captain=<key>&set=<id>
+  // - so the tab, the filter and the board can all arrive in the URL. Read once, as starting values.
+  const [params] = useSearchParams();
+  const linkedSet = params.get("set");
+  const [setId, setSetId] = useState<SquareSetId | null>(
+    linkedSet && squareSet(linkedSet).id === linkedSet ? (linkedSet as SquareSetId) : null
+  );
   const [archived, setArchived] = useState<ArchivedMatchListing[]>([]);
-  const [view, setView] = useState<"patterns" | "captains" | "game">("patterns");
+  const [view, setView] = useState<"patterns" | "captains" | "game" | "fame">(
+    params.get("view") === "fame" ? "fame" : "patterns"
+  );
+  const [fameCaptain, setFameCaptain] = useState<string | null>(params.get("captain"));
   /** Which match the "Per Game" tab is showing. Null defaults to the newest match on this board. */
   const [gameKey, setGameKey] = useState<string | null>(null);
+
+  // Voiding from the Hall of Fame. It is the one place an admin can reach a match whose recap the
+  // 30-day sweep has taken - the admin list is built from match_reports and cannot see those.
+  const { isAdmin } = useAdminStatus();
+  const [reload, setReload] = useState(0);
+  const [lastVoided, setLastVoided] = useState<{ matchKey: string; label: string } | null>(null);
+  async function voidBattle(r: BattleRating) {
+    const label = `${r.roomCode ?? r.matchKey.split(":")[0]} (${new Date(r.finishedAt).toLocaleDateString()})`;
+    const ok = window.confirm(
+      t(
+        `Void the whole match ${label}? Every captain's results from it stop counting: careers, the leaderboard, the record book, the Almanac and this list. You can undo it straight after.`,
+        `Invalider toute la partie ${label} ? Les résultats de tous les capitaines cessent de compter : carrières, classement, livre des records, almanach et cette liste. Vous pourrez annuler juste après.`
+      )
+    );
+    if (!ok) return;
+    try {
+      await setMatchVoided(r.matchKey, true);
+      setLastVoided({ matchKey: r.matchKey, label });
+      setReload((n) => n + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function undoVoid() {
+    if (!lastVoided) return;
+    try {
+      await setMatchVoided(lastVoided.matchKey, false);
+      setLastVoided(null);
+      setReload((n) => n + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -64,7 +110,8 @@ export function Almanac() {
       // no profile row to read.
       setProfiles(await fetchProfiles(p.map((r) => r.user_id).filter(Boolean) as string[]));
     })();
-  }, []);
+    // `reload` re-reads after a void: setMatchVoided has already dropped the cached feeds.
+  }, [reload]);
 
   const shownSet = setId ?? DEFAULT_SQUARE_SET;
 
@@ -153,21 +200,25 @@ export function Almanac() {
   // The leaderboard's measure of the same thing, shown beside this page's. See the pace table.
   const paceMedians = useMemo(() => squarePace(activeEvents), [activeEvents]);
   const shape = useMemo(() => matchShape(activeEvents, activeParts), [activeEvents, activeParts]);
+  // Rebuilds each board's full challenge list from its room id, which is what reveals squares
+  // nobody ever fired at - see boardResolver, shared with the recap's scoreboard.
+  const resolveBoard = useMemo(() => boardResolver(shownSet), [shownSet]);
+  // The whole board's, whatever tab is open: square weights are a property of the board, so a
+  // battle's rating must not change with which match the Per Game picker happens to be on.
+  const boardFreq = useMemo(() => bossFrequency(events, resolveBoard), [events, resolveBoard]);
+  // Rebuilding every board is the expensive part, so only the Per Game tab pays for a second pass.
   const freq = useMemo(
-    // Rebuilds each board's full challenge list from its room id, which is what reveals squares
-    // nobody ever fired at. Everything here is one TAB's matches, which can be more than one stored
-    // set: the boss tab holds both cuts of the boss board. So each candidate is tried and the one
-    // that reproduces the log is the board - a board that cannot is the wrong board, and counting
-    // only the squares actually shot beats inventing a denominator.
-    () =>
-      bossFrequency(activeEvents, (roomId, cells, fired, seed, perm) => {
-        for (const setId of squareSetVariants(shownSet)) {
-          const board = challengesForRoom(roomId, cells, setId, seed, perm).map((c) => c.name)
-          if (fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)) return board
-        }
-        return []
-      }),
-    [activeEvents, shownSet]
+    () => (view === "game" ? bossFrequency(activeEvents, resolveBoard) : boardFreq),
+    [view, activeEvents, resolveBoard, boardFreq]
+  );
+
+  const ratings = useMemo(
+    () => rateBattles(parts, events, squareWeights(events, boardFreq)),
+    [parts, events, boardFreq]
+  );
+  const gameRatings = useMemo(
+    () => ratings.filter((r) => r.matchKey === effectiveGameKey),
+    [ratings, effectiveGameKey]
   );
 
   const sizes = useMemo(() => boardSizesPresent(activeFleets, activeEvents), [activeFleets, activeEvents]);
@@ -215,11 +266,28 @@ export function Almanac() {
           >
             {t("Per Game", "Par partie")}
           </button>
+          <button
+            onClick={() => setView("fame")}
+            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderColor: view === "fame" ? "var(--accent)" : undefined }}
+          >
+            {t("Hall of Fame", "Panthéon")}
+          </button>
         </div>
       </div>
 
       {view === "captains" ? (
         <CaptainCards reports={reports} profiles={profiles} setId={shownSet} />
+      ) : view === "fame" ? (
+        <HallOfFame
+          ratings={ratings}
+          profiles={profiles}
+          setId={shownSet}
+          captain={fameCaptain}
+          onCaptain={setFameCaptain}
+          onVoid={isAdmin ? (r) => void voidBattle(r) : undefined}
+          lastVoided={isAdmin ? lastVoided : null}
+          onUndoVoid={() => void undoVoid()}
+        />
       ) : (
         <>
         {view === "patterns" ? (
@@ -232,7 +300,19 @@ export function Almanac() {
             capped={archived.length >= ARCHIVE_LIST_LIMIT}
           />
         ) : (
-          <GamePicker matches={matchesForSet} value={effectiveGameKey} onChange={setGameKey} />
+          <>
+            <GamePicker matches={matchesForSet} value={effectiveGameKey} onChange={setGameKey} />
+            {/* Every rated captain in this match, best first, so the MVP is the top line and the
+                rest of the crew can be read against them. */}
+            {gameRatings.length > 0 && (
+              <div className="panel stack" style={{ gap: "0.45rem" }}>
+                <h3 style={{ margin: 0 }}>{t("Battle ratings", "Notes de bataille")}</h3>
+                {gameRatings.map((r) => (
+                  <BattleLine key={r.key} battle={r} profiles={profiles} setId={shownSet} />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {!hasData ? (
