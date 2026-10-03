@@ -26,8 +26,17 @@ export function boardResolver(set: SquareSetId): Parameters<typeof bossFrequency
 /** The scoreboard's join: a recap's stats rows carry the nickname and team, not the account. */
 export const ratingKey = (team: number, nickname: string) => `${team}|${nickname.trim().toLowerCase()}`;
 
+/** What the recap's scoreboard reads: the match's ratings, and the board's square weights behind them. */
+export interface MatchRatings {
+  /** Keyed by ratingKey. A captain missing from it was not rated - see ratedMatch. */
+  ratings: Map<string, BattleRating>;
+  /** Square name -> weight. A square missing from it counts as 1, exactly as rateBattles reads it. */
+  weights: Map<string, number>;
+}
+
 /**
- * Battle ratings for one archived match, keyed by ratingKey, or null while they load.
+ * Battle ratings for one archived match, and the square weights they were built on, or null while
+ * they load.
  *
  * A rating is a rank against every game on the board, so it cannot be worked out from the match
  * alone: this reads the same two cached feeds the Almanac and the Leaderboard read, and costs nothing
@@ -35,8 +44,8 @@ export const ratingKey = (team: number, nickname: string) => `${team}|${nickname
  * a field on the report - the number moves as the archive grows, and freezing it at archive time
  * would leave the recap disagreeing with the Hall of Fame about the same game.
  */
-export function useBattleRatings(matchKey: string | null, set: SquareSetId | null): Map<string, BattleRating> | null {
-  const [ratings, setRatings] = useState<Map<string, BattleRating> | null>(null);
+export function useBattleRatings(matchKey: string | null, set: SquareSetId | null): MatchRatings | null {
+  const [ratings, setRatings] = useState<MatchRatings | null>(null);
 
   useEffect(() => {
     if (!matchKey || !set) return;
@@ -47,7 +56,7 @@ export function useBattleRatings(matchKey: string | null, set: SquareSetId | nul
       const boardParts = parts.filter((p) => rowSquareSet(p) === set);
       const weights = squareWeights(boardEvents, bossFrequency(boardEvents, boardResolver(set)));
       const mine = rateBattles(boardParts, boardEvents, weights).filter((r) => r.matchKey === matchKey);
-      if (!cancelled) setRatings(new Map(mine.map((r) => [ratingKey(r.team, r.nickname), r])));
+      if (!cancelled) setRatings({ ratings: new Map(mine.map((r) => [ratingKey(r.team, r.nickname), r])), weights });
     })();
     return () => {
       cancelled = true;

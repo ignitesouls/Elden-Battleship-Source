@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
 import { TheDeep } from "../components/TheDeep";
@@ -76,8 +76,34 @@ export function ArchivedMatch() {
   // The trophy goes to the best-rated captain, but only where there was somebody to beat - the same
   // rule as the Hall of Fame's MVP tag, which it mirrors.
   const topRating = ratings
-    ? [...ratings.values()].reduce<number | null>((best, r) => (best === null || r.rating > best ? r.rating : best), null)
+    ? [...ratings.ratings.values()].reduce<number | null>((best, r) => (best === null || r.rating > best ? r.rating : best), null)
     : null;
+
+  /**
+   * Every square each captain took, keyed by ratingKey: the squares behind the Weight column.
+   *
+   * One entry per CELL, not per row - a shot writes a row per opposing fleet, so a three-fleet match
+   * would otherwise list each square twice. The result is the best across those rows, the same way
+   * the archive and the rating read a shot. Misses are listed: the fight was won either way.
+   */
+  const squaresTaken = useMemo(() => {
+    type Result = "miss" | "hit" | "sunk";
+    const better: Record<Result, number> = { miss: 0, hit: 1, sunk: 2 };
+    const out = new Map<string, Map<number, { name: string | null; result: Result }>>();
+    for (const e of detail?.events ?? []) {
+      if (e.cell_index < 0) continue; // bookkeeping rows, not shots
+      const key = ratingKey(e.team, e.nickname);
+      const cells = out.get(key) ?? new Map<number, { name: string | null; result: Result }>();
+      out.set(key, cells);
+      const result: Result = e.result === "sunk" ? "sunk" : e.result === "hit" ? "hit" : "miss";
+      const held = cells.get(e.cell_index);
+      if (!held) cells.set(e.cell_index, { name: e.challenge_name, result });
+      else if (better[result] > better[held.result]) held.result = result;
+    }
+    return out;
+  }, [detail]);
+  /** Which captain's square list is open on the scoreboard. One at a time. */
+  const [openSquares, setOpenSquares] = useState<string | null>(null);
 
   /**
    * The squares this match was played on.
@@ -346,6 +372,15 @@ export function ArchivedMatch() {
                         <th
                           style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
                           title={t(
+                            "Weighted squares, then the average weight. Each square counts for how long its fight usually runs and how rarely it gets taken: 1 is a typical square, 3 the heaviest. Misses count. Click a captain to see their squares.",
+                            "Cases pondérées, puis le poids moyen. Chaque case compte selon la durée habituelle de son combat et sa rareté : 1 est une case typique, 3 la plus lourde. Les tirs manqués comptent. Cliquez sur un capitaine pour voir ses cases."
+                          )}
+                        >
+                          {t("Weight", "Poids")}
+                        </th>
+                        <th
+                          style={{ fontWeight: 500, padding: "0.15rem 0.4rem" }}
+                          title={t(
                             "Battle rating, 0-100, against every game on this board: squares weighted by how long and how rare they are, per hour (50%), sunk (20%), hits (15%), the win (10%), accuracy (5%). The same number as the Almanac's Hall of Fame.",
                             "Note de bataille, 0-100, face à toutes les parties de ce plateau : cases pondérées par durée et rareté, par heure (50 %), coulés (20 %), touchés (15 %), la victoire (10 %), précision (5 %). Le même chiffre que le Panthéon de l'almanach."
                           )}
@@ -358,11 +393,29 @@ export function ArchivedMatch() {
                       {stats
                         .filter((s) => s.team === team)
                         .map((s) => {
-                          const rated = ratings?.get(ratingKey(s.team, s.nickname));
+                          const key = ratingKey(s.team, s.nickname);
+                          const rated = ratings?.ratings.get(key);
                           const top = rated !== undefined && rated.mvp && rated.rating === topRating;
+                          // Heaviest first: the list is there to show what made the number.
+                          const taken = [...(squaresTaken.get(key)?.values() ?? [])]
+                            .map((sq) => ({ ...sq, weight: (sq.name ? ratings?.weights.get(sq.name) : undefined) ?? 1 }))
+                            .sort((a, b) => b.weight - a.weight);
+                          const workload = taken.reduce((n, sq) => n + sq.weight, 0);
+                          const open = openSquares === key;
+                          const canOpen = ratings !== null && taken.length > 0;
                           return (
-                          <tr key={s.nickname} style={{ textAlign: "right" }}>
+                          <Fragment key={s.nickname}>
+                          <tr
+                            style={{ textAlign: "right", cursor: canOpen ? "pointer" : undefined }}
+                            onClick={canOpen ? () => setOpenSquares(open ? null : key) : undefined}
+                            aria-expanded={canOpen ? open : undefined}
+                          >
                             <td style={{ textAlign: "left", padding: "0.15rem 0.4rem" }}>
+                              {canOpen && (
+                                <span aria-hidden className="muted" style={{ fontSize: "0.65rem" }}>
+                                  {open ? "▾ " : "▸ "}
+                                </span>
+                              )}
                               {s.nickname}
                               {top && (
                                 <span title={t("Highest-rated captain in the match", "Capitaine le mieux noté de la partie")}> 🏆</span>
@@ -387,8 +440,17 @@ export function ArchivedMatch() {
                             <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums" }}>
                               {s.pace != null ? paceLabel(s.pace) : "-"}
                             </td>
+                            {/* Shown for every captain with a shot log, rated or not: a weight is a
+                                fact about the squares, and a 1v1 or three-fleet match still has them. */}
+                            <td style={{ padding: "0.15rem 0.4rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                              {ratings === null
+                                ? ""
+                                : taken.length > 0
+                                  ? `${workload.toFixed(1)} · ${(workload / taken.length).toFixed(2)}`
+                                  : "-"}
+                            </td>
                             {/* Blank while the feeds load, a dash for a captain the rating could not
-                                read (no shot log, or a voided match). */}
+                                read (no shot log, a voided match, a 1v1 or three-fleet match). */}
                             <td
                               style={{
                                 padding: "0.15rem 0.4rem",
@@ -400,6 +462,33 @@ export function ArchivedMatch() {
                               {ratings === null ? "" : rated ? rated.rating : "-"}
                             </td>
                           </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={9} style={{ padding: "0.2rem 0.4rem 0.5rem 1.2rem" }}>
+                                <div className="stack" style={{ gap: "0.1rem", fontSize: "0.76rem" }}>
+                                  {taken.map((sq, i) => (
+                                    <div key={i} className="row" style={{ gap: "0.5rem", justifyContent: "space-between" }}>
+                                      <span style={{ minWidth: 0 }}>
+                                        {sq.name ?? t("Unknown square", "Case inconnue")}
+                                        <span
+                                          style={{
+                                            marginLeft: "0.4rem",
+                                            fontSize: "0.68rem",
+                                            color:
+                                              sq.result === "sunk" ? "var(--sunk)" : sq.result === "hit" ? "var(--hit)" : "var(--text-dim)",
+                                          }}
+                                        >
+                                          {sq.result === "sunk" ? t("SANK", "COULÉ") : sq.result === "hit" ? t("HIT", "TOUCHÉ") : t("miss", "manqué")}
+                                        </span>
+                                      </span>
+                                      <strong style={{ fontVariantNumeric: "tabular-nums" }}>{sq.weight.toFixed(2)}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                           );
                         })}
                     </tbody>
