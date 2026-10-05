@@ -189,11 +189,18 @@ function SignupForms({
   const t = useT();
   const [teamName, setTeamName] = useState("");
   const [mates, setMates] = useState("");
+  const [partner, setPartner] = useState("");
   const [note, setNote] = useState("");
 
   const others = event.team_size - 1;
   const named = parseLogins(mates);
   const myName = accountName(profile) ?? "Player";
+  // Pairs only exist in three-player events: two friends, and a solo player the organisers add.
+  const pairs = event.team_size === 3;
+  const partnerLogin = parseLogins(partner)[0] ?? "";
+  // A pair isn't asked for a name - it isn't a whole team yet. It goes by its two players until it is,
+  // and the captain can rename it from their team panel while signup is open.
+  const pairName = `${myName} & ${partnerLogin}`.slice(0, 40);
 
   // An individual event has no teams to build: you enter as yourself.
   if (event.team_size === 1) {
@@ -219,8 +226,8 @@ function SignupForms({
         <h3>{t("Sign up a team", "Inscrire une équipe")}</h3>
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            `Teams here are ${event.team_size} players${event.max_roster > event.team_size ? `, with room for ${event.max_roster - event.team_size} substitute${event.max_roster - event.team_size === 1 ? "" : "s"}` : ""}. You're the captain and one of them - list the other ${others} by Twitch username, and they'll accept from the front page when they sign in.`,
-            `Les équipes comptent ${event.team_size} joueurs${event.max_roster > event.team_size ? `, avec de la place pour ${event.max_roster - event.team_size} remplaçant(s)` : ""}. Vous êtes le capitaine et l'un d'eux - indiquez les ${others} autres par nom d'utilisateur Twitch ; ils accepteront depuis la page d'accueil en se connectant.`,
+            `Teams here are ${event.team_size} players. You're the captain and one of them - list the other ${others} by Twitch username, and they'll accept from the front page when they sign in.`,
+            `Les équipes comptent ${event.team_size} joueurs. Vous êtes le capitaine et l'un d'eux - indiquez les ${others} autres par nom d'utilisateur Twitch ; ils accepteront depuis la page d'accueil en se connectant.`,
           )}
         </p>
         <label className="stack" style={{ gap: "0.3rem" }}>
@@ -251,13 +258,39 @@ function SignupForms({
         </div>
       </div>
 
+      {pairs && (
+        <div className="panel stack">
+          <h3>{t("Two of you? Sign up as a pair", "Vous êtes deux ? Inscrivez-vous en duo")}</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            {t(
+              "Name your partner and an administrator will add a solo player to make your team of three. Your partner accepts from the front page when they sign in.",
+              "Indiquez votre partenaire et un administrateur ajoutera un joueur solo pour former votre équipe de trois. Votre partenaire accepte depuis la page d'accueil en se connectant.",
+            )}
+          </p>
+          <label className="stack" style={{ gap: "0.3rem" }}>
+            <span className="muted">{t("Your partner's Twitch username", "Le nom Twitch de votre partenaire")}</span>
+            <input value={partner} onChange={(e) => setPartner(e.target.value)} maxLength={30} placeholder="twitch_name" />
+          </label>
+          <div>
+            <button disabled={busy || !partnerLogin} onClick={() => void act(() => registerTeam(event.id, pairName, [partnerLogin], true))}>
+              {t("Sign up as a pair", "S'inscrire en duo")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="panel stack">
         <h3>{t("No team? Sign up solo", "Pas d'équipe ? Inscrivez-vous seul")}</h3>
         <p className="muted" style={{ margin: 0 }}>
-          {t(
-            "Go on the list and an administrator will pair you with other solo players before the event starts.",
-            "Inscrivez-vous sur la liste et un administrateur vous associera à d'autres joueurs solo avant le début de l'événement.",
-          )}
+          {pairs
+            ? t(
+                "Go on the list and an administrator will put you with a pair, or with other solo players, before the event starts.",
+                "Inscrivez-vous sur la liste et un administrateur vous placera avec un duo, ou avec d'autres joueurs solo, avant le début de l'événement.",
+              )
+            : t(
+                "Go on the list and an administrator will pair you with other solo players before the event starts.",
+                "Inscrivez-vous sur la liste et un administrateur vous associera à d'autres joueurs solo avant le début de l'événement.",
+              )}
         </p>
         <label className="stack" style={{ gap: "0.3rem" }}>
           <span className="muted">{t("A note for the organizers (optional)", "Un mot pour les organisateurs (facultatif)")}</span>

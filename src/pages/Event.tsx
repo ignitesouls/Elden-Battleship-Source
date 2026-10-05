@@ -12,6 +12,7 @@ import {
   type TeamRow,
 } from "../lib/tournament/api";
 import { signupHeadline, signupIsOpen } from "../lib/tournament/frontPage";
+import { squareSetLabel } from "../lib/squareSets";
 import { qualifierStatus } from "../lib/tournament/stages";
 import type { TMatch } from "../lib/tournament/types";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -166,8 +167,22 @@ export function Event() {
               · {t(`up to ${event.max_entrants} ${event.team_size === 1 ? "players" : "teams"}`, `jusqu'à ${event.max_entrants} ${event.team_size === 1 ? "joueurs" : "équipes"}`)}
             </span>
           )}
+          {/* The board every official match is played on, where the organisers fix one - worth knowing
+              before signing up. Nothing when it is left to each match's host. */}
+          {event.rules.square_set && <span className="muted">· {squareSetLabel(event.rules.square_set)}</span>}
+          {event.rules.board_size && <span className="muted">· {`${event.rules.board_size}x${event.rules.board_size}`}</span>}
+          {event.rules.fleet && (
+            <span className="muted" title={event.rules.fleet.map((s) => `${s.name} (${s.size})`).join(" · ")}>
+              · {t(`fleet of ${event.rules.fleet.length} ships`, `flotte de ${event.rules.fleet.length} navires`)}
+            </span>
+          )}
         </div>
         {event.description && <p className="muted" style={{ marginTop: "0.6rem" }}>{event.description}</p>}
+        {event.status !== "cancelled" && (
+          <p style={{ margin: "0.4rem 0" }}>
+            <Link to={`/event/${event.id}/rules`} className="link-button">{t("Read the rules", "Lire le règlement")}</Link>
+          </p>
+        )}
         {open && event.signup_closes_at && (
           <p className="muted" style={{ margin: 0 }}>
             {t(`Signup closes ${day(event.signup_closes_at)}`, `Inscriptions jusqu'au ${day(event.signup_closes_at)}`)}

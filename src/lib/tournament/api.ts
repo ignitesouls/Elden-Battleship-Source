@@ -1,6 +1,7 @@
 import { supabase } from "../supabase";
 import type { TournamentFormat } from "./format";
 import { CHAMPION_BANNER_DAYS, type EventSummary } from "./frontPage";
+import { rulesFrom, type MatchRules } from "./matchRules";
 import type { Schedule } from "./schedule";
 import { matchFromRow, toMatchRows } from "./start";
 import type { TMatch } from "./types";
@@ -32,12 +33,16 @@ export interface EventDetail {
   id: string;
   name: string;
   description: string;
+  /** What this event adds to the shared rulebook, shown above it on the rules page. Empty for most. */
+  extra_rules: string;
   status: EventStatus;
   /** A test event: made-up teams, visible to administrators only. */
   is_test: boolean;
+  /** Players on a team - and the most a roster can hold, since there are no substitutes. */
   team_size: number;
-  max_roster: number;
   max_entrants: number | null;
+  /** What official matches are played by: the clock, and the board where the event fixes one. */
+  rules: MatchRules;
   signup_closes_at: string | null;
   starts_at: string | null;
   finished_at: string | null;
@@ -59,6 +64,8 @@ export interface TeamRow {
   seed: number | null;
   forfeited_at: string | null;
   captain_user_id: string;
+  /** Signed up as a pair, waiting for an administrator to add a solo player. */
+  looking_for_players: boolean;
   roster: RosterMember[];
 }
 
@@ -85,7 +92,6 @@ export interface InboxInvite {
   captain_name: string | null;
   team_size: number;
   roster_count: number;
-  max_roster: number;
 }
 
 export interface MatchRow {
@@ -162,7 +168,7 @@ export async function fetchMyInbox(): Promise<InboxInvite[]> {
 // ===========================================================================
 
 const EVENT_COLUMNS =
-  "id, name, description, status, is_test, team_size, max_roster, max_entrants, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
+  "id, name, description, extra_rules, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
 
 function toDetail(row: Record<string, unknown>): EventDetail {
   const champion = row.champion as { name: string } | { name: string }[] | null;
@@ -170,11 +176,12 @@ function toDetail(row: Record<string, unknown>): EventDetail {
     id: row.id as string,
     name: row.name as string,
     description: (row.description as string) ?? "",
+    extra_rules: (row.extra_rules as string | undefined) ?? "",
     status: row.status as EventStatus,
     is_test: (row.is_test as boolean | undefined) ?? false,
     team_size: row.team_size as number,
-    max_roster: row.max_roster as number,
     max_entrants: (row.max_entrants as number | null) ?? null,
+    rules: rulesFrom(row.match_settings),
     signup_closes_at: (row.signup_closes_at as string | null) ?? null,
     starts_at: (row.starts_at as string | null) ?? null,
     finished_at: (row.finished_at as string | null) ?? null,
@@ -199,7 +206,7 @@ export async function fetchEvent(id: string): Promise<EventDetail | null> {
 export async function fetchTeams(eventId: string): Promise<TeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
-    .select("id, name, status, seed, forfeited_at, captain_user_id, roster:tournament_roster(user_id, display_name, is_captain)")
+    .select("id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, roster:tournament_roster(user_id, display_name, is_captain)")
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
   if (error) fail(error);
@@ -262,8 +269,13 @@ export function parseLogins(text: string): string[] {
   return [...new Set(text.split(/[\s,;]+/).map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean))];
 }
 
-export async function registerTeam(eventId: string, name: string, logins: string[]): Promise<string> {
-  const { data, error } = await supabase.rpc("register_team", { p_tournament: eventId, p_name: name, p_logins: logins });
+/**
+ * Signs a team up with the caller as captain, inviting everyone named. `pair` signs up two players of a
+ * three-player team - the caller and exactly one partner - for an administrator to complete with a solo
+ * player; the database refuses it for any other team size.
+ */
+export async function registerTeam(eventId: string, name: string, logins: string[], pair = false): Promise<string> {
+  const { data, error } = await supabase.rpc("register_team", { p_tournament: eventId, p_name: name, p_logins: logins, p_pair: pair });
   if (error) fail(error);
   return data as string;
 }
@@ -363,7 +375,6 @@ export interface NewEvent {
   name: string;
   description: string;
   team_size: number;
-  max_roster: number;
   max_entrants: number | null;
   signup_closes_at: string | null;
 }
@@ -415,6 +426,12 @@ export async function createTestEvent(name: string, teams: number, teamSize: num
 
 export interface AdminTeamRow extends TeamRow {
   entry_code: string | null;
+  /**
+   * Invitations still waiting for an answer. A place someone has been invited to is not free: the
+   * pairing screen counts these, or a pair whose partner has yet to accept would be offered two solos
+   * and then have no room for the partner.
+   */
+  pending_invites: number;
 }
 
 /** Every team in an event including pending ones, with entry codes - administrators only. */
@@ -422,15 +439,22 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
     .select(
-      "id, name, status, seed, forfeited_at, captain_user_id, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code)",
+      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(status)",
     )
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
   if (error) fail(error);
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
-    const secrets = row.secrets as { entry_code: string | null } | { entry_code: string | null }[] | null;
+    const { secrets, invites, ...team } = row as Record<string, unknown> & {
+      secrets: { entry_code: string | null } | { entry_code: string | null }[] | null;
+      invites: { status: string }[] | null;
+    };
     const code = Array.isArray(secrets) ? secrets[0]?.entry_code : secrets?.entry_code;
-    return { ...(row as unknown as TeamRow), entry_code: code ?? null };
+    return {
+      ...(team as unknown as TeamRow),
+      entry_code: code ?? null,
+      pending_invites: (invites ?? []).filter((i) => i.status === "pending").length,
+    };
   });
 }
 
@@ -621,6 +645,12 @@ export async function fetchEventConfig(eventId: string): Promise<EventConfig> {
   // where callers are forced to deal with "there is no format yet".
   const format = saved && typeof saved === "object" && saved.qualifier ? (saved as TournamentFormat) : null;
   return { format, schedule: data.schedule as Schedule };
+}
+
+/** Save what an event adds to the shared rulebook. Editable in any state. */
+export async function saveExtraRules(eventId: string, text: string): Promise<void> {
+  const { error } = await supabase.from("tournaments").update({ extra_rules: text }).eq("id", eventId);
+  if (error) fail(error);
 }
 
 /** The timers an event's official rooms are played by, as saved. Empty for an event that never set any. */

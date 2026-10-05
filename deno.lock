@@ -14,6 +14,7 @@
     "npm:@vitejs/plugin-react@^6.0.3": "6.0.5_vite@8.2.1__@types+node@24.13.3_@types+node@24.13.3",
     "npm:gh-pages@^6.3.0": "6.3.0",
     "npm:oxlint@^1.71.0": "1.78.0",
+    "npm:postgres@3.4.7": "3.4.7",
     "npm:react-dom@^19.2.7": "19.2.8_react@19.2.8",
     "npm:react-router-dom@^7.18.1": "7.18.2_react@19.2.8_react-dom@19.2.8__react@19.2.8",
     "npm:react@^19.2.7": "19.2.8",
@@ -628,6 +629,9 @@
         "picocolors",
         "source-map-js"
       ]
+    },
+    "postgres@3.4.7": {
+      "integrity": "sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw=="
     },
     "queue-microtask@1.2.3": {
       "integrity": "sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A=="

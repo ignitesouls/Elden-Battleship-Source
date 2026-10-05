@@ -4,6 +4,7 @@ import {
   adminFreeAgents,
   adminTeams,
   fetchEvent,
+  fetchMatchSettings,
   saveMatchSettings,
   startEvent,
   type AdminTeamRow,
@@ -18,8 +19,8 @@ import { useT } from "../../lib/language";
 import { LoadingScreen } from "../BrandMark";
 import { MatchList } from "../event/MatchList";
 import { FormatEditor } from "./FormatEditor";
-import { DEFAULT_MATCH_RULES, type MatchRules } from "../../lib/tournament/matchRules";
-import { MatchRulesEditor } from "./MatchRulesEditor";
+import { DEFAULT_MATCH_RULES, rulesFrom, rulesProblem, toMatchSettings, type MatchRules } from "../../lib/tournament/matchRules";
+import { MatchRulesEditor, SET_CAPS } from "./MatchRulesEditor";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { SeedList } from "./SeedList";
 import "../Tournament.css";
@@ -74,9 +75,17 @@ export function StartEventForm({ eventId }: { eventId: string }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [found, allTeams, agents] = await Promise.all([fetchEvent(eventId), adminTeams(eventId), adminFreeAgents(eventId)]);
+        const [found, allTeams, agents, saved] = await Promise.all([
+          fetchEvent(eventId),
+          adminTeams(eventId),
+          adminFreeAgents(eventId),
+          // Rules may already have been set from the desk while signup was open; start from those, not
+          // from the defaults, or pressing Start would quietly put them back.
+          fetchMatchSettings(eventId).catch(() => ({})),
+        ]);
         if (cancelled) return;
         setEvent(found);
+        setRules(rulesFrom(saved));
         setTeams(allTeams);
         setSoloWaiting(agents.filter((a) => a.status === "waiting").length);
 
@@ -128,7 +137,7 @@ export function StartEventForm({ eventId }: { eventId: string }) {
   const formatErrors = validateFormat(format, n);
   const estimate = estimateMatches(format, n);
   const problems = plan && !plan.ok ? plan.problems : [];
-  const canStart = n >= 2 && plan?.ok === true && !busy;
+  const canStart = n >= 2 && plan?.ok === true && !busy && rulesProblem(rules, SET_CAPS) === null;
   const names = new Map(order.map((team) => [team.id, team.name]));
 
   async function start() {
@@ -145,7 +154,7 @@ export function StartEventForm({ eventId }: { eventId: string }) {
     try {
       // The rules go first: they are harmless if the start is then refused, and an event that started
       // without them would have official rooms on the default clock until somebody noticed.
-      await saveMatchSettings(event.id, { ...rules });
+      await saveMatchSettings(event.id, toMatchSettings(rules, SET_CAPS));
       await startEvent(event.id, format, schedule, order.map((team) => team.id), plan.plan.matches);
       navigate(`/event/${event.id}`);
     } catch (e) {
@@ -273,8 +282,8 @@ export function StartEventForm({ eventId }: { eventId: string }) {
         <h3>{t("5. Official match rules", "5. Règles des matchs officiels")}</h3>
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            "When a team's room becomes an official match it takes these timers, and the host can't change them. You can change them later from the event's desk.",
-            "Quand la partie d'une équipe devient un match officiel, elle adopte ces délais et l'hôte ne peut plus les modifier. Vous pourrez les changer plus tard depuis le bureau de l'événement.",
+            "When a team's room becomes an official match it takes these rules, and the host can't change them. You can change them later from the event's desk.",
+            "Quand la partie d'une équipe devient un match officiel, elle adopte ces règles et l'hôte ne peut plus les modifier. Vous pourrez les changer plus tard depuis le bureau de l'événement.",
           )}
         </p>
         <MatchRulesEditor rules={rules} onChange={setRules} />

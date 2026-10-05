@@ -172,7 +172,7 @@ async function person(label: string, opts: { twitch?: boolean; admin?: boolean }
 async function newTournament(over: Record<string, unknown> = {}) {
   const { data, error } = await svc
     .from('tournaments')
-    .insert({ name: `Check ${run}`, status: 'signup', team_size: 3, max_roster: 4, ...over })
+    .insert({ name: `Check ${run}`, status: 'signup', team_size: 3, ...over })
     .select()
     .single()
   if (error) throw new Error(`tournament: ${error.message}`)
@@ -225,7 +225,7 @@ async function rules() {
 
   const made = await admin.client
     .from('tournaments')
-    .insert({ name: `Check ${run} draft`, status: 'draft', team_size: 3, max_roster: 4 })
+    .insert({ name: `Check ${run} draft`, status: 'draft', team_size: 4 })
     .select()
     .single()
   allowed('an admin can create an event', made.error)
@@ -314,7 +314,7 @@ async function rules() {
   check('...and a decline leaves them off the roster',
     !((await alice.client.from('tournament_roster').select('user_id').eq('entrant_id', alpha)).data ?? []).some((r) => r.user_id === cat.id))
 
-  // team_size 3, max_roster 4: alice and bob are on it. Room for two more, counting pending invites.
+  // Teams of 4 (and so rosters of 4): alice and bob are on it. Room for two more, counting pending invites.
   refused('too many invitations are refused',
     (await alice.client.rpc('invite_to_roster', { p_entrant: alpha, p_logins: ['dan_x1', 'dan_x2', 'dan_x3'] })).error, /at most 4/)
   check('...and none of them were left behind (all or nothing)',
@@ -369,7 +369,7 @@ async function rules() {
     (await admin.client.rpc('regenerate_entry_code', { p_entrant: beta })).error, /approved/)
 
   console.log('\nEntry codes are unique within an event')
-  const T3 = await newTournament({ team_size: 1, max_roster: 1 })
+  const T3 = await newTournament({ team_size: 1 })
   const rows = Array.from({ length: 30 }, (_, i) => ({ tournament_id: T3.id, name: `Team ${i + 1}`, captain_user_id: admin.id }))
   const ins = await svc.from('tournament_entrants').insert(rows)
   check('thirty teams inserted', !ins.error, msg(ins.error))
@@ -378,7 +378,7 @@ async function rules() {
   check('every one got a code, and no two match', codes.length === 30 && new Set(codes).size === 30 && codes.every(Boolean), `${new Set(codes).size} distinct of ${codes.length}`)
 
   console.log('\nCapacity, and signup closing')
-  const T2 = await newTournament({ max_entrants: 2, team_size: 1, max_roster: 1 })
+  const T2 = await newTournament({ max_entrants: 2, team_size: 1 })
   const c1 = await person('c1')
   const c2 = await person('c2')
   const c3 = await person('c3')
@@ -399,7 +399,7 @@ async function rules() {
   allowed('...though its description can still be edited',
     (await admin.client.from('tournaments').update({ description: 'updated' }).eq('id', T2.id)).error)
 
-  const T4 = await newTournament({ team_size: 1, max_roster: 1 })
+  const T4 = await newTournament({ team_size: 1 })
   const solo = (await c3.client.rpc('register_team', { p_tournament: T4.id, p_name: 'Solo' })).data as string
   allowed('a captain can withdraw while signup is open',
     (await c3.client.from('tournament_entrants').update({ status: 'withdrawn' }).eq('id', solo)).error)
@@ -407,7 +407,7 @@ async function rules() {
     (await c2.client.rpc('register_team', { p_tournament: T4.id, p_name: 'Solo' })).error)
 
   console.log('\nRoster changes')
-  const T5 = await newTournament({ team_size: 2, max_roster: 3 })
+  const T5 = await newTournament({ team_size: 2 })
   const h1 = await person('h1')
   const h2 = await person('h2')
   const team = (await h1.client.rpc('register_team', { p_tournament: T5.id, p_name: 'Hex', p_logins: [h2.login] })).data as string
@@ -470,7 +470,7 @@ async function rules() {
   console.log('\nCancelling a running event')
   // A live four-team single elimination, one semifinal already played - the situation an admin
   // actually cancels from.
-  const cancelled = await newTournament({ status: 'live', team_size: 1, max_roster: 1, name: `Cancel ${run}` })
+  const cancelled = await newTournament({ status: 'live', team_size: 1, name: `Cancel ${run}` })
   const names = ['K1', 'K2', 'K3', 'K4']
   const kEnts = await svc.from('tournament_entrants').insert(
     names.map((n) => ({ tournament_id: cancelled.id, name: n, captain_user_id: admin.id, status: 'approved' })),
@@ -524,7 +524,7 @@ async function rules() {
     (await dan.client.rpc('register_team', { p_tournament: cancelled.id, p_name: 'Latecomers' })).error, /not open/)
 
   // Cancelled during signup: invitations still waiting go nowhere.
-  const openEvent = await newTournament({ team_size: 2, max_roster: 2, name: `Open ${run}` })
+  const openEvent = await newTournament({ team_size: 2, name: `Open ${run}` })
   const ivy = await person('ivy')
   const jon = await person('jon')
   const ivyTeam = (await ivy.client.rpc('register_team', { p_tournament: openEvent.id, p_name: 'Ivy Team', p_logins: [jon.login] })).data as string
@@ -542,6 +542,7 @@ async function rules() {
   await visibility(admin, eve)
   await eventNames(admin, eve)
   await inviteInbox(admin)
+  await pairsAndRosters(admin)
   await startRules(admin)
   await laterStages(admin)
   await officialMatches(admin)
@@ -578,7 +579,7 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
   const p6 = await person('fa6')
   const noTwitch = await person('fanotwitch', { twitch: false })
 
-  const T = await newTournament({ team_size: 3, max_roster: 4, name: `Solo ${run}` })
+  const T = await newTournament({ team_size: 3, name: `Solo ${run}` })
   const pool = async (client: SupabaseClient, status = 'waiting') =>
     ((await client.from('tournament_free_agents').select('user_id, status, note, placed_entrant_id').eq('tournament_id', T.id)).data ?? [])
       .filter((r) => r.status === status)
@@ -599,7 +600,7 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
     !(await p1.client.rpc('sign_up_solo', { p_tournament: T.id, p_note: 'changed' })).error && (await pool(admin.client)).length === 6 &&
       (await pool(p1.client))[0].note === 'changed')
 
-  const solo = await newTournament({ team_size: 1, max_roster: 1, name: `Individual ${run}` })
+  const solo = await newTournament({ team_size: 1, name: `Individual ${run}` })
   refused('an individual event has no pool - sign up directly',
     (await p1.client.rpc('sign_up_solo', { p_tournament: solo.id })).error, /individual/)
   await svc.from('tournaments').update({ status: 'draft' }).eq('id', solo.id)
@@ -631,7 +632,7 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
     (await p4.client.rpc('register_team', { p_tournament: T.id, p_name: 'Self Starters' })).error)
   check('...and leaves the pool', !(await pool(admin.client)).some((r) => r.user_id === p4.id))
 
-  // Now waiting: p1, p2, p3, p6. Recruiters have 2 of a possible 4 and need a third for team_size 3.
+  // Now waiting: p1, p2, p3, p6. Recruiters have 2 of 3.
   console.log('\nAdmins pairing the pool')
   refused('a player cannot form a team',
     (await p1.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Rogue', p_user_ids: [p1.id, p2.id] })).error, /administrator/)
@@ -639,8 +640,8 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
     (await p1.client.rpc('assign_free_agent_to_team', { p_entrant: outsiderTeam, p_user: p2.id })).error, /administrator/)
   refused('a team needs at least one player',
     (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Empty', p_user_ids: [] })).error, /at least one/)
-  refused('a team cannot exceed the roster limit (4)',
-    (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Huge', p_user_ids: [p1.id, p2.id, p3.id, p6.id, p5.id] })).error, /at most 4/)
+  refused('a team cannot exceed the team size (3) - there are no substitutes',
+    (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Huge', p_user_ids: [p1.id, p2.id, p3.id, p6.id] })).error, /at most 3/)
   refused('the same player cannot be listed twice',
     (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Twins', p_user_ids: [p1.id, p1.id] })).error, /twice/)
   refused('a player who is already on a team cannot be pulled into another',
@@ -664,34 +665,34 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
   check('the new team got an entry code, and its captain can read it', /^[A-HJ-KM-NP-Z2-9]{6}$/.test(code ?? ''), String(code))
   check('the new team is public', ((await stranger.client.from('tournament_entrants').select('id').eq('id', draftees)).data ?? []).length === 1)
 
-  // Placing into an existing team. This event is team_size 3 with room for a substitute (max 4), so
-  // Draftees (3) has one place left and Recruiters (2) has two.
+  // Placing into an existing team. Rosters are exactly the team size (3): Draftees is full, and
+  // Recruiters (2) has one place.
   const p7 = await person('fa7')
   await p7.client.rpc('sign_up_solo', { p_tournament: T.id })
-  allowed('an admin can add a waiting player to a team that has room',
-    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: p6.id })).error)
-  refused('...but not to a team that is full (4 of 4)',
-    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: p7.id })).error, /full/)
-  check('a refused placement leaves the player waiting', (await pool(admin.client)).length === 1 && (await pool(admin.client))[0].user_id === p7.id)
-  allowed('they can be placed on a team that is short instead',
-    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: outsiderTeam, p_user: p7.id })).error)
-  check('...and the pool is empty', (await pool(admin.client)).length === 0)
-  refused('a player who is not waiting cannot be placed',
-    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: outsiderTeam, p_user: p6.id })).error, /not waiting/)
+  refused('a team that is full (3 of 3) takes nobody from the pool',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: p6.id })).error, /full/)
+  check('a refused placement leaves the player waiting', (await pool(admin.client)).length === 2)
+  allowed('an admin can add a waiting player to a team that is short',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: outsiderTeam, p_user: p6.id })).error)
+  refused('...and once that makes it full, it takes nobody else',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: outsiderTeam, p_user: p7.id })).error, /full/)
+  check('...so only the second player is still waiting', (await pool(admin.client)).length === 1 && (await pool(admin.client))[0].user_id === p7.id)
 
   console.log('\nPlayers going back to the pool')
   allowed('an admin can take a player off a roster',
     (await admin.client.from('tournament_roster').delete().eq('entrant_id', draftees).eq('user_id', p3.id)).error)
   check('...and they are waiting again', (await pool(admin.client)).some((r) => r.user_id === p3.id))
+  refused('a player who is not waiting cannot be placed, even on a team with room',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: p6.id })).error, /not waiting/)
   allowed('an admin can reject a team',
     (await admin.client.from('tournament_entrants').update({ status: 'rejected' }).eq('id', outsiderTeam)).error)
   const waiting = (await pool(admin.client)).map((r) => r.user_id)
-  check('its free agents are waiting again (p5 was placed by invitation, p7 by an admin)',
-    waiting.includes(p5.id) && waiting.includes(p7.id) && waiting.includes(p3.id) && waiting.length === 3, `${waiting.length} waiting`)
+  check('its free agents are waiting again (p5 was placed by invitation, p6 by an admin)',
+    waiting.includes(p5.id) && waiting.includes(p6.id) && waiting.includes(p3.id) && waiting.includes(p7.id) && waiting.length === 4, `${waiting.length} waiting`)
   const reformed = await admin.client.rpc('form_team_from_free_agents', {
-    p_tournament: T.id, p_name: 'Second Chance', p_user_ids: [p5.id, p7.id, p3.id] })
+    p_tournament: T.id, p_name: 'Second Chance', p_user_ids: [p5.id, p6.id, p3.id] })
   allowed('...and can be paired into a new team', reformed.error)
-  check('the pool is empty again', (await pool(admin.client)).length === 0)
+  check('...which takes them out of the pool', (await pool(admin.client)).length === 1 && (await pool(admin.client))[0].user_id === p7.id)
 
   // Pairing closes when the event starts.
   const late = await person('falate')
@@ -699,7 +700,7 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
   await svc.from('tournaments').update({ status: 'live' }).eq('id', T.id)
   refused('teams cannot be formed once the event is live',
     (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Too Late', p_user_ids: [late.id] })).error, /before the event starts/)
-  // A running event still loses players; the pool can top a team up (Draftees has 3 of 4).
+  // A running event still loses players; the pool can top a team up (Draftees has 2 of 3 since p3 left).
   allowed('...but a waiting player can still be placed on a team that has room',
     (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: late.id })).error)
   check('...and joins that roster', ((await svc.from('tournament_roster').select('user_id').eq('entrant_id', draftees)).data ?? []).some((r) => r.user_id === late.id))
@@ -720,7 +721,7 @@ async function scheduling(admin: Person, outsider: Person) {
 
   // A live, four-team best-of-three knockout. K1 and K2 have real captains; the rest belong to the
   // admin. Round 1 opened 20 days ago and closed 13 days ago, so both first-round matches are late.
-  const event = await newTournament({ status: 'live', team_size: 1, max_roster: 1, name: `Month ${run}` })
+  const event = await newTournament({ status: 'live', team_size: 1, name: `Month ${run}` })
   const names = ['K1', 'K2', 'K3', 'K4']
   const captains = [cap1.id, cap2.id, admin.id, admin.id]
   const made = await svc.from('tournament_entrants').insert(
@@ -840,7 +841,7 @@ async function scheduling(admin: Person, outsider: Person) {
   // into the loser bracket against a team that has not been decided yet; the moment that opponent
   // arrives, the match should settle itself rather than leave them waiting for a team that is gone.
   const bracket2 = buildKnockout(['K1', 'K2', 'K3', 'K4'], { format: 'double', bestOf: 1, thirdPlace: false, grandFinalReset: false })
-  const event2 = await newTournament({ status: 'live', team_size: 1, max_roster: 1, name: `Month2 ${run}` })
+  const event2 = await newTournament({ status: 'live', team_size: 1, name: `Month2 ${run}` })
   const made2 = await svc.from('tournament_entrants').insert(
     names.map((n) => ({ tournament_id: event2.id, name: n, captain_user_id: admin.id, status: 'approved' })),
   ).select('id, name')
@@ -873,7 +874,7 @@ async function scheduling(admin: Person, outsider: Person) {
   const sm2 = await person('sub_m2')
   const sn = await person('sub_new')
   const sx = await person('sub_other')
-  const subEvent = await newTournament({ team_size: 3, max_roster: 3, name: `Subs ${run}` })
+  const subEvent = await newTournament({ team_size: 3, name: `Subs ${run}` })
   const squad = (await sc.client.rpc('register_team', { p_tournament: subEvent.id, p_name: 'Squad', p_logins: [sm1.login, sm2.login] })).data as string
   for (const m of [sm1, sm2]) {
     const inv = (await m.client.from('tournament_invites').select('id').eq('entrant_id', squad)).data?.[0]?.id as string
@@ -921,7 +922,7 @@ interface LiveEvent {
 }
 
 async function makeLiveEvent(admin: Person, label: string, format: TournamentFormat, names: string[]): Promise<LiveEvent> {
-  const t = await newTournament({ status: 'live', team_size: 1, max_roster: 1, name: `${label} ${run}`, format })
+  const t = await newTournament({ status: 'live', team_size: 1, name: `${label} ${run}`, format })
   const made = await svc.from('tournament_entrants').insert(
     names.map((n) => ({ tournament_id: t.id, name: n, captain_user_id: admin.id, status: 'approved' })),
   ).select('id, name')
@@ -1119,7 +1120,7 @@ async function eventNames(admin: Person, visitor: Person) {
   const nameOf = async (id: string) => (await svc.from('tournaments').select('name').eq('id', id).single()).data!.name as string
 
   const made = await admin.client.from('tournaments')
-    .insert({ name: '  Autumn   Cup  ', status: 'signup', team_size: 1, max_roster: 1 }).select('id, name').single()
+    .insert({ name: '  Autumn   Cup  ', status: 'signup', team_size: 1 }).select('id, name').single()
   allowed('an admin can name an event', made.error)
   const id = made.data!.id as string
   createdTournaments.push(id)
@@ -1167,7 +1168,6 @@ interface InboxRow {
   captain_name: string | null
   team_size: number
   roster_count: number
-  max_roster: number
 }
 
 async function inviteInbox(admin: Person) {
@@ -1180,7 +1180,7 @@ async function inviteInbox(admin: Person) {
   const noProfile = await person('ib_noprofile', { twitch: false })
 
   // Room for a third player, so a later invitation is not refused for want of space.
-  const event = await newTournament({ team_size: 2, max_roster: 3, name: `Inbox ${run}` })
+  const event = await newTournament({ team_size: 3, name: `Inbox ${run}` })
   const inbox = async (p: Person) => (await p.client.rpc('my_roster_invites')).data as InboxRow[] | null
 
   const team = (await cap.client.rpc('register_team', { p_tournament: event.id, p_name: 'Inbox Team', p_logins: [invitee.login] })).data as string
@@ -1194,7 +1194,7 @@ async function inviteInbox(admin: Person) {
   const row = rows[0]
   check('...naming the event, the team, and who is captaining it',
     row?.tournament_name === `Inbox ${run}` && row.team_name === 'Inbox Team' && row.captain_name === 'ib_cap', JSON.stringify(row))
-  check('...and how full the team is (1 of a possible 3, team size 2)', row?.roster_count === 1 && row.max_roster === 3 && row.team_size === 2)
+  check('...and how full the team is (1 of 3)', row?.roster_count === 1 && row.team_size === 3)
   check('...and nothing about the other pending team', !JSON.stringify(rows).includes('Secret Decoy'))
   // Scoped to this event: approved teams in OTHER events are public by design and would be counted.
   check('but the invitee still cannot read pending teams directly - the policy was not loosened',
@@ -1222,6 +1222,56 @@ async function inviteInbox(admin: Person) {
   check('once the event stops taking signups the invitation drops out - it could only fail', ((await inbox(late)) ?? []).length === 0)
 }
 
+async function pairsAndRosters(admin: Person) {
+  console.log('\nNo substitutes: a roster is exactly the team')
+  const benched = await newTournament({ team_size: 3, max_roster: 5, name: `Bench ${run}` })
+  const row = async (id: string) => (await svc.from('tournaments').select('team_size, max_roster').eq('id', id).single()).data!
+  check('an event asked for with two substitutes gets none', (await row(benched.id)).max_roster === 3, JSON.stringify(await row(benched.id)))
+  allowed('an admin can still change the team size before the event runs',
+    (await admin.client.from('tournaments').update({ team_size: 4 }).eq('id', benched.id)).error)
+  check('...and the roster limit follows it', (await row(benched.id)).max_roster === 4, JSON.stringify(await row(benched.id)))
+  allowed('an old client sending a bench is not refused - the bench is just not kept',
+    (await admin.client.from('tournaments').update({ max_roster: 9 }).eq('id', benched.id)).error)
+  check('...so it stays exactly the team size', (await row(benched.id)).max_roster === 4)
+
+  console.log('\nPairs (two of a three-player team)')
+  const p1 = await person('pr1')
+  const p2 = await person('pr2')
+  const p3 = await person('pr3')
+  const solo = await person('pr_solo')
+  const threes = await newTournament({ team_size: 3, name: `Threes ${run}` })
+  const twos = await newTournament({ team_size: 2, name: `Twos ${run}` })
+  const pair = (who: Person, ev: { id: string }, logins: string[], name = `${who.login} & co`) =>
+    who.client.rpc('register_team', { p_tournament: ev.id, p_name: name, p_logins: logins, p_pair: true })
+
+  refused('a pair needs a three-player event', (await pair(p1, twos, [p2.login])).error, /teams of three/)
+  refused('a pair is exactly one partner - not none', (await pair(p1, threes, [])).error, /exactly one/)
+  refused('...and not two', (await pair(p1, threes, [p2.login, p3.login])).error, /exactly one/)
+  check('(none of those left a team behind)', ((await svc.from('tournament_entrants').select('id').eq('captain_user_id', p1.id)).data ?? []).length === 0)
+
+  const made = await pair(p1, threes, [p2.login])
+  allowed('a captain can sign up as a pair', made.error)
+  const pairId = made.data as string
+  const entrant = (await svc.from('tournament_entrants').select('looking_for_players, status').eq('id', pairId).single()).data
+  check('...which is a pending team flagged as looking for a player', entrant?.looking_for_players === true && entrant.status === 'pending', JSON.stringify(entrant))
+  const fromApi = ((await p1.client.from('tournament_entrants').select('looking_for_players').eq('id', pairId)).data ?? [])[0]
+  check('...that the captain can see', fromApi?.looking_for_players === true)
+  const plain = (await p3.client.rpc('register_team', { p_tournament: threes.id, p_name: `Full ${run}` })).data as string
+  check('an ordinary signup is not flagged', (await svc.from('tournament_entrants').select('looking_for_players').eq('id', plain).single()).data?.looking_for_players === false)
+
+  const inv = ((await p2.client.from('tournament_invites').select('id').eq('entrant_id', pairId)).data ?? [])[0]?.id as string
+  allowed('the partner accepts', (await p2.client.rpc('respond_to_roster_invite', { p_invite: inv, p_accept: true })).error)
+  await solo.client.rpc('sign_up_solo', { p_tournament: threes.id })
+  allowed('an administrator completes the pair with a solo player',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: pairId, p_user: solo.id })).error)
+  const roster = ((await svc.from('tournament_roster').select('user_id').eq('entrant_id', pairId)).data ?? []).map((r) => r.user_id)
+  check('...making a full team of three', roster.length === 3 && [p1.id, p2.id, solo.id].every((id) => roster.includes(id)))
+  const extra = await person('pr_extra')
+  await extra.client.rpc('sign_up_solo', { p_tournament: threes.id })
+  refused('...which takes nobody else - there is no bench',
+    (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: pairId, p_user: extra.id })).error, /full/)
+}
+
 async function startRules(admin: Person) {
   console.log('\nStarting an event - administrators only')
   const captain = await person('st_cap')
@@ -1234,7 +1284,7 @@ async function startRules(admin: Person) {
   }
   /** An event with `count` approved teams (the first captained by a real user), in the given status. */
   const make = async (label: string, status = 'signup', count = 4): Promise<StartEvent> => {
-    const t = await newTournament({ status, team_size: 1, max_roster: 1, name: `${label} ${run}` })
+    const t = await newTournament({ status, team_size: 1, name: `${label} ${run}` })
     const made = await svc.from('tournament_entrants').insert(
       Array.from({ length: count }, (_, i) => ({ tournament_id: t.id, name: `T${i + 1}`, captain_user_id: i === 0 ? captain.id : admin.id, status: 'approved' })),
     ).select('id, name')
@@ -1369,7 +1419,7 @@ async function laterStages(admin: Person) {
 
   /** A started event: `n` approved teams and the given format, with round 1 (or the whole first stage) drawn. */
   const started = async (label: string, format: TournamentFormat, n = 4) => {
-    const t = await newTournament({ status: 'signup', team_size: 1, max_roster: 1, name: `${label} ${run}` })
+    const t = await newTournament({ status: 'signup', team_size: 1, name: `${label} ${run}` })
     const made = await svc.from('tournament_entrants').insert(
       Array.from({ length: n }, (_, i) => ({ tournament_id: t.id, name: `T${i + 1}`, captain_user_id: i === 0 ? captain.id : admin.id, status: 'approved' })),
     ).select('id, name')
@@ -1458,7 +1508,7 @@ async function laterStages(admin: Person) {
   check('played through, the event finishes itself with a champion', done?.status === 'finished' && !!done.champion_id)
 
   // -- other states and other formats ------------------------------------------------------------------
-  const notLive = await newTournament({ status: 'signup', team_size: 1, max_roster: 1, name: `Not live ${run}` })
+  const notLive = await newTournament({ status: 'signup', team_size: 1, name: `Not live ${run}` })
   refused('a draw for an event that has not started is refused', (await draw(admin, notLive.id, 'swiss', roundTwo.matches)).error, /running event/)
   // Left running on purpose: played out, a one-round Swiss event would finish itself, and the draw would
   // be refused for that instead of for the rule under test.
@@ -1480,7 +1530,7 @@ async function laterStages(admin: Person) {
   // -- handing a captaincy on ------------------------------------------------------------------------------
   const sub = await person('lt_mate')
   const other = await person('lt_other')
-  const ce = await newTournament({ team_size: 2, max_roster: 3, name: `Captains ${run}` })
+  const ce = await newTournament({ team_size: 2, name: `Captains ${run}` })
   const team = (await captain.client.rpc('register_team', { p_tournament: ce.id, p_name: 'Handover', p_logins: [sub.login] })).data as string
   await sub.client.rpc('respond_to_roster_invite', { p_invite: (await sub.client.rpc('my_roster_invites')).data[0].invite_id, p_accept: true })
   await svc.from('tournament_entrants').update({ status: 'approved' }).eq('id', team)
@@ -1505,7 +1555,7 @@ async function laterStages(admin: Person) {
 
   /** A throwaway event, only for its id (a team belonging to somewhere else). */
   async function make2(label: string) {
-    const t = await newTournament({ status: 'signup', team_size: 1, max_roster: 1, name: `${label} ${run}` })
+    const t = await newTournament({ status: 'signup', team_size: 1, name: `${label} ${run}` })
     const e = await svc.from('tournament_entrants').insert({ tournament_id: t.id, name: 'Stranger', captain_user_id: admin.id, status: 'approved' }).select('id').single()
     return { id: e.data!.id as string }
   }
@@ -1522,8 +1572,8 @@ async function officialMatches(admin: Person) {
 
   try {
     /** A live two-team event. Team A is captained by `host`, team B by `capB`. Returns the ids and codes. */
-    const event = async (label: string, bestOf: number) => {
-      const t = await newTournament({ status: 'signup', team_size: 1, max_roster: 1, name: `${label} ${run}`, match_settings: { prep_seconds: 120, starting_seconds: 5 } })
+    const event = async (label: string, bestOf: number, extra: Record<string, unknown> = {}) => {
+      const t = await newTournament({ status: 'signup', team_size: 1, name: `${label} ${run}`, match_settings: { prep_seconds: 120, starting_seconds: 5, ...extra } })
       const made = await svc.from('tournament_entrants').insert([
         { tournament_id: t.id, name: 'Alpha', captain_user_id: host.id, status: 'pending' },
         { tournament_id: t.id, name: 'Bravo', captain_user_id: capB.id, status: 'pending' },
@@ -1621,6 +1671,63 @@ async function officialMatches(admin: Person) {
     refused('the tournament\'s settings cannot be changed by the host', (await host.client.from('rooms').update({ prep_seconds: 30 }).eq('id', r1.id)).error, /fixed by the tournament/)
     refused('an official match cannot be a practice match', (await host.client.from('rooms').update({ practice: true }).eq('id', r1.id)).error, /practice/i)
     refused('and it cannot start before both teams have confirmed', (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r1.id)).error, /Both teams have to enter/)
+    check('an event that fixes no board leaves the host\'s (a new room\'s 10x10, bosses)',
+      linked.board_size === 10 && (linked.square_set ?? 'bosses') === 'bosses', `${linked.board_size} ${linked.square_set}`)
+
+    console.log('  -- the event\'s board, each setting on its own')
+    const { toMatchSettings, DEFAULT_MATCH_RULES } = await import('../src/lib/tournament/matchRules.ts')
+    const { fleetFor } = await import('../src/types/battleship.ts')
+    // The real ceilings of the two boss cuts (206 squares fill 14x14, the small crew's 164 fill 12x12),
+    // and settings built by the app's own toMatchSettings - so this is the whole path, app to room.
+    const caps = { bosses: 14, 'bosses-2v2': 12 }
+    const rules = (over: Record<string, unknown>) => toMatchSettings({ ...DEFAULT_MATCH_RULES, prep_seconds: 120, starting_seconds: 5, ...over }, caps)
+    const tiny = [{ name: 'Destroyer', size: 2 }, { name: 'Cruiser', size: 3 }]
+    const sameFleet = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
+    /** A fresh event with these rules and a room of the host's, set up as given, then linked. */
+    const tryLink = async (tag: string, over: Record<string, unknown>, roomSetup: Record<string, unknown>) => {
+      const ev = await event(`Board ${tag}`, 1, rules(over))
+      const made = await room(host, `BD${tag}`)
+      const setup = await host.client.from('rooms').update(roomSetup).eq('id', made.id)
+      if (setup.error) throw new Error(`room setup: ${setup.error.message}`)
+      return { ev, made, res: await link(host, made.id, ev, ev.codeA) }
+    }
+
+    const all = await tryLink('1', { square_set: 'bosses-2v2', board_size: 8, fleet: tiny }, { board_size: 10, ship_defs: fleetFor(10) })
+    const allRoom = await state(all.made.id)
+    check('everything fixed: the room takes the event\'s squares, size and fleet, in one write',
+      all.res.ok && allRoom.square_set === 'bosses-2v2' && allRoom.board_size === 8 && sameFleet(allRoom.ship_defs, tiny), `${JSON.stringify(all.res)} ${allRoom.square_set} ${allRoom.board_size} ${JSON.stringify(allRoom.ship_defs)}`)
+    refused('...and the host cannot change the board afterwards', (await host.client.from('rooms').update({ board_size: 10 }).eq('id', all.made.id)).error, /fixed by the tournament/)
+    refused('...nor the squares', (await host.client.from('rooms').update({ square_set: 'bosses' }).eq('id', all.made.id)).error, /fixed by the tournament/)
+    refused('...nor the fleet', (await host.client.from('rooms').update({ ship_defs: fleetFor(8) }).eq('id', all.made.id)).error, /fixed by the tournament/)
+
+    const sizeDefault = await tryLink('2', { board_size: 12 }, { board_size: 10, ship_defs: fleetFor(10) })
+    const sd = await state(sizeDefault.made.id)
+    check('size only: the host\'s default fleet becomes the default for the event\'s size, and the squares stay the host\'s',
+      sizeDefault.res.ok && sd.board_size === 12 && sameFleet(sd.ship_defs, fleetFor(12)) && sd.square_set === null, `${sd.board_size} ${sd.square_set} ${JSON.stringify(sd.ship_defs)}`)
+    const sizeCustom = await tryLink('3', { board_size: 12 }, { board_size: 10, ship_defs: tiny })
+    const sc = await state(sizeCustom.made.id)
+    check('size only: a custom host fleet that still fits is kept', sizeCustom.res.ok && sc.board_size === 12 && sameFleet(sc.ship_defs, tiny), JSON.stringify(sc.ship_defs))
+    const sizeTooBig = await tryLink('4', { board_size: 13 }, { square_set: 'bosses-2v2', board_size: 10, ship_defs: fleetFor(10) })
+    check('size only: a room whose squares cannot fill the event\'s size is refused, saying why',
+      !sizeTooBig.res.ok && /13x13 boards.*only fill 12x12.*pick other squares/.test(sizeTooBig.res.error ?? ''), sizeTooBig.res.error)
+    check('...and the room is untouched', (await state(sizeTooBig.made.id)).tournament_match_id === null && (await state(sizeTooBig.made.id)).board_size === 10)
+
+    const setShrinks = await tryLink('5', { square_set: 'bosses-2v2' }, { board_size: 14, ship_defs: fleetFor(14) })
+    const ss = await state(setShrinks.made.id)
+    check('squares only: a host board too big for them shrinks to their ceiling, fleet refit - as the lobby would',
+      setShrinks.res.ok && ss.square_set === 'bosses-2v2' && ss.board_size === 12 && sameFleet(ss.ship_defs, fleetFor(12)), `${ss.board_size} ${JSON.stringify(ss.ship_defs)}`)
+    const setFits = await tryLink('6', { square_set: 'bosses-2v2' }, { board_size: 9, ship_defs: tiny })
+    const sf = await state(setFits.made.id)
+    check('squares only: a host board that fits is left as it is, fleet and all', setFits.res.ok && sf.board_size === 9 && sameFleet(sf.ship_defs, tiny))
+
+    const fleetSmall = await tryLink('7', { fleet: fleetFor(14) }, { board_size: 8, ship_defs: tiny })
+    check('fleet only: a room whose board is too small for the event\'s fleet is refused, saying how big it needs',
+      !fleetSmall.res.ok && /at least 10x10/.test(fleetSmall.res.error ?? ''), fleetSmall.res.error)
+    allowed('(the host makes the board bigger in the lobby)', (await host.client.from('rooms').update({ board_size: 10 }).eq('id', fleetSmall.made.id)).error)
+    const fleetOk = await link(host, fleetSmall.made.id, fleetSmall.ev, fleetSmall.ev.codeA)
+    const fo = await state(fleetSmall.made.id)
+    check('...then it links, keeping the host\'s board and taking the event\'s fleet',
+      fleetOk.ok && fo.board_size === 10 && sameFleet(fo.ship_defs, fleetFor(14)), `${JSON.stringify(fleetOk)} ${fo.board_size}`)
 
     console.log('  -- the other team confirms')
     const wrongB = await confirm(capB, r1.id, 'ZZZZZZ')
@@ -1805,8 +1912,8 @@ async function concurrentEvents(admin: Person) {
   console.log('\nEvents run separately')
   const p = await person('cx1')
   const r = await person('cx2')
-  const evA = await newTournament({ status: 'signup', team_size: 2, max_roster: 2, name: `Concurrent A ${run}` })
-  const evB = await newTournament({ status: 'signup', team_size: 2, max_roster: 2, name: `Concurrent B ${run}` })
+  const evA = await newTournament({ status: 'signup', team_size: 2, name: `Concurrent A ${run}` })
+  const evB = await newTournament({ status: 'signup', team_size: 2, name: `Concurrent B ${run}` })
 
   allowed('a player can captain a team in one event', (await p.client.rpc('register_team', { p_tournament: evA.id, p_name: 'Wolves' })).error)
   allowed('...and another in a second event at the same time (one team per event, not overall)',
@@ -1893,8 +2000,8 @@ async function testEvents(admin: Person, visitor: Person): Promise<string> {
   createdTournaments.push(id)
 
   const ev = (await svc.from('tournaments').select('name, status, is_test, team_size, max_roster').eq('id', id).single()).data
-  check('it is a test event taking signups, with one roster place to spare for a substitution',
-    ev?.is_test === true && ev.status === 'signup' && ev.team_size === 2 && ev.max_roster === 3 && ev.name === `Test ${run}`, JSON.stringify(ev))
+  check('it is a test event taking signups, its rosters exactly the team size (no bench, though the function still asks for one)',
+    ev?.is_test === true && ev.status === 'signup' && ev.team_size === 2 && ev.max_roster === 2 && ev.name === `Test ${run}`, JSON.stringify(ev))
   const teams = ((await svc
     .from('tournament_entrants')
     .select('id, status, captain_user_id, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code)')
@@ -2023,7 +2130,7 @@ async function mirror() {
     // The format goes on the tournament so the database knows this is a knockout-only event and can
     // decide for itself when it is over.
     const fmt: TournamentFormat = { qualifier: { format: 'none' }, knockout: { ...cfg.opts } }
-    const tournament = await newTournament({ status: 'live', team_size: 1, max_roster: 1, format: fmt })
+    const tournament = await newTournament({ status: 'live', team_size: 1, format: fmt })
 
     const ids = Array.from({ length: cfg.n }, (_, i) => `e${i + 1}`)
     const uuid = new Map<string, string>()
@@ -2210,7 +2317,7 @@ async function mirror() {
     sawFinished > 0 && sawReopened > 0, `finished ${sawFinished}, reopened ${sawReopened}`)
 
   // Non-knockout matches have no pointers: scoring one must touch nothing else.
-  const T = await newTournament({ status: 'live', team_size: 1, max_roster: 1 })
+  const T = await newTournament({ status: 'live', team_size: 1 })
   const esInsert = await svc.from('tournament_entrants').insert(
     ['S1', 'S2', 'S3', 'S4'].map((n) => ({ tournament_id: T.id, name: n, captain_user_id: admin.id })),
   ).select('id')

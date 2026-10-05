@@ -4,6 +4,7 @@ import { LoadingScreen } from "../../BrandMark";
 import { useT } from "../../../lib/language";
 import { tournamentComplete } from "../../../lib/tournament/complete";
 import "../../Tournament.css";
+import { EventRulesPanel } from "./EventRulesPanel";
 import { MatchRulesPanel } from "./MatchRulesPanel";
 import { OfficialFailuresPanel } from "./OfficialFailuresPanel";
 import { OverduePanel } from "./OverduePanel";
@@ -99,6 +100,7 @@ export function DeskView({ eventId }: { eventId: string }) {
       <PairingPanel data={data} act={act} busy={busy} />
       <TeamsPanel data={data} act={act} busy={busy} />
       <MatchRulesPanel data={data} act={act} busy={busy} />
+      {event.status !== "cancelled" && <EventRulesPanel data={data} act={act} busy={busy} />}
     </div>
   );
 }

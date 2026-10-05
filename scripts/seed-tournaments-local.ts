@@ -52,7 +52,7 @@ if (process.argv.includes('--clear')) {
 async function event(name: string, status: string, extra: Record<string, unknown> = {}) {
   const r = await svc
     .from('tournaments')
-    .insert({ name, status, description: DEMO_MARK, team_size: 2, max_roster: 3, ...extra })
+    .insert({ name, status, description: DEMO_MARK, team_size: 2, ...extra })
     .select('id')
     .single()
   if (r.error) throw new Error(`${name}: ${r.error.message}`)

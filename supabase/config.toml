@@ -425,6 +425,12 @@ verify_jwt = false
 [functions.support]
 verify_jwt = false
 
+# Recaps are public pages and a signed-out visitor sees the same scoreboard, so the ratings behind it
+# must be too. The function only reads public archive data, and the most a caller can make it do is
+# recompute a snapshot that is already stale - which the advisory lock collapses to one at a time.
+[functions.battle-ratings]
+verify_jwt = false
+
 # pg-delta is the schema diff engine for db diff / db pull / db remote commit.
 # Set enabled = false to fall back to the legacy migra engine.
 [experimental.pgdelta]

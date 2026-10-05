@@ -49,7 +49,7 @@ try {
   const capB = await person('ol_capb')
   const stranger = await person('ol_stranger')
 
-  const t = await svc.from('tournaments').insert({ name: `Lobby Cup ${run}`, status: 'signup', team_size: 1, max_roster: 1, match_settings: { prep_seconds: 120, starting_seconds: 5 } }).select('id').single()
+  const t = await svc.from('tournaments').insert({ name: `Lobby Cup ${run}`, status: 'signup', team_size: 1, match_settings: { prep_seconds: 120, starting_seconds: 5 } }).select('id').single()
   trackTournament(t.data!.id as string)
   const made = await svc.from('tournament_entrants').insert([
     { tournament_id: t.data!.id, name: 'Alpha', captain_user_id: host.id, status: 'pending' },

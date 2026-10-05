@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { fetchMatchSettings, saveMatchSettings } from "../../../lib/tournament/api";
 import { useT } from "../../../lib/language";
-import { rulesFrom, type MatchRules } from "../../../lib/tournament/matchRules";
-import { MatchRulesEditor } from "../MatchRulesEditor";
+import { rulesFrom, rulesProblem, sameRules, toMatchSettings, type MatchRules } from "../../../lib/tournament/matchRules";
+import { MatchRulesEditor, SET_CAPS } from "../MatchRulesEditor";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
 /**
- * The clock official matches are played by. Editable at any point in the event: a change applies to
- * rooms linked from then on, and never to one already linked - a match that has been agreed under one
- * set of rules is not re-timed under another.
+ * The clock and board official matches are played by. Editable at any point in the event: a change
+ * applies to rooms linked from then on, and never to one already linked - a match that has been agreed
+ * under one set of rules is not re-timed or re-boarded under another.
  */
 export function MatchRulesPanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
   const t = useT();
@@ -35,7 +35,7 @@ export function MatchRulesPanel({ data, act, busy }: { data: DeskData; act: Desk
 
   if (!data.event || !rules || !saved) return null;
   if (data.event.status !== "signup" && data.event.status !== "live") return null;
-  const changed = rules.prep_seconds !== saved.prep_seconds || rules.starting_seconds !== saved.starting_seconds;
+  const changed = !sameRules(rules, saved);
 
   return (
     <div className="panel stack">
@@ -43,10 +43,10 @@ export function MatchRulesPanel({ data, act, busy }: { data: DeskData; act: Desk
       <MatchRulesEditor rules={rules} onChange={setRules} />
       <div className="row">
         <button
-          disabled={busy || !changed}
+          disabled={busy || !changed || rulesProblem(rules, SET_CAPS) !== null}
           onClick={() =>
             void act(async () => {
-              await saveMatchSettings(data.event!.id, { ...rules });
+              await saveMatchSettings(data.event!.id, toMatchSettings(rules, SET_CAPS));
               setSaved(rules);
             })
           }

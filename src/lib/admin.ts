@@ -17,6 +17,27 @@ export interface AdminStatus {
 }
 
 /**
+ * The admin/owner answer for one account, shared by every caller.
+ *
+ * The top bar and the page under it both ask, and every auth event made each of them ask again -
+ * including the SIGNED_IN supabase-js re-announces whenever a tab regains focus, so a player flicking
+ * between tabs was four RPCs a flick for an answer that cannot have changed. Held per account id, so
+ * a real sign-in or sign-out (a different id) still asks afresh. A failed call is not kept.
+ */
+let adminAnswer: { userId: string; status: Promise<{ isAdmin: boolean; isOwner: boolean }> } | null = null;
+
+function askAdmin(userId: string) {
+  if (adminAnswer?.userId !== userId) {
+    const status = Promise.all([supabase.rpc("is_admin"), supabase.rpc("is_owner")]).then(([admin, owner]) => {
+      if (admin.error || owner.error) adminAnswer = null;
+      return { isAdmin: !!admin.data, isOwner: !!owner.data };
+    });
+    adminAnswer = { userId, status };
+  }
+  return adminAnswer.status;
+}
+
+/**
  * Whether the signed-in account may manage the record books.
  *
  * Asks the database rather than inferring anything client-side. Nothing here is a security
@@ -38,18 +59,18 @@ export function useAdminStatus(enabled = true): AdminStatus {
     }
     let cancelled = false;
 
-    async function check() {
-      const [{ data: admin }, { data: owner }] = await Promise.all([
-        supabase.rpc("is_admin"),
-        supabase.rpc("is_owner"),
-      ]);
-      if (!cancelled) setStatus({ isAdmin: !!admin, isOwner: !!owner, loading: false });
+    async function check(userId: string | null) {
+      // No session, no rights: is_admin() reads auth.uid(), which is null here, so asking is two
+      // guaranteed `false`s.
+      const answer = userId ? await askAdmin(userId) : { isAdmin: false, isOwner: false };
+      if (!cancelled) setStatus({ ...answer, loading: false });
     }
 
-    void check();
     // Re-checked on sign-in/out: the answer is a property of the session, and without this the
-    // panel would stay hidden until a reload after logging in.
-    const { data: sub } = supabase.auth.onAuthStateChange(() => void check());
+    // panel would stay hidden until a reload after logging in. A re-announced session for the same
+    // account is answered from askAdmin's copy, not the network. INITIAL_SESSION fires on subscribe,
+    // so this also covers the first check.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => void check(session?.user.id ?? null));
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();

@@ -40,13 +40,31 @@ function publish(next: AccountProfile | null): void {
 }
 
 /**
+ * The account adopt() last ran for - `undefined` until the first run, `null` for signed out.
+ *
+ * supabase-js re-announces the session far more often than it changes: INITIAL_SESSION on subscribe
+ * (on top of the getSession read in start), SIGNED_IN every time a tab comes back into focus, and
+ * TOKEN_REFRESHED on the hour. Each used to re-upsert the profile and read it back - in October 2026
+ * one player switching tabs was ~110 profile requests in ten minutes, and the profile, admin and owner
+ * calls together were around 40% of the project's API log lines. Same account, nothing to redo.
+ */
+let adoptedFor: string | null | undefined;
+
+/**
  * Publishes the session's identity, then fills in the chosen nickname.
  *
  * Two steps on purpose: the nickname is a second round trip, and the top bar shouldn't sit empty
  * waiting for it. The first publish reuses the nickname already in hand when the user id hasn't
  * changed (a token refresh, say) so an established name doesn't flicker back to the Twitch one.
+ *
+ * Skipped for the account already adopted unless `force`: a Twitch link and a USER_UPDATED change the
+ * identity behind the same id, and those must be re-read.
  */
-async function adopt(user: User | null): Promise<void> {
+async function adopt(user: User | null, force = false): Promise<void> {
+  const id = user?.id ?? null;
+  if (!force && id === adoptedFor) return;
+  adoptedFor = id;
+
   const base = profileFromUser(user);
   if (!base) {
     publish(null);
@@ -93,7 +111,8 @@ function start(): void {
     // pre-login one.
     const linked = await completeTwitchLogin();
     if (linked) {
-      await adopt(linked);
+      // Forced: the id is the same one the session already had, but the identity behind it is new.
+      await adopt(linked, true);
       return;
     }
     const { data } = await supabase.auth.getSession();
@@ -103,9 +122,9 @@ function start(): void {
   // Never unsubscribed: this is app-lifetime state, not a component's. Clearing the memoised
   // sign-in promise on every change makes the next ensureSignedIn() read the new session rather
   // than the one it captured at startup.
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.auth.onAuthStateChange((event, session) => {
     resetSignInCache();
-    void adopt(session?.user ?? null);
+    void adopt(session?.user ?? null, event === "USER_UPDATED");
   });
 }
 

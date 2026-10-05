@@ -62,7 +62,7 @@ try {
 
   console.log('\nCreating and opening an event')
   const created = await as(admin, () => api.createEvent({
-    name: `API Cup ${run}`, description: 'Fall league', team_size: 2, max_roster: 3, max_entrants: 8,
+    name: `API Cup ${run}`, description: 'Fall league', team_size: 3, max_entrants: 8,
     signup_closes_at: new Date(Date.now() + 7 * day).toISOString(),
   }))
   check('an admin can create an event', !!created.value, created.error)
@@ -74,7 +74,7 @@ try {
   check('...nor for a signed-in player', !(await as(stranger, () => api.fetchFrontPageEvents(Date.now()))).value!.some((e) => e.id === eventId))
   check('...and fetching it directly finds nothing', (await as(stranger, () => api.fetchEvent(eventId))).value === null)
   check('...but an admin can fetch it', (await as(admin, () => api.fetchEvent(eventId))).value?.status === 'draft')
-  check('a player cannot create an event', !!(await as(stranger, () => api.createEvent({ name: 'Nope Cup', description: '', team_size: 1, max_roster: 1, max_entrants: null, signup_closes_at: null }))).error)
+  check('a player cannot create an event', !!(await as(stranger, () => api.createEvent({ name: 'Nope Cup', description: '', team_size: 1, max_entrants: null, signup_closes_at: null }))).error)
 
   await as(admin, () => api.setEventStatus(eventId, 'signup'))
   const front = (await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!
@@ -85,7 +85,7 @@ try {
     frontPageBanners(front, new Date()).find((b) => b.event.id === eventId)?.kind === 'signup')
   const detail = (await as(null, () => api.fetchEvent(eventId))).value
   check('an anonymous visitor can read the event page data',
-    detail?.name === `API Cup ${run}` && detail.team_size === 2 && detail.max_roster === 3 && detail.description === 'Fall league')
+    detail?.name === `API Cup ${run}` && detail.team_size === 3 && detail.description === 'Fall league' && detail.rules.square_set === null)
 
   console.log('\nSigning a team up')
   const noTeam = await as(stranger, () => api.registerTeam(eventId, 'X', []))
@@ -127,6 +127,26 @@ try {
   const adminView = (await as(admin, () => api.adminTeams(eventId))).value!
   check('an admin sees the pending team with no entry code yet', adminView.find((t) => t.id === teamId)?.entry_code === null && adminView.find((t) => t.id === teamId)?.status === 'pending')
   check('a player cannot use the admin listing to see other teams', ((await as(stranger, () => api.adminTeams(eventId))).value ?? []).length === 0)
+  check('...which counts no pending invitations once they are answered or withdrawn, and is not a pair',
+    adminView.find((t) => t.id === teamId)?.pending_invites === 0 && adminView.find((t) => t.id === teamId)?.looking_for_players === false, JSON.stringify(adminView.find((t) => t.id === teamId)))
+
+  console.log('\nPairs, through the api')
+  const pairTeam = await as(stranger, () => api.registerTeam(eventId, 'Api Pair', [invitee.login], true))
+  check('registerTeam(..., true) signs up a pair', !!pairTeam.value, pairTeam.error)
+  const pairRow = (await as(admin, () => api.adminTeams(eventId))).value!.find((t) => t.id === pairTeam.value)
+  check('...which the admin listing shows as a pair, its partner\'s invitation still pending',
+    pairRow?.looking_for_players === true && pairRow.pending_invites === 1 && pairRow.roster.length === 1, JSON.stringify(pairRow))
+  check('...and fetchTeams carries the flag for the captain',
+    (await as(stranger, () => api.fetchTeams(eventId))).value!.find((t) => t.id === pairTeam.value)?.looking_for_players === true)
+  check('(withdrawn again, to keep the rest of this run as it was)', !(await as(stranger, () => api.withdrawTeam(pairTeam.value!))).error)
+
+  console.log('\nThe event\'s board, through the api')
+  const fixed = { prep_seconds: 180, starting_seconds: 10, square_set: 'bosses', board_size: 12, ship_defs: [{ name: 'Carrier', size: 5 }] }
+  check('an admin can save board rules', !(await as(admin, () => api.saveMatchSettings(eventId, fixed))).error)
+  const withRules = (await as(stranger, () => api.fetchEvent(eventId))).value
+  check('...and anyone reading the event gets them back as rules - squares, size and fleet',
+    withRules?.rules.square_set === 'bosses' && withRules.rules.board_size === 12 && withRules.rules.fleet?.length === 1 && withRules.rules.prep_seconds === 180, JSON.stringify(withRules?.rules))
+  await as(admin, () => api.saveMatchSettings(eventId, {}))
   check('the captain has no entry code before approval', (await as(captain, () => api.fetchEntryCode(teamId))).value === null)
   await as(admin, () => api.setTeamStatus(teamId, 'approved'))
   const code = (await as(captain, () => api.fetchEntryCode(teamId))).value

@@ -51,7 +51,7 @@ try {
 
   /** A live event, started through the real function, with `n` approved teams. */
   const startEvent = async (label: string, format: TournamentFormat, names: string[]) => {
-    const t = await svc.from('tournaments').insert({ name: `${label} ${run}`, status: 'signup', team_size: 1, max_roster: 1 }).select('id').single()
+    const t = await svc.from('tournaments').insert({ name: `${label} ${run}`, status: 'signup', team_size: 1 }).select('id').single()
     trackTournament(t.data!.id as string)
     const made = await svc.from('tournament_entrants').insert(names.map((name) => ({ tournament_id: t.data!.id, name, captain_user_id: admin.id, status: 'approved' }))).select('id, name')
     const order = names.map((n) => made.data!.find((e) => e.name === n)!.id as string)
@@ -115,7 +115,7 @@ try {
     ((await svc.from('tournament_matches').select('id', { count: 'exact', head: true }).eq('tournament_id', removal.id).eq('result_kind', 'forfeit')).count ?? 0) >= 1)
 
   // -- pairing solo players ---------------------------------------------------------------------
-  const pairing = await svc.from('tournaments').insert({ name: `Desk Pairing ${run}`, status: 'signup', team_size: 2, max_roster: 3 }).select('id').single()
+  const pairing = await svc.from('tournaments').insert({ name: `Desk Pairing ${run}`, status: 'signup', team_size: 2 }).select('id').single()
   trackTournament(pairing.data!.id as string)
   const solos: Person[] = []
   for (const label of ['dk_p1', 'dk_p2', 'dk_p3', 'dk_p4', 'dk_p5']) {

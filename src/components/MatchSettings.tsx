@@ -156,7 +156,9 @@ export function MatchSettings({ room, isHost, onError }: Props) {
         : `${t("custom fleet", "flotte personnalisée")}, ${shipDefs.length} ${t("ships", "navires")}`
     } ·${shownSet.label}${cutSuffix} · ${formatDuration(
       prepSeconds
-    )} ${t("prep", "prépa")}`;
+    )} ${t("prep", "prépa")}` +
+    // Said outright, because every control below is greyed out and nothing else explains why.
+    (official ? ` · ${t("set by the event", "fixés par l'événement")}` : "");
 
   // Everyone sees the settings; only the host gets the buttons. A spectator or a player who
   // wandered in deserves to know what they're about to play without having to ask.

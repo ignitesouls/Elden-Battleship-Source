@@ -116,11 +116,10 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [teamSize, setTeamSize] = useState(2);
-  const [subs, setSubs] = useState(1);
   const [maxTeams, setMaxTeams] = useState("");
   const [closes, setCloses] = useState("");
 
-  const valid = name.trim().length >= 3 && teamSize >= 1 && teamSize <= 10 && subs >= 0;
+  const valid = name.trim().length >= 3 && teamSize >= 1 && teamSize <= 10;
 
   return (
     <div className="stack" style={{ gap: "0.6rem", border: "1px solid var(--panel-border)", borderRadius: 8, padding: "0.9rem" }}>
@@ -140,10 +139,6 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
           <input type="number" min={1} max={10} value={teamSize} onChange={(e) => setTeamSize(Number(e.target.value))} style={{ width: "5rem" }} />
         </label>
         <label className="stack" style={{ gap: "0.25rem" }}>
-          <span className="muted">{t("Substitutes allowed", "Remplaçants autorisés")}</span>
-          <input type="number" min={0} max={6} value={subs} onChange={(e) => setSubs(Number(e.target.value))} style={{ width: "5rem" }} />
-        </label>
-        <label className="stack" style={{ gap: "0.25rem" }}>
           <span className="muted">{t("Max teams (blank = no limit)", "Équipes max (vide = illimité)")}</span>
           <input type="number" min={2} value={maxTeams} onChange={(e) => setMaxTeams(e.target.value)} style={{ width: "7rem" }} />
         </label>
@@ -155,7 +150,15 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
       <span className="muted" style={{ fontSize: "0.75rem" }}>
         {teamSize === 1
           ? t("Team size 1 makes this an individual event.", "Une taille d'équipe de 1 en fait un événement individuel.")
-          : t(`Teams of ${teamSize}, up to ${teamSize + subs} on a roster.`, `Équipes de ${teamSize}, jusqu'à ${teamSize + subs} par effectif.`)}
+          : teamSize === 3
+            ? t(
+                "Teams of 3. Players can sign up solo, as a pair, or as a whole team - you complete pairs with solo players.",
+                "Équipes de 3. Les joueurs peuvent s'inscrire seuls, en duo ou en équipe complète - vous complétez les duos avec des joueurs solo.",
+              )
+            : t(
+                `Teams of ${teamSize}. Players can sign up solo or as a whole team.`,
+                `Équipes de ${teamSize}. Les joueurs peuvent s'inscrire seuls ou en équipe complète.`,
+              )}
       </span>
       <div className="row">
         <button
@@ -167,7 +170,6 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
                 name: name.trim(),
                 description: description.trim(),
                 team_size: teamSize,
-                max_roster: teamSize + subs,
                 max_entrants: maxTeams ? Number(maxTeams) : null,
                 signup_closes_at: closes ? new Date(closes).toISOString() : null,
               });
@@ -420,7 +422,9 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                   {team.status === "withdrawn" && <span className="badge">{t("withdrawn", "retirée")}</span>}
                   {event.team_size > 1 && short(team) > 0 && team.status !== "rejected" && team.status !== "withdrawn" && (
                     <span className="badge badge--warn" style={{ marginLeft: "0.3rem" }}>
-                      {t(`${short(team)} short`, `il manque ${short(team)}`)}
+                      {team.looking_for_players
+                        ? t("pair - needs a solo player", "duo - attend un joueur solo")
+                        : t(`${short(team)} short`, `il manque ${short(team)}`)}
                     </span>
                   )}
                 </span>

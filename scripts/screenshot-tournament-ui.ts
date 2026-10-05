@@ -47,7 +47,7 @@ try {
   const gina = await person('scr_gina')
 
   const mk = async (name: string, extra: Record<string, unknown> = {}) => {
-    const r = await svc.from('tournaments').insert({ name: `${name} ${run}`, status: 'signup', team_size: 3, max_roster: 4, ...extra }).select('id').single()
+    const r = await svc.from('tournaments').insert({ name: `${name} ${run}`, status: 'signup', team_size: 3, ...extra }).select('id').single()
     if (r.error) throw new Error(r.error.message)
     trackTournament(r.data.id as string)
     return r.data.id as string
@@ -80,7 +80,7 @@ try {
   await look('08_admin_approved', admin, '#/admin', [clickIn(`Screen Cup ${run}`, 'Manage teams'), clickIn('Screen Wolves', 'Approve')])
 
   // -- the start page: administrators only ---------------------------------------------------------
-  const startable = await mk('Startable Cup', { team_size: 1, max_roster: 1, signup_closes_at: soon })
+  const startable = await mk('Startable Cup', { team_size: 1, signup_closes_at: soon })
   await svc.from('tournament_entrants').insert(
     ['Anchors', 'Buoys', 'Cutters', 'Drifters', 'Ebbtide', 'Flotsam'].map((name) => ({ tournament_id: startable, name, captain_user_id: admin.id, status: 'approved' })),
   )

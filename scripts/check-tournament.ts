@@ -1237,7 +1237,8 @@ console.log('\nOfficial match rules')
   check('one timer stated leaves the other on its default', rulesFrom({ prep_seconds: 90 }).starting_seconds === DEFAULT_MATCH_RULES.starting_seconds)
   check('a timer of the wrong type is ignored, not passed to a room', rulesFrom({ prep_seconds: 'abc', starting_seconds: null }).prep_seconds === DEFAULT_MATCH_RULES.prep_seconds)
   check('...as are zero, negative and non-finite ones', [0, -5, Infinity, NaN].every((bad) => rulesFrom({ prep_seconds: bad }).prep_seconds === DEFAULT_MATCH_RULES.prep_seconds))
-  check('extra fields are dropped (the board size is not something an event dictates)', !('board_size' in rulesFrom({ board_size: 14, prep_seconds: 60 })))
+  check('unknown fields are dropped', !('weather' in rulesFrom({ weather: 'rain', prep_seconds: 60 })))
+  check('a board size can be fixed on its own, with no square set', rulesFrom({ board_size: 14, prep_seconds: 60 }).board_size === 14)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1464,6 +1465,98 @@ console.log('\nPairing solo signups into teams')
   let threw = false
   try { suggestPairings({ players: [], teamSize: 0, mode: 'random' }) } catch { threw = true }
   check('a team size below 1 is refused', threw)
+
+  // A pair (2 of 3, partner still deciding) needs ONE solo - the caller counts the pending invitation.
+  const pairFill = suggestPairings({
+    players: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    teamSize: 3, mode: 'random',
+    openTeams: [{ id: 'pair', needs: 1 }],
+  })
+  check('a pair is completed with exactly one solo, and the other two are left for a team of their own (none - too few)',
+    pairFill.fills.length === 1 && pairFill.fills[0].playerIds.length === 1 && pairFill.leftover.length === 2, JSON.stringify(pairFill))
+}
+
+{
+  console.log('\nOfficial match rules (what an event fixes for its rooms)')
+  const { rulesFrom, toMatchSettings, withSquareSet, sameRules, rulesProblem, minBoardFor, DEFAULT_MATCH_RULES } = await import('../src/lib/tournament/matchRules.ts')
+  const { fleetFor, BOARD_SIZES } = await import('../src/types/battleship.ts')
+  // Stand-in ceilings, so this needs none of the square sets' JSON: 'big' fills 14x14, 'small' 9x9.
+  const caps = { bosses: 14, big: 14, small: 9 }
+  const R = DEFAULT_MATCH_RULES
+  const tiny = [{ name: 'Destroyer', size: 2 }]
+  const huge = Array.from({ length: 20 }, () => ({ name: 'Carrier', size: 5 })) // 100 squares: needs 15x15, which does not exist
+
+  check('an empty object is the room defaults, everything left to the host',
+    sameRules(rulesFrom({}), R) && rulesFrom(null).square_set === null && rulesFrom({}).fleet === null)
+  check('a board size can be fixed on its own', rulesFrom({ board_size: 10 }).board_size === 10)
+  check('a board size not on the menu is dropped', rulesFrom({ board_size: 15 }).board_size === null && rulesFrom({ board_size: '10' }).board_size === null)
+  check('a fleet is read back', JSON.stringify(rulesFrom({ ship_defs: tiny }).fleet) === JSON.stringify(tiny))
+  check('a malformed or empty fleet is dropped, not trusted',
+    rulesFrom({ ship_defs: [] }).fleet === null && rulesFrom({ ship_defs: [{ name: 'x' }] }).fleet === null && rulesFrom({ ship_defs: 'big' }).fleet === null)
+
+  const timersOnly = toMatchSettings({ ...R, prep_seconds: 120 }, caps)
+  check('host\'s choice writes only the clock', JSON.stringify(Object.keys(timersOnly).sort()) === '["prep_seconds","starting_seconds"]', JSON.stringify(timersOnly))
+  const setOnly = toMatchSettings({ ...R, square_set: 'small' }, caps)
+  check('a set on its own is written alone, with the lookups linking needs',
+    setOnly.square_set === 'small' && !('board_size' in setOnly) && !('ship_defs' in setOnly) && !!setOnly.set_caps && !!setOnly.default_fleets, Object.keys(setOnly).join())
+  const sizeOnly = toMatchSettings({ ...R, board_size: 8 }, caps)
+  check('a size on its own is written alone - no set, and no fleet forced on the host',
+    sizeOnly.board_size === 8 && !('square_set' in sizeOnly) && !('ship_defs' in sizeOnly) && !!sizeOnly.default_fleets, Object.keys(sizeOnly).join())
+  const fleetOnly = toMatchSettings({ ...R, fleet: tiny }, caps)
+  check('a fleet on its own is written alone', JSON.stringify(fleetOnly.ship_defs) === JSON.stringify(tiny) && !('board_size' in fleetOnly) && !('square_set' in fleetOnly))
+  const lookups = sizeOnly.default_fleets as Record<string, unknown>
+  check('the lookups are every set\'s ceiling and the default fleet for every board size',
+    JSON.stringify(sizeOnly.set_caps) === JSON.stringify(caps) &&
+      BOARD_SIZES.every((n) => JSON.stringify(lookups[String(n)]) === JSON.stringify(fleetFor(n))))
+  const all = { ...R, square_set: 'big', board_size: 8, fleet: tiny }
+  check('the stored form reads back as the same rules', sameRules(rulesFrom(toMatchSettings(all, caps)), all))
+
+  check('each setting on its own is always saveable',
+    [{ square_set: 'small' }, { board_size: 5 }, { board_size: 14 }, { fleet: tiny }, { fleet: fleetFor(14) }].every((x) => rulesProblem({ ...R, ...x }, caps) === null))
+  check('a size the fixed squares cannot fill is a problem', /9x9/.test(rulesProblem({ ...R, square_set: 'small', board_size: 12 }, caps) ?? ''))
+  check('a fleet over half the fixed board is a problem', /more than half of a 7x7/.test(rulesProblem({ ...R, board_size: 7, fleet: fleetFor(14) }, caps) ?? ''))
+  check('a fleet bigger than the fixed squares can ever hold is a problem',
+    /fill 9x9 at most/.test(rulesProblem({ ...R, square_set: 'small', fleet: fleetFor(14) }, caps) ?? ''), String(rulesProblem({ ...R, square_set: 'small', fleet: fleetFor(14) }, caps)))
+  check('a fleet too big for any board is a problem', /too big for any board/.test(rulesProblem({ ...R, fleet: huge }, caps) ?? ''))
+  check('the smallest board a fleet fits is where it covers at most half', minBoardFor(tiny) === 5 && minBoardFor(fleetFor(10)) === 7 && minBoardFor(huge) === null,
+    `${minBoardFor(tiny)} ${minBoardFor(fleetFor(10))} ${minBoardFor(huge)}`)
+
+  const onBig = { ...R, square_set: 'big', board_size: 12 }
+  check('moving to a smaller set pulls a fixed size down to its ceiling', withSquareSet(onBig, 'small', caps).board_size === 9)
+  check('moving to a set it still fits keeps the size', withSquareSet({ ...onBig, board_size: 8 }, 'small', caps).board_size === 8)
+  check('the host\'s choice of set leaves a fixed size alone', withSquareSet(onBig, null, caps).board_size === 12)
+  check('...and a size left to the host stays the host\'s', withSquareSet({ ...R }, 'small', caps).board_size === null)
+}
+
+{
+  console.log('\nThe rulebook says what the event set')
+  const { rulebook } = await import('../src/lib/tournament/rulebook.ts')
+  const { DEFAULT_MATCH_RULES } = await import('../src/lib/tournament/matchRules.ts')
+  const fleet = [{ name: 'Carrier', size: 5 }, { name: 'Destroyer', size: 2 }]
+  const book = (over: Record<string, unknown>, teamSize = 3, setLabel: string | null = null, lang: 'en' | 'fr' = 'en') =>
+    rulebook({ eventName: 'Cup', teamSize, rules: { ...DEFAULT_MATCH_RULES, ...over }, setLabel, bossBoard: true, format: null }, lang)
+  const rule = (sections: ReturnType<typeof book>, n: string) =>
+    sections.flatMap((s) => s.rules).find((r) => r.n === n)!.body.filter((b): b is string => typeof b === 'string').join(' ')
+
+  const hosts = rule(book({}), '4.1')
+  check('nothing fixed: the host chooses size and fleet, and nothing claims the event set them',
+    /host chooses the board size and the fleet/.test(hosts) && !/event sets/.test(hosts), hosts)
+  const sizeOnly = rule(book({ board_size: 12 }), '4.1')
+  check('a size fixed on its own is in the rules - with no square set', /The board is 12x12\. Each match's host chooses the fleet/.test(sizeOnly), sizeOnly)
+  const fleetOnly = rule(book({ fleet }), '4.1')
+  check('a fleet fixed on its own is in the rules, ship by ship, and the size is the host\'s',
+    /Every fleet is 2 ships: Carrier \(5\), Destroyer \(2\)\. Each match's host chooses the board size/.test(fleetOnly), fleetOnly)
+  const everything = rule(book({ board_size: 8, fleet }, 3, 'Bosses - Small crew'), '4.1')
+  check('everything fixed: squares, size and fleet all named, and the lock explained',
+    /played on Bosses - Small crew\./.test(everything) && /The board is 8x8, and every fleet is 2 ships/.test(everything) && /locked from then on/.test(everything), everything)
+  const fr = rule(book({ board_size: 8, fleet }, 3, 'Bosses', 'fr'), '4.1')
+  check('...and in French', /Le plateau fait 8x8, et chaque flotte compte 2 navires/.test(fr), fr)
+
+  const threes = rule(book({}, 3), '2.2')
+  check('a three-player event: no substitutes, and pairs are an option', /exactly 3 players; there are no substitutes/.test(threes) && /as a pair/.test(threes), threes)
+  const fours = rule(book({}, 4), '2.2')
+  check('other crew sizes: no substitutes, and no pairs', /exactly 4 players; there are no substitutes/.test(fours) && !/pair/.test(fours), fours)
+  check('an individual event says nothing about crews or substitutes', !/substitute/.test(rule(book({}, 1), '2.2')))
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) FAILED.`)

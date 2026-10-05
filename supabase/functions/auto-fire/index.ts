@@ -271,6 +271,8 @@ const MIN_SHOTS_FOR_ACCURACY = 5
 interface PersonalBests {
   hits: number | null
   sunk: number | null
+  /** Most shots taken in one game, hits and misses together. */
+  shots: number | null
   accuracyRatio: number | null
   pace: number | null
 }
@@ -336,11 +338,12 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
   // Voided games count for nothing anywhere on the site, PBs included - see lib/voidedMatches.
   const struck = new Set((voided.data ?? []).map((r) => r.match_key))
 
-  const bests: PersonalBests = { hits: null, sunk: null, accuracyRatio: null, pace: null }
+  const bests: PersonalBests = { hits: null, sunk: null, shots: null, accuracyRatio: null, pace: null }
   for (const g of games) {
     if (struck.has(g.match_key)) continue
     if (g.hits > 0) bests.hits = Math.max(bests.hits ?? 0, g.hits)
     if (g.sunk > 0) bests.sunk = Math.max(bests.sunk ?? 0, g.sunk)
+    if (g.shots > 0) bests.shots = Math.max(bests.shots ?? 0, g.shots)
     if (g.shots >= MIN_SHOTS_FOR_ACCURACY && g.hits > 0) {
       bests.accuracyRatio = Math.max(bests.accuracyRatio ?? 0, g.hits / g.shots)
     }
@@ -398,11 +401,20 @@ async function pbPayload(
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }
     const b = hit.bests
-    if (b.hits === null && b.sunk === null && b.accuracyRatio === null && b.pace === null) return null
+    if (
+      b.hits === null &&
+      b.sunk === null &&
+      b.shots === null &&
+      b.accuracyRatio === null &&
+      b.pace === null
+    ) {
+      return null
+    }
 
     const beaten: string[] = []
     if (b.hits !== null && tally.hits > b.hits) beaten.push('hits')
     if (b.sunk !== null && tally.sunk > b.sunk) beaten.push('sunk')
+    if (b.shots !== null && tally.shots > b.shots) beaten.push('shots')
     if (
       b.accuracyRatio !== null &&
       tally.shots >= MIN_SHOTS_FOR_ACCURACY &&
@@ -416,6 +428,7 @@ async function pbPayload(
       pb: {
         hits: b.hits,
         sunk: b.sunk,
+        shots: b.shots,
         accuracy: b.accuracyRatio === null ? null : Math.round(b.accuracyRatio * 100),
         pace: b.pace === null ? null : Math.round(b.pace),
       },

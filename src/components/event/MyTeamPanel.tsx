@@ -76,9 +76,11 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
   }
 
   const pending = invites.filter((i) => i.status === "pending");
-  const spare = event.max_roster - team.roster.length - pending.length;
+  const spare = event.team_size - team.roster.length - pending.length;
   const named = parseLogins(more);
   const short = Math.max(0, event.team_size - team.roster.length);
+  // A pair is waiting on an administrator for its third, not on an invitation of its own.
+  const awaitingSolo = team.looking_for_players && team.roster.length + pending.length < event.team_size;
 
   return (
     <div className="panel stack">
@@ -105,7 +107,12 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
       )}
 
       <p className="muted" style={{ margin: 0 }}>
-        {team.status === "approved"
+        {awaitingSolo
+          ? t(
+              "You've signed up as a pair. An administrator will add a solo player to make your team of three - they'll appear on the roster here. You can still invite a third yourself.",
+              "Vous êtes inscrits en duo. Un administrateur ajoutera un joueur solo pour compléter votre équipe de trois - il apparaîtra ici. Vous pouvez aussi inviter un troisième joueur vous-mêmes.",
+            )
+          : team.status === "approved"
           ? short === 0
             ? t("You're in. Your team is full and approved.", "Vous êtes inscrits. Votre équipe est complète et approuvée.")
             : t(
@@ -120,7 +127,7 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
 
       <div>
         <div className="muted" style={{ marginBottom: "0.2rem" }}>
-          {t("Roster", "Équipe")} ({team.roster.length}/{event.max_roster})
+          {t("Roster", "Équipe")} ({team.roster.length}/{event.team_size})
         </div>
         <div className="t-list">
           {team.roster.map((m) => (

@@ -7,7 +7,7 @@ import { CaptainCards } from "../components/CaptainCards";
 import { HallOfFame, BattleLine } from "../components/HallOfFame";
 import { squareWeights, rateBattles, type BattleRating } from "../lib/battleRating";
 import { setMatchVoided, useAdminStatus } from "../lib/admin";
-import { boardResolver } from "../hooks/useBattleRatings";
+import { boardResolver } from "../lib/battleRatingBoards";
 import type { ParticipantRow } from "../lib/careerStats";
 import { matchName } from "../lib/matchName";
 import { teamName, teamHex } from "../lib/teamColors";

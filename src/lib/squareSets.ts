@@ -342,6 +342,18 @@ export function maxBoardSize(set: SquareSetDef): number {
  * small-crew cut, whose ceiling is two sizes lower. Never raises a size. A host who chose 8x8 means
  * 8x8, and a bigger set is not a reason to redecide that for them.
  */
+/** A set as the lobby names it: the set, plus the cut where it is not the full board ("Bosses - Small crew"). */
+export function squareSetLabel(id: string): string {
+  const set = squareSet(id);
+  const parent = squareSet(displaySquareSet(id));
+  return set.id !== parent.id && set.cutLabel ? `${parent.label} - ${set.cutLabel}` : parent.label;
+}
+
+/** Every set's maxBoardSize by id, cuts included - the shape an event's rules take it in (tournament/matchRules SetCaps). */
+export function squareSetCaps(): Record<string, number> {
+  return Object.fromEntries(Object.values(SQUARE_SETS).map((s) => [s.id, maxBoardSize(s)]));
+}
+
 export function clampBoardSize(boardSize: number, setId: string | null | undefined): number {
   return Math.min(boardSize, maxBoardSize(squareSet(setId)));
 }

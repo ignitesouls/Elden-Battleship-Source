@@ -3,6 +3,9 @@ import { canonicalSquareName } from "./squareSetFormat";
 import { participantKey, type ParticipantRow } from "./careerStats";
 import { withoutVoided } from "./voidedMatches";
 import { cached, forget } from "./archiveCache";
+import { prepareEvents, prepareParticipants, type BoardSource } from "./battleRatingBoards";
+
+export type { BoardSource };
 
 export interface Profile {
   id: string;
@@ -243,14 +246,6 @@ const PARTICIPANT_COLUMNS =
 
 // The cache these three feeds share with the history list lives in lib/archiveCache.
 
-/** The room, seed and balancer permutation one match's squares were dealt from. */
-export interface BoardSource {
-  match_key: string;
-  room_id: string | null;
-  board_seed: string | null;
-  board_perm: number[] | null;
-}
-
 /**
  * Every match's board source, one row each.
  *
@@ -292,23 +287,9 @@ export async function fetchMatchEvents(limit = 50000) {
       fetchBoardSources(),
     ]);
 
-    // Rows archived before a square was renamed still carry its old name. Folded here rather than in
-    // each of the several things that group on it - see canonicalSquareName.
-    //
-    // The board source is put back onto every row in the same pass, because the row is where every
-    // consumer already looks for it and this is not the place to teach them otherwise. It costs
-    // nothing to hold: all ~120 rows of a match are handed the SAME perm array by reference, which
-    // is the arrangement the wire could not express and the whole reason it was sent 120 times.
-    return (await withoutVoided(rows)).map((r) => {
-      const source = sources.get(r.match_key);
-      return {
-        ...r,
-        challenge_name: canonicalSquareName(r.challenge_name),
-        room_id: source?.room_id ?? null,
-        board_seed: source?.board_seed ?? null,
-        board_perm: source?.board_perm ?? null,
-      };
-    }) as never[];
+    // Square renames folded and board sources put back, in the one function the battle-ratings Edge
+    // Function also runs - see lib/battleRatingBoards.
+    return prepareEvents(await withoutVoided(rows), sources) as never[];
   });
 }
 
@@ -368,9 +349,8 @@ export async function fetchPlayerEvents(key: string, limit = 50000) {
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */
 export async function fetchParticipants(limit = 20000): Promise<ParticipantRow[]> {
   return cached("participants", async () => {
-    const rows = await withoutVoided(
-      await fetchAllRows<ParticipantRow>("match_participants", PARTICIPANT_COLUMNS, limit)
+    return prepareParticipants(
+      await withoutVoided(await fetchAllRows<ParticipantRow>("match_participants", PARTICIPANT_COLUMNS, limit))
     );
-    return rows.map((r) => ({ ...r, awards: Array.isArray(r.awards) ? r.awards : [] }));
   });
 }

@@ -48,10 +48,17 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
   const byUser = new Map(waiting.map((w) => [w.user_id, w]));
   const nameOf = (id: string) => byUser.get(id)?.display_name ?? "?";
 
-  // Teams that can take more players: still short of a full team, and in the event.
+  // Teams that can take more players: still short of a full team, and in the event. A place somebody
+  // has been invited to is spoken for - a pair whose partner hasn't accepted yet needs one solo, not two.
   const open = data.teams
-    .filter((team) => (team.status === "approved" || team.status === "pending") && team.roster.length < event.team_size)
-    .map((team) => ({ id: team.id, needs: event.team_size - team.roster.length, name: team.name }));
+    .filter((team) => team.status === "approved" || team.status === "pending")
+    .map((team) => ({
+      id: team.id,
+      needs: event.team_size - team.roster.length - team.pending_invites,
+      name: team.name,
+      pair: team.looking_for_players,
+    }))
+    .filter((team) => team.needs > 0);
 
   const draft = suggestPairings({
     players: waiting.map((w) => ({ id: w.user_id, rating: ratings.get(w.user_id) })),
@@ -65,6 +72,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
   const rate = (id: string) => ratings.get(id) ?? 0.5;
   const teamNameFor = (index: number) => names[`new${index}`] ?? `${t("Team", "Équipe")} ${data.seeded.length + index + 1}`;
   const openName = (id: string) => open.find((o) => o.id === id)?.name ?? "?";
+  const isPair = (id: string) => open.find((o) => o.id === id)?.pair ?? false;
 
   return (
     <div className="panel stack">
@@ -111,11 +119,12 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
 
       {draft.fills.length > 0 && (
         <div className="stack" style={{ gap: "0.4rem" }}>
-          <strong>{t("Top up short teams", "Compléter les équipes")}</strong>
+          <strong>{t("Complete pairs and short teams", "Compléter les duos et les équipes")}</strong>
           {draft.fills.map((fill) => (
             <div key={fill.teamId} className="row" style={{ justifyContent: "space-between" }}>
               <span>
-                <strong>{openName(fill.teamId)}</strong> ← {fill.playerIds.map(nameOf).join(", ")}
+                <strong>{openName(fill.teamId)}</strong>
+                {isPair(fill.teamId) && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("pair", "duo")}</span>} ← {fill.playerIds.map(nameOf).join(", ")}
               </span>
               <button className="primary" disabled={busy} onClick={() => void act(async () => { for (const id of fill.playerIds) await placeFromPool(fill.teamId, id); })}>
                 {t("Place them", "Les placer")}
@@ -164,7 +173,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
         <div className="stack" style={{ gap: "0.4rem", borderTop: "1px solid var(--panel-border)", paddingTop: "0.6rem" }}>
           <strong>{t("Or pick the players yourself", "Ou choisissez vous-même les joueurs")}</strong>
           <span className="muted" style={{ fontSize: "0.78rem" }}>
-            {t(`Tick players above (${chosen.size} chosen, up to ${event.max_roster}), name the team, and create it.`, `Cochez des joueurs ci-dessus (${chosen.size} choisi(s), jusqu'à ${event.max_roster}), nommez l'équipe, puis créez-la.`)}
+            {t(`Tick players above (${chosen.size} chosen, up to ${event.team_size}), name the team, and create it.`, `Cochez des joueurs ci-dessus (${chosen.size} choisi(s), jusqu'à ${event.team_size}), nommez l'équipe, puis créez-la.`)}
           </span>
           <div className="row">
             <input value={manualName} onChange={(e) => setManualName(e.target.value)} maxLength={40} placeholder={t("Team name", "Nom de l'équipe")} />
