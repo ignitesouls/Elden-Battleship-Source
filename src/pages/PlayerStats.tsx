@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { rowSquareSet, busiestSquareSet, squareSet, DEFAULT_SQUARE_SET } from "../lib/challenges";
-import { fetchParticipants, fetchProfiles, fetchPlayerEvents, profileName, type Profile } from "../lib/profiles";
+import { fetchParticipants, fetchProfiles, fetchPlayerEvents, fetchMatchBoards, profileName, type Profile } from "../lib/profiles";
 import { playerPace, playerKills, playerBestKills, type MatchEventRow } from "../lib/almanac";
 import { LoadingScreen } from "../components/BrandMark";
 import { accountName, useAuthProfile } from "../hooks/useAuthProfile";
@@ -94,11 +94,42 @@ export function PlayerStats() {
    * joke at the scale of the whole board. Unset records are dropped rather than shown as unclaimed:
    * on one captain's page "nobody yet" just means "not you yet", which says nothing.
    */
+  /**
+   * ...on one board size and fleet at a time (see lib/boardShape). Most hits on a 14x14 board against
+   * fourteen ships is not a record a 7x7 game could ever have taken, so pooling them crowned the big
+   * boards at everything that counts. The overlay's PB line splits the same way.
+   *
+   * The options are the boards this captain has played on this square set, most-played first, and
+   * that is also the default.
+   */
+  const [matchBoards, setMatchBoards] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (allRows === null) return;
+    const keys = allRows.filter((r) => participantKey(r) === playerKey).map((r) => r.match_key);
+    void fetchMatchBoards(keys).then(setMatchBoards);
+  }, [allRows, playerKey]);
+
+  const boardOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of rows ?? []) {
+      if (participantKey(r) !== playerKey) continue;
+      const b = matchBoards.get(r.match_key);
+      if (b) counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([key, games]) => ({ key, games }));
+  }, [rows, matchBoards, playerKey]);
+
+  const [pickedBoard, setPickedBoard] = useState<string | null>(null);
+  const bestsBoard = boardOptions.some((o) => o.key === pickedBoard) ? pickedBoard : boardOptions[0]?.key ?? null;
+
   const singleGameBests = useMemo(() => {
-    if (!rows) return [];
-    const mine = rows.filter((r) => participantKey(r) === playerKey);
-    return buildRecordBook(mine, boardEvents, shownSet).filter((r) => r.id !== "worst-accuracy" && r.holder);
-  }, [rows, boardEvents, shownSet, playerKey]);
+    if (!rows || bestsBoard === null) return [];
+    const onBoard = (r: { match_key: string }) => matchBoards.get(r.match_key) === bestsBoard;
+    const mine = rows.filter((r) => participantKey(r) === playerKey && onBoard(r));
+    return buildRecordBook(mine, boardEvents.filter(onBoard), shownSet).filter(
+      (r) => r.id !== "worst-accuracy" && r.holder
+    );
+  }, [rows, boardEvents, shownSet, playerKey, matchBoards, bestsBoard]);
 
   const view = useMemo(() => {
     if (!rows) return null;
@@ -166,6 +197,22 @@ export function PlayerStats() {
    */
   const captainLink = (key: string) =>
     `/player/${encodeURIComponent(key)}?set=${encodeURIComponent(shownSet)}`;
+
+  /**
+   * "11×11 · 9 ships" for a boardShapeKey. Two fleets of the same count on the same board (an 11-ship
+   * 12×12 comes in two shapes) would read identically, so those spell their hulls out as well.
+   */
+  const boardLabel = (key: string) => {
+    const [size, shape] = key.split("|");
+    const ships = shape ? shape.split(",").length : 0;
+    const base = `${size}×${size} · ${ships} ${ships === 1 ? t("ship", "navire") : t("ships", "navires")}`;
+    const twin = boardOptions.some((o) => {
+      if (o.key === key) return false;
+      const [s, sh] = o.key.split("|");
+      return s === size && (sh ? sh.split(",").length : 0) === ships;
+    });
+    return twin ? `${base} (${shape.split(",").join("-")})` : base;
+  };
 
   const { career, h2h, nemesis, bestMate, recent } = view;
   const profile = career.userId ? profiles.get(career.userId) : undefined;
@@ -249,10 +296,30 @@ export function PlayerStats() {
         </div>
       </div>
 
-      {singleGameBests.length > 0 && (
+      {boardOptions.length > 0 && (
         <div className="panel stack" style={{ gap: "0.3rem" }}>
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>{t("Single-game bests", "Records sur une partie")}</h3>
+            {/* A picker only when there is a choice; one board is just named, so the reader still
+                knows these records are that board's and not the whole career's. */}
+            {boardOptions.length > 1 ? (
+              <select
+                value={bestsBoard ?? ""}
+                onChange={(e) => setPickedBoard(e.target.value)}
+                style={{ fontSize: "0.78rem", padding: "0.2rem 0.35rem", marginRight: "auto" }}
+                aria-label={t("Board and fleet", "Plateau et flotte")}
+              >
+                {boardOptions.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {`${boardLabel(o.key)} · ${o.games} ${o.games === 1 ? t("game", "partie") : t("games", "parties")}`}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted" style={{ fontSize: "0.75rem", marginRight: "auto" }}>
+                {boardLabel(boardOptions[0].key)}
+              </span>
+            )}
             {/* Into the Almanac rather than rated here: ratings rank a game against every other game
                 on the board, and this page deliberately loads one captain's shot log, not the board's. */}
             <Link
@@ -264,10 +331,15 @@ export function PlayerStats() {
           </div>
           <span className="muted" style={{ fontSize: "0.7rem" }}>
             {t(
-              "Their best game at each record in the Record Book. Ties go to the earlier game. Click one to open that match.",
-              "Leur meilleure partie pour chaque record du Livre des records. En cas d'égalité, la plus ancienne l'emporte. Cliquez pour ouvrir le match."
+              "Their best game at each record in the Record Book, on this board size and fleet only. Ties go to the earlier game. Click one to open that match.",
+              "Leur meilleure partie pour chaque record du Livre des records, sur cette taille de plateau et cette flotte uniquement. En cas d'égalité, la plus ancienne l'emporte. Cliquez pour ouvrir le match."
             )}
           </span>
+          {singleGameBests.length === 0 && (
+            <span className="muted" style={{ fontSize: "0.78rem" }}>
+              {t("No records set on this board yet.", "Aucun record établi sur ce plateau pour l'instant.")}
+            </span>
+          )}
           {singleGameBests.map((r) => {
             const h = r.holder!;
             return (

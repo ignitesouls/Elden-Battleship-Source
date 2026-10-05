@@ -191,11 +191,13 @@ margin worth cheating for.
 ```
 
 `pb` is the captain's best single game on the boss board (both cuts, folded), from archived,
-non-voided games: most hits, most hulls sunk, most shots taken, best accuracy over 5+ shots, and best per-match median
+non-voided games **on the same board size and fleet as this match** (the fleet compared by hull sizes,
+so `10×10, 5-4-3-3-2` only meets other `10×10, 5-4-3-3-2` games): most hits, most hulls sunk, most shots taken, best accuracy over 5+ shots, and best per-match median
 pace built exactly like `tally.pace`, so the two compare like with like. Any one of them is `null`
 until it has been set. **The `pb` and `pb_beaten` keys are absent altogether** for a captain with
-nothing archived, and whenever the lookup fails: it runs after the shots have fired, so it can only
-ever cost the PB line, never the report. It is read once per room and cached for the match.
+nothing archived on this board and fleet (their bests on other boards are not offered instead), and
+whenever the lookup fails: it runs after the shots have fired, so it can only ever cost the PB line,
+never the report. It is read once per match and cached for it.
 
 `pb_beaten` names the stats this game already beats, strictly (a tie goes to the earlier game, as
 in the record book), and only against a PB that exists. Accuracy needs 5 shots here too; pace is

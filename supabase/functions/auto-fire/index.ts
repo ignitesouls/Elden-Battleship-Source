@@ -34,6 +34,7 @@ import { applyBoardPerm } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import { MATCH_START_MARKER, matchTimings, battlePhaseAt } from '../../../src/lib/matchTime.ts'
 import { pauseInfoAt, pausedMsAt, type PauseFields } from '../../../src/lib/matchPause.ts'
+import { fleetShape } from '../../../src/lib/boardShape.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
 import bossData2v2 from '../../../src/data/battleshipChallenges2v2.json' with { type: 'json' }
 import bossFlags from '../../../src/data/bossFlags.json' with { type: 'json' }
@@ -257,10 +258,13 @@ interface LiveTally {
 const MIN_SHOTS_FOR_ACCURACY = 5
 
 /**
- * A captain's best single game on the boss board, for the overlay's PB line.
+ * A captain's best single game on the boss board, for the overlay's PB line - on THIS match's board
+ * size and fleet only (see lib/boardShape). A 14x14 game's hits are out of reach on a 6x6 board, so
+ * pooling every size made most of the line unbeatable.
  *
  * The same records the website's "Single-game bests" panel reads off the record book, rebuilt from
- * the same two tables: hits, sunk and accuracy from match_participants, pace from match_events.
+ * the same tables: hits, sunk and accuracy from match_participants, pace from match_events, and the
+ * board and fleet each game was played on from match_fleets.
  * `accuracyRatio` is kept unrounded so a PB of 83.4% is not "beaten" by 83.1%.
  *
  * Pace is the best per-match MEDIAN, built exactly like the live tally's pace - auto-fired squares at
@@ -278,11 +282,12 @@ interface PersonalBests {
 }
 
 /**
- * PBs per captain per room, so they are read once per match rather than on every one-second poll.
+ * PBs per captain per match, so they are read once per match rather than on every one-second poll.
  *
  * Safe to hold for the life of the match: the rows are archived games, and the match being played
- * is not one of them until it finishes - by which time the room is no longer in battle and nothing
- * asks for it. The TTL only bounds memory on a long-lived instance; a cold one simply reads again.
+ * is not one of them until it finishes. Keyed on the match's start marker and its board, not just the
+ * room, because a room is replayed: the next match there may be on another board, and has the last
+ * one in its archive. The TTL only bounds memory on a long-lived instance; a cold one simply reads again.
  */
 const PB_TTL_MS = 30 * 60 * 1000
 const pbCache = new Map<string, { at: number; bests: PersonalBests }>()
@@ -307,10 +312,27 @@ async function allRows<T>(
  */
 const BOSS_BOARD_FILTER = `square_set.is.null,square_set.in.(${Object.keys(BOSS_SETS).join(',')})`
 
-async function personalBests(admin: SupabaseClient, userId: string): Promise<PersonalBests> {
-  const [voided, games, events] = await Promise.all([
+async function personalBests(
+  admin: SupabaseClient,
+  userId: string,
+  boardSize: number,
+  shape: string
+): Promise<PersonalBests> {
+  const [voided, fleets, games, events] = await Promise.all([
     // The durable list, which outlives the 30-day sweep of match_reports - see 20261003000000.
     admin.from('voided_matches').select('match_key'),
+    // Every game archived on this board size; the fleet is compared below, since PostgREST cannot
+    // sort a jsonb array's sizes. A row per fleet in the match, all carrying the room's one ship_defs.
+    allRows<{ match_key: string; ship_defs: { size: number }[] | null }>((from, to) =>
+      admin
+        .from('match_fleets')
+        .select('match_key, ship_defs')
+        .eq('board_size', boardSize)
+        .or(BOSS_BOARD_FILTER)
+        .order('match_key')
+        .order('team')
+        .range(from, to)
+    ),
     allRows<{ match_key: string; shots: number; hits: number; sunk: number }>((from, to) =>
       admin
         .from('match_participants')
@@ -327,6 +349,8 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
         .eq('participant_key', userId)
         .eq('auto', true)
         .gte('cell_index', 0)
+        // Narrows the read server-side; the fleet is matched below along with the participants.
+        .eq('board_size', boardSize)
         .or(BOSS_BOARD_FILTER)
         // The order match_events_participant_idx is built in, so paging walks the index rather than
         // sorting a career's worth of rows - and `id` makes it a total order, so no page skips a row.
@@ -337,10 +361,14 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
   ])
   // Voided games count for nothing anywhere on the site, PBs included - see lib/voidedMatches.
   const struck = new Set((voided.data ?? []).map((r) => r.match_key))
+  // The games played on this exact board and fleet. Every archived match has its fleets (checked
+  // Oct 2026: 290 of 290), so nothing is lost here that could be compared fairly.
+  const sameBoard = new Set(fleets.filter((f) => fleetShape(f.ship_defs) === shape).map((f) => f.match_key))
+  const counts = (key: string) => sameBoard.has(key) && !struck.has(key)
 
   const bests: PersonalBests = { hits: null, sunk: null, shots: null, accuracyRatio: null, pace: null }
   for (const g of games) {
-    if (struck.has(g.match_key)) continue
+    if (!counts(g.match_key)) continue
     if (g.hits > 0) bests.hits = Math.max(bests.hits ?? 0, g.hits)
     if (g.sunk > 0) bests.sunk = Math.max(bests.sunk ?? 0, g.sunk)
     if (g.shots > 0) bests.shots = Math.max(bests.shots ?? 0, g.shots)
@@ -352,7 +380,7 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
   // One time per square per match: a shot writes a row per opposing fleet, all on the same clock.
   const squareTimes = new Map<string, Map<number, number>>()
   for (const e of events) {
-    if (struck.has(e.match_key) || e.match_seconds === null) continue
+    if (!counts(e.match_key) || e.match_seconds === null) continue
     let cells = squareTimes.get(e.match_key)
     if (!cells) squareTimes.set(e.match_key, (cells = new Map()))
     if (!cells.has(e.cell_index)) cells.set(e.cell_index, e.match_seconds)
@@ -377,7 +405,8 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
 /**
  * The PB line's payload, or null to leave `pb` out of the reply entirely.
  *
- * Null on a captain's first game (nothing archived to beat) and on ANY failure. This rides on the
+ * Null on a captain's first game on this board size and fleet (nothing archived to beat - their
+ * bests on other boards are deliberately not offered instead) and on ANY failure. This rides on the
  * same request that fires shots, and a PB lookup going wrong must never be the reason a kill's reply
  * comes back as an error - the shots have already landed by the time this runs.
  *
@@ -388,15 +417,17 @@ async function personalBests(admin: SupabaseClient, userId: string): Promise<Per
 async function pbPayload(
   admin: SupabaseClient,
   userId: string,
-  roomId: string,
+  room: { id: string; board_size: number; ship_defs: { size: number }[] | null },
+  matchStartedAt: string | null,
   tally: LiveTally
 ): Promise<{ pb: Record<string, number | null>; pb_beaten: string[] } | null> {
   try {
-    const key = `${userId}|${roomId}`
+    const shape = fleetShape(room.ship_defs)
+    const key = `${userId}|${room.id}|${matchStartedAt}|${room.board_size}|${shape}`
     const now = Date.now()
     let hit = pbCache.get(key)
     if (!hit || now - hit.at > PB_TTL_MS) {
-      hit = { at: now, bests: await personalBests(admin, userId) }
+      hit = { at: now, bests: await personalBests(admin, userId, room.board_size, shape) }
       pbCache.set(key, hit)
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }
@@ -513,9 +544,10 @@ Deno.serve(async (req) => {
     const { data: battles } = seated.length
       ? await admin
           .from('rooms')
-          // The extra five columns past board_perm are the website's own match clock: starting_seconds
-          // and prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
-          .select('id, board_size, square_set, seed, board_perm, starting_seconds, prep_seconds, pause_at, resume_at, pause_log')
+          // The five columns past board_perm are the website's own match clock: starting_seconds and
+          // prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
+          // ship_defs is the fleet, which with board_size picks the games the PB line compares against.
+          .select('id, board_size, square_set, seed, board_perm, starting_seconds, prep_seconds, pause_at, resume_at, pause_log, ship_defs')
           .in(
             'id',
             seated.map((s) => s.room_id)
@@ -660,7 +692,7 @@ Deno.serve(async (req) => {
     const tally = await liveStats(admin, room.id, seat.id, room)
     // Spread rather than assigned, so a captain with no PBs gets no `pb` key at all - which is how
     // the overlay knows to draw no PB line, and how an older DLL never sees a field it can't read.
-    const pb = await pbPayload(admin, tokenRow.user_id, room.id, tally)
+    const pb = await pbPayload(admin, tokenRow.user_id, room, markerRow?.created_at ?? null, tally)
 
     return jsonResponse({
       ok: true,

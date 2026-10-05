@@ -4,6 +4,7 @@ import { participantKey, type ParticipantRow } from "./careerStats";
 import { withoutVoided } from "./voidedMatches";
 import { cached, forget } from "./archiveCache";
 import { prepareEvents, prepareParticipants, type BoardSource } from "./battleRatingBoards";
+import { boardShapeKey } from "./boardShape";
 
 export type { BoardSource };
 
@@ -344,6 +345,32 @@ export async function fetchPlayerEvents(key: string, limit = 50000) {
 
   const all = (await fetchMatchEvents(limit)) as unknown as { user_id: string | null; nickname: string }[];
   return all.filter((e) => participantKey(e) === key) as never[];
+}
+
+/**
+ * The board each of these matches was played on, as a boardShapeKey ("10|5,4,3,3,2"), from
+ * match_fleets - for the career page's "Single-game bests", which only compares like with like.
+ *
+ * Asked for by key, in chunks, rather than through fetchMatchFleets: that feed carries every fleet's
+ * placements, which is most of its weight and none of this. Every fleet in a match shares the room's
+ * one ship_defs, so the first row per match is the match.
+ */
+export async function fetchMatchBoards(matchKeys: string[]): Promise<Map<string, string>> {
+  const keys = [...new Set(matchKeys)];
+  const CHUNK = 100; // match keys are ~40 characters; this keeps the URL well under any proxy's limit
+  const out = new Map<string, string>();
+  await Promise.all(
+    Array.from({ length: Math.ceil(keys.length / CHUNK) }, async (_, i) => {
+      const { data } = await supabase
+        .from("match_fleets")
+        .select("match_key,board_size,ship_defs")
+        .in("match_key", keys.slice(i * CHUNK, (i + 1) * CHUNK));
+      for (const r of (data ?? []) as { match_key: string; board_size: number; ship_defs: { size: number }[] | null }[]) {
+        if (!out.has(r.match_key)) out.set(r.match_key, boardShapeKey(r.board_size, r.ship_defs));
+      }
+    })
+  );
+  return out;
 }
 
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */
