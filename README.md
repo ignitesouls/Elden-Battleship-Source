@@ -130,27 +130,28 @@ node scripts/check-square-counts.mjs                        # shared square tall
 
 ## Deploying
 
-```bash
-npm run deploy
-```
+The site is at https://kcbrazos.github.io/Elden-Battleship/. GitHub Pages serves it from the
+root of `main` in [`KCBrazos/Elden-Battleship`](https://github.com/KCBrazos/Elden-Battleship),
+which holds built files only. This repository is the source. Never push it there.
 
-Builds, then pushes `dist/` to the `gh-pages` branch of
-[`KCBrazos/Elden-Battleship`](https://github.com/KCBrazos/Elden-Battleship). The site is at
-https://kcbrazos.github.io/Elden-Battleship/.
+A deploy goes source first, so every build matches a commit that exists here:
 
-Two things must be true the first time:
+1. Commit and push the source to this repository.
+2. `npm run build`. Environment variables are baked in at build time, so this has to run
+   locally with `.env.local` present. They are not read from GitHub.
+3. Note the source commit with `git rev-parse --short HEAD`.
+4. Clone `KCBrazos/Elden-Battleship`, delete everything in it except `.git`, and copy in the
+   contents of `dist/`. Before going on, check that `index.html` is there and that the file
+   count matches `dist/`.
+5. Commit with a message that says what the deploy adds and names the source commit, then push
+   `main`.
 
-- `origin` points at that repository.
-- **Settings > Pages > Source** is set to the `gh-pages` branch. The site was previously
-  served from the root of `main` and published by uploading files through the web UI. Push
-  `gh-pages` first and then switch, so there is no gap where the site is missing.
+Database migrations and edge functions are not part of the site build. They go out separately
+through the Supabase CLI.
 
-`base` in [`vite.config.ts`](vite.config.ts) must match the repository name exactly, since
-Pages serves project sites from `/<repo>/`. Rename the repo without changing it and the
+`base` in [`vite.config.ts`](vite.config.ts) must match the deploy repository's name exactly,
+since Pages serves project sites from `/<repo>/`. Rename the repo without changing it and the
 deployed page comes up blank with every asset 404ing.
-
-Environment variables are baked in at build time, so `npm run deploy` has to run locally with
-`.env.local` present. They are not read from GitHub.
 
 ## Credits
 
@@ -182,8 +183,6 @@ FromSoftware or Bandai Namco.
 
 ## Licence
 
-None. No licence is granted, so nobody has permission to copy, modify, host or redistribute any
-part of this project.
-
-It was MIT until August 2026 and GPL-3.0-or-later until September 2026. Copies obtained under
-those licences keep them; nothing published after the change does.
+[AGPL-3.0-or-later](LICENSE), with additional terms in [NOTICE](NOTICE): copies run for other
+people must credit the original, and changed versions must be marked as such and use another name.
+IgniteSouls' square sets are not covered; NOTICE lists them.

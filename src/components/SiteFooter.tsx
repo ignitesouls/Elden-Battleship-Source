@@ -13,11 +13,11 @@ import "./SiteFooter.css";
  * a legal note in a strip of controls, and it does not need to be read at a glance - it needs to be
  * present. The bottom of the page is where a reader looks for it and where it costs nothing.
  *
- * There is deliberately no copyright line or licence name beside it. Both used to sit here and
- * neither did any work - there is no licence to name, copyright applies without a notice, and a
- * copyright line on a fan project's front page is posturing. The disclaimer is the part that earns
- * its place outright: fan projects live on tolerance rather than on licences, and saying plainly what
- * this is not costs almost nothing.
+ * There is deliberately no copyright line, licence name or source link beside it. Both of the first
+ * two used to sit here and neither did any work - the licence (AGPL) lives with the source in the
+ * repository, copyright applies without a notice, and a copyright line on a fan project's front
+ * page is posturing. The disclaimer is the part that earns its place outright: fan projects live on
+ * tolerance rather than on licences, and saying plainly what this is not costs almost nothing.
  *
  * Still not mounted during placement or battle. That was once about the links being a hazard mid-
  * match; it is now simply that those screens are a board and a clock, and neither has a bottom of

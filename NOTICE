@@ -1,0 +1,46 @@
+Elden Battleship
+Copyright (C) 2026 KCBrazos
+https://kcbrazos.github.io/Elden-Battleship/
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version, with the additional terms below. The full
+licence text is in LICENSE.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+Affero General Public License for more details.
+
+
+ADDITIONAL TERMS (AGPL-3.0 section 7)
+
+These terms apply to all of the work covered by the licence.
+
+1. Visible credit (section 7b). Any copy run for other people, changed or not, must show
+
+       Built on Elden Battleship by KCBrazos
+
+   with a link to https://kcbrazos.github.io/Elden-Battleship/, somewhere users can find it
+   without reading the source, such as the footer or an about page.
+
+2. Marked as different (section 7c). A changed version must say clearly that it is a modified
+   version and must not present itself as the original or the official site.
+
+3. No name rights (section 7e). The licence grants no right to use the name Elden Battleship or
+   KCBrazos for a changed version, other than in the credit above.
+
+
+NOT COVERED BY THE LICENCE
+
+The square sets by IgniteSouls belong to their authors and are included with permission. They are
+not licensed under the AGPL. In src/data/:
+
+    incursionSquares.json
+    rookieRumbleSquares.json
+    rookieRumbleColors.json
+    scaduLeagueSquares.json
+    scaduLeagueColors.json
+    ringusSquares.json
+
+Elden Ring, and the names and other material drawn from it, belong to FromSoftware. This is an
+unofficial fan project, not affiliated with or endorsed by FromSoftware or Bandai Namco.
