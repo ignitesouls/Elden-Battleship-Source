@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { LogoImageError, makeLogo } from "../../lib/tournament/logoImage";
+import { clearTeamLogo, setTeamLogo } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 
 /**
@@ -32,6 +33,59 @@ export function TeamLabel({ name, logo, size, empty, className }: { name: ReactN
     <span className="team-label">
       <TeamLogo url={logo} size={size} empty={empty} />
       <span className={`team-label__name${className ? ` ${className}` : ""}`}>{name}</span>
+    </span>
+  );
+}
+
+/**
+ * An administrator's logo controls for one team: change it (any time - captains are locked out once
+ * signup closes, administrators are not) or take it down. Small buttons for a row in a team list; the
+ * picture is shrunk exactly as a captain's would be. `run` is the page's action wrapper, which shows
+ * errors and reloads.
+ */
+export function AdminLogoButtons({
+  teamId,
+  teamName,
+  logoPath,
+  busy,
+  run,
+}: {
+  teamId: string;
+  teamName: string;
+  logoPath: string | null;
+  busy: boolean;
+  run: (action: () => Promise<unknown>) => unknown;
+}) {
+  const t = useT();
+  const input = useRef<HTMLInputElement>(null);
+  const small = { fontSize: "0.72rem", padding: "0.15rem 0.45rem" };
+  return (
+    <span className="row" style={{ gap: "0.3rem", display: "inline-flex" }}>
+      <button style={small} disabled={busy} onClick={() => input.current?.click()}>
+        {logoPath ? t("Change logo", "Changer le logo") : t("Add logo", "Ajouter un logo")}
+      </button>
+      {logoPath && (
+        <button
+          style={small}
+          disabled={busy}
+          onClick={() => {
+            if (window.confirm(t(`Remove ${teamName}'s logo?`, `Retirer le logo de ${teamName} ?`))) void run(() => clearTeamLogo(teamId, logoPath));
+          }}
+        >
+          {t("Remove logo", "Retirer le logo")}
+        </button>
+      )}
+      <input
+        ref={input}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void run(async () => setTeamLogo(teamId, await makeLogo(file), logoPath));
+        }}
+      />
     </span>
   );
 }

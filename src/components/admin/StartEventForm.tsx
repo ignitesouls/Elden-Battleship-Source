@@ -4,7 +4,10 @@ import {
   adminFreeAgents,
   adminTeams,
   fetchEvent,
+  fetchEventPlan,
   fetchMatchSettings,
+  saveEventPlan,
+  saveGroupNames,
   saveMatchSettings,
   startEvent,
   type AdminTeamRow,
@@ -14,11 +17,16 @@ import {
 import { effectiveCut, estimateMatches, suggestFormat, validateFormat, type TournamentFormat } from "../../lib/tournament/format";
 import { scheduleShape, suggestSchedule, type Schedule } from "../../lib/tournament/schedule";
 import { planStart } from "../../lib/tournament/start";
+import { assignGroups } from "../../lib/tournament/groups";
+import { groupNamesProblem, tidyGroupNames } from "../../lib/tournament/groupNames";
 import type { TMatch } from "../../lib/tournament/types";
-import { useT } from "../../lib/language";
+import { useLanguage, useT } from "../../lib/language";
+import { useTeamPowers } from "../../hooks/useTeamPowers";
 import { LoadingScreen } from "../BrandMark";
 import { MatchList } from "../event/MatchList";
+import { JustForFun, PowerTag } from "../event/PowerLine";
 import { FormatEditor } from "./FormatEditor";
+import { GroupNamesEditor } from "./desk/GroupNamesPanel";
 import { DEFAULT_MATCH_RULES, rulesFrom, rulesProblem, toMatchSettings, type MatchRules } from "../../lib/tournament/matchRules";
 import { MatchRulesEditor, SET_CAPS } from "./MatchRulesEditor";
 import { ScheduleEditor } from "./ScheduleEditor";
@@ -42,18 +50,28 @@ function previewRow(m: TMatch): MatchRow {
   };
 }
 
+/** The group count a format asks for, or 0 when it has no group stage. */
+function groupCountOf(format: TournamentFormat | null): number {
+  return format?.qualifier.format === "groups" ? format.qualifier.groupCount : 0;
+}
+
 /**
- * The start page: turn a signup into a running event.
+ * The plan-and-start page: draft an event while signup is open, then turn it into a running event.
  *
  * This is mounted only for an administrator (see pages/AdminStartEvent) and nothing here is fetched
- * before that - but the page is not what keeps anyone else out. Starting is one database function,
- * start_tournament, that checks for an administrator itself and either does everything or nothing.
+ * before that - but the page is not what keeps anyone else out. Saving a plan writes to an admin-only
+ * table, and starting is one database function, start_tournament, that checks for an administrator
+ * itself and either does everything or nothing.
  *
- * What it shows is exactly what will happen: the teams in seed order, the format, the schedule, and the
- * first stage's matches as they will be drawn. Nothing is written until the button is pressed.
+ * While signup is open (or the event is still a draft) the organiser can work on the plan - seeding,
+ * format, groups and their names, schedule, match rules - and SAVE it, coming back to it as teams keep
+ * signing up. The page always opens from the saved plan: teams that signed up since go on the end of the
+ * seeding, teams that left drop out. Pressing Start saves once more and starts, and only then does
+ * anything become the event's real format.
  */
 export function StartEventForm({ eventId }: { eventId: string }) {
   const t = useT();
+  const lang = useLanguage();
   const navigate = useNavigate();
 
   const [event, setEvent] = useState<EventDetail | null | undefined>(undefined);
@@ -61,12 +79,17 @@ export function StartEventForm({ eventId }: { eventId: string }) {
   const [soloWaiting, setSoloWaiting] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // The three things the administrator decides.
+  // What the administrator decides.
   const [order, setOrder] = useState<AdminTeamRow[]>([]);
   const [format, setFormat] = useState<TournamentFormat | null>(null);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [fitDays, setFitDays] = useState(28);
   const [rules, setRules] = useState<MatchRules>(DEFAULT_MATCH_RULES);
+  const [groupNames, setGroupNames] = useState<string[]>([]);
+
+  // What was last saved, as one string, so "unsaved changes" is a comparison rather than bookkeeping.
+  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,13 +98,14 @@ export function StartEventForm({ eventId }: { eventId: string }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [found, allTeams, agents, saved] = await Promise.all([
+        const [found, allTeams, agents, saved, plan] = await Promise.all([
           fetchEvent(eventId),
           adminTeams(eventId),
           adminFreeAgents(eventId),
           // Rules may already have been set from the desk while signup was open; start from those, not
           // from the defaults, or pressing Start would quietly put them back.
           fetchMatchSettings(eventId).catch(() => ({})),
+          fetchEventPlan(eventId).catch(() => null),
         ]);
         if (cancelled) return;
         setEvent(found);
@@ -89,12 +113,29 @@ export function StartEventForm({ eventId }: { eventId: string }) {
         setTeams(allTeams);
         setSoloWaiting(agents.filter((a) => a.status === "waiting").length);
 
-        // Teams go in the order they signed up, which favours nobody; the administrator changes it.
         const entered = allTeams.filter((team) => team.status === "approved" && !team.forfeited_at);
-        setOrder(entered);
-        const suggestion = suggestFormat(entered.length).format;
-        setFormat(suggestion);
-        setSchedule(suggestSchedule(suggestion, entered.length, nextHour()).schedule);
+        let nextOrder = entered; // sign-up order, which favours nobody, unless a plan says otherwise
+        let nextFormat = suggestFormat(entered.length).format;
+        let nextSchedule = suggestSchedule(nextFormat, entered.length, nextHour()).schedule;
+        let nextFit = 28;
+        if (plan) {
+          // The saved seeding, minus teams no longer in, plus teams approved since - on the end.
+          const byId = new Map(entered.map((team) => [team.id, team]));
+          const kept = plan.seed_order.map((id) => byId.get(id)).filter((x): x is AdminTeamRow => !!x);
+          const keptIds = new Set(kept.map((team) => team.id));
+          nextOrder = [...kept, ...entered.filter((team) => !keptIds.has(team.id))];
+          nextFormat = plan.format;
+          nextSchedule = plan.schedule;
+          nextFit = plan.fit_days ?? 28;
+          setSavedAt(plan.updated_at);
+        }
+        const names = Array.from({ length: groupCountOf(nextFormat) }, (_, i) => found?.group_names[i] ?? "");
+        setOrder(nextOrder);
+        setFormat(nextFormat);
+        setSchedule(nextSchedule);
+        setFitDays(nextFit);
+        setGroupNames(names);
+        if (plan) setSavedKey(planKey(nextFormat, nextSchedule, nextOrder, nextFit, names, rulesFrom(saved)));
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
       }
@@ -104,28 +145,32 @@ export function StartEventForm({ eventId }: { eventId: string }) {
     };
   }, [eventId]);
 
+  // One name box per group, following the group count as the format changes; names already typed stay.
+  const groupCount = groupCountOf(format);
+  useEffect(() => {
+    setGroupNames((now) => (now.length === groupCount ? now : Array.from({ length: groupCount }, (_, i) => now[i] ?? "")));
+  }, [groupCount]);
+
   const n = order.length;
   const suggestion = useMemo(() => suggestFormat(n), [n]);
   const plan = useMemo(
     () => (format && schedule ? planStart(format, order.map((team) => team.id), schedule) : null),
     [format, schedule, order],
   );
+  const rosters = useMemo(() => new Map(order.map((team) => [team.id, team.roster.map((m) => m.user_id)])), [order]);
+  const powers = useTeamPowers(rosters);
 
   if (loadError) return <div className="panel error-text">{loadError}</div>;
   if (event === undefined || !format || !schedule) return <LoadingScreen>{t("Loading...", "Chargement...")}</LoadingScreen>;
   if (event === null) return <div className="panel">{t("There is no such event.", "Cet événement n'existe pas.")}</div>;
 
-  if (event.status !== "signup") {
+  if (event.status !== "signup" && event.status !== "draft") {
     return (
       <div className="panel stack">
         <strong>
-          {t(`"${event.name}" isn't taking signups, so it can't be started.`, `« ${event.name} » n'accepte plus d'inscriptions, il ne peut donc pas être lancé.`)}
+          {t(`"${event.name}" has already started, so its plan can't be changed here.`, `« ${event.name} » a déjà commencé : son plan ne peut plus être modifié ici.`)}
         </strong>
-        <span className="muted">
-          {event.status === "draft"
-            ? t("Open signup first, let teams register, then come back to start it.", "Ouvrez d'abord les inscriptions, laissez les équipes s'inscrire, puis revenez le lancer.")
-            : t(`It is ${event.status}.`, `Il est ${event.status}.`)}
-        </span>
+        <span className="muted">{t(`It is ${event.status}.`, `Il est ${event.status}.`)}</span>
         <Link to="/admin">{t("Back to the admin page", "Retour à la page d'administration")}</Link>
       </div>
     );
@@ -137,8 +182,36 @@ export function StartEventForm({ eventId }: { eventId: string }) {
   const formatErrors = validateFormat(format, n);
   const estimate = estimateMatches(format, n);
   const problems = plan && !plan.ok ? plan.problems : [];
-  const canStart = n >= 2 && plan?.ok === true && !busy && rulesProblem(rules, SET_CAPS) === null;
+  const tidyNames = tidyGroupNames(groupNames);
+  const namesProblem = groupNamesProblem(tidyNames);
+  const canSave = !busy && !namesProblem && rulesProblem(rules, SET_CAPS) === null;
+  const canStart = event.status === "signup" && n >= 2 && plan?.ok === true && canSave;
   const names = new Map(order.map((team) => [team.id, team.name]));
+  const currentKey = planKey(format, schedule, order, fitDays, groupNames, rules);
+  const unsaved = savedKey !== currentKey;
+  const groups = groupCount > 0 && n >= groupCount ? assignGroups(order.map((team) => team.id), groupCount) : null;
+
+  /** Writes the plan, the group names and the match rules - everything this page decides. */
+  async function persist() {
+    if (!format || !schedule || !event) return;
+    await saveMatchSettings(event.id, toMatchSettings(rules, SET_CAPS));
+    await saveGroupNames(event.id, tidyNames);
+    await saveEventPlan(event.id, { format, schedule, seed_order: order.map((team) => team.id), fit_days: fitDays });
+    setSavedKey(planKey(format, schedule, order, fitDays, groupNames, rules));
+    setSavedAt(new Date().toISOString());
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await persist();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function start() {
     if (!plan || !plan.ok || !format || !schedule || !event) return;
@@ -152,34 +225,47 @@ export function StartEventForm({ eventId }: { eventId: string }) {
     setBusy(true);
     setError(null);
     try {
-      // The rules go first: they are harmless if the start is then refused, and an event that started
-      // without them would have official rooms on the default clock until somebody noticed.
-      await saveMatchSettings(event.id, toMatchSettings(rules, SET_CAPS));
+      // Everything decided here goes first: harmless if the start is then refused, and an event that
+      // started without its rules would have official rooms on the default clock until somebody noticed.
+      await persist();
       await startEvent(event.id, format, schedule, order.map((team) => team.id), plan.plan.matches);
       navigate(`/event/${event.id}`);
     } catch (e) {
-      // Refused, or failed part-way: either way nothing was changed, and the reason is the server's own.
+      // Refused, or failed part-way: either way nothing was started, and the reason is the server's own.
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   }
 
+  const when = (iso: string) => new Date(iso).toLocaleString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
   return (
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
-        <h1>{t("Start", "Lancer")} {event.name}</h1>
-        <p className="muted">{t("Nothing is written until you press Start at the bottom.", "Rien n'est enregistré avant d'appuyer sur Lancer, en bas.")}</p>
+        <h1>{t("Plan and start", "Préparer et lancer")} {event.name}</h1>
+        <p className="muted">
+          {t(
+            "Work on the plan while teams are still signing up and save it as often as you like - nothing goes live until you press Start at the bottom.",
+            "Préparez le plan pendant que les équipes s'inscrivent et enregistrez-le aussi souvent que vous voulez - rien n'est lancé avant d'appuyer sur Lancer, en bas.",
+          )}
+        </p>
+        {savedAt && (
+          <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
+            {t(`Plan last saved ${when(savedAt)}.`, `Plan enregistré le ${when(savedAt)}.`)} {unsaved && <strong style={{ color: "var(--accent-bright)" }}>{t("You have unsaved changes.", "Modifications non enregistrées.")}</strong>}
+          </p>
+        )}
       </div>
 
       {/* Things that will not be in the event, said before the administrator commits. */}
-      {(n < 2 || pending.length > 0 || short.length > 0 || soloWaiting > 0) && (
+      {(n < 2 || pending.length > 0 || short.length > 0 || soloWaiting > 0 || event.status === "draft") && (
         <div className="panel stack" style={{ borderColor: n < 2 ? "var(--danger)" : "rgba(217, 164, 65, 0.6)" }}>
+          {event.status === "draft" && <strong>{t("This event is still a draft. You can plan it now; open signup before it can be started.", "Cet événement est encore un brouillon. Vous pouvez le préparer ; ouvrez les inscriptions avant de le lancer.")}</strong>}
           {n < 2 && <strong>{t("At least two approved teams are needed to start.", "Il faut au moins deux équipes approuvées pour lancer.")}</strong>}
           {pending.length > 0 && (
             <span>
               {t(
-                `${pending.length} team${pending.length === 1 ? " is" : "s are"} still awaiting approval and will NOT be in the event: `,
-                `${pending.length} équipe(s) en attente d'approbation ne seront PAS dans l'événement : `,
+                `${pending.length} team${pending.length === 1 ? " is" : "s are"} still awaiting approval and are not in this plan: `,
+                `${pending.length} équipe(s) en attente d'approbation ne sont pas dans ce plan : `,
               )}
               <strong>{pending.map((p) => p.name).join(", ")}</strong>. {t("Approve them on the admin page first if they should play.", "Approuvez-les d'abord sur la page d'administration si elles doivent jouer.")}
             </span>
@@ -203,11 +289,11 @@ export function StartEventForm({ eventId }: { eventId: string }) {
         <h3>{t(`1. Seeding (${n} ${event.team_size === 1 ? "players" : "teams"})`, `1. Têtes de série (${n} ${event.team_size === 1 ? "joueurs" : "équipes"})`)}</h3>
         <p className="muted" style={{ margin: 0 }}>
           {t(
-            "The seed order decides who meets whom - the top seed meets the bottom seed first. It starts in sign-up order, which favours nobody.",
-            "L'ordre des têtes de série détermine les affrontements - la première tête de série affronte la dernière. Il part de l'ordre d'inscription, qui ne favorise personne.",
+            "The seed order decides who meets whom - the top seed meets the bottom seed first, and groups are dealt from it so none is stacked. It starts in sign-up order, which favours nobody; \"Seed by power\" orders it by the teams' records instead.",
+            "L'ordre des têtes de série détermine les affrontements - la première affronte la dernière, et les poules en sont tirées pour qu'aucune ne soit déséquilibrée. Il part de l'ordre d'inscription, qui ne favorise personne ; « par puissance » le classe d'après les résultats des équipes.",
           )}
         </p>
-        <SeedList teams={order} onChange={setOrder} signupOrder={teams.filter((team) => team.status === "approved" && !team.forfeited_at)} />
+        <SeedList teams={order} onChange={setOrder} signupOrder={teams.filter((team) => team.status === "approved" && !team.forfeited_at)} powers={powers} />
       </div>
 
       <div className="panel stack">
@@ -245,8 +331,40 @@ export function StartEventForm({ eventId }: { eventId: string }) {
         )}
       </div>
 
+      {groupCount > 0 && (
+        <div className="panel stack">
+          <h3>{t("3. Groups", "3. Poules")}</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            {t(
+              "Name each group - type anything, or fill them from a list - and see who is in it. Teams are dealt into groups from the seeding, so reorder the seeds to change a group. The groups follow the teams as more sign up; leave a name empty to keep its letter.",
+              "Nommez chaque poule - tapez ce que vous voulez, ou remplissez depuis une liste - et voyez qui la compose. Les équipes sont réparties d'après les têtes de série : changez l'ordre pour changer une poule. Les poules suivent les inscriptions ; laissez un nom vide pour garder la lettre.",
+            )}
+          </p>
+          <GroupNamesEditor
+            names={groupNames}
+            onChange={setGroupNames}
+            disabled={busy}
+            extra={(g) =>
+              groups ? (
+                <div className="row" style={{ gap: "0.3rem 0.8rem", paddingLeft: "5.1rem", fontSize: "0.82rem" }}>
+                  {groups[g].map((id) => (
+                    <span key={id}>
+                      {names.get(id)} <PowerTag info={powers?.get(id)} />
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="muted" style={{ paddingLeft: "5.1rem", fontSize: "0.78rem" }}>
+                  {t("Not enough teams yet to fill every group.", "Pas encore assez d'équipes pour remplir chaque poule.")}
+                </span>
+              )
+            }
+          />
+        </div>
+      )}
+
       <div className="panel stack">
-        <h3>{t("3. Schedule", "3. Calendrier")}</h3>
+        <h3>{t(`${groupCount > 0 ? 4 : 3}. Schedule`, `${groupCount > 0 ? 4 : 3}. Calendrier`)}</h3>
         <div className="row">
           <span className="muted">{t("Fit the whole event into about", "Faire tenir l'événement en environ")}</span>
           <input type="number" min={7} value={fitDays} onChange={(e) => setFitDays(Number(e.target.value))} style={{ width: "5rem" }} />
@@ -259,7 +377,7 @@ export function StartEventForm({ eventId }: { eventId: string }) {
       </div>
 
       <div className="panel stack">
-        <h3>{t("4. What will be drawn", "4. Ce qui sera tiré")}</h3>
+        <h3>{t(`${groupCount > 0 ? 5 : 4}. What will be drawn`, `${groupCount > 0 ? 5 : 4}. Ce qui sera tiré`)}</h3>
         {plan?.ok ? (
           <>
             <p className="muted" style={{ margin: 0 }}>
@@ -268,8 +386,9 @@ export function StartEventForm({ eventId }: { eventId: string }) {
                 : plan.plan.stage === "group"
                   ? t("Every group match, all at once.", "Tous les matchs de poule, d'un coup.")
                   : t("The whole bracket.", "Tout le tableau.")}
+              {event.status !== "signup" || n < 2 ? "" : ` ${t("As signups stand right now.", "D'après les inscriptions actuelles.")}`}
             </p>
-            <MatchList matches={plan.plan.matches.map(previewRow)} names={names} />
+            <MatchList matches={plan.plan.matches.map(previewRow)} names={names} groupNames={groupNames} powers={powers} />
           </>
         ) : (
           <div className="error-text">
@@ -279,7 +398,7 @@ export function StartEventForm({ eventId }: { eventId: string }) {
       </div>
 
       <div className="panel stack">
-        <h3>{t("5. Official match rules", "5. Règles des matchs officiels")}</h3>
+        <h3>{t(`${groupCount > 0 ? 6 : 5}. Official match rules`, `${groupCount > 0 ? 6 : 5}. Règles des matchs officiels`)}</h3>
         <p className="muted" style={{ margin: 0 }}>
           {t(
             "When a team's room becomes an official match it takes these rules, and the host can't change them. You can change them later from the event's desk.",
@@ -293,10 +412,19 @@ export function StartEventForm({ eventId }: { eventId: string }) {
 
       <div className="row" style={{ justifyContent: "center", gap: "1rem" }}>
         <Link to="/admin" className="link-button">{t("Back", "Retour")}</Link>
+        <button disabled={!canSave || !unsaved} onClick={() => void save()} style={{ padding: "0.7rem 1.4rem" }}>
+          {busy ? t("Saving...", "Enregistrement...") : unsaved ? t("Save the plan", "Enregistrer le plan") : t("Plan saved", "Plan enregistré")}
+        </button>
         <button className="primary" disabled={!canStart} onClick={() => void start()} style={{ padding: "0.7rem 2rem", fontSize: "1.05rem" }}>
           {busy ? t("Starting...", "Lancement...") : t("Start the event", "Lancer l'événement")}
         </button>
       </div>
+      {powers && powers.size > 0 && <JustForFun />}
     </div>
   );
+}
+
+/** Everything the page decides, as one string - equal strings mean nothing has changed since the save. */
+function planKey(format: TournamentFormat, schedule: Schedule, order: AdminTeamRow[], fitDays: number, groupNames: string[], rules: MatchRules): string {
+  return JSON.stringify([format, schedule, order.map((team) => team.id), fitDays, tidyGroupNames(groupNames), rules]);
 }

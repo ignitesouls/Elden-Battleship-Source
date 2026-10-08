@@ -1560,6 +1560,61 @@ console.log('\nPairing solo signups into teams')
 }
 
 {
+  console.log('\nTeam power and the line')
+  const tp = await import('../src/lib/tournament/teamPower.ts')
+  const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
+
+  check('equal powers are a coin flip', near(tp.gameWinProbability(1500, 1500), 0.5))
+  check('400 points is ten to one', near(tp.gameWinProbability(1900, 1500), 10 / 11))
+  check('the two sides always add up to 1', near(tp.gameWinProbability(1612, 1488) + tp.gameWinProbability(1488, 1612), 1))
+
+  check('a single game is just the game', near(tp.seriesWinProbability(0.6, 1), 0.6))
+  check('a best of 3 at 60% a game is 64.8%', near(tp.seriesWinProbability(0.6, 3), 0.648))
+  check('a longer series favours the favourite more', tp.seriesWinProbability(0.6, 5) > tp.seriesWinProbability(0.6, 3))
+  check('a series between equals is still 50/50', near(tp.seriesWinProbability(0.5, 7), 0.5))
+
+  check('a 50/50 is EVEN', tp.moneyline(0.5) === 'EVEN')
+  check('60% is -150, 40% is +150', tp.moneyline(0.6) === '-150' && tp.moneyline(0.4) === '+150', `${tp.moneyline(0.6)} ${tp.moneyline(0.4)}`)
+  check('75% is -300', tp.moneyline(0.75) === '-300', tp.moneyline(0.75))
+  check('a mismatch is capped rather than absurd', tp.moneyline(0.9999) === '-4900' && tp.moneyline(0.0001) === '+4900', `${tp.moneyline(0.9999)} ${tp.moneyline(0.0001)}`)
+
+  check('a single game has no handicap', tp.handicap(0.7, 1) === null)
+  const h3 = tp.handicap(0.7, 3)!
+  check('a best of 3 favourite gives 1.5 games, covered by a 2-0 (49%)', h3.favourite === 'a' && h3.games === 1.5 && near(h3.cover, 0.49), JSON.stringify(h3))
+  check('the handicap goes to whichever side is favoured', tp.handicap(0.3, 3)!.favourite === 'b')
+  const h7 = tp.handicap(0.65, 7)!
+  check('a best of 7 picks the half-game line closest to even', [1.5, 2.5, 3.5].includes(h7.games) && Math.abs(h7.cover - 0.5) <= Math.abs(0.5 - (tp.handicap(0.65, 7)!.cover)), JSON.stringify(h7))
+
+  const line = tp.matchLine(1600, 1500, 3)
+  check('a match line is symmetric: the two moneylines mirror', line.a.startsWith('-') && line.b.startsWith('+') && line.pA > 0.5, JSON.stringify(line))
+
+  // Elo, replayed.
+  const g = (key: string, at: string, aWins: boolean, a = ['p1'], b = ['p2']) => ({
+    matchKey: key, finishedAt: at,
+    players: [...a.map((k) => ({ key: k, team: 0, won: aWins, draw: false })), ...b.map((k) => ({ key: k, team: 1, won: !aWins, draw: false }))],
+  })
+  const table = tp.replayElo([g('m2', '2026-01-02', true), g('m1', '2026-01-01', true)], 32)
+  check('a winner gains what the loser loses', near(table.get('p1')!.elo - 1500, 1500 - table.get('p2')!.elo) && table.get('p1')!.elo > 1500)
+  check('games are replayed oldest first, and counted', table.get('p1')!.games === 2)
+  const first = tp.replayElo([g('m1', '2026-01-01', true)], 32).get('p1')!.elo - 1500
+  check('the second win against the same player is worth less than the first', table.get('p1')!.elo - 1500 - first < first)
+  const crew = tp.replayElo([g('c1', '2026-01-01', true, ['a', 'b'], ['c', 'd'])], 32)
+  check('a crew wins or loses together', near(crew.get('a')!.elo, crew.get('b')!.elo) && near(crew.get('c')!.elo, crew.get('d')!.elo))
+  const three = { matchKey: 't', finishedAt: '2026-01-01', players: [0, 1, 2].map((team) => ({ key: `x${team}`, team, won: team === 0, draw: false })) }
+  check('a three-fleet game is not rated by Elo', tp.replayElo([three], 32).size === 0)
+  const seen: number[] = []
+  tp.replayElo([g('m1', '2026-01-01', true)], 32, (_game, before) => seen.push(before.get('p1')?.elo ?? 1500))
+  check('the "before" hook sees the rating before the game, not after', seen.length === 1 && seen[0] === 1500)
+
+  const p = tp.playerPower({ elo: 1600, games: 10 }, [80, 80], { k: 32, battleWeight: 10, battleShrink: 2 })
+  check('power is Elo plus the battle reading, shrunk towards 50', near(p.battle!, 65) && near(p.power, 1600 + 10 * 15), JSON.stringify(p))
+  check('an unknown player is exactly average', tp.playerPower(undefined, []).power === tp.START)
+  check('a team is the average of its players, unknowns counted as average',
+    near(tp.teamPower([tp.playerPower({ elo: 1700, games: 5 }, [], { k: 32, battleWeight: 0, battleShrink: 1 }), undefined])!, 1600))
+  check('an empty roster has no power', tp.teamPower([]) === null)
+}
+
+{
   console.log('\nGroup names')
   const { groupLabel, pickGroupNames, groupNamesProblem, tidyGroupNames, GROUP_NAME_SETS, MAX_GROUP_NAME } = await import('../src/lib/tournament/groupNames.ts')
   check('an unnamed group is its letter', groupLabel([], 2, 'en') === 'Group C' && groupLabel(null, 0, 'fr') === 'Poule A')

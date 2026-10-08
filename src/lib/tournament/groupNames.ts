@@ -3,8 +3,9 @@
  *
  * An administrator can name the groups (tournaments.group_names, by group number); a group they have not
  * named is "Group A", "Group B" ... as it always was. The lists below are the names they can pick from
- * instead of typing - places and figures from the game, so a group draw reads like part of it. A name is
- * stored exactly as written, so it reads the same in either language.
+ * instead of typing - sea terms, and places and figures from the game, so a group draw reads like part of
+ * it. Any name can still be typed or edited freely. A name is stored exactly as written, so it reads the
+ * same in either language.
  *
  * Pure: no database, no React - the event page, the desk and the checks all use the same rule.
  */
@@ -16,6 +17,22 @@ export interface GroupNameSet {
 }
 
 export const GROUP_NAME_SETS: GroupNameSet[] = [
+  {
+    id: "nautical",
+    label: ["Nautical", "Nautique"],
+    names: [
+      "Kraken", "Leviathan", "Maelstrom", "Riptide", "Undertow", "Broadside", "Crow's Nest", "Starboard",
+      "Port Side", "Deep Water", "High Tide", "Anchor", "Keel", "Fathom", "Squall", "Davy Jones",
+    ],
+  },
+  {
+    id: "waters",
+    label: ["Waters of the Lands Between", "Eaux de l'Entre-terre"],
+    names: [
+      "Liurnia of the Lakes", "Lake of Rot", "Siofra River", "Ainsel River", "Cerulean Coast", "Coastal Cave",
+      "Stillwater Cave", "Lakeside Crystal Cave", "Weeping Peninsula", "Nokron", "Deeproot Depths",
+    ],
+  },
   {
     id: "regions",
     label: ["The Lands Between", "L'Entre-terre"],

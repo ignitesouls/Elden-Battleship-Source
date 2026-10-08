@@ -1,5 +1,7 @@
 import type { AdminTeamRow } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
+import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
+import { PowerTag } from "../event/PowerLine";
 
 interface Props {
   /** The teams in seed order, best first. */
@@ -7,6 +9,8 @@ interface Props {
   onChange: (teams: AdminTeamRow[]) => void;
   /** The order the teams signed up in, for "reset". */
   signupOrder: AdminTeamRow[];
+  /** Team power by team id, for "seed by power" and to show beside each team. */
+  powers?: Map<string, TeamPowerInfo> | null;
 }
 
 /**
@@ -14,12 +18,19 @@ interface Props {
  * the bottom seed first, in Swiss the first round pairs the top half against the bottom half, and in
  * groups the seeds are dealt out so no group is stacked.
  *
- * Starts in sign-up order, which favours nobody. The administrator can move teams up and down, or
- * shuffle for a random draw. A shuffle uses the browser's cryptographic randomness, so a draw cannot be
- * predicted from an earlier one.
+ * Starts in sign-up order, which favours nobody. The administrator can move teams up and down, shuffle
+ * for a random draw, or seed by team power - strongest first, from the leaderboards (see teamPower). A
+ * shuffle uses the browser's cryptographic randomness, so a draw cannot be predicted from an earlier one.
  */
-export function SeedList({ teams, onChange, signupOrder }: Props) {
+export function SeedList({ teams, onChange, signupOrder, powers }: Props) {
   const t = useT();
+
+  /** Strongest first. Ties - two unknown teams, say - keep the order they were already in. */
+  function byPower() {
+    if (!powers) return;
+    const at = new Map(teams.map((team, i) => [team.id, i]));
+    onChange([...teams].sort((a, b) => (powers.get(b.id)?.power ?? 1500) - (powers.get(a.id)?.power ?? 1500) || at.get(a.id)! - at.get(b.id)!));
+  }
 
   function move(from: number, to: number) {
     if (to < 0 || to >= teams.length) return;
@@ -50,6 +61,13 @@ export function SeedList({ teams, onChange, signupOrder }: Props) {
       <div className="row">
         <button onClick={shuffle}>{t("Shuffle (random draw)", "Mélanger (tirage au sort)")}</button>
         <button onClick={() => onChange([...signupOrder])}>{t("Sign-up order", "Ordre d'inscription")}</button>
+        <button
+          disabled={!powers || powers.size === 0}
+          onClick={byPower}
+          title={t("Strongest team first, by team power from the leaderboards.", "L'équipe la plus forte en premier, d'après la puissance d'équipe.")}
+        >
+          {t("Seed by power (suggested)", "Têtes de série par puissance (suggéré)")}
+        </button>
       </div>
       <div className="t-list">
         {teams.map((team, index) => (
@@ -57,7 +75,8 @@ export function SeedList({ teams, onChange, signupOrder }: Props) {
             <span>
               <strong style={{ display: "inline-block", minWidth: "2.2ch", color: "var(--accent-bright)" }}>{index + 1}</strong>{" "}
               {team.name}{" "}
-              <span className="muted" style={{ fontSize: "0.78rem" }}>{team.roster.map((m) => m.display_name).join(", ")}</span>
+              <span className="muted" style={{ fontSize: "0.78rem" }}>{team.roster.map((m) => m.display_name).join(", ")}</span>{" "}
+              <PowerTag info={powers?.get(team.id)} />
             </span>
             <span className="row" style={{ gap: "0.25rem" }}>
               <button

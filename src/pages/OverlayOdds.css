@@ -154,3 +154,20 @@
   color: #f2f7fa;
   font-weight: 600;
 }
+
+/* An official match's pre-match line (team power), pinned along the top above the live odds. Same glass
+   as the panel. ?line=0 on the URL leaves it off. */
+.ovo-line {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  padding: 0.35rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(6, 16, 24, 0.72);
+  border: 1px solid rgba(180, 210, 230, 0.22);
+  color: #f2f7fa;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}

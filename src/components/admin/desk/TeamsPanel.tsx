@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { clearTeamLogo, handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow } from "../../../lib/tournament/api";
+import { useMemo, useState } from "react";
+import { handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow } from "../../../lib/tournament/api";
 import { useT } from "../../../lib/language";
-import { TeamLabel } from "../../event/TeamLogo";
+import { AdminLogoButtons, TeamLabel } from "../../event/TeamLogo";
+import { PowerTag } from "../../event/PowerLine";
+import { useTeamPowers, type TeamPowerInfo } from "../../../hooks/useTeamPowers";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
@@ -16,6 +18,8 @@ import type { DeskData } from "./useDeskData";
 export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
   const t = useT();
   const { event } = data;
+  const rosters = useMemo(() => new Map(data.seeded.map((team) => [team.id, team.roster.map((m) => m.user_id)])), [data.seeded]);
+  const powers = useTeamPowers(rosters, data.stored);
   if (!event) return null;
   const editable = event.status === "signup" || event.status === "live";
   const canRemove = event.status === "live";
@@ -28,7 +32,7 @@ export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
       ) : (
         <div className="t-list">
           {data.seeded.map((team) => (
-            <TeamRow key={team.id} team={team} gone={data.departed.has(team.id)} editable={editable} canRemove={canRemove} teamSize={event.team_size} act={act} busy={busy} />
+            <TeamRow key={team.id} team={team} gone={data.departed.has(team.id)} editable={editable} canRemove={canRemove} teamSize={event.team_size} act={act} busy={busy} power={powers?.get(team.id)} />
           ))}
         </div>
       )}
@@ -37,8 +41,8 @@ export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
 }
 
 function TeamRow({
-  team, gone, editable, canRemove, teamSize, act, busy,
-}: { team: AdminTeamRow; gone: boolean; editable: boolean; canRemove: boolean; teamSize: number; act: DeskAct; busy: boolean }) {
+  team, gone, editable, canRemove, teamSize, act, busy, power,
+}: { team: AdminTeamRow; gone: boolean; editable: boolean; canRemove: boolean; teamSize: number; act: DeskAct; busy: boolean; power: TeamPowerInfo | undefined }) {
   const t = useT();
   const [swapping, setSwapping] = useState<string | null>(null); // user id being swapped out
   const [login, setLogin] = useState("");
@@ -50,17 +54,13 @@ function TeamRow({
           {team.seed !== null && <span style={{ color: "var(--accent-bright)", fontWeight: 600 }}>#{team.seed} </span>}
           <strong><TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} /></strong>
           {gone && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("removed from the event", "retirée de l'événement")}</span>}
-          {/* Captains can't change their logo once signup has closed, so taking down a bad one is the desk's job. */}
-          {team.logo_path && (
-            <button
-              style={{ fontSize: "0.72rem", padding: "0.15rem 0.45rem", marginLeft: "0.5rem" }}
-              disabled={busy}
-              onClick={() => {
-                if (window.confirm(t(`Remove ${team.name}'s logo?`, `Retirer le logo de ${team.name} ?`))) void act(() => clearTeamLogo(team.id, team.logo_path!));
-              }}
-            >
-              {t("Remove logo", "Retirer le logo")}
-            </button>
+          <PowerTag info={power} style={{ marginLeft: "0.5rem" }} />
+          {/* Captains can't change their logo once signup has closed, so a change after that - or taking
+              down a bad one - is the desk's job. Individual events show avatars, so there's nothing to set. */}
+          {teamSize > 1 && (
+            <span style={{ marginLeft: "0.5rem" }}>
+              <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={act} />
+            </span>
           )}
         </span>
 

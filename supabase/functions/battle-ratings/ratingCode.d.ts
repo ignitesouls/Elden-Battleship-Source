@@ -27,3 +27,15 @@ export function prepareParticipants(rows: Row[]): Row[]
 export function prepareEvents(rows: Row[], sources: Map<string, BoardSource>): Row[]
 export function rateEveryBoard(parts: Row[], events: Row[]): Map<string, BoardRatings>
 export const RATING_CODE_VERSION: string
+
+// Team power - src/lib/tournament/teamPower.ts.
+export interface PowerGame {
+  matchKey: string
+  finishedAt: string
+  players: Array<{ key: string; team: number; won: boolean; draw: boolean }>
+}
+export interface PowerParams { k: number; battleWeight: number; battleShrink: number }
+export interface PlayerPower { power: number; elo: number; games: number; battle: number | null }
+export const POWER_PARAMS: PowerParams
+export function replayElo(games: PowerGame[], k: number): Map<string, { elo: number; games: number }>
+export function playerPower(elo: { elo: number; games: number } | undefined, battles: number[], params?: PowerParams): PlayerPower

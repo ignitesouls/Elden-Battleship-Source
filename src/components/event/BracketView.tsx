@@ -1,6 +1,8 @@
 import type { MatchRow } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 import { TeamLabel } from "./TeamLogo";
+import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
+import { MatchOdds } from "./PowerLine";
 
 interface Props {
   /** The knockout matches only. */
@@ -8,6 +10,8 @@ interface Props {
   names: Map<string, string>;
   /** Logo addresses by team id, for the teams that have their own; the rest show the default. */
   logos?: Map<string, string>;
+  /** Team power by team id: a match still to be played shows its line under the two teams. */
+  powers?: Map<string, TeamPowerInfo> | null;
 }
 
 /**
@@ -21,7 +25,7 @@ interface Props {
 
 const ORDER = ["W", "L", "GF", "TP"] as const;
 
-export function BracketView({ matches, names, logos }: Props) {
+export function BracketView({ matches, names, logos, powers }: Props) {
   const t = useT();
   const label: Record<string, string> = {
     W: t("Winners bracket", "Tableau des vainqueurs"),
@@ -47,7 +51,7 @@ export function BracketView({ matches, names, logos }: Props) {
                     .filter((m) => m.round === round)
                     .sort((a, b) => a.idx - b.idx)
                     .map((m) => (
-                      <Card key={m.id} match={m} names={names} logos={logos} />
+                      <Card key={m.id} match={m} names={names} logos={logos} powers={powers} />
                     ))}
                 </div>
               ))}
@@ -59,7 +63,7 @@ export function BracketView({ matches, names, logos }: Props) {
   );
 }
 
-function Card({ match, names, logos }: { match: MatchRow; names: Map<string, string>; logos?: Map<string, string> }) {
+function Card({ match, names, logos, powers }: { match: MatchRow; names: Map<string, string>; logos?: Map<string, string>; powers?: Map<string, TeamPowerInfo> | null }) {
   const t = useT();
   const done = match.status === "done";
   const skipped = match.status === "skipped";
@@ -90,6 +94,16 @@ function Card({ match, names, logos }: { match: MatchRow; names: Map<string, str
       {line(match.entrant_a, match.score_a)}
       <div style={{ borderTop: "1px solid rgba(30, 65, 87, 0.7)" }} />
       {line(match.entrant_b, match.score_b)}
+      {powers && match.entrant_a && match.entrant_b && !done && !skipped && (
+        <MatchOdds
+          a={powers.get(match.entrant_a)}
+          b={powers.get(match.entrant_b)}
+          nameA={names.get(match.entrant_a) ?? "?"}
+          nameB={names.get(match.entrant_b) ?? "?"}
+          bestOf={match.best_of}
+          compact
+        />
+      )}
       {(match.result_kind === "forfeit" || skipped) && (
         <div className="muted" style={{ fontSize: "0.65rem", padding: "0 0.5rem 0.15rem" }}>
           {skipped ? t("not needed", "inutile") : t("forfeit", "forfait")}

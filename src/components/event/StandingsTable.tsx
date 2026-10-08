@@ -27,7 +27,7 @@ export function StandingsTable({ rows, names, logos, cut, departed, title }: Pro
 
   return (
     <div>
-      {title && <div className="muted" style={{ marginBottom: "0.2rem" }}>{title}</div>}
+      {title && <h4 className="group-heading">{title}</h4>}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
         <thead>
           <tr className="muted" style={{ textAlign: "left", fontSize: "0.72rem" }}>

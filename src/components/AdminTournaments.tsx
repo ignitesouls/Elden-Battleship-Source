@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   adminFreeAgents,
   adminListEvents,
   adminTeams,
   cancelEvent,
-  clearTeamLogo,
   createEvent,
   createTestEvent,
   deleteEvent,
@@ -18,7 +17,9 @@ import {
   type FreeAgentRow,
 } from "../lib/tournament/api";
 import { useT } from "../lib/language";
-import { TeamLabel } from "./event/TeamLogo";
+import { AdminLogoButtons, TeamLabel } from "./event/TeamLogo";
+import { PowerTag } from "./event/PowerLine";
+import { useTeamPowers } from "../hooks/useTeamPowers";
 import "./Tournament.css";
 
 /**
@@ -315,9 +316,10 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
             {t("Open signup", "Ouvrir les inscriptions")}
           </button>
         )}
-        {event.status === "signup" && (
-          <Link to={`/admin/event/${event.id}/start`} className="link-button primary">
-            {t("Start the event…", "Lancer l'événement…")}
+        {/* The plan can be drafted and saved from the moment the event exists; only starting needs signup. */}
+        {(event.status === "signup" || event.status === "draft") && (
+          <Link to={`/admin/event/${event.id}/start`} className={`link-button${event.status === "signup" ? " primary" : ""}`}>
+            {event.status === "signup" ? t("Plan & start the event…", "Préparer et lancer…") : t("Plan the event…", "Préparer l'événement…")}
           </Link>
         )}
         {event.status === "signup" && (
@@ -401,6 +403,13 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
   /** An action on one team, then a reload of this list as well as the event list above. */
   const onTeam = (action: () => Promise<unknown>) => act(async () => { await action(); await load(); });
 
+  // Power for teams still in the running - worth seeing while deciding whom to approve and how to seed.
+  const rosters = useMemo(
+    () => new Map((teams ?? []).filter((team) => team.status === "pending" || team.status === "approved").map((team) => [team.id, team.roster.map((m) => m.user_id)])),
+    [teams],
+  );
+  const powers = useTeamPowers(rosters);
+
   if (teams === null) return <p className="muted" style={{ margin: 0 }}>{t("Loading...", "Chargement...")}</p>;
 
   const order = { pending: 0, approved: 1, rejected: 2, withdrawn: 3 } as const;
@@ -424,6 +433,7 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                   {team.status === "approved" && <span className="badge badge--good">{t("approved", "approuvée")}</span>}
                   {team.status === "rejected" && <span className="badge badge--bad">{t("rejected", "refusée")}</span>}
                   {team.status === "withdrawn" && <span className="badge">{t("withdrawn", "retirée")}</span>}
+                  <PowerTag info={powers?.get(team.id)} style={{ marginLeft: "0.4rem" }} />
                   {event.team_size > 1 && short(team) > 0 && team.status !== "rejected" && team.status !== "withdrawn" && (
                     <span className="badge badge--warn" style={{ marginLeft: "0.3rem" }}>
                       {team.looking_for_players
@@ -460,15 +470,8 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                 {team.status === "rejected" && (
                   <button disabled={busy} onClick={() => void onTeam(() => setTeamStatus(team.id, "pending"))}>{t("Reconsider", "Réexaminer")}</button>
                 )}
-                {team.logo_path && (
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm(t(`Remove ${team.name}'s logo?`, `Retirer le logo de ${team.name} ?`))) void onTeam(() => clearTeamLogo(team.id, team.logo_path!));
-                    }}
-                  >
-                    {t("Remove logo", "Retirer le logo")}
-                  </button>
+                {event.team_size > 1 && (
+                  <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={onTeam} />
                 )}
               </div>
             </div>

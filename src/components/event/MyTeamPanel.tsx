@@ -107,12 +107,15 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
               {t("Rename", "Renommer")}
             </button>
           </div>
-          <LogoField
-            current={teamLogoUrl(team.logo_path)}
-            disabled={busy}
-            onPick={(image) => void act(() => setTeamLogo(team.id, image, team.logo_path))}
-            onClear={team.logo_path ? () => void act(() => clearTeamLogo(team.id, team.logo_path!)) : undefined}
-          />
+          {/* An individual event shows each player's Twitch avatar instead - there's no logo to choose. */}
+          {event.team_size > 1 && (
+            <LogoField
+              current={teamLogoUrl(team.logo_path)}
+              disabled={busy}
+              onPick={(image) => void act(() => setTeamLogo(team.id, image, team.logo_path))}
+              onClear={team.logo_path ? () => void act(() => clearTeamLogo(team.id, team.logo_path!)) : undefined}
+            />
+          )}
         </>
       ) : (
         <strong style={{ fontSize: "1.1rem" }}>

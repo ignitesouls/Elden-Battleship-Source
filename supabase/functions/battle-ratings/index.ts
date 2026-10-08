@@ -1,5 +1,7 @@
 /**
- * One archived match's battle ratings, from a stored snapshot that follows the archive.
+ * One archived match's battle ratings, from a stored snapshot that follows the archive - and, from the
+ * same snapshot, team power for a list of players (body `{ players: [...] }`; see storePowers and
+ * src/lib/tournament/teamPower.ts), which the tournament pages put lines on matches with.
  *
  * -- Why this exists -------------------------------------------------------------------------------
  *
@@ -31,12 +33,16 @@
  */
 import postgres from 'npm:postgres@3.4.7'
 import {
+  playerPower,
+  POWER_PARAMS,
   prepareEvents,
   prepareParticipants,
   rateEveryBoard,
+  replayElo,
   RATING_CODE_VERSION,
   type BattleRating,
   type BoardSource,
+  type PowerGame,
 } from './ratingCode.generated.js'
 
 const corsHeaders = {
@@ -152,13 +158,90 @@ async function recompute(tx: postgres.TransactionSql, fp: string): Promise<void>
       insert into public.battle_rating_snapshots (square_set, fingerprint, weights, ratings)
       values (${set}, ${fp}, ${tx.json(Object.fromEntries(board.weights))}, ${tx.json(byMatch)})`
   }
+
+  await storePowers(tx, fp, parts.rows, boards)
+}
+
+/** Keyed like a career (participantKey): the account, or the name for a game played signed out. */
+const playerKey = (userId: string | null | undefined, nickname: string) => userId ?? `name:${String(nickname).trim().toLowerCase()}`
+
+/**
+ * Every player's team power, from the same rows the ratings were just made from: Elo by replaying every
+ * game in order, plus their battle ratings across every board. See src/lib/tournament/teamPower.ts.
+ */
+async function storePowers(
+  tx: postgres.TransactionSql,
+  fp: string,
+  // deno-lint-ignore no-explicit-any
+  parts: any[],
+  boards: Map<string, { ratings: BattleRating[] }>,
+): Promise<void> {
+  const byMatch = new Map<string, PowerGame>()
+  for (const p of parts) {
+    const game = byMatch.get(p.match_key) ?? { matchKey: p.match_key, finishedAt: p.finished_at, players: [] }
+    game.players.push({ key: playerKey(p.user_id, p.nickname), team: p.team, won: !!p.won, draw: !!p.draw })
+    byMatch.set(p.match_key, game)
+  }
+  const elo = replayElo([...byMatch.values()], POWER_PARAMS.k)
+
+  const battles = new Map<string, number[]>()
+  for (const board of boards.values()) {
+    for (const r of board.ratings) {
+      const k = playerKey(r.userId as string | null, r.nickname as string)
+      const list = battles.get(k) ?? []
+      list.push(r.rating as number)
+      battles.set(k, list)
+    }
+  }
+
+  const rows = [...new Set([...elo.keys(), ...battles.keys()])].map((key) => {
+    const p = playerPower(elo.get(key), battles.get(key) ?? [])
+    return { player_key: key, fingerprint: fp, elo: p.elo, games: p.games, battle: p.battle, power: p.power }
+  })
+  await tx`delete from public.player_power_snapshots`
+  // In slices: one insert per few hundred players keeps each statement small.
+  for (let i = 0; i < rows.length; i += 500) {
+    const slice = rows.slice(i, i + 500)
+    await tx`insert into public.player_power_snapshots ${tx(slice, 'player_key', 'fingerprint', 'elo', 'games', 'battle', 'power')}`
+  }
+}
+
+/** The most players one request may ask about - a big event's every roster, with room to spare. */
+const MAX_PLAYERS = 400
+
+/** Recomputes everything if the archive has moved since the snapshot was taken. */
+async function ensureFresh(): Promise<void> {
+  const fp = await fingerprint(sql)
+  const [row] = await sql`select (select fingerprint from public.battle_rating_snapshots limit 1) as fp`
+  if (row.fp === fp) return
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtext(${LOCK_KEY}::text))`
+    const now = await fingerprint(tx)
+    const [again] = await tx`select (select fingerprint from public.battle_rating_snapshots limit 1) as fp`
+    if (again.fp === now) return
+    await recompute(tx, now)
+  })
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const body = (await req.json().catch(() => ({}))) as { matchKey?: unknown; set?: unknown }
+    const body = (await req.json().catch(() => ({}))) as { matchKey?: unknown; set?: unknown; players?: unknown }
+
+    // Team power for a list of players: { players: [key, ...] } -> { powers: { key: {...} } }. A player
+    // missing from the answer has never played a counted game, and the page counts them as average.
+    if (Array.isArray(body.players)) {
+      const keys = body.players.filter((k): k is string => typeof k === 'string').slice(0, MAX_PLAYERS)
+      if (keys.length === 0) return jsonResponse({ powers: {} })
+      await ensureFresh()
+      const rows = await sql`select player_key, elo, games, battle, power from public.player_power_snapshots
+                              where player_key = any(${keys}::text[])`
+      const powers: Record<string, { elo: number; games: number; battle: number | null; power: number }> = {}
+      for (const r of rows) powers[r.player_key] = { elo: r.elo, games: r.games, battle: r.battle, power: r.power }
+      return jsonResponse({ powers })
+    }
+
     if (typeof body.matchKey !== 'string' || typeof body.set !== 'string') {
       return jsonResponse({ error: 'bad_request' }, 400)
     }

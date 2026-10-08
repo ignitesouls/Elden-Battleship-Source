@@ -1,6 +1,9 @@
 import type { MatchRow } from "../../lib/tournament/api";
 import { useLanguage, useT } from "../../lib/language";
 import { groupLabel } from "../../lib/tournament/groupNames";
+import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
+import { MatchOdds } from "./PowerLine";
+import { TeamLogo } from "./TeamLogo";
 
 /**
  * Every match of a running or finished event, grouped by round.
@@ -20,6 +23,10 @@ interface Props {
   names: Map<string, string>;
   /** The event's group names, so a group match can say which group it is in. */
   groupNames?: string[];
+  /** Team power by team id: matches still to be played show their line. */
+  powers?: Map<string, TeamPowerInfo> | null;
+  /** Logo addresses by team id. Given, every named team shows its logo (or the default) beside its name. */
+  logos?: Map<string, string>;
 }
 
 const BRACKET_LABEL: Record<string, [string, string]> = {
@@ -29,7 +36,7 @@ const BRACKET_LABEL: Record<string, [string, string]> = {
   TP: ["Third place", "Troisième place"],
 };
 
-export function MatchList({ matches, names, groupNames }: Props) {
+export function MatchList({ matches, names, groupNames, powers, logos }: Props) {
   const t = useT();
   const lang = useLanguage();
 
@@ -88,8 +95,10 @@ export function MatchList({ matches, names, groupNames }: Props) {
               return (
                 <div className="t-item" key={m.id}>
                   <span style={{ flex: 1, minWidth: "12rem" }}>
+                    {logos && <TeamLogo url={m.entrant_a ? logos.get(m.entrant_a) : null} empty={!m.entrant_a} size={1.15} />}{logos && " "}
                     <span className={done && m.winner === m.entrant_a ? "t-winner" : undefined}>{a}</span>
                     <span className="muted"> {t("vs", "contre")} </span>
+                    {logos && <TeamLogo url={m.entrant_b ? logos.get(m.entrant_b) : null} empty={!m.entrant_b} size={1.15} />}{logos && " "}
                     <span className={done && m.winner === m.entrant_b ? "t-winner" : undefined}>{b}</span>
                     {bracket && (
                       <span className="muted" style={{ fontSize: "0.72rem" }}>
@@ -125,6 +134,12 @@ export function MatchList({ matches, names, groupNames }: Props) {
                       </span>
                     )}
                   </span>
+                  {/* The line, for a match still to be decided with both teams known. */}
+                  {powers && m.entrant_a && m.entrant_b && (m.status === "ready" || m.status === "in_progress" || m.status === "pending") && (
+                    <div style={{ flexBasis: "100%" }}>
+                      <MatchOdds a={powers.get(m.entrant_a)} b={powers.get(m.entrant_b)} nameA={a} nameB={b} bestOf={m.best_of} />
+                    </div>
+                  )}
                 </div>
               );
             })}

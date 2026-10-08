@@ -7,6 +7,7 @@ import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { SiteFooter } from "../components/SiteFooter";
 import { EventBanners } from "../components/EventBanners";
+import { ScheduledMatches } from "../components/ScheduledMatches";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
 import { formatRoomCode } from "../lib/roomCode";
@@ -269,6 +270,10 @@ export function Home() {
           ))}
         </div>
       )}
+
+      {/* Official tournament matches the captains have scheduled, and any being played now - at the
+          bottom, after the casual battles, with links to spectate and to the players' streams. */}
+      <ScheduledMatches />
 
       <SiteFooter />
     </div>

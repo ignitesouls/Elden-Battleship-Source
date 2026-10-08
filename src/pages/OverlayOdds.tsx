@@ -1,4 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { fetchOfficialMatch, type OfficialMatchInfo } from "../lib/tournament/api";
+import { OfficialMatchLine } from "../components/event/OfficialMatchLine";
+import "../components/Tournament.css";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useBattleClock } from "../hooks/useBattlePhase";
@@ -36,6 +39,25 @@ export function OverlayOdds(props: OverlaySourceProps = {}) {
   const showGraph = params.get("graph") !== "0";
   const { snapshot, timeline } = useVictoryOdds(state.attacks, state.room, state.players, showGraph);
 
+  // An official tournament match also shows its pre-match line (team power), above the live odds - a
+  // caster's "the book had them at -180" before the first shot. ?line=0 hides it.
+  const matchId = state.room?.tournament_match_id ?? null;
+  const showLine = params.get("line") !== "0";
+  const [official, setOfficial] = useState<OfficialMatchInfo | null>(null);
+  useEffect(() => {
+    if (!matchId || !showLine) {
+      setOfficial(null);
+      return;
+    }
+    let cancelled = false;
+    fetchOfficialMatch(matchId)
+      .then((m) => !cancelled && setOfficial(m))
+      .catch(() => undefined); // best effort: the odds must never fail over an extra
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId, showLine]);
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.add("overlay-mode");
@@ -57,6 +79,11 @@ export function OverlayOdds(props: OverlaySourceProps = {}) {
    */
   return (
     <div className="ovo">
+      {official && (
+        <div className="ovo-line">
+          <OfficialMatchLine info={official} small />
+        </div>
+      )}
       <OddsPanel
         snapshot={snapshot}
         points={timeline}

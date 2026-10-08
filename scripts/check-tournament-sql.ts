@@ -545,6 +545,8 @@ async function rules() {
   await pairsAndRosters(admin)
   await teamLogos(admin)
   await groupNames(admin, eve)
+  await plans(admin, eve)
+  await frontPageMatches(admin, eve)
   await startRules(admin)
   await laterStages(admin)
   await officialMatches(admin)
@@ -1298,6 +1300,78 @@ async function groupNames(admin: Person, visitor: Person) {
     (await admin.client.from('tournaments').update({ group_names: ['Limgrave', null] }).eq('id', ev.id)).error, /group_names_check/)
   allowed('several unnamed groups are fine', (await admin.client.from('tournaments').update({ group_names: ['', '', 'Caelid'] }).eq('id', ev.id)).error)
   allowed('and clearing them all is fine', (await admin.client.from('tournaments').update({ group_names: [] }).eq('id', ev.id)).error)
+}
+
+// ===========================================================================================
+async function frontPageMatches(admin: Person, visitor: Person) {
+  console.log('\nScheduled matches on the front page')
+  const capA = await person('fp_a')
+  const capB = await person('fp_b')
+  const ev = await newTournament({ team_size: 1, name: `Front ${run}`, status: 'live' })
+  const made = await svc.from('tournament_entrants').insert([
+    { tournament_id: ev.id, name: 'Front A', captain_user_id: capA.id, status: 'approved' },
+    { tournament_id: ev.id, name: 'Front B', captain_user_id: capB.id, status: 'approved' },
+  ]).select('id, name')
+  const [a, b] = ['Front A', 'Front B'].map((n) => made.data!.find((e) => e.name === n)!.id as string)
+  const soon = new Date(Date.now() + 3600_000).toISOString()
+  const ms = (await svc.from('tournament_matches').insert([
+    { tournament_id: ev.id, key: 'W1-0', stage: 'knockout', bracket: 'W', round: 1, idx: 0, entrant_a: a, entrant_b: b, status: 'ready', best_of: 1 },
+    { tournament_id: ev.id, key: 'W1-1', stage: 'knockout', bracket: 'W', round: 1, idx: 1, entrant_a: b, entrant_b: a, status: 'ready', best_of: 1 },
+  ]).select('id, key')).data!
+  const m0 = ms.find((m) => m.key === 'W1-0')!.id as string
+  const m1 = ms.find((m) => m.key === 'W1-1')!.id as string
+
+  allowed('a captain can set their own match\'s time', (await capA.client.rpc('set_match_time', { p_match: m0, p_at: soon })).error)
+  refused('a stranger cannot', (await visitor.client.rpc('set_match_time', { p_match: m0, p_at: soon })).error, /captain/)
+
+  const listed = async () => ((await visitor.client.rpc('scheduled_official_matches', { p_limit: 50 })).data ?? []) as Array<Record<string, unknown>>
+  let rows = (await listed()).filter((r) => r.tournament_id === ev.id)
+  check('the scheduled match is on the front page, for anyone', rows.length === 1 && rows[0].match_id === m0, JSON.stringify(rows))
+  check('...with both teams, the time, and the players\' Twitch names for Multitwitch',
+    rows[0]?.team_a_name === 'Front A' && rows[0]?.team_b_name === 'Front B' && !!rows[0]?.agreed_at &&
+    (rows[0]?.streams_a as string[]).includes(capA.login) && (rows[0]?.streams_b as string[]).includes(capB.login), JSON.stringify(rows[0]))
+  check('a match with no time and no room is not listed', !rows.some((r) => r.match_id === m1))
+
+  const room = await svc.from('rooms').insert({ code: `FP ${run}`, status: 'lobby', tournament_match_id: m1 }).select('id').single()
+  rows = (await listed()).filter((r) => r.tournament_id === ev.id)
+  check('a match being played in an official room is listed - first - with the room to spectate',
+    rows[0]?.match_id === m1 && rows[0]?.room_code === `FP ${run}`, room.error?.message ?? JSON.stringify(rows))
+  await svc.from('rooms').delete().eq('id', room.data?.id ?? '')
+
+  const hidden = await newTournament({ team_size: 1, name: `Front test ${run}`, status: 'live', is_test: true })
+  const he = (await svc.from('tournament_entrants').insert([
+    { tournament_id: hidden.id, name: 'Hidden A', captain_user_id: capA.id, status: 'approved' },
+    { tournament_id: hidden.id, name: 'Hidden B', captain_user_id: capB.id, status: 'approved' },
+  ]).select('id')).data!
+  await svc.from('tournament_matches').insert({ tournament_id: hidden.id, key: 'W1-0', stage: 'knockout', bracket: 'W', round: 1, idx: 0, entrant_a: he[0].id, entrant_b: he[1].id, status: 'ready', agreed_at: soon })
+  check('a test event\'s matches never reach the front page', !(await listed()).some((r) => r.tournament_id === hidden.id))
+  void admin
+}
+
+// ===========================================================================================
+async function plans(admin: Person, visitor: Person) {
+  console.log('\nPlanning an event while signup is open')
+  const ev = await newTournament({ team_size: 1, name: `Plan ${run}` })
+  const plan = {
+    tournament_id: ev.id,
+    format: { qualifier: { format: 'groups', groupCount: 2, legs: 1, bestOf: 1, advancePerGroup: 1 }, knockout: null },
+    schedule: { startsAt: new Date().toISOString(), roundDays: 7, stageGapDays: 0, overrides: {} },
+    seed_order: [],
+    fit_days: 21,
+  }
+  allowed('an administrator can save a plan during signup', (await admin.client.from('tournament_plans').upsert(plan)).error)
+  allowed('...and save over it', (await admin.client.from('tournament_plans').upsert({ ...plan, fit_days: 28 })).error)
+  const back = (await admin.client.from('tournament_plans').select('fit_days, updated_by').eq('tournament_id', ev.id).single()).data
+  check('...which keeps the newest, and who saved it', back?.fit_days === 28 && back?.updated_by === admin.id, JSON.stringify(back))
+  check('a player cannot read the plan - a draft seeding is the organisers\' working',
+    ((await visitor.client.from('tournament_plans').select('tournament_id').eq('tournament_id', ev.id)).data ?? []).length === 0)
+  refused('...or write one', (await visitor.client.from('tournament_plans').upsert({ ...plan, fit_days: 7 })).error)
+  check('...so the administrator\'s plan is untouched', (await svc.from('tournament_plans').select('fit_days').eq('tournament_id', ev.id).single()).data?.fit_days === 28)
+  check('saving a plan does not start anything: the event\'s own format is still empty',
+    JSON.stringify((await svc.from('tournaments').select('format, status').eq('id', ev.id).single()).data) === JSON.stringify({ format: {}, status: 'signup' }))
+  allowed('group names can be set during signup too', (await admin.client.from('tournaments').update({ group_names: ['Kraken', 'Leviathan'] }).eq('id', ev.id)).error)
+  await svc.from('tournaments').delete().eq('id', ev.id)
+  check('deleting the event deletes its plan', ((await svc.from('tournament_plans').select('tournament_id').eq('tournament_id', ev.id)).data ?? []).length === 0)
 }
 
 // ===========================================================================================

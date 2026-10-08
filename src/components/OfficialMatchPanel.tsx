@@ -10,6 +10,7 @@ import {
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useT } from "../lib/language";
 import type { Room } from "../types/battleship";
+import { OfficialMatchLine } from "./event/OfficialMatchLine";
 import "./Tournament.css";
 
 interface Props {
@@ -154,6 +155,8 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
           {t(`Best of ${info.bestOf} - the series stands ${info.scoreA}-${info.scoreB}`, `Au meilleur de ${info.bestOf} - la série est à ${info.scoreA}-${info.scoreB}`)}
         </span>
       )}
+
+      <OfficialMatchLine info={info} />
 
       {both ? (
         <span className="muted" style={{ textAlign: "center" }}>

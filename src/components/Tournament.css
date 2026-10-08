@@ -143,6 +143,63 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* The signed-in player's next match, at the top of the event page. */
+.next-match {
+  border-color: rgba(217, 164, 65, 0.6);
+}
+
+.next-match__teams {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  font-size: 1.1rem;
+}
+
+/* A group's name over its standings: a heading, not a caption - the groups are named now. */
+.group-heading {
+  font-family: var(--font-display);
+  color: var(--accent-bright);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  margin: 0.6rem 0 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid rgba(217, 164, 65, 0.35);
+}
+
+/* Team power and match lines (see components/event/PowerLine). Quiet on purpose: a number for fun, not
+   the headline. */
+.power-tag {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.match-odds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-odds--compact {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  padding: 0.1rem 0.5rem 0.15rem;
+  border-top: 1px dashed rgba(30, 65, 87, 0.7);
+  font-size: 0.68rem;
+}
+
+.just-for-fun {
+  font-size: 0.72rem;
+  text-align: center;
+  margin: 0.4rem 0 0;
+}
+
 /* The logo chooser: a preview square on a checkerboard (so a transparent logo reads as transparent), then the buttons. */
 .logo-field {
   display: flex;

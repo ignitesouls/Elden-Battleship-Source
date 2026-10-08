@@ -3,6 +3,7 @@ import type { TournamentFormat } from "./format";
 import { CHAMPION_BANNER_DAYS, type EventSummary } from "./frontPage";
 import { rulesFrom, type MatchRules } from "./matchRules";
 import type { Schedule } from "./schedule";
+import type { PlayerPower } from "./teamPower";
 import { matchFromRow, toMatchRows } from "./start";
 import type { TMatch } from "./types";
 
@@ -316,6 +317,87 @@ export async function renameTeam(entrantId: string, name: string): Promise<void>
   if (error) fail(error);
 }
 
+// -- Players' public profile bits ---------------------------------------------------------------------
+
+export interface PlayerProfileBits {
+  avatar_url: string | null;
+  twitch_login: string | null;
+}
+
+/**
+ * Twitch avatar and login for a list of accounts, in one request. Avatars stand in for a logo in an
+ * individual event (a player IS the team), and logins make the Multitwitch link. Both are public
+ * profile fields. Accounts with no profile are simply missing from the map.
+ */
+export async function fetchProfileBits(userIds: string[]): Promise<Map<string, PlayerProfileBits>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.from("profiles").select("id, avatar_url, twitch_login").in("id", ids);
+  if (error) fail(error);
+  return new Map((data ?? []).map((p) => [p.id as string, { avatar_url: (p.avatar_url as string | null) ?? null, twitch_login: (p.twitch_login as string | null) ?? null }]));
+}
+
+/**
+ * Everyone's streams side by side, on multitwitch.tv - which takes channels as path segments. Null with
+ * nobody to show. Logins are Twitch's own (lowercase letters, digits, underscores), so nothing to escape;
+ * anything else is dropped rather than trusted into a URL.
+ */
+export function multitwitchUrl(logins: Array<string | null | undefined>): string | null {
+  const clean = [...new Set(logins.filter((l): l is string => !!l && /^[a-zA-Z0-9_]{2,25}$/.test(l)).map((l) => l.toLowerCase()))];
+  return clean.length > 0 ? `https://www.multitwitch.tv/${clean.join("/")}` : null;
+}
+
+// -- The front page's official matches -----------------------------------------------------------------
+
+export interface ScheduledMatch {
+  match_id: string;
+  tournament_id: string;
+  event_name: string;
+  team_size: number;
+  stage: "swiss" | "group" | "knockout";
+  phase: number;
+  best_of: number;
+  score_a: number;
+  score_b: number;
+  status: "ready" | "in_progress";
+  agreed_at: string | null;
+  team_a: string;
+  team_a_name: string;
+  team_a_logo: string | null;
+  team_a_avatar: string | null;
+  streams_a: string[];
+  team_b: string;
+  team_b_name: string;
+  team_b_logo: string | null;
+  team_b_avatar: string | null;
+  streams_b: string[];
+  /** The official room playing it right now, if there is one - spectate at /room/<code>. */
+  room_code: string | null;
+}
+
+/** Scheduled and in-progress official matches across every running event, soonest first - one request. */
+export async function fetchScheduledMatches(limit = 12): Promise<ScheduledMatch[]> {
+  const { data, error } = await supabase.rpc("scheduled_official_matches", { p_limit: limit });
+  if (error) fail(error);
+  return (data ?? []) as ScheduledMatch[];
+}
+
+// -- Team power -------------------------------------------------------------------------------------
+
+/**
+ * Each listed player's power, by account id, from the battle-ratings Edge Function's snapshot - one
+ * request however many players, and nothing downloaded but the answer. A player missing from the result
+ * has no counted games and is treated as average. Null if the function can't answer (not deployed, or
+ * down): the pages then simply show no power or lines, rather than guessing.
+ */
+export async function fetchPlayerPowers(playerIds: string[]): Promise<Map<string, PlayerPower> | null> {
+  const ids = [...new Set(playerIds)];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.functions.invoke("battle-ratings", { body: { players: ids } });
+  if (error || !data || typeof data.powers !== "object" || data.powers === null) return null;
+  return new Map(Object.entries(data.powers as Record<string, PlayerPower>));
+}
+
 // -- Team logos -------------------------------------------------------------------------------------
 // The image is a file in a public storage bucket, in a folder named for the team; the entrant row holds
 // its path. Who may change either is the database's rule (captain while signup is open, administrator
@@ -329,11 +411,20 @@ export function teamLogoUrl(path: string | null | undefined): string | null {
   return supabase.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl;
 }
 
-/** Every team's logo address in a list of teams, by team id - the shape the tables and bracket take. */
-export function teamLogos(teams: Pick<TeamRow, "id" | "logo_path">[]): Map<string, string> {
+/**
+ * Every team's logo address in a list of teams, by team id - the shape the tables and bracket take.
+ *
+ * In an individual event (`avatars` given) a "team" is one player, so its logo is that player's Twitch
+ * avatar, and an uploaded logo is ignored - individual entrants don't get to choose one. Pass the
+ * captains' avatars by account id; see fetchProfileBits.
+ */
+export function teamLogos(
+  teams: Pick<TeamRow, "id" | "logo_path" | "captain_user_id">[],
+  avatars?: Map<string, PlayerProfileBits>,
+): Map<string, string> {
   const logos = new Map<string, string>();
   for (const team of teams) {
-    const url = teamLogoUrl(team.logo_path);
+    const url = avatars ? avatars.get(team.captain_user_id)?.avatar_url ?? null : teamLogoUrl(team.logo_path);
     if (url) logos.set(team.id, url);
   }
   return logos;
@@ -615,6 +706,9 @@ export interface OfficialMatchInfo {
   eventName: string;
   teamA: string;
   teamB: string;
+  /** The two teams' players, by account id - for the match's line (see useTeamPowers). */
+  rosterA: string[];
+  rosterB: string[];
   bestOf: number;
   scoreA: number;
   scoreB: number;
@@ -632,14 +726,17 @@ export async function fetchOfficialMatch(matchId: string): Promise<OfficialMatch
   if (!m) return null;
   const ids = [m.entrant_a, m.entrant_b].filter(Boolean) as string[];
   const [teams, event] = await Promise.all([
-    supabase.from("tournament_entrants").select("id, name").in("id", ids),
+    supabase.from("tournament_entrants").select("id, name, roster:tournament_roster(user_id)").in("id", ids),
     supabase.from("tournaments").select("name").eq("id", m.tournament_id).maybeSingle(),
   ]);
-  const name = (id: string | null) => (teams.data ?? []).find((t) => t.id === id)?.name ?? "?";
+  const team = (id: string | null) =>
+    (teams.data ?? []).find((t) => t.id === id) as { name: string; roster: { user_id: string }[] | null } | undefined;
   return {
     eventName: (event.data?.name as string | undefined) ?? "",
-    teamA: name(m.entrant_a),
-    teamB: name(m.entrant_b),
+    teamA: team(m.entrant_a)?.name ?? "?",
+    teamB: team(m.entrant_b)?.name ?? "?",
+    rosterA: (team(m.entrant_a)?.roster ?? []).map((r) => r.user_id),
+    rosterB: (team(m.entrant_b)?.roster ?? []).map((r) => r.user_id),
     bestOf: m.best_of,
     scoreA: m.score_a,
     scoreB: m.score_b,
@@ -717,6 +814,32 @@ export async function fetchEventConfig(eventId: string): Promise<EventConfig> {
   // where callers are forced to deal with "there is no format yet".
   const format = saved && typeof saved === "object" && saved.qualifier ? (saved as TournamentFormat) : null;
   return { format, schedule: data.schedule as Schedule };
+}
+
+/** An event's saved plan - what the start page opens with. Administrators only. */
+export interface EventPlan {
+  format: TournamentFormat;
+  schedule: Schedule;
+  seed_order: string[];
+  fit_days: number | null;
+  updated_at: string;
+}
+
+/** The plan saved for an event, or null if nobody has saved one. */
+export async function fetchEventPlan(eventId: string): Promise<EventPlan | null> {
+  const { data, error } = await supabase
+    .from("tournament_plans")
+    .select("format, schedule, seed_order, fit_days, updated_at")
+    .eq("tournament_id", eventId)
+    .maybeSingle();
+  if (error) fail(error);
+  return (data as EventPlan | null) ?? null;
+}
+
+/** Saves (or replaces) an event's plan. Starting the event is still a separate step - see startEvent. */
+export async function saveEventPlan(eventId: string, plan: Omit<EventPlan, "updated_at">): Promise<void> {
+  const { error } = await supabase.from("tournament_plans").upsert({ tournament_id: eventId, ...plan });
+  if (error) fail(error);
 }
 
 /** Name the group stage's groups, by group number. Editable in any state; the database checks the names. */

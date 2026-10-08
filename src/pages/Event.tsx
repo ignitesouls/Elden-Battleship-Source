@@ -26,6 +26,10 @@ import { MatchList } from "../components/event/MatchList";
 import { BracketView } from "../components/event/BracketView";
 import { StandingsTable } from "../components/event/StandingsTable";
 import { TeamLabel } from "../components/event/TeamLogo";
+import { JustForFun, PowerTag } from "../components/event/PowerLine";
+import { useTeamPowers } from "../hooks/useTeamPowers";
+import { useProfileBits } from "../hooks/useProfileBits";
+import { NextMatchCard } from "../components/event/NextMatchCard";
 import "../components/Tournament.css";
 
 /** How often a running event is re-read, so results show up without a reload. */
@@ -120,6 +124,19 @@ export function Event() {
     };
   }, [engine, teams]);
 
+  // Team power, for the team list and the lines on matches still to play. Approved teams only - the ones
+  // in the event. Fetched again when a result comes in (the count of finished matches), not every refresh.
+  const rosters = useMemo(
+    () => new Map(teams.filter((team) => team.status === "approved").map((team) => [team.id, team.roster.map((m) => m.user_id)])),
+    [teams],
+  );
+  const decided = matches.filter((m) => m.status === "done").length;
+  const powers = useTeamPowers(event?.status === "cancelled" ? new Map() : rosters, decided);
+  const showsPower = !!powers && powers.size > 0;
+  // Avatars (an individual event's logos) and Twitch logins (the next-match card's streams link).
+  const profileIds = useMemo(() => [...rosters.values()].flat(), [rosters]);
+  const profiles = useProfileBits(profileIds);
+
   if (!isSupabaseConfigured) {
     return <div className="panel">{t("Supabase isn't configured.", "Supabase n'est pas configuré.")}</div>;
   }
@@ -149,7 +166,8 @@ export function Event() {
   const open = signupIsOpen({ status: event.status, signupClosesAt: event.signup_closes_at }, new Date());
   const approved = teams.filter((team) => team.status === "approved");
   const names = new Map(teams.map((team) => [team.id, team.name]));
-  const logos = teamLogos(teams);
+  // In an individual event each "team" is one player, shown with their Twitch avatar.
+  const logos = teamLogos(teams, event.team_size === 1 ? profiles : undefined);
   const knockoutMatches = matches.filter((m) => m.stage === "knockout");
   const departedIds = new Set(teams.filter((team) => team.forfeited_at).map((team) => team.id));
   const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "long", day: "numeric", year: "numeric" });
@@ -222,6 +240,10 @@ export function Event() {
 
       {error && <div className="error-text">{error}</div>}
 
+      {userId && (
+        <NextMatchCard event={event} teams={teams} matches={matches} userId={userId} logos={logos} powers={powers} profiles={profiles} reload={reload} />
+      )}
+
       {standings && standings.tables.length > 0 && (
         <div className="panel stack">
           <h3>{t("Standings", "Classement")}</h3>
@@ -247,14 +269,14 @@ export function Event() {
       {(event.status === "live" || event.status === "finished") && knockoutMatches.length > 0 && (
         <div className="panel stack">
           <h3>{t("Bracket", "Tableau")}</h3>
-          <BracketView matches={knockoutMatches} names={names} logos={logos} />
+          <BracketView matches={knockoutMatches} names={names} logos={logos} powers={powers} />
         </div>
       )}
 
       {(event.status === "live" || event.status === "finished") && (
         <div className="panel stack">
           <h3>{t("Schedule and results", "Calendrier et résultats")}</h3>
-          <MatchList matches={matches} names={names} groupNames={event.group_names} />
+          <MatchList matches={matches} names={names} groupNames={event.group_names} powers={powers} logos={logos} />
         </div>
       )}
 
@@ -277,6 +299,7 @@ export function Event() {
                   <span>
                     <strong><TeamLabel name={team.name} logo={logos.get(team.id)} size={1.6} /></strong>
                     {team.forfeited_at && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("withdrawn", "retirée")}</span>}
+                    <PowerTag info={powers?.get(team.id)} style={{ marginLeft: "0.5rem" }} />
                   </span>
                   {event.team_size > 1 && (
                     <span className="muted" style={{ fontSize: "0.8rem" }}>{team.roster.map((m) => m.display_name).join(", ")}</span>
@@ -290,6 +313,7 @@ export function Event() {
 
       <div style={{ textAlign: "center" }}>
         <Link to="/">{t("Back to the harbor", "Retour au port")}</Link>
+        {showsPower && event.status !== "cancelled" && <JustForFun />}
       </div>
     </div>
   );
