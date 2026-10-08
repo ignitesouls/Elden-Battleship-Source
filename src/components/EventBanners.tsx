@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { EventLogo } from "./event/EventLogo";
 import { fetchFrontPageEvents, fetchMyInbox, type InboxInvite } from "../lib/tournament/api";
 import { frontPageBanners, signupHeadline, type Banner, type EventSummary } from "../lib/tournament/frontPage";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -108,6 +109,16 @@ function shortDate(iso: string, lang: "en" | "fr"): string {
   return new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric" });
 }
 
+/** A banner's headline and the line under it, with the event's logo (if it has one) to their left. */
+function BannerHead({ event, children }: { event: EventSummary; children: ReactNode }) {
+  return (
+    <div className="event-banner__head">
+      <EventLogo path={event.logoPath} size={3.5} />
+      <div className="event-banner__text">{children}</div>
+    </div>
+  );
+}
+
 function EventBanner({ banner }: { banner: Banner }) {
   const t = useT();
   const lang = useLanguage();
@@ -117,13 +128,15 @@ function EventBanner({ banner }: { banner: Banner }) {
   if (kind === "signup") {
     return (
       <div className="panel stack event-banner event-banner--signup" style={{ gap: "0.5rem" }}>
-        <h3 style={{ margin: 0 }}>{signupHeadline(event.name, lang)}</h3>
-        {event.signupClosesAt && (
-          <span className="muted">
-            {t(`Signup closes ${shortDate(event.signupClosesAt, lang)}`, `Inscriptions jusqu'au ${shortDate(event.signupClosesAt, lang)}`)}
-          </span>
-        )}
-        <div>
+        <BannerHead event={event}>
+          <h3 style={{ margin: 0 }}>{signupHeadline(event.name, lang)}</h3>
+          {event.signupClosesAt && (
+            <span className="muted">
+              {t(`Signup closes ${shortDate(event.signupClosesAt, lang)}`, `Inscriptions jusqu'au ${shortDate(event.signupClosesAt, lang)}`)}
+            </span>
+          )}
+        </BannerHead>
+        <div style={{ textAlign: "center" }}>
           <Link to={to} className="link-button primary">
             {t("Sign up", "S'inscrire")}
           </Link>
@@ -135,8 +148,10 @@ function EventBanner({ banner }: { banner: Banner }) {
   if (kind === "signup-closed") {
     return (
       <div className="panel stack event-banner" style={{ gap: "0.5rem" }}>
-        <h3 style={{ margin: 0 }}>{event.name}</h3>
-        <span className="muted">{t("Signup has closed - starting soon.", "Les inscriptions sont closes - début imminent.")}</span>
+        <BannerHead event={event}>
+          <h3 style={{ margin: 0 }}>{event.name}</h3>
+          <span className="muted">{t("Signup has closed - starting soon.", "Les inscriptions sont closes - début imminent.")}</span>
+        </BannerHead>
         <div>
           <Link to={to} className="link-button">
             {t("See who's in", "Voir les inscrits")}
@@ -149,7 +164,9 @@ function EventBanner({ banner }: { banner: Banner }) {
   if (kind === "live") {
     return (
       <div className="panel stack event-banner event-banner--live" style={{ gap: "0.5rem" }}>
-        <h3 style={{ margin: 0 }}>{t(`${event.name} is underway`, `${event.name} est en cours`)}</h3>
+        <BannerHead event={event}>
+          <h3 style={{ margin: 0 }}>{t(`${event.name} is underway`, `${event.name} est en cours`)}</h3>
+        </BannerHead>
         <div>
           <Link to={to} className="link-button primary">
             {t("View the bracket", "Voir le tableau")}
@@ -161,11 +178,13 @@ function EventBanner({ banner }: { banner: Banner }) {
 
   return (
     <div className="panel stack event-banner event-banner--finished" style={{ gap: "0.5rem" }}>
-      <h3 style={{ margin: 0 }}>
-        {event.championName
-          ? t(`Congratulations to ${event.championName}, champions of ${event.name}!`, `Félicitations à ${event.championName}, vainqueurs de ${event.name} !`)
-          : t(`${event.name} has finished`, `${event.name} est terminé`)}
-      </h3>
+      <BannerHead event={event}>
+        <h3 style={{ margin: 0 }}>
+          {event.championName
+            ? t(`Congratulations to ${event.championName}, champions of ${event.name}!`, `Félicitations à ${event.championName}, vainqueurs de ${event.name} !`)
+            : t(`${event.name} has finished`, `${event.name} est terminé`)}
+        </h3>
+      </BannerHead>
       <div>
         <Link to={to} className="link-button">
           {t("See the results", "Voir les résultats")}

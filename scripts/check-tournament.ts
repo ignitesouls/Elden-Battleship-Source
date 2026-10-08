@@ -1297,7 +1297,7 @@ console.log('\nWhat the front page shows')
   const now = new Date('2026-10-20T12:00:00.000Z')
   const at = (days: number) => new Date(now.getTime() + days * 86_400_000).toISOString()
   const ev = (over: Record<string, unknown>) => ({
-    id: String(Math.random()), name: 'Event', status: 'draft', signupClosesAt: null, startsAt: null, finishedAt: null, championName: null, ...over,
+    id: String(Math.random()), name: 'Event', status: 'draft', signupClosesAt: null, startsAt: null, finishedAt: null, championName: null, logoPath: null, ...over,
   }) as Parameters<typeof frontPageBanners>[0][number]
   const kinds = (events: ReturnType<typeof ev>[]) => frontPageBanners(events, now).map((b) => `${b.kind}:${b.event.name}`).join()
 

@@ -55,6 +55,8 @@ export interface EventSummary {
   finishedAt: string | null;
   /** The recorded champion (knockout events). Null for an event whose table decides it. */
   championName: string | null;
+  /** The event's logo in the event-logos bucket, or null. */
+  logoPath: string | null;
 }
 
 export interface Banner {

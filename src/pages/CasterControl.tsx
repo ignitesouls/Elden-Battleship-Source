@@ -15,6 +15,7 @@ import { fetchParticipants } from "../lib/profiles";
 import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
 import { BoardGrid, type CellVisual, type ShipOverlay } from "../components/BoardGrid";
+import { TeamGlyph } from "../components/TeamGlyph";
 import { useBoxSize } from "../hooks/useBoxSize";
 import { SourceRow } from "../components/SourceRow";
 import { SOURCE_SIZE, placeBoard } from "../lib/overlayBoardLayout";
@@ -743,9 +744,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
    * Deliberately built BEFORE the marker filter below and from the unfiltered set: with the markers
    * off, these rings are the entire board. See lib/overlayMarkers.
    */
-  const firedBy = new Map(
-    [...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)])
-  );
+  const firedBy = attackerTeamsByCell(relevant);
   // From `marked`, not `relevant`. A hull sunk by a fleet whose markers are hidden must not leave
   // its wreckage on the board - the sunk cells are a result like any other, and they are also what
   // `cellVisuals` applies last and lets win outright.
@@ -1184,7 +1183,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   style={{ color: teamHex(tm) }}
                   title={`${t("Only", "Seuls les navires de")} ${teamName(tm)}${t("'s ships", "")}`}
                 >
-                  {teamName(tm)}
+                  <TeamGlyph team={tm} /> {teamName(tm)}
                 </button>
               ))}
             </div>
@@ -1614,7 +1613,8 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                         style={{ color: teamHex(tm) }}
                         title={`${t("Only", "Seuls les tirs de")} ${teamName(tm)}${t("'s shots get markers", " sont marqués")}`}
                       >
-                        {teamName(tm)}
+                        {/* The key to the shapes on the rings, in colourblind mode - see TeamGlyph. */}
+                        <TeamGlyph team={tm} /> {teamName(tm)}
                       </button>
                     );
                   })}

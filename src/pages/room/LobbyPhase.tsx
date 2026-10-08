@@ -11,7 +11,7 @@ import { FleetDraw } from "../../components/FleetDraw";
 import { BrandMark } from "../../components/BrandMark";
 import { activeTeams, captainOf } from "../../lib/battleshipLogic";
 import { formatRoomCode } from "../../lib/roomCode";
-import { TEAM_COLORS, teamName, customTeamName, defaultTeamName } from "../../lib/teamColors";
+import { teamHex, teamName, customTeamName, defaultTeamName } from "../../lib/teamColors";
 import type { Room, Player } from "../../types/battleship";
 import { SiteFooter } from "../../components/SiteFooter";
 
@@ -291,7 +291,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
       <div className="row" style={{ alignItems: "stretch" }}>
         {usedTeams.map((team) => {
-          const color = TEAM_COLORS[team];
+          // teamHex, not TEAM_COLORS[team].hex: the raw hex is the default palette whatever the
+          // colourblind toggle says, and this was the one fleet heading that ignored it.
+          const color = teamHex(team);
           const teamPlayers = players.filter((p) => p.team === team);
           const captain = captainOf(players, team);
           const iCaptainThis = captain?.id === myPlayer.id;
@@ -300,9 +302,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
               {/* The fleet's own captain renames it; the host can rename any, since they run the
                   room. Everyone else just reads it. */}
               {myPlayer.is_host || iCaptainThis ? (
-                <TeamNameField roomId={room.id} team={team} colorHex={color.hex} />
+                <TeamNameField roomId={room.id} team={team} colorHex={color} />
               ) : (
-                <h3 style={{ color: color.hex, margin: 0 }}>{teamName(team)}</h3>
+                <h3 style={{ color, margin: 0 }}>{teamName(team)}</h3>
               )}
               <div className="stack" style={{ gap: "0.3rem" }}>
                 {teamPlayers.length === 0 && <span className="muted">{t("Empty", "Vide")}</span>}

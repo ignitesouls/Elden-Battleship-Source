@@ -205,8 +205,8 @@ export function TopBar() {
 
         <span className="tb-sep" />
 
-        {/* As a bare ◑ this looked broken: it only recolors TEAMS, so on any screen without a board
-            or roster it appears to do nothing at all. Saying "on/off" gives it visible feedback
+        {/* As a bare ◑ this looked broken: it only changes boards, keys and fleet colours, so on any
+            screen without one it appears to do nothing at all. Saying "on/off" gives it visible feedback
             everywhere, and the accent border does the same job when the label is hidden.
 
             Ahead of the sound controls so that the two plain toggles sit together and the slider
@@ -217,8 +217,8 @@ export function TopBar() {
           aria-pressed={colorblind}
           className={`tb-item${colorblind ? " tb-colorblind-on" : ""}`}
           title={t(
-            "Colorblind mode - blue and orange fleets instead of red and blue, on boards, rosters and the leaderboard.",
-            "Mode daltonien - flottes bleue et orange au lieu de rouge et bleu, sur les plateaux, les listes d'équipage et le classement."
+            "Colorblind mode - every square shows a short region code that matches the colour key, region and fleet colours switch to ones that stay apart for colour-blind eyes, and shot rings get a shape per fleet.",
+            "Mode daltonien - chaque case affiche un code de région court qui correspond à la légende, les couleurs des régions et des flottes passent à des teintes qui restent distinctes pour les daltoniens, et les anneaux de tir reçoivent une forme par flotte."
           )}
         >
           <span className="tb-emoji">🎨</span>

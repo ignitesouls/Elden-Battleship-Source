@@ -67,7 +67,7 @@
 
 /**
  * Colour comes from --bg-region, set either by the .bg-region-* class beside it (region-tagged
- * sets) or written inline from the square's own hex (keyword-tinted sets) - the same variable the
+ * sets) or by .bg-kw from the square's own hex (keyword-tinted sets) - the same variable the
  * square names themselves are painted with, so a swatch on stream cannot disagree with the board.
  *
  * A ring rather than a bare square: these are read at a distance through an encoder, against
@@ -80,4 +80,11 @@
   border-radius: 3px;
   background: var(--bg-region);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+
+/* Colourblind mode's square code beside the swatch - see .bg-cell-code in BoardGrid.css. */
+.ovk-code {
+  font-family: var(--font-board);
+  font-weight: 800;
+  color: var(--bg-region);
 }

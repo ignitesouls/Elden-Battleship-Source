@@ -90,6 +90,25 @@
   box-sizing: border-box;
 }
 
+/**
+ * Colourblind mode's second cues - the fleet shapes and the square codes - only exist while it is on.
+ *
+ * Hidden by a rule on :root rather than left out of the markup, so the toggle (which only flips
+ * data-colorblind, see applyTeamPalette) reaches them live with no re-render. `:not` and !important
+ * so that turning it ON doesn't have to know what display each one normally takes.
+ */
+:root:not([data-colorblind="1"]) .cb-only {
+  display: none !important;
+}
+
+.team-glyph {
+  width: 0.85em;
+  height: 0.85em;
+  flex: none;
+  overflow: visible;
+  vertical-align: -0.1em;
+}
+
 body {
   margin: 0;
   min-height: 100vh;

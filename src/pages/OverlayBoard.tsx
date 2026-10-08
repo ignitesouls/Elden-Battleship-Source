@@ -452,10 +452,7 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
    * every square in one colour answers a question nobody asked and costs the square's name the
    * contrast it needs. The players' own board draws none either.
    */
-  const firedBy =
-    fireTeam !== null
-      ? undefined
-      : new Map([...attackerTeamsByCell(relevant)].map(([cell, ts]) => [cell, ts.map(teamHex)]));
+  const firedBy = fireTeam !== null ? undefined : attackerTeamsByCell(relevant);
 
   /**
    * What is hiding in the water (see lib/deepWater.ts).

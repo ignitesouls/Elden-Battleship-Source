@@ -36,6 +36,32 @@ a.link-button.primary:hover {
   border-color: rgba(159, 216, 255, 0.6);
 }
 
+/* An event's logo: in a banner it sits left of the headline, which keeps its own column. */
+.event-logo {
+  display: block;
+  flex: none;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.event-logo--header {
+  margin: 0 auto 0.4rem;
+}
+
+.event-banner__head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.event-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
 /* Small status pills. Extends .badge rather than replacing it. */
 .badge.badge--good {
   color: #7fd8b0;

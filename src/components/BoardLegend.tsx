@@ -50,6 +50,13 @@ export function BoardLegend({
           onBlur={onHighlight && (() => onHighlight(null))}
         >
           <span className={`${item.className} board-legend-swatch`} style={item.style} aria-hidden />
+          {/* The code on this group's squares, in colourblind mode - the swatch alone can't be told
+              from its neighbours by every eye. Painted in the group's colour like the squares' are. */}
+          {item.code && (
+            <span className={`${item.className} board-legend-code cb-only`} style={item.style}>
+              {item.code}
+            </span>
+          )}
           {item.label}
         </span>
       ))}

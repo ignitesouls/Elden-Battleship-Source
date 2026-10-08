@@ -1,5 +1,6 @@
 /**
- * Turns whatever picture a captain chooses into a team logo: a 256px square, the whole image fitted
+ * Turns whatever picture a captain chooses into a team logo (or an administrator into an event logo): a
+ * square - 256px for a team, 512px for an event - the whole image fitted
  * inside it (never cropped - a logo with its edge cut off is a different logo), transparent around it,
  * encoded as WebP where the browser can and PNG where it can't (Safari).
  *
@@ -13,29 +14,32 @@
 
 export const LOGO_SIZE = 256;
 
+/** An event's logo is shown much larger - at the top of its page - so it is kept at twice the size. */
+export const EVENT_LOGO_SIZE = 512;
+
 /** Refused before decoding: a picture this big is not a logo, and decoding it could stall a phone. */
 const MAX_INPUT_BYTES = 15 * 1024 * 1024;
 
 export class LogoImageError extends Error {}
 
-export async function makeLogo(file: File): Promise<Blob> {
+export async function makeLogo(file: File, size: number = LOGO_SIZE): Promise<Blob> {
   if (!file.type.startsWith("image/")) throw new LogoImageError("not-image");
   if (file.size > MAX_INPUT_BYTES) throw new LogoImageError("too-big");
 
   const image = await load(file);
-  const width = image.naturalWidth || LOGO_SIZE;
-  const height = image.naturalHeight || LOGO_SIZE;
-  const scale = Math.min(LOGO_SIZE / width, LOGO_SIZE / height);
+  const width = image.naturalWidth || size;
+  const height = image.naturalHeight || size;
+  const scale = Math.min(size / width, size / height);
   const w = Math.max(1, Math.round(width * scale));
   const h = Math.max(1, Math.round(height * scale));
 
   const canvas = document.createElement("canvas");
-  canvas.width = LOGO_SIZE;
-  canvas.height = LOGO_SIZE;
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new LogoImageError("unreadable");
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image, Math.round((LOGO_SIZE - w) / 2), Math.round((LOGO_SIZE - h) / 2), w, h);
+  ctx.drawImage(image, Math.round((size - w) / 2), Math.round((size - h) / 2), w, h);
 
   // A browser that cannot write WebP quietly hands back a PNG instead; both are accepted.
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.9));

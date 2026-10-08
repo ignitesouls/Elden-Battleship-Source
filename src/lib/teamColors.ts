@@ -26,21 +26,33 @@ export const TEAM_COLORS: TeamColor[] = [
 ];
 
 /**
- * Colorblind-safe alternates. The default palette opens on red vs blue, which is exactly the
- * pair deuteranopia and protanopia collapse; this swaps in a blue/orange-anchored ramp that
- * stays separable, and keeps the *names* unchanged so players can still call out "Red Fleet"
- * and mean the same team as everyone else.
+ * The fleet palette for colourblind mode.
+ *
+ * Red against Blue was never the problem - a deutan or protan eye still tells those two apart, and
+ * the first version of this list "fixed" that pair by turning Red orange, which only put it next to
+ * the hit fill and the brass accent while still calling it "Red Fleet". What colour vision
+ * deficiency actually collapses is everything past the first two: Blue/Purple, Green/Brown,
+ * Cyan/Pink, Red/Brown all land within a few CIEDE2000 units of each other under simulation.
+ *
+ * So each colour stays near its own hue (Red is still a red, so the name still fits) and moves in
+ * lightness and chroma instead, which is the axis those eyes keep. The first four - the fleets real
+ * matches use - were searched on their own first, and hold at least 23 dE2000 apart under simulated
+ * deutan and protan vision (the list this replaced managed 8). The other five were then fitted
+ * around them, and all nine stay 13 or more apart for deutan and protan, against 2 before. Tritan
+ * (blue-yellow, about 1 in 10,000) was weighted lower and sits at 8 for the full nine. Nine colours
+ * can't all be far apart for every eye; on the boards where fleets share a square, the shot rings
+ * carry a shape per fleet as well (see TeamGlyph).
  */
 export const TEAM_COLORS_ACCESSIBLE: string[] = [
-  "#e66100", // orange   (was red)
-  "#1a85ff", // blue
-  "#117733", // green
-  "#d4a441", // brass
-  "#785ef0", // violet
-  "#40c8c8", // cyan
-  "#ee6fd0", // pink
-  "#8a6a3a", // brown
-  "#e8d54a", // yellow
+  "#bb4444", // red
+  "#2277ee", // blue
+  "#77eebb", // green (a light mint, so it leaves the dark end to brown)
+  "#ff8800", // orange
+  "#aa99dd", // purple
+  "#008877", // cyan  (a deep teal, so it parts from the light green)
+  "#ee4488", // pink
+  "#dd9977", // brown (a tan, lighter than the red it used to sit on)
+  "#eeee11", // yellow
 ];
 
 export const MAX_TEAMS = TEAM_COLORS.length;

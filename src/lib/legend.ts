@@ -1,12 +1,16 @@
 import type { CSSProperties } from "react";
 import { REGION_ORDER, REGION_LABELS, colorKeyFor, type Challenge, type Region } from "./challenges";
+import { squareCode, keywordStyle, KEYWORD_CLASS } from "./colorblind";
 
 export interface LegendItem {
   key: string;
   label: string;
-  /** Carries the colour for a region-tagged set; the keyword sets use `style` instead. */
+  /** Carries the colour: a .bg-region-* class on a region-tagged set, .bg-kw on a keyword one. */
   className: string;
+  /** The keyword sets' colour, which .bg-kw reads. */
   style?: CSSProperties;
+  /** The code colourblind mode prints in the corner of every square in this group. */
+  code: string | null;
 }
 
 /**
@@ -52,13 +56,16 @@ export function legendItems(
       key: region,
       label: REGION_LABELS[region],
       className: `bg-region-${region}`,
+      code: squareCode({ region }),
     })),
     ...colors.map((c) => ({
       key: c.hex,
       label: c.label,
-      className: "",
-      // Written into the same variable the .bg-region-* classes set, so one rule paints every swatch.
-      style: { ["--bg-region" as string]: c.hex } as CSSProperties,
+      // Resolves to the same variable the .bg-region-* classes set, so one rule paints every swatch -
+      // and through the same pair the board uses, so colourblind mode swaps both together.
+      className: KEYWORD_CLASS,
+      style: keywordStyle(c.hex),
+      code: squareCode({ color: c.hex }),
     })),
   ];
 

@@ -232,6 +232,88 @@
 .bg-region-general { --bg-region: #edf3f7; }
 
 /**
+ * A keyword-tinted square's colour, which arrives inline as a pair (see keywordStyle in
+ * lib/colorblind) because an inline --bg-region could never be swapped by the mode below.
+ */
+.bg-kw { --bg-region: var(--bg-kw); }
+
+/**
+ * Colourblind mode's palettes for all of the above.
+ *
+ * The normal ones are well spaced round the hue wheel, which is the axis deutan and protan vision
+ * loses: under simulation Liurnia and Underground come out nearly identical, as do Post-Altus and
+ * Rauh, and DLC (general) and Combined. These were searched for the widest worst-case CIEDE2000 gap
+ * under simulated deutan, protan and tritan vision, each colour kept within ~20 degrees of its usual
+ * hue so a player who knows the board still recognises it, and every one still at 6:1 or better
+ * against --cell so the names stay readable. Worst pair under deutan/protan: boss board 15 (was 2),
+ * objectives 11 (was under 1), keyword sets 11 (was 1 to 3). Tritan, far rarer, was weighted lower and
+ * lands at 7-10. That is "different if you look", which is why the mode puts a code in each square's
+ * corner too (.bg-cell-code below) and treats the colour as the backup.
+ */
+:root[data-colorblind="1"] .bg-region-limgrave { --bg-region: #bbffcc; }
+:root[data-colorblind="1"] .bg-region-liurnia { --bg-region: #88ccee; }
+:root[data-colorblind="1"] .bg-region-caelid { --bg-region: #ff6655; }
+:root[data-colorblind="1"] .bg-region-altus { --bg-region: #eeee11; }
+:root[data-colorblind="1"] .bg-region-mountaintops { --bg-region: #bbaa99; }
+:root[data-colorblind="1"] .bg-region-underground { --bg-region: #9988ff; }
+:root[data-colorblind="1"] .bg-region-dlc { --bg-region: #dd77aa; }
+
+:root[data-colorblind="1"] .bg-region-prealtus { --bg-region: #33ffcc; }
+:root[data-colorblind="1"] .bg-region-postaltus { --bg-region: #bb9933; }
+:root[data-colorblind="1"] .bg-region-snowfield { --bg-region: #66ccbb; }
+:root[data-colorblind="1"] .bg-region-dlcgeneral { --bg-region: #8899ff; }
+:root[data-colorblind="1"] .bg-region-belurat { --bg-region: #bb88bb; }
+:root[data-colorblind="1"] .bg-region-shadowkeep { --bg-region: #ffaa77; }
+:root[data-colorblind="1"] .bg-region-rauh { --bg-region: #aaff44; }
+:root[data-colorblind="1"] .bg-region-dlcsouth { --bg-region: #cc8877; }
+:root[data-colorblind="1"] .bg-region-combined { --bg-region: #ddbbff; }
+:root[data-colorblind="1"] .bg-region-general { --bg-region: #ddeeff; }
+
+:root[data-colorblind="1"] .bg-kw { --bg-region: var(--bg-kw-cb); }
+
+/**
+ * The square's group as a code in its top-left corner - colourblind mode's main answer to "which
+ * region is this", with the colour as the backup. Matched by the same code beside each swatch in
+ * the key.
+ *
+ * Top LEFT because that corner is free: the pencil star owns the top right, the tallies the bottom
+ * edge, the result markers the middle. z-index 4 puts it over the result markers, the way the
+ * tallies are: a fired square still says which region it was.
+ *
+ * In the group's own colour, so the code and the tint agree, with the heavy shadow the names use.
+ * The grid reserves a strip for it (.bg-grid-coded below) rather than letting it sit on the name.
+ */
+.bg-cell-code {
+  position: absolute;
+  top: 2%;
+  left: 4%;
+  z-index: 4;
+  font-family: var(--font-board);
+  font-weight: 800;
+  font-size: max(7px, calc(var(--bg-cell-font, 11px) * 0.82));
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--bg-region, var(--cell-text));
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/**
+ * Room for the code above the name, on boards that have codes at all.
+ *
+ * On the grid, not on the coded cells, because the name fitting measures ONE cell (data-cell 0, see
+ * cellBox in BoardGrid) and fits every name against it - so every cell has to have the same box, or
+ * the names in the others are fitted to a square they aren't in. Padding the content box is what
+ * makes that measurement shrink, so the names refit themselves to the smaller space the moment the
+ * mode is turned on. Costs a line of each square, which is the price of the mode.
+ */
+:root[data-colorblind="1"] .bg-grid-coded .bg-cell {
+  padding-top: calc(max(7px, calc(var(--bg-cell-font, 11px) * 0.82)) * 1.15);
+}
+
+/**
  * Lifts the name above the marker layer, which is a later grid item and would otherwise paint over
  * it. Every square carrying anything at all needs this - a result OR a pencil mark - and an
  * untouched square has no marker to sit under. Same trick the stream overlay uses for the same
@@ -462,6 +544,24 @@
      it meets a bright square fill or a neighbour's ring across the 2px grid gap. Inset only: an
      outer shadow falls outside the border box, which is exactly what the mask above clips away. */
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+/**
+ * The ring's fleets as shapes, for colourblind mode - one per fleet that fired here, in ring order.
+ *
+ * Top RIGHT: the code owns the top left, and the pencil star that otherwise lives here is a player's
+ * mark, which never appears on the caster's and stream boards that are the only ones with rings.
+ * Above the result markers for the same reason the code is.
+ */
+.bg-shot-glyphs {
+  position: absolute;
+  top: 4%;
+  right: 5%;
+  z-index: 4;
+  display: flex;
+  gap: 1px;
+  font-size: max(8px, calc(var(--bg-cell-font, 11px) * 0.95));
   pointer-events: none;
 }
 

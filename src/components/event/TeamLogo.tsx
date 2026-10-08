@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { LogoImageError, makeLogo } from "../../lib/tournament/logoImage";
+import { LOGO_SIZE, LogoImageError, makeLogo } from "../../lib/tournament/logoImage";
 import { clearTeamLogo, setTeamLogo } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 
@@ -92,20 +92,28 @@ export function AdminLogoButtons({
 
 /**
  * Choosing a logo: a preview, a button that opens the file picker, and a way to take the logo off.
- * The picked file is shrunk to a 256px square here (see makeLogo) and handed on as the image that will
- * be uploaded - what the preview shows is exactly what everyone else will see.
+ * The picked file is shrunk to a square here (256px for a team, or `outputSize`; see makeLogo) and handed
+ * on as the image that will be uploaded - what the preview shows is exactly what everyone else will see.
  */
 export function LogoField({
   current,
   disabled,
   onPick,
   onClear,
+  outputSize = LOGO_SIZE,
+  hint,
+  noDefault = false,
 }: {
   /** The address of the logo to show: the saved one, or a preview of one about to be saved. */
   current: string | null;
   disabled?: boolean;
   onPick: (image: Blob) => void;
   onClear?: () => void;
+  outputSize?: number;
+  /** The line under the picker. Defaults to the team wording. */
+  hint?: ReactNode;
+  /** No IgniteSouls stand-in: without a logo the preview is blank, because nothing is shown (an event's logo). */
+  noDefault?: boolean;
 }) {
   const t = useT();
   const input = useRef<HTMLInputElement>(null);
@@ -117,7 +125,7 @@ export function LogoField({
     setWorking(true);
     setError(null);
     try {
-      onPick(await makeLogo(file));
+      onPick(await makeLogo(file, outputSize));
     } catch (e) {
       const why = e instanceof LogoImageError ? e.message : "unreadable";
       setError(
@@ -138,9 +146,9 @@ export function LogoField({
         {/* With no logo chosen the preview is the default, since that is what everyone else will see. */}
         <div className="stack" style={{ gap: "0.15rem", alignItems: "center" }}>
           <div className="logo-field__preview">
-            <TeamLogo url={current} size={4} />
+            <TeamLogo url={current} size={4} empty={noDefault && !current} />
           </div>
-          {!current && <span className="muted" style={{ fontSize: "0.68rem" }}>{t("default", "par défaut")}</span>}
+          {!current && !noDefault && <span className="muted" style={{ fontSize: "0.68rem" }}>{t("default", "par défaut")}</span>}
         </div>
         <div className="row" style={{ gap: "0.4rem" }}>
           <button type="button" disabled={disabled || working} onClick={() => input.current?.click()}>
@@ -155,10 +163,11 @@ export function LogoField({
         <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden onChange={(e) => void picked(e.target.files?.[0])} />
       </div>
       <span className="muted" style={{ fontSize: "0.75rem" }}>
-        {t(
-          "Square pictures look best. It's shrunk to 256 px and shown beside your team's name in the standings and bracket. Without one, your team shows the IgniteSouls logo.",
-          "Les images carrées rendent le mieux. Elle est réduite à 256 px et affichée à côté du nom de votre équipe dans le classement et le tableau. Sans logo, votre équipe affiche celui d'IgniteSouls.",
-        )}
+        {hint ??
+          t(
+            "Square pictures look best. It's shrunk to 256 px and shown beside your team's name in the standings and bracket. Without one, your team shows the IgniteSouls logo.",
+            "Les images carrées rendent le mieux. Elle est réduite à 256 px et affichée à côté du nom de votre équipe dans le classement et le tableau. Sans logo, votre équipe affiche celui d'IgniteSouls.",
+          )}
       </span>
       {error && <span className="error-text">{error}</span>}
     </div>

@@ -68,8 +68,12 @@ function groupCountOf(format: TournamentFormat | null): number {
  * signing up. The page always opens from the saved plan: teams that signed up since go on the end of the
  * seeding, teams that left drop out. Pressing Start saves once more and starts, and only then does
  * anything become the event's real format.
+ *
+ * Two ways in, from two buttons on the admin page, so an organiser doing group work can't start the
+ * event by accident: `mode="plan"` (/plan) has no Start button at all, only Save; `mode="start"` (/start)
+ * is the same page with Start at the bottom.
  */
-export function StartEventForm({ eventId }: { eventId: string }) {
+export function StartEventForm({ eventId, mode = "start" }: { eventId: string; mode?: "plan" | "start" }) {
   const t = useT();
   const lang = useLanguage();
   const navigate = useNavigate();
@@ -242,12 +246,17 @@ export function StartEventForm({ eventId }: { eventId: string }) {
   return (
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
-        <h1>{t("Plan and start", "Préparer et lancer")} {event.name}</h1>
+        <h1>{mode === "plan" ? t("Plan", "Préparer") : t("Start", "Lancer")} {event.name}</h1>
         <p className="muted">
-          {t(
-            "Work on the plan while teams are still signing up and save it as often as you like - nothing goes live until you press Start at the bottom.",
-            "Préparez le plan pendant que les équipes s'inscrivent et enregistrez-le aussi souvent que vous voulez - rien n'est lancé avant d'appuyer sur Lancer, en bas.",
-          )}
+          {mode === "plan"
+            ? t(
+                "Work on the plan while teams are still signing up and save it as often as you like. This page can't start the event - when you're ready, use \"Start the event\" on the admin page, which opens from this plan.",
+                "Préparez le plan pendant que les équipes s'inscrivent et enregistrez-le aussi souvent que vous voulez. Cette page ne peut pas lancer l'événement - le moment venu, utilisez « Lancer l'événement » sur la page d'administration, qui reprend ce plan.",
+              )
+            : t(
+                "Check the plan, change anything you need, then press Start at the bottom. Nothing goes live before that.",
+                "Vérifiez le plan, modifiez ce qu'il faut, puis appuyez sur Lancer en bas. Rien n'est lancé avant.",
+              )}
         </p>
         {savedAt && (
           <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
@@ -415,9 +424,11 @@ export function StartEventForm({ eventId }: { eventId: string }) {
         <button disabled={!canSave || !unsaved} onClick={() => void save()} style={{ padding: "0.7rem 1.4rem" }}>
           {busy ? t("Saving...", "Enregistrement...") : unsaved ? t("Save the plan", "Enregistrer le plan") : t("Plan saved", "Plan enregistré")}
         </button>
-        <button className="primary" disabled={!canStart} onClick={() => void start()} style={{ padding: "0.7rem 2rem", fontSize: "1.05rem" }}>
-          {busy ? t("Starting...", "Lancement...") : t("Start the event", "Lancer l'événement")}
-        </button>
+        {mode === "start" && (
+          <button className="primary" disabled={!canStart} onClick={() => void start()} style={{ padding: "0.7rem 2rem", fontSize: "1.05rem" }}>
+            {busy ? t("Starting...", "Lancement...") : t("Start the event", "Lancer l'événement")}
+          </button>
+        )}
       </div>
       {powers && powers.size > 0 && <JustForFun />}
     </div>

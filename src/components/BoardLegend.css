@@ -67,7 +67,7 @@
 }
 
 /* Colour comes from --bg-region: set by the .bg-region-* class alongside it on a region-tagged set,
-   or written inline from the square's own hex on a keyword-tinted one. Either way it is the same
+   or by .bg-kw from the square's own hex on a keyword-tinted one. Either way it is the same
    variable the square names are painted with, so a swatch can never disagree with the board it
    describes. */
 .board-legend-swatch {
@@ -76,4 +76,12 @@
   flex: none;
   border-radius: 2px;
   background: var(--bg-region);
+}
+
+/* Colourblind mode's square code beside the swatch - see .bg-cell-code in BoardGrid.css. */
+.board-legend-code {
+  flex: none;
+  font-family: var(--font-board);
+  font-weight: 800;
+  color: var(--bg-region);
 }

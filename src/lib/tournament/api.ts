@@ -52,6 +52,8 @@ export interface EventDetail {
   cancelled_at: string | null;
   cancel_reason: string | null;
   champion_name: string | null;
+  /** Where the event's logo is in the event-logos bucket, or null. Turn it into an address with eventLogoUrl. */
+  logo_path: string | null;
 }
 
 export interface RosterMember {
@@ -138,7 +140,7 @@ export async function fetchFrontPageEvents(serverNowMs: number): Promise<EventSu
   const { data, error } = await supabase
     .from("tournaments")
     .select(
-      "id, name, status, signup_closes_at, starts_at, finished_at, champion:tournament_entrants!tournaments_champion_id_fkey(name)",
+      "id, name, status, signup_closes_at, starts_at, finished_at, logo_path, champion:tournament_entrants!tournaments_champion_id_fkey(name)",
     )
     .or(`status.in.(signup,live),and(status.eq.finished,finished_at.gte.${cutoff})`)
     // The database already hides test events from everyone else; this keeps them off an admin's front page too.
@@ -157,6 +159,7 @@ export async function fetchFrontPageEvents(serverNowMs: number): Promise<EventSu
       startsAt: (row.starts_at as string | null) ?? null,
       finishedAt: (row.finished_at as string | null) ?? null,
       championName: (Array.isArray(champion) ? champion[0]?.name : champion?.name) ?? null,
+      logoPath: (row.logo_path as string | null) ?? null,
     };
   });
 }
@@ -173,7 +176,7 @@ export async function fetchMyInbox(): Promise<InboxInvite[]> {
 // ===========================================================================
 
 const EVENT_COLUMNS =
-  "id, name, description, extra_rules, group_names, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
+  "id, name, description, extra_rules, group_names, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, logo_path, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
 
 function toDetail(row: Record<string, unknown>): EventDetail {
   const champion = row.champion as { name: string } | { name: string }[] | null;
@@ -194,6 +197,7 @@ function toDetail(row: Record<string, unknown>): EventDetail {
     cancelled_at: (row.cancelled_at as string | null) ?? null,
     cancel_reason: (row.cancel_reason as string | null) ?? null,
     champion_name: (Array.isArray(champion) ? champion[0]?.name : champion?.name) ?? null,
+    logo_path: (row.logo_path as string | null | undefined) ?? null,
   };
 }
 
@@ -555,6 +559,47 @@ export async function updateEvent(id: string, patch: Partial<NewEvent>): Promise
   if (error) fail(error);
 }
 
+// -- Event logos ------------------------------------------------------------------------------------
+// Like team logos, but administrators only - see 20261009030000_event_logos.sql.
+
+const EVENT_LOGO_BUCKET = "event-logos";
+
+/** The public address of an event's logo. Pure - building it costs no request. */
+export function eventLogoUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return supabase.storage.from(EVENT_LOGO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/** Gives an event a new logo: upload under a fresh name, point the event at it, remove the old file. See setTeamLogo. */
+export async function setEventLogo(eventId: string, image: Blob, oldPath: string | null): Promise<string> {
+  const ext = image.type === "image/png" ? "png" : "webp";
+  const path = `${eventId}/${crypto.randomUUID()}.${ext}`;
+  const up = await supabase.storage.from(EVENT_LOGO_BUCKET).upload(path, image, { contentType: image.type, cacheControl: "31536000", upsert: false });
+  if (up.error) fail(up.error);
+  const { error } = await supabase.from("tournaments").update({ logo_path: path }).eq("id", eventId);
+  if (error) {
+    await supabase.storage.from(EVENT_LOGO_BUCKET).remove([path]);
+    fail(error);
+  }
+  if (oldPath) await supabase.storage.from(EVENT_LOGO_BUCKET).remove([oldPath]);
+  return path;
+}
+
+/** Takes an event's logo away - the row first, so a failure there leaves the logo as it was. */
+export async function clearEventLogo(eventId: string, path: string): Promise<void> {
+  const { error } = await supabase.from("tournaments").update({ logo_path: null }).eq("id", eventId);
+  if (error) fail(error);
+  await supabase.storage.from(EVENT_LOGO_BUCKET).remove([path]);
+}
+
+/** Removes the event's whole logo folder, for when the event is deleted. Best effort. */
+async function removeEventLogoFiles(eventId: string): Promise<void> {
+  const bucket = supabase.storage.from(EVENT_LOGO_BUCKET);
+  const { data } = await bucket.list(eventId, { limit: 100 });
+  const paths = (data ?? []).map((f) => `${eventId}/${f.name}`);
+  if (paths.length > 0) await bucket.remove(paths);
+}
+
 export async function setEventStatus(id: string, status: EventStatus): Promise<void> {
   const { error } = await supabase.from("tournaments").update({ status }).eq("id", id);
   if (error) fail(error);
@@ -575,6 +620,7 @@ export async function deleteEvent(id: string): Promise<void> {
   const { error } = await supabase.rpc("delete_tournament", { p_tournament: id });
   if (error) fail(error);
   await removeTeamLogoFiles((withLogos ?? []).map((row) => row.id as string)).catch(() => undefined);
+  await removeEventLogoFiles(id).catch(() => undefined);
 }
 
 /**

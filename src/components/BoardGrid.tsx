@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { shipArtUrl } from "../lib/shipArt";
 import type { Region } from "../lib/challenges";
 import { useT } from "../lib/language";
+import { squareCode, keywordStyle, KEYWORD_CLASS } from "../lib/colorblind";
+import { teamHex } from "../lib/teamColors";
+import { TeamGlyph } from "./TeamGlyph";
 import "./BoardGrid.css";
 import { HitMark, MissMark, SunkMark, RuledOutMark, DeepMarkIcon } from "./HitMarkers";
 import { fitText, useTextFit, breakSegments } from "../lib/textFit";
@@ -155,18 +158,19 @@ interface BoardGridProps {
    */
   textBoost?: number;
   /**
-   * Who fired at each square, as a list of fleet colours - drawn as a ring around the square.
+   * Who fired at each square, as a list of teams - drawn as a ring around the square in their colours.
    *
    * For the composited boards, where every shown fleet shares one grid and a square's result is
    * merged worst-first: the marker says what happened, and this says whose shot it was. Two fleets
    * on the same square split the ring between them, in the order given - build it with
    * `attackerTeamsByCell`, which sorts by team so the split lands the same way on every square.
    *
-   * Colours rather than team numbers because the palette is a preference (see teamColors), and a
-   * board should not have to know that. Omit on any board that already answers "whose?" by being
-   * one fleet's board - the players' own fire board is fired at by one fleet only.
+   * Teams rather than colours, so colourblind mode can put each fleet's shape beside the ring (see
+   * TeamGlyph). The palette preference is still none of the board's business: teamHex hands back a
+   * CSS variable, which the mode repaints by itself. Omit on any board that already answers "whose?"
+   * by being one fleet's board - the players' own fire board is fired at by one fleet only.
    */
-  firedBy?: ReadonlyMap<number, string[]>;
+  firedBy?: ReadonlyMap<number, number[]>;
   /**
    * Hard ceiling on a square's font size, overriding the per-layout defaults below.
    *
@@ -672,6 +676,9 @@ export function BoardGrid({
   // Rendered as a separate layer AFTER the ship overlays below, so hit/miss/sunk markers sit
   // in front of a ship sprite instead of getting buried under it.
   const marks = [];
+  // Whether any square carries a colourblind-mode code, which is what reserves the strip for it on
+  // every cell - see .bg-grid-coded for why it has to be all of them or none.
+  let coded = false;
   for (let i = 0; i < boardSize * boardSize; i++) {
     const visual = cellVisual(i);
     const rawRow = Math.floor(i / boardSize);
@@ -688,6 +695,9 @@ export function BoardGrid({
     // square carries exactly one of the two, so whichever it has is the thing to compare.
     const group = text ?? tint;
     const highlit = Boolean(highlightKey) && (group?.region ?? group?.color) === highlightKey;
+    // Its group as a short code, drawn only in colourblind mode - see lib/colorblind.
+    const code = squareCode(group);
+    if (code) coded = true;
     const mark = markedCells?.get(i);
     // One cross, from either source. The board's deduction is the only thing that still makes these;
     // a "ruled" mark is a hand-made one left in a player's storage from when middle-click did it, and
@@ -735,20 +745,26 @@ export function BoardGrid({
         className={`bg-cell bg-${visual}${axisShadow ? " bg-cell-axis-shadow" : ""}${
           interactive ? "" : " bg-cell-inert"
         }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}${
-          tint ? ` bg-cell-tinted${tint.region ? ` bg-region-${tint.region}` : ""}` : ""
+          tint
+            ? ` bg-cell-tinted${tint.region ? ` bg-region-${tint.region}` : ""}${tint.color ? ` ${KEYWORD_CLASS}` : ""}`
+            : ""
         }${spot ? " bg-cell-spot" : ""}${
           // The ring is drawn in the group's own colour, read off --bg-region. A tinted square has
           // that on the button already; a named one only has it on its text, so it's put here too.
-          highlit ? ` bg-cell-highlight${!tint && group?.region ? ` bg-region-${group.region}` : ""}` : ""
+          highlit
+            ? ` bg-cell-highlight${!tint && group?.region ? ` bg-region-${group.region}` : ""}${
+                !tint && group?.color ? ` ${KEYWORD_CLASS}` : ""
+              }`
+            : ""
         }`}
         style={{
           gridRow: row,
           gridColumn: col,
-          ...(highlit && !tint && group?.color ? { ["--bg-region" as string]: group.color } : null),
+          ...(highlit && !tint && group?.color ? keywordStyle(group.color) : null),
           // Keyword-tinted sets have no class to hang a colour on, so theirs arrives as a hex and
-          // goes into the same variable .bg-region-* sets - exactly as the square NAMES do a few
-          // lines below, and for the same reason.
-          ...(tint?.color ? { ["--bg-region" as string]: tint.color } : null),
+          // goes into the variables .bg-kw reads - exactly as the square NAMES do a few lines below,
+          // and for the same reason. A pair, so colourblind mode can swap it; see keywordStyle.
+          ...(tint?.color ? keywordStyle(tint.color) : null),
           // The fill has to finish exactly when the shot goes, and the player chose how long that
           // is - so the animation's duration comes from the same number as the timer.
           ...(holding ? { ["--bg-hold-ms" as string]: `${holdMs}ms` } : null),
@@ -786,17 +802,30 @@ export function BoardGrid({
           onToggleMark(i, "guess");
         }}
       >
+        {code && (
+          // Its own region class rather than inheriting one: on a named board the class sits on the
+          // name below, not on this button, and the code is painted in the group's colour too.
+          <span
+            className={`bg-cell-code cb-only${group?.region ? ` bg-region-${group.region}` : ""}${
+              group?.color ? ` ${KEYWORD_CLASS}` : ""
+            }`}
+            style={group?.color ? keywordStyle(group.color) : undefined}
+            aria-hidden
+          >
+            {code}
+          </span>
+        )}
         {text && (
           <span
             className={`bg-cell-text${text.region ? ` bg-region-${text.region}` : ""}${
-              annotated ? " bg-cell-text-lifted" : ""
-            }${resolved ? " bg-cell-text-marked" : ""}`}
+              text.color ? ` ${KEYWORD_CLASS}` : ""
+            }${annotated ? " bg-cell-text-lifted" : ""}${resolved ? " bg-cell-text-marked" : ""}`}
             style={{
               // Sets that tint by keyword have no named class to hang a colour on, so theirs
-              // arrives as a hex and is written straight into the same variable the .bg-region-*
-              // classes set. One consumer either way, and .bg-cell-text-marked still wins over both
-              // because it sets `color` outright rather than the variable behind it.
-              ...(text.color ? { ["--bg-region" as string]: text.color } : null),
+              // arrives as a hex and is written into the variables .bg-kw turns into --bg-region -
+              // the same variable the .bg-region-* classes set. One consumer either way, and
+              // .bg-cell-text-marked still wins over both because it sets `color` outright.
+              ...(text.color ? keywordStyle(text.color) : null),
               ...(fit
                 ? // Measured against the real cell and the real font, so the name shrinks to fit
                   // rather than ending in an ellipsis. Both layouts take this path.
@@ -833,11 +862,20 @@ export function BoardGrid({
               a pencil star or a tally is drawn over it rather than under it - this is context for
               what happened on the square, not the thing that happened. */}
           {fired && fired.length > 0 && (
-            <span
-              className="bg-shot-ring"
-              aria-hidden
-              style={{ ["--bg-ring-paint" as string]: ringPaint(fired) }}
-            />
+            <>
+              <span
+                className="bg-shot-ring"
+                aria-hidden
+                style={{ ["--bg-ring-paint" as string]: ringPaint(fired.map(teamHex)) }}
+              />
+              {/* The same fleets as shapes, for colourblind mode - with five or more fleets on a
+                  board, some pair of ring colours is always too close for some eye to split. */}
+              <span className="bg-shot-glyphs cb-only" aria-hidden>
+                {fired.map((team) => (
+                  <TeamGlyph key={team} team={team} />
+                ))}
+              </span>
+            </>
           )}
           {/* The spotlight's border, in the marker layer so it draws OVER a hull sprite rather than
               under one. It began as a box-shadow on the cell itself with a z-index lift, which put
@@ -925,7 +963,9 @@ export function BoardGrid({
       <div className={`bg-grid-scroll${fill ? " bg-grid-scroll-fill" : ""}`}>
         <div
           ref={gridRef}
-          className={`bg-grid${fill ? " bg-grid-fill" : ""}${highlightKey ? " bg-grid-highlighting" : ""}`}
+          className={`bg-grid${fill ? " bg-grid-fill" : ""}${highlightKey ? " bg-grid-highlighting" : ""}${
+            coded ? " bg-grid-coded" : ""
+          }`}
           role="grid"
           aria-label={label ?? t("Game board", "Plateau de jeu")}
           style={{

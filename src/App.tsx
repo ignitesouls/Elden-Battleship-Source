@@ -149,9 +149,11 @@ function App() {
           {/* Guarded inside the page, not here - the route has to exist for everyone so that an
               admin following a link into a fresh tab lands on it before the session is checked. */}
           <Route path="/admin" element={<Admin />} />
-          {/* Starting an event. Guarded inside the page like /admin, and enforced by the database
-              function it calls - see pages/AdminStartEvent. */}
-          <Route path="/admin/event/:id/start" element={<AdminStartEvent />} />
+          {/* Planning an event (save only), and starting one (save and start) - the same page, two ways
+              in, so the button an admin clicks says which it is. Guarded inside the page like /admin, and
+              starting is enforced by the database function it calls - see pages/AdminStartEvent. */}
+          <Route path="/admin/event/:id/plan" element={<AdminStartEvent mode="plan" />} />
+          <Route path="/admin/event/:id/start" element={<AdminStartEvent mode="start" />} />
           {/* Running an event week to week: overdue, results, the next round, teams, pairing. */}
           <Route path="/admin/event/:id" element={<AdminEventDesk />} />
           {/* Reached from the footer on every page that has one, always in a new tab, so that

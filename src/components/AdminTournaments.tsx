@@ -5,19 +5,26 @@ import {
   adminListEvents,
   adminTeams,
   cancelEvent,
+  clearEventLogo,
   createEvent,
   createTestEvent,
   deleteEvent,
+  eventLogoUrl,
   regenerateEntryCode,
+  setEventLogo,
   setEventStatus,
   setTeamStatus,
   teamLogoUrl,
+  updateEvent,
   type AdminEventRow,
   type AdminTeamRow,
   type FreeAgentRow,
+  type NewEvent,
 } from "../lib/tournament/api";
+import { EVENT_LOGO_SIZE } from "../lib/tournament/logoImage";
 import { useT } from "../lib/language";
-import { AdminLogoButtons, TeamLabel } from "./event/TeamLogo";
+import { AdminLogoButtons, LogoField, TeamLabel } from "./event/TeamLogo";
+import { EventLogo } from "./event/EventLogo";
 import { PowerTag } from "./event/PowerLine";
 import { useTeamPowers } from "../hooks/useTeamPowers";
 import "./Tournament.css";
@@ -84,7 +91,7 @@ export function AdminTournaments() {
           </button>
         </div>
       ) : making === "event" ? (
-        <NewEventForm busy={busy} act={act} onClose={() => setMaking(null)} />
+        <EventForm busy={busy} act={act} onClose={() => setMaking(null)} />
       ) : (
         <TestEventForm busy={busy} act={act} onClose={() => setMaking(null)} />
       )}
@@ -115,15 +122,72 @@ export function AdminTournaments() {
 
 type Act = (action: () => Promise<unknown>) => Promise<void>;
 
-function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose: () => void }) {
+/** An ISO time as a datetime-local input wants it: the reader's own clock, to the minute. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Creating an event, or (given `event`) changing one's details. One form for both, so the two can never
+ * drift apart. While editing, what can still be changed narrows as the event goes on: team size only in a
+ * draft (teams already signed up were made for the old size), the team cap and signup close only until
+ * the event starts. Name, description and logo can always be changed.
+ */
+function EventForm({ event, busy, act, onClose }: { event?: AdminEventRow; busy: boolean; act: Act; onClose: () => void }) {
   const t = useT();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [teamSize, setTeamSize] = useState(2);
-  const [maxTeams, setMaxTeams] = useState("");
-  const [closes, setCloses] = useState("");
+  const [name, setName] = useState(event?.name ?? "");
+  const [description, setDescription] = useState(event?.description ?? "");
+  const [teamSize, setTeamSize] = useState(event?.team_size ?? 2);
+  const [maxTeams, setMaxTeams] = useState(event?.max_entrants ? String(event.max_entrants) : "");
+  const [closes, setCloses] = useState(toLocalInput(event?.signup_closes_at ?? null));
+  // A newly picked logo waits here until Save; `dropLogo` is a saved logo marked for removal.
+  const [logo, setLogo] = useState<Blob | null>(null);
+  const [dropLogo, setDropLogo] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(logo);
+    setLogoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
+
+  const savedLogo = event?.logo_path ?? null;
+  const shownLogo = logoPreview ?? (dropLogo ? null : eventLogoUrl(savedLogo));
+  const canSize = !event || event.status === "draft";
+  const canSignup = !event || event.status === "draft" || event.status === "signup";
 
   const valid = name.trim().length >= 3 && teamSize >= 1 && teamSize <= 10;
+
+  async function save() {
+    const fields: NewEvent = {
+      name: name.trim(),
+      description: description.trim(),
+      team_size: teamSize,
+      max_entrants: maxTeams ? Number(maxTeams) : null,
+      signup_closes_at: closes ? new Date(closes).toISOString() : null,
+    };
+    if (!event) {
+      const id = await createEvent(fields);
+      // The event exists either way; a logo that fails to upload can be added again from "Edit details".
+      if (logo) await setEventLogo(id, logo, null);
+      return;
+    }
+    const patch: Partial<NewEvent> = { name: fields.name, description: fields.description };
+    if (canSize) patch.team_size = fields.team_size;
+    if (canSignup) {
+      patch.max_entrants = fields.max_entrants;
+      patch.signup_closes_at = fields.signup_closes_at;
+    }
+    await updateEvent(event.id, patch);
+    if (logo) await setEventLogo(event.id, logo, savedLogo);
+    else if (dropLogo && savedLogo) await clearEventLogo(event.id, savedLogo);
+  }
 
   return (
     <div className="stack" style={{ gap: "0.6rem", border: "1px solid var(--panel-border)", borderRadius: 8, padding: "0.9rem" }}>
@@ -137,21 +201,48 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
         <span className="muted">{t("Description (optional)", "Description (facultative)")}</span>
         <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
-      <div className="row" style={{ alignItems: "flex-end" }}>
-        <label className="stack" style={{ gap: "0.25rem" }}>
-          <span className="muted">{t("Team size", "Taille d'équipe")}</span>
-          <input type="number" min={1} max={10} value={teamSize} onChange={(e) => setTeamSize(Number(e.target.value))} style={{ width: "5rem" }} />
-        </label>
-        <label className="stack" style={{ gap: "0.25rem" }}>
-          <span className="muted">{t("Max teams (blank = no limit)", "Équipes max (vide = illimité)")}</span>
-          <input type="number" min={2} value={maxTeams} onChange={(e) => setMaxTeams(e.target.value)} style={{ width: "7rem" }} />
-        </label>
-        <label className="stack" style={{ gap: "0.25rem" }}>
-          <span className="muted">{t("Signup closes (optional)", "Fin des inscriptions (facultatif)")}</span>
-          <input type="datetime-local" value={closes} onChange={(e) => setCloses(e.target.value)} />
-        </label>
+      <div className="stack" style={{ gap: "0.25rem" }}>
+        <span className="muted">{t("Event logo (optional)", "Logo de l'événement (facultatif)")}</span>
+        <LogoField
+          current={shownLogo}
+          disabled={busy}
+          outputSize={EVENT_LOGO_SIZE}
+          noDefault
+          onPick={(image) => {
+            setLogo(image);
+            setDropLogo(false);
+          }}
+          onClear={() => {
+            setLogo(null);
+            setDropLogo(true);
+          }}
+          hint={t(
+            "Square pictures look best. It's shrunk to 512 px and shown on the front-page banner and at the top of the event's page. Without one, nothing is shown.",
+            "Les images carrées rendent le mieux. Elle est réduite à 512 px et affichée sur la bannière de la page d'accueil et en haut de la page de l'événement. Sans logo, rien n'est affiché.",
+          )}
+        />
       </div>
-      <span className="muted" style={{ fontSize: "0.75rem" }}>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        {canSize && (
+          <label className="stack" style={{ gap: "0.25rem" }}>
+            <span className="muted">{t("Team size", "Taille d'équipe")}</span>
+            <input type="number" min={1} max={10} value={teamSize} onChange={(e) => setTeamSize(Number(e.target.value))} style={{ width: "5rem" }} />
+          </label>
+        )}
+        {canSignup && (
+          <>
+            <label className="stack" style={{ gap: "0.25rem" }}>
+              <span className="muted">{t("Max teams (blank = no limit)", "Équipes max (vide = illimité)")}</span>
+              <input type="number" min={2} value={maxTeams} onChange={(e) => setMaxTeams(e.target.value)} style={{ width: "7rem" }} />
+            </label>
+            <label className="stack" style={{ gap: "0.25rem" }}>
+              <span className="muted">{t("Signup closes (optional)", "Fin des inscriptions (facultatif)")}</span>
+              <input type="datetime-local" value={closes} onChange={(e) => setCloses(e.target.value)} />
+            </label>
+          </>
+        )}
+      </div>
+      {canSize && <span className="muted" style={{ fontSize: "0.75rem" }}>
         {teamSize === 1
           ? t("Team size 1 makes this an individual event.", "Une taille d'équipe de 1 en fait un événement individuel.")
           : teamSize === 3
@@ -163,31 +254,27 @@ function NewEventForm({ busy, act, onClose }: { busy: boolean; act: Act; onClose
                 `Teams of ${teamSize}. Players can sign up solo or as a whole team.`,
                 `Équipes de ${teamSize}. Les joueurs peuvent s'inscrire seuls ou en équipe complète.`,
               )}
-      </span>
+      </span>}
       <div className="row">
         <button
           className="primary"
           disabled={busy || !valid}
           onClick={() =>
             void act(async () => {
-              await createEvent({
-                name: name.trim(),
-                description: description.trim(),
-                team_size: teamSize,
-                max_entrants: maxTeams ? Number(maxTeams) : null,
-                signup_closes_at: closes ? new Date(closes).toISOString() : null,
-              });
+              await save();
               onClose();
             })
           }
         >
-          {t("Create draft", "Créer le brouillon")}
+          {event ? t("Save", "Enregistrer") : t("Create draft", "Créer le brouillon")}
         </button>
         <button onClick={onClose}>{t("Cancel", "Annuler")}</button>
       </div>
-      <span className="muted" style={{ fontSize: "0.75rem" }}>
-        {t("A new event is a draft: only administrators can see it until you open signup.", "Un nouvel événement est un brouillon : seuls les administrateurs le voient tant que vous n'ouvrez pas les inscriptions.")}
-      </span>
+      {!event && (
+        <span className="muted" style={{ fontSize: "0.75rem" }}>
+          {t("A new event is a draft: only administrators can see it until you open signup.", "Un nouvel événement est un brouillon : seuls les administrateurs le voient tant que vous n'ouvrez pas les inscriptions.")}
+        </span>
+      )}
     </div>
   );
 }
@@ -246,6 +333,7 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
   const t = useT();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
+  const [editing, setEditing] = useState(false);
 
   const badge =
     event.status === "draft" ? <span className="badge">{t("draft", "brouillon")}</span>
@@ -284,6 +372,7 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
     <div style={{ border: "1px solid var(--panel-border)", borderRadius: 8, padding: "0.8rem" }} className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <span className="row">
+          <EventLogo path={event.logo_path} size={1.6} />
           <strong>{event.name}</strong>
           {event.is_test && <span className="badge badge--warn">{t("TEST", "TEST")}</span>}
           {badge}
@@ -304,6 +393,7 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
 
       <div className="row">
         <button onClick={onToggle}>{open ? t("Hide teams", "Masquer les équipes") : t("Manage teams", "Gérer les équipes")}</button>
+        {!editing && <button onClick={() => setEditing(true)}>{t("Edit details", "Modifier les détails")}</button>}
         <Link to={`/event/${event.id}`} className="link-button">{t("Open the page", "Ouvrir la page")}</Link>
         {event.status !== "draft" && (
           <Link to={`/admin/event/${event.id}`} className="link-button">
@@ -316,10 +406,17 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
             {t("Open signup", "Ouvrir les inscriptions")}
           </button>
         )}
-        {/* The plan can be drafted and saved from the moment the event exists; only starting needs signup. */}
+        {/* Two buttons on purpose: planning (format, groups, names, seeding - saved, never started) is safe
+            to open any time, while starting is its own trip. The plan can be drafted from the moment the
+            event exists; starting needs signup to be open. */}
         {(event.status === "signup" || event.status === "draft") && (
-          <Link to={`/admin/event/${event.id}/start`} className={`link-button${event.status === "signup" ? " primary" : ""}`}>
-            {event.status === "signup" ? t("Plan & start the event…", "Préparer et lancer…") : t("Plan the event…", "Préparer l'événement…")}
+          <Link to={`/admin/event/${event.id}/plan`} className="link-button">
+            {t("Plan the event…", "Préparer l'événement…")}
+          </Link>
+        )}
+        {event.status === "signup" && (
+          <Link to={`/admin/event/${event.id}/start`} className="link-button primary">
+            {t("Start the event…", "Lancer l'événement…")}
           </Link>
         )}
         {event.status === "signup" && (
@@ -374,6 +471,8 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
           </div>
         </div>
       )}
+
+      {editing && <EventForm event={event} busy={busy} act={act} onClose={() => setEditing(false)} />}
 
       {open && <TeamManager event={event} busy={busy} act={act} />}
     </div>

@@ -18,7 +18,7 @@ import { useT } from "../lib/language";
  * administrator itself, and would refuse them whatever this page did. A guard in the browser is a
  * courtesy; the refusal in the database is the rule.
  */
-export function AdminStartEvent() {
+export function AdminStartEvent({ mode }: { mode: "plan" | "start" }) {
   const t = useT();
   const { id = "" } = useParams();
   const { isAdmin, loading } = useAdminStatus();
@@ -36,5 +36,5 @@ export function AdminStartEvent() {
     );
   }
 
-  return <StartEventForm eventId={id} />;
+  return <StartEventForm eventId={id} mode={mode} />;
 }

@@ -51,6 +51,12 @@ export function KeyStrip({
         {items.map((item) => (
           <span key={item.key} className="ovk-item">
             <span className={`${item.className} ovk-swatch`} style={item.style} aria-hidden />
+            {/* The squares' colourblind-mode code - see BoardLegend. */}
+            {item.code && (
+              <span className={`${item.className} ovk-code cb-only`} style={item.style}>
+                {item.code}
+              </span>
+            )}
             {item.label}
           </span>
         ))}
