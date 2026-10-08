@@ -35,7 +35,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
-import { buildFlatBoard } from '../../../src/lib/squareSetFormat.ts'
+import { buildFlatBoard, dealtPool } from '../../../src/lib/squareSetFormat.ts'
 import { balanceBoard, scoreLayout, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
@@ -134,14 +134,16 @@ function boardCost(
   roomId: string,
   setId: string,
   cells: number,
-  seed: string | null
+  seed: string | null,
+  dealtAt: string | null
 ): { cost: number[]; regions: Array<string | null> } | null {
   // Cast kept as narrow as auto-fire's: buildFlatBoard returns Challenge[] whatever it is handed,
   // and it passes the very same objects through, so `region` is read off the RESULT - where it is
   // properly typed - rather than asserted onto the input.
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base))
-  const board = buildFlatBoard(BOSS_SETS[setId], cells, next)
+  // Same pool challengesForRoom deals from - see dealtPool.
+  const board = buildFlatBoard(dealtPool(BOSS_SETS[setId], dealtAt), cells, next)
 
   const cost: number[] = []
   const regions: Array<string | null> = []
@@ -198,7 +200,7 @@ Deno.serve(async (req) => {
     // -- is this the moment ------------------------------------------------------------------
     const { data: room } = await admin
       .from('rooms')
-      .select('id, board_size, square_set, seed, status, board_perm')
+      .select('id, board_size, square_set, seed, seed_set_at, status, board_perm')
       .eq('id', roomId)
       .maybeSingle()
     if (!room) return jsonResponse({ balanced: false, reason: 'no_room' }, 404)
@@ -249,7 +251,7 @@ Deno.serve(async (req) => {
     }
 
     const cells = room.board_size * room.board_size
-    const deal = boardCost(room.id, setId, cells, room.seed)
+    const deal = boardCost(room.id, setId, cells, room.seed, room.seed_set_at)
     if (!deal) return jsonResponse({ balanced: false, reason: 'missing_reach_data' })
 
     // Each fleet as its SHIPS, not as a flat list of cells - which is the whole fairness test, since

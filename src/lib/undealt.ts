@@ -1,5 +1,6 @@
 import { squareSet, squareTitle, buildFlatBoard, maxBoardSize, type Challenge, type SquareSetId } from "./squareSets";
 import { dealSeed } from "./challenges";
+import { dealtPool } from "./squareSetFormat";
 
 /**
  * How close to a set's ceiling a board has to be before the squares it left out are worth naming.
@@ -52,12 +53,16 @@ export function undealtSquares(
   roomId: string,
   count: number,
   setId: SquareSetId | null | undefined,
-  seed?: string | null
+  seed?: string | null,
+  /** When the board was dealt. A square added to the set after that was never in this pack. */
+  dealtAt?: string | null
 ): Challenge[] {
   const set = squareSet(setId);
-  if (set.format !== "flat" || set.data.length <= count) return [];
+  if (set.format !== "flat") return [];
+  const pack = dealtPool(set.data, dealtAt);
+  if (pack.length <= count) return [];
   return (
-    buildFlatBoard(set.data, set.data.length, dealSeed(roomId, setId, seed))
+    buildFlatBoard(pack, pack.length, dealSeed(roomId, setId, seed))
       .slice(count)
       // Titled here for the reason the board is titled at the end of its own deal: how a square
       // reads to a person depends on which set it came from, and this is the last point that knows.

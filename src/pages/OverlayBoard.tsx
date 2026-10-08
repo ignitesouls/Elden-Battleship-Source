@@ -389,7 +389,7 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
   // lib/overlayReveal.ts. A captain must not be able to read the squares off their own source
   // while they still have hulls in hand.
   const revealed = squaresRevealed(room.status, battlePhase);
-  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
+  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at);
   // From `marked`: wreckage is a result like any other, and a hull sunk by a fleet whose markers
   // are hidden must not leave its ship drawn across the board.
   const sunkCells = sunkCellOrientations(marked, boardSize);

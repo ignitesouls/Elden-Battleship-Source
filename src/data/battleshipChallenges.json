@@ -194,6 +194,7 @@
   {"name": "Midra", "tooltip": "Midra, Lord of Frenzied Flame - Midra's Manse", "region": "dlc"},
   {"name": "Deathblight Lion", "tooltip": "Divine Beast Dancing Lion - Ancient Ruins of Rauh", "region": "dlc"},
   {"name": "Romina", "tooltip": "Romina, Saint of the Bud - Church of the Bud", "region": "dlc"},
+  {"name": "Devonia", "tooltip": "Crucible Knight Devonia - Ancient Ruins of Rauh", "region": "dlc", "dealtFrom": "pending"},
   {"name": "Metyr, Mother of Fingers", "short": "Metyr", "tooltip": "Metyr, Mother of Fingers - Cathedral of Manus Metyr", "region": "dlc"},
   {"name": "Promised Consort Radahn", "tooltip": "Promised Consort Radahn - Enir-Ilim", "region": "dlc"},
   {"name": "Gideon Ofnir", "tooltip": "Sir Gideon Ofnir, the All-Knowing - Leyndell, Ashen Capital", "region": "mountaintops"},

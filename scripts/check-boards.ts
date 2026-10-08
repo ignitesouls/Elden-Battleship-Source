@@ -12,7 +12,7 @@
  *   node --experimental-strip-types scripts/check-boards.ts
  */
 import { readFileSync, readdirSync } from 'node:fs'
-import { buildBingoBoard, buildFlatBoard, boardColor, colorLegend, strictFill, relaxedFill, largestBoardFor, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
+import { buildBingoBoard, buildFlatBoard, dealtPool, boardColor, colorLegend, strictFill, relaxedFill, largestBoardFor, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
 import { BOARD_SIZES, FLEET_PRESETS, fleetFor, type Attack, type ShipDefinition } from '../src/types/battleship.ts'
 import {
   eliminatedTeamsFromAttacks,
@@ -199,6 +199,51 @@ for (const size of SIZES) {
 const bossA = buildFlatBoard(bosses, 100, rng(seedFrom(ROOM_IDS[0]))).map((c) => c.name)
 const bossB = buildFlatBoard(bosses, 100, rng(seedFrom(ROOM_IDS[0]))).map((c) => c.name)
 check('Reproduces exactly', bossA.join('|') === bossB.join('|'))
+
+console.log('\n=== A square added later re-deals nothing ===\n')
+// The shuffle draws once per square, so a longer list deals a different board from the same room -
+// every live match and every archived one would rebuild wrong. dealtPool hands a board dealt before a
+// square's `dealtFrom` the exact list it was dealt from. The fingerprints are of 14x14 (full) and 12x12
+// (small crew) boards dealt from the 206- and 164-square lists as they stood before Crucible Knight
+// Devonia was added, so this fails the moment anything changes what an existing board deals.
+{
+  const fnv = (s: string) => {
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193)
+    }
+    return (h >>> 0).toString(16)
+  }
+  const deal = (list: Challenge[], cells: number, key: string) =>
+    buildFlatBoard(list, cells, rng(seedFrom(key))).map((c) => c.name).join('|')
+  const late = bosses.filter((c) => c.dealtFrom !== undefined)
+
+  check(
+    'A board with no deal date deals the original 206',
+    fnv(deal(dealtPool(bosses, null), 196, ROOM_IDS[0])) === 'cbac4dad'
+  )
+  check(
+    'The small-crew cut deals its original 164 too',
+    fnv(deal(dealtPool(bosses2v2, null), 144, `${ROOM_IDS[0]}:bosses-2v2`)) === '4d6051d2'
+  )
+  const pending = late.filter((sq) => !Number.isFinite(Date.parse(sq.dealtFrom!)))
+  const today = dealtPool(bosses, new Date().toISOString())
+  check(
+    `A "pending" square is never dealt (${pending.map((sq) => sq.name).join(', ') || 'none pending'})`,
+    pending.every((sq) => !today.includes(sq))
+  )
+  // The rule itself, on a made-up square, so it is exercised whatever state the real ones are in.
+  const probe = [...bosses.filter((c) => c.dealtFrom === undefined), { name: 'Probe', dealtFrom: '2026-10-10T00:00:00Z' }]
+  check('A late square is out of a board dealt before its date', !dealtPool(probe, '2026-10-09T23:59:59Z').some((c) => c.name === 'Probe'))
+  check('A late square is in a board dealt on or after its date', dealtPool(probe, '2026-10-10T00:00:00Z').some((c) => c.name === 'Probe'))
+  check('A late square is out of a board with no deal date', !dealtPool(probe, null).some((c) => c.name === 'Probe'))
+  // Every late square has to be in both cuts' flag and cost tables like any other - see build-boss-flags.
+  for (const sq of late) {
+    const twin = bosses2v2.find((c) => c.name === sq.name)
+    check(`${sq.name}: small-crew copy carries the same dealtFrom`, !twin || twin.dealtFrom === sq.dealtFrom)
+  }
+}
 
 console.log('\n=== The community sets (base game / DLC) ===\n')
 {

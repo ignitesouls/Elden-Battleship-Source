@@ -29,7 +29,7 @@
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
-import { buildFlatBoard } from '../../../src/lib/squareSetFormat.ts'
+import { buildFlatBoard, dealtPool } from '../../../src/lib/squareSetFormat.ts'
 import { applyBoardPerm } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import { MATCH_START_MARKER, matchTimings, battlePhaseAt } from '../../../src/lib/matchTime.ts'
@@ -118,11 +118,14 @@ function boardIndex(
   setId: string,
   cells: number,
   seed: string | null,
-  perm: number[] | null
+  perm: number[] | null,
+  dealtAt: string | null
 ): Map<string, number[]> {
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base))
-  const dealt = buildFlatBoard(BOSS_SETS[setId], cells, next)
+  // Same pool challengesForRoom deals from: a square added to the set after this board was dealt is
+  // not on it, and leaving it in would re-deal the board and fire every kill at the wrong cell.
+  const dealt = buildFlatBoard(dealtPool(BOSS_SETS[setId], dealtAt), cells, next)
   const board = applyBoardPerm(dealt, perm)
 
   const byTooltip = new Map<string, number[]>()
@@ -547,7 +550,8 @@ Deno.serve(async (req) => {
           // The five columns past board_perm are the website's own match clock: starting_seconds and
           // prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
           // ship_defs is the fleet, which with board_size picks the games the PB line compares against.
-          .select('id, board_size, square_set, seed, board_perm, starting_seconds, prep_seconds, pause_at, resume_at, pause_log, ship_defs')
+          // seed_set_at says which squares the board was dealt from - see dealtPool.
+          .select('id, board_size, square_set, seed, board_perm, seed_set_at, starting_seconds, prep_seconds, pause_at, resume_at, pause_log, ship_defs')
           .in(
             'id',
             seated.map((s) => s.room_id)
@@ -574,7 +578,7 @@ Deno.serve(async (req) => {
     }
 
     const cells = room.board_size * room.board_size
-    const byTooltip = boardIndex(room.id, setId, cells, room.seed, room.board_perm)
+    const byTooltip = boardIndex(room.id, setId, cells, room.seed, room.board_perm, room.seed_set_at)
 
     const { data: roster } = await admin.from('players').select('team').eq('room_id', room.id)
     const defenders = activeTeams(roster ?? []).filter((t) => t !== seat.team)

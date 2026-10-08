@@ -158,6 +158,7 @@
   {"name":"Jagged Peak Drake","tooltip":"Jagged Peak Drake - Jagged Peak","region":"dlc"},
   {"name":"Rakshasa","tooltip":"Rakshasa - Eastern Nameless Mausoleum","region":"dlc"},
   {"name":"Midra","tooltip":"Midra, Lord of Frenzied Flame - Midra's Manse","region":"dlc"},
+  {"name":"Devonia","tooltip":"Crucible Knight Devonia - Ancient Ruins of Rauh","region":"dlc","dealtFrom":"pending"},
   {"name":"Gideon Ofnir","tooltip":"Sir Gideon Ofnir, the All-Knowing - Leyndell, Ashen Capital","region":"mountaintops"},
   {"name":"Hoarah Loux","tooltip":"Godfrey, First Elden Lord & Hoarah Loux, Warrior - Leyndell, Ashen Capital","region":"mountaintops"},
   {"name":"Fell Twins","tooltip":"Fell Twins (Omen Twins) - Divine Tower of East Altus","region":"altus"},

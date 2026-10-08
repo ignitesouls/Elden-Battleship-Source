@@ -132,7 +132,11 @@ async function recompute(tx: postgres.TransactionSql, fp: string): Promise<void>
          where match_key not in (select match_key from public.voided_matches)
          order by finished_at desc, id desc
       ) t`,
-    tx<BoardSource[]>`select match_key, room_id, board_seed, board_perm from public.match_board_sources`,
+    // board_dealt_at as ISO text, the shape the browser gets it in: postgres.js would hand back a Date,
+    // and dealtPool reads a string.
+    tx<BoardSource[]>`select match_key, room_id, board_seed, board_perm,
+                             to_json(board_dealt_at) #>> '{}' as board_dealt_at
+                        from public.match_board_sources`,
   ])
 
   const boards = rateEveryBoard(

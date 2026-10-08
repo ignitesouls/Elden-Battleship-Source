@@ -51,7 +51,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
-import { buildFlatBoard, type Challenge } from '../../../src/lib/squareSetFormat.ts'
+import { buildFlatBoard, dealtPool, type Challenge } from '../../../src/lib/squareSetFormat.ts'
 import {
   balanceBoard,
   scoreLayout,
@@ -128,11 +128,13 @@ function dealBoard(
   setId: string,
   cells: number,
   seed: string | null,
-  perm: number[] | null
+  perm: number[] | null,
+  dealtAt: string | null
 ): Challenge[] {
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base))
-  const board = buildFlatBoard(BOSS_SETS[setId], cells, next)
+  // Same pool challengesForRoom deals from - see dealtPool.
+  const board = buildFlatBoard(dealtPool(BOSS_SETS[setId], dealtAt), cells, next)
   if (Array.isArray(perm) && perm.length === cells) return perm.map((from) => board[from])
   return board
 }
@@ -292,7 +294,7 @@ Deno.serve(async (req) => {
     const { data: eventRows, error: eventErr } = await admin
       .from('match_events')
       .select(
-        'match_key, room_id, cell_index, challenge_name, match_seconds, board_size, board_seed, board_perm, square_set'
+        'match_key, room_id, cell_index, challenge_name, match_seconds, board_size, board_seed, board_perm, board_dealt_at, square_set'
       )
       .in('match_key', matchKeys)
     if (eventErr) throw new Error('match_events: ' + eventErr.message)
@@ -357,9 +359,10 @@ Deno.serve(async (req) => {
 
       const seed = (evs.find((e) => e.board_seed)?.board_seed as string) ?? null
       const perm = (evs.find((e) => e.board_perm)?.board_perm as number[]) ?? null
+      const dealtAt = (evs.find((e) => e.board_dealt_at)?.board_dealt_at as string) ?? null
 
-      const playedBoard = dealBoard(roomId, setId, cells, seed, perm)
-      const dealtBoard = dealBoard(roomId, setId, cells, seed, null)
+      const playedBoard = dealBoard(roomId, setId, cells, seed, perm, dealtAt)
+      const dealtBoard = dealBoard(roomId, setId, cells, seed, null, dealtAt)
 
       // Trust a match only if the names it logged land where the rebuild puts them - the same guard
       // build-time-cost.mjs uses, and for the same reason: a rebuild that disagrees with the archive

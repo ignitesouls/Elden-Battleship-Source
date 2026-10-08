@@ -27,6 +27,8 @@ export interface BoardSource {
   room_id: string | null;
   board_seed: string | null;
   board_perm: number[] | null;
+  /** When the board was dealt. Optional so a source read before the column existed still fits. */
+  board_dealt_at?: string | null;
 }
 
 /**
@@ -49,6 +51,7 @@ export function prepareEvents<T extends { match_key: string; challenge_name?: st
       room_id: source?.room_id ?? null,
       board_seed: source?.board_seed ?? null,
       board_perm: source?.board_perm ?? null,
+      board_dealt_at: source?.board_dealt_at ?? null,
     };
   });
 }
@@ -68,9 +71,9 @@ export function prepareParticipants(rows: ParticipantRow[]): ParticipantRow[] {
  * weigh squares identically.
  */
 export function boardResolver(set: SquareSetId): Parameters<typeof bossFrequency>[1] {
-  return (roomId, cells, fired, seed, perm) => {
+  return (roomId, cells, fired, seed, perm, dealtAt) => {
     for (const setId of squareSetVariants(set)) {
-      const board = challengesForRoom(roomId, cells, setId, seed, perm).map((c) => c.name);
+      const board = challengesForRoom(roomId, cells, setId, seed, perm, dealtAt).map((c) => c.name);
       if (fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)) return board;
     }
     return [];

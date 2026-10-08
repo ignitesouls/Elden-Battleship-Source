@@ -86,7 +86,7 @@ export function Overlay() {
   // Which hulls went down, not how many: OverlayFleetStatus draws silhouettes, so it needs the
   // fleet position of each loss rather than a count. See sunkHullFlags for why that can't be
   // answered from sunk_ship_name, which is what this used to hand it.
-  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm);
+  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm, room.seed_set_at);
 
   // ?team=N marks the streamer's own fleet so viewers can tell at a glance which side they're on.
   const rawTeam = params.get("team");

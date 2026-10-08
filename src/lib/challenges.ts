@@ -12,7 +12,7 @@ import {
   type Region,
 } from "./squareSets";
 import { rng, seedFrom } from "./seededRandom";
-import { BAYLE_SQUARES, igonUnveiled } from "./squareSetFormat";
+import { BAYLE_SQUARES, igonUnveiled, dealtPool } from "./squareSetFormat";
 import { applyBoardPerm } from "./boardBalance";
 
 export type { Challenge, SquareSetId, Region };
@@ -85,7 +85,13 @@ export function challengesForRoom(
    * existed has, what every archived match has, and what a room gets when the balancer was
    * unreachable - so this must stay a no-op rather than a fallback that guesses.
    */
-  perm?: number[] | null
+  perm?: number[] | null,
+  /**
+   * When this board was dealt - `rooms.seed_set_at`, or `board_dealt_at` on an archived match. Decides
+   * whether squares added to the set later are in the deal; see dealtPool. Omit (or pass null) for
+   * "before any of them", which is right for every board dealt before the first one was added.
+   */
+  dealtAt?: string | null
 ): Challenge[] {
   const set = squareSet(setId);
   const next = dealSeed(roomId, setId, seed);
@@ -103,7 +109,7 @@ export function challengesForRoom(
           set.shortNamesFr,
           set.optionsFr
         )
-      : buildFlatBoard(set.data, count, next);
+      : buildFlatBoard(dealtPool(set.data, dealtAt), count, next);
   // Applied after the deal and never during it, so the sequence of next() calls above is untouched.
   // Consuming the PRNG differently would re-deal every live board and strand every archived one.
   const board = applyBoardPerm(dealt, perm);
@@ -149,7 +155,9 @@ export function detectSquareSet(
   fired: Array<{ cell: number; name: string }>,
   seed?: string | null,
   /** The match's balanced layout, or null. Without it a balanced match matches no set at all. */
-  perm?: number[] | null
+  perm?: number[] | null,
+  /** When the board was dealt, or null - see challengesForRoom. */
+  dealtAt?: string | null
 ): SquareSetId | null {
   if (fired.length === 0) return null;
   // Three is plenty: names are near-unique across sets, and a single agreement could in principle
@@ -157,7 +165,7 @@ export function detectSquareSet(
   const sample = fired.slice(0, 3);
 
   for (const set of Object.values(SQUARE_SETS)) {
-    const board = challengesForRoom(roomId, cells, set.id, seed, perm);
+    const board = challengesForRoom(roomId, cells, set.id, seed, perm, dealtAt);
     if (sample.every(({ cell, name }) => board[cell]?.name === name)) return set.id;
   }
   return null;
@@ -217,13 +225,14 @@ export function bayleCell(room: {
   square_set?: string | null;
   seed?: string | null;
   board_perm?: number[] | null;
+  seed_set_at?: string | null;
 }): number | null {
   const cells = room.board_size * room.board_size;
-  const key = `${room.id}:${room.square_set ?? ""}:${room.seed ?? ""}:${room.board_perm?.join(",") ?? ""}:${cells}`;
+  const key = `${room.id}:${room.square_set ?? ""}:${room.seed ?? ""}:${room.board_perm?.join(",") ?? ""}:${cells}:${room.seed_set_at ?? ""}`;
   const cached = bayleCellMemo.get(key);
   if (cached !== undefined) return cached;
 
-  const board = challengesForRoom(room.id, cells, room.square_set, room.seed, room.board_perm);
+  const board = challengesForRoom(room.id, cells, room.square_set, room.seed, room.board_perm, room.seed_set_at);
   const found = board.findIndex((c) => BAYLE_SQUARES.has(c.name));
   const cell = found === -1 ? null : found;
   bayleCellMemo.set(key, cell);

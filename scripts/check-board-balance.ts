@@ -35,12 +35,14 @@ import {
   LONG_GAP,
   LONG_SQUARE_SECONDS,
 } from '../src/lib/boardBalance.ts'
-import { buildFlatBoard, type Challenge } from '../src/lib/squareSetFormat.ts'
+import { buildFlatBoard, dealtPool, type Challenge } from '../src/lib/squareSetFormat.ts'
 import { BOARD_SIZES, FLEET_PRESETS, fleetFor } from '../src/types/battleship.ts'
 import { randomPlacements } from '../src/lib/battleshipLogic.ts'
 
-const bosses = JSON.parse(readFileSync(new URL('../src/data/battleshipChallenges.json', import.meta.url), 'utf8')) as Challenge[]
-const bosses2v2 = JSON.parse(readFileSync(new URL('../src/data/battleshipChallenges2v2.json', import.meta.url), 'utf8')) as Challenge[]
+// The pool as a board dealt right now draws it - a square added to the set but not live yet is not
+// in any real deal, so balancing around it would be testing a board nobody can get. See dealtPool.
+const bosses = dealtPool(JSON.parse(readFileSync(new URL('../src/data/battleshipChallenges.json', import.meta.url), 'utf8')) as Challenge[], new Date().toISOString())
+const bosses2v2 = dealtPool(JSON.parse(readFileSync(new URL('../src/data/battleshipChallenges2v2.json', import.meta.url), 'utf8')) as Challenge[], new Date().toISOString())
 const costTable = JSON.parse(readFileSync(new URL('../src/data/bossTimeCost.json', import.meta.url), 'utf8')) as Record<string, number>
 
 // Mirrors seededRandom.ts, which check-boards.ts also mirrors and for the same reason.

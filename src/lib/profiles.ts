@@ -258,9 +258,14 @@ const PARTICIPANT_COLUMNS =
  * always had to handle anyway (see bossFrequency, which then counts only what was fired at).
  */
 async function fetchBoardSources(): Promise<Map<string, BoardSource>> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("match_board_sources")
-    .select("match_key,room_id,board_seed,board_perm");
+    .select("match_key,room_id,board_seed,board_perm,board_dealt_at");
+  // board_dealt_at arrived with the board_dealt_at migration. Without it every match still rebuilds
+  // correctly as long as no late-added square has been dealt yet, so drop the column, not the sources.
+  if (error) {
+    ({ data, error } = await supabase.from("match_board_sources").select("match_key,room_id,board_seed,board_perm"));
+  }
   if (error || !data) return new Map();
   return new Map((data as BoardSource[]).map((r) => [r.match_key, r]));
 }

@@ -50,7 +50,7 @@ export function OverlayKey(props: OverlaySourceProps = {}) {
   const battlePhase = useBattlePhaseName(state.attacks, room);
   const boardSize = room?.board_size ?? 0;
   const challenges = useMemo(
-    () => (room ? challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm) : []),
+    () => (room ? challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at) : []),
     [room, boardSize]
   );
 

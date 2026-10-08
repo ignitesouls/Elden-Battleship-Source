@@ -30,6 +30,8 @@ export interface MatchEventRow {
   board_seed?: string | null;
   /** How the balancer rearranged that deal, if it did. Null for every unbalanced match. */
   board_perm?: number[] | null;
+  /** When that board was dealt - decides whether late-added squares were in it. See dealtPool. */
+  board_dealt_at?: string | null;
   /** Whether the mod fired this shot off a kill event, rather than a manual click. */
   auto?: boolean;
 }
@@ -414,7 +416,8 @@ export function bossFrequency(
     cells: number,
     fired: Array<{ cell: number; name: string }>,
     seed: string | null,
-    perm: number[] | null
+    perm: number[] | null,
+    dealtAt: string | null
   ) => string[]
 ): BossFrequency[] {
   const stats = new Map<string, BossFrequency>();
@@ -444,7 +447,8 @@ export function bossFrequency(
     // Per match for the same reason, and from the same rows: a balanced board was rearranged after
     // the fleets went down, so the seed alone no longer says where anything ended up.
     const perm = evs.find((e) => e.board_perm)?.board_perm ?? null
-    const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed, perm) : [];
+    const dealtAt = evs.find((e) => e.board_dealt_at)?.board_dealt_at ?? null
+    const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed, perm, dealtAt) : [];
     const allNames = rebuilt.length > 0 ? rebuilt : [...firedNames];
     for (const n of allNames) touch(n).appeared++;
     for (const n of firedNames) touch(n).fired++;

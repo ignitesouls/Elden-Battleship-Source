@@ -47,8 +47,8 @@ export function MatchReport({ room, players, attacks, deepHides, fleets, activeT
   );
   const boardSize = room.board_size;
   const challenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
-    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at]
   );
   const shipDefs = room.ship_defs;
   const sunkCells = useMemo(() => sunkCellOrientations(attacks, boardSize), [attacks, boardSize]);

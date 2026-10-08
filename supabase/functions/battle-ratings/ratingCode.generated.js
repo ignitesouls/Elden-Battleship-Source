@@ -1142,7 +1142,8 @@ function bossFrequency(events, resolveBoard) {
 		}));
 		const seed = evs.find((e) => e.board_seed)?.board_seed ?? null;
 		const perm = evs.find((e) => e.board_perm)?.board_perm ?? null;
-		const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed, perm) : [];
+		const dealtAt = evs.find((e) => e.board_dealt_at)?.board_dealt_at ?? null;
+		const rebuilt = roomId ? resolveBoard(roomId, boardSize * boardSize, fired, seed, perm, dealtAt) : [];
 		const allNames = rebuilt.length > 0 ? rebuilt : [...firedNames];
 		for (const n of allNames) touch(n).appeared++;
 		for (const n of firedNames) touch(n).fired++;
@@ -2423,6 +2424,12 @@ var battleshipChallenges_default = [
 		"region": "dlc"
 	},
 	{
+		"name": "Devonia",
+		"tooltip": "Crucible Knight Devonia - Ancient Ruins of Rauh",
+		"region": "dlc",
+		"dealtFrom": "pending"
+	},
+	{
 		"name": "Metyr, Mother of Fingers",
 		"short": "Metyr",
 		"tooltip": "Metyr, Mother of Fingers - Cathedral of Manus Metyr",
@@ -3283,6 +3290,12 @@ var battleshipChallenges2v2_default = [
 		"name": "Midra",
 		"tooltip": "Midra, Lord of Frenzied Flame - Midra's Manse",
 		"region": "dlc"
+	},
+	{
+		"name": "Devonia",
+		"tooltip": "Crucible Knight Devonia - Ancient Ruins of Rauh",
+		"region": "dlc",
+		"dealtFrom": "pending"
 	},
 	{
 		"name": "Gideon Ofnir",
@@ -6885,6 +6898,7 @@ var battleshipTooltipsFr_default = {
 	"Midra, Lord of Frenzied Flame - Midra's Manse": "Midra, Seigneur des Flammes Frénétiques - Manoir de Midra",
 	"Divine Beast Dancing Lion - Ancient Ruins of Rauh": "Lion Dansant de la Bête Divine - Ruines Antiques de Rauh",
 	"Romina, Saint of the Bud - Church of the Bud": "Romina, Sainte du Bourgeon - Église du Bourgeon",
+	"Crucible Knight Devonia - Ancient Ruins of Rauh": "Devonia, Chevalier du Creuset - Ruines Antiques de Rauh",
 	"Metyr, Mother of Fingers - Cathedral of Manus Metyr": "Metyr, Mère des Doigts - Cathédrale de Manus Metyr",
 	"Promised Consort Radahn - Enir-Ilim": "Radahn, Futur Consort - Enir-Ilim",
 	"Sir Gideon Ofnir, the All-Knowing - Leyndell, Ashen Capital": "Sire Gideon Ofnir l'Omniscient - Leyndell, Capitale des Cendres",
@@ -7096,6 +7110,7 @@ var names$1 = {
 	"Midra": "Midra",
 	"Deathblight Lion": "Lion Malemort",
 	"Romina": "Romina",
+	"Devonia": "Devonia",
 	"Metyr, Mother of Fingers": "Metyr, Mère des Doigts",
 	"Promised Consort Radahn": "Radahn, Futur Consort",
 	"Gideon Ofnir": "Gideon Ofnir",
@@ -8480,6 +8495,34 @@ function buildBingoBoard(set, count, next, shortNames = {}, regions = {}, colors
 	}
 	return out;
 }
+/**
+* The squares a board dealt at `dealtAt` draws from: the list, minus any square whose `dealtFrom` is
+* later than that board.
+*
+* This is how a square joins a set without re-dealing every board ever played. The shuffle consumes
+* one draw per square, so a longer list deals a different board from the same room - every live
+* match would change under its players and the Almanac could no longer rebuild a single archived
+* one. Filtering BEFORE the shuffle hands an older board exactly the list it was dealt from, in the
+* same order, so it comes out identical; only boards dealt after the date see the new square.
+*
+* `dealtAt` is `rooms.seed_set_at` for a live room and `match_events.board_dealt_at` for an archived
+* match - the moment the board was rolled, stamped by the server. A missing stamp reads as "before",
+* which is right for every board from before the column existed, and the same rule igonUnveiled
+* follows. A `dealtFrom` that does not parse (e.g. "pending") means the square is not dealt yet.
+*
+* Returns the list itself when nothing is held back, so the common case costs nothing.
+*/
+function dealtPool(list, dealtAt) {
+	const fromOf = (sq) => sq.dealtFrom;
+	if (!list.some((sq) => fromOf(sq) !== void 0)) return list;
+	const at = Date.parse(dealtAt ?? "");
+	return list.filter((sq) => {
+		const dealtFrom = fromOf(sq);
+		if (dealtFrom === void 0) return true;
+		const from = Date.parse(String(dealtFrom));
+		return Number.isFinite(from) && Number.isFinite(at) && at >= from;
+	});
+}
 /** Picks `count` squares from a plain `{ name, tooltip }` list, cycling if it runs short. */
 function buildFlatBoard(list, count, next) {
 	if (list.length === 0) return [];
@@ -8859,10 +8902,10 @@ function dealSeed(roomId, setId, seed) {
 * this deployed - renaming squares under a live match - and would strand the Almanac, which
 * reconstructs finished boards from the room id and could no longer reproduce a single archived one.
 */
-function challengesForRoom(roomId, count, setId = DEFAULT_SQUARE_SET, seed, perm) {
+function challengesForRoom(roomId, count, setId = DEFAULT_SQUARE_SET, seed, perm, dealtAt) {
 	const set = squareSet(setId);
 	const next = dealSeed(roomId, setId, seed);
-	return applyBoardPerm(set.format === "bingo" ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors, set.namesFr, set.tooltipsFr, set.shortNamesFr, set.optionsFr) : buildFlatBoard(set.data, count, next), perm).map((c) => {
+	return applyBoardPerm(set.format === "bingo" ? buildBingoBoard(set.data, count, next, set.shortNames, set.regions, set.colors, set.namesFr, set.tooltipsFr, set.shortNamesFr, set.optionsFr) : buildFlatBoard(dealtPool(set.data, dealtAt), count, next), perm).map((c) => {
 		const nameFr = c.nameFr ?? set.namesFr?.[c.name];
 		const withFr = {
 			...c,
@@ -8896,7 +8939,8 @@ function prepareEvents(rows, sources) {
 			challenge_name: canonicalSquareName(r.challenge_name),
 			room_id: source?.room_id ?? null,
 			board_seed: source?.board_seed ?? null,
-			board_perm: source?.board_perm ?? null
+			board_perm: source?.board_perm ?? null,
+			board_dealt_at: source?.board_dealt_at ?? null
 		};
 	});
 }
@@ -8917,9 +8961,9 @@ function prepareParticipants(rows) {
 * weigh squares identically.
 */
 function boardResolver(set) {
-	return (roomId, cells, fired, seed, perm) => {
+	return (roomId, cells, fired, seed, perm, dealtAt) => {
 		for (const setId of squareSetVariants(set)) {
-			const board = challengesForRoom(roomId, cells, setId, seed, perm).map((c) => c.name);
+			const board = challengesForRoom(roomId, cells, setId, seed, perm, dealtAt).map((c) => c.name);
 			if (fired.slice(0, 3).every(({ cell, name }) => board[cell] === name)) return board;
 		}
 		return [];
@@ -8943,4 +8987,4 @@ function rateEveryBoard(parts, events) {
 
 //#endregion
 export { boardResolver, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard };
-export const RATING_CODE_VERSION = "177ac048dbccaf5e";
+export const RATING_CODE_VERSION = "0688d3cefafc9c76";

@@ -128,10 +128,20 @@ function rng(seed) {
   };
 }
 
-function bossBoard(roomId, setId, cells, seed, perm) {
+// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack.
+function dealtPool(list, dealtAt) {
+  const at = Date.parse(dealtAt ?? "");
+  return list.filter((sq) => {
+    if (sq.dealtFrom === undefined) return true;
+    const from = Date.parse(sq.dealtFrom);
+    return Number.isFinite(from) && Number.isFinite(at) && at >= from;
+  });
+}
+
+function bossBoard(roomId, setId, cells, seed, perm, dealtAt) {
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`;
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base));
-  const pool = [...BOSS_SETS[setId]];
+  const pool = dealtPool(BOSS_SETS[setId], dealtAt);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(next() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -148,7 +158,7 @@ const rows = [];
 for (let page = 0; page < 200; page++) {
   const { data, error } = await supabase
     .from("match_events")
-    .select("match_key, room_id, cell_index, challenge_name, board_size, square_set, board_seed, board_perm")
+    .select("match_key, room_id, cell_index, challenge_name, board_size, square_set, board_seed, board_perm, board_dealt_at")
     .order("match_key", { ascending: true })
     .order("cell_index", { ascending: true })
     .range(page * 1000, page * 1000 + 999);
@@ -177,7 +187,8 @@ for (const [key, events] of byMatch) {
     events[0].square_set ?? DEFAULT_SET,
     cells,
     events[0].board_seed,
-    events[0].board_perm
+    events[0].board_perm,
+    events[0].board_dealt_at
   );
 
   // Trust a match only if the names it logged land where the rebuild puts them - a match dealt under

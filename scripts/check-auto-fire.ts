@@ -31,7 +31,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
-import { buildFlatBoard, type Challenge } from '../src/lib/squareSetFormat.ts'
+import { buildFlatBoard, dealtPool, type Challenge } from '../src/lib/squareSetFormat.ts'
 import { rng, seedFrom } from '../src/lib/seededRandom.ts'
 
 function loadEnv(path: string): Record<string, string> {
@@ -90,10 +90,13 @@ function fleetRows(rowOffset: number) {
   return { shipGrid, shipIndexGrid, placements }
 }
 
-/** Mirrors challengesForRoom()'s seeding for the default set - see the header. */
+/**
+ * Mirrors challengesForRoom()'s seeding for the default set - see the header. The room is created by
+ * this run, so its board was dealt just now and draws from today's pool (see dealtPool).
+ */
 function boardFor(roomId: string, seed: string | null): Challenge[] {
   const next = rng(seedFrom(seed ? `${roomId}:${seed}` : roomId))
-  return buildFlatBoard(bossData, BOARD * BOARD, next)
+  return buildFlatBoard(dealtPool(bossData, new Date().toISOString()), BOARD * BOARD, next)
 }
 
 async function post(body: unknown) {

@@ -104,8 +104,8 @@ export function SpectateWithCrew({
   // Riding along means reading the same squares the crew reads, on both of their boards - the
   // whole point is following what they're deciding between, which bare colored cells can't carry.
   const dealtChallenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
-    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at]
   );
   // Held back through the RANDOMIZATION window, on the same beat as the players own board and the
   // overlays - a spectator reading out the squares ten seconds before the crews can see them would

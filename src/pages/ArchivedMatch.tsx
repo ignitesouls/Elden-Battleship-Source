@@ -69,7 +69,7 @@ export function ArchivedMatch() {
   }, [matchKey]);
 
   const boardSize = detail ? archivedBoardSize(detail) : 10;
-  const source = detail ? archivedBoardSource(detail) : { roomId: null, seed: null, perm: null };
+  const source = detail ? archivedBoardSource(detail) : { roomId: null, seed: null, perm: null, dealtAt: null };
   const setId = detail ? archivedSquareSet(detail) : null;
   // Folded, because ratings rank a game against its whole tab: both cuts of the boss board are one.
   const ratings = useBattleRatings(detail ? matchKey : null, setId ? displaySquareSet(setId) : null);
@@ -115,9 +115,9 @@ export function ArchivedMatch() {
   const challenges = useMemo(
     () =>
       source.roomId
-        ? challengesForRoom(source.roomId, boardSize * boardSize, setId, source.seed, source.perm)
+        ? challengesForRoom(source.roomId, boardSize * boardSize, setId, source.seed, source.perm, source.dealtAt)
         : null,
-    [source.roomId, source.seed, source.perm, boardSize, setId]
+    [source.roomId, source.seed, source.perm, source.dealtAt, boardSize, setId]
   );
 
   /**

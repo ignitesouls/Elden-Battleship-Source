@@ -72,10 +72,24 @@ function rng(seed) {
  * permutation that finished the deal - without either, every match played since those columns landed
  * rebuilds into a different board and this check fails on all of them for no reason.
  */
-function bossBoard(roomId, setId, cells, seed, perm) {
+/**
+ * Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack.
+ * This is the check that proves adding one re-dealt nothing - every match from before the add has to
+ * keep rebuilding exactly as it did.
+ */
+function dealtPool(list, dealtAt) {
+  const at = Date.parse(dealtAt ?? '')
+  return list.filter((sq) => {
+    if (sq.dealtFrom === undefined) return true
+    const from = Date.parse(sq.dealtFrom)
+    return Number.isFinite(from) && Number.isFinite(at) && at >= from
+  })
+}
+
+function bossBoard(roomId, setId, cells, seed, perm, dealtAt) {
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base))
-  const pool = [...BOSS_SETS[setId]]
+  const pool = dealtPool(BOSS_SETS[setId], dealtAt)
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(next() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
@@ -86,11 +100,13 @@ function bossBoard(roomId, setId, cells, seed, perm) {
   return out.map((c) => c.name)
 }
 
-const { data, error } = await supabase
-  .from('match_events')
-  .select('match_key, room_id, cell_index, challenge_name, board_size, square_set, board_seed, board_perm')
-  .order('finished_at', { ascending: false })
-  .limit(4000)
+const COLUMNS = 'match_key, room_id, cell_index, challenge_name, board_size, square_set, board_seed, board_perm'
+const read = (columns) =>
+  supabase.from('match_events').select(columns).order('finished_at', { ascending: false }).limit(4000)
+// board_dealt_at arrived with its own migration. Before it is applied no late square has been dealt,
+// so reading without it checks exactly the same thing.
+let { data, error } = await read(`${COLUMNS}, board_dealt_at`)
+if (error) ({ data, error } = await read(COLUMNS))
 
 if (error) {
   console.log(`FAIL  could not read match_events: ${error.message}`)
@@ -117,7 +133,7 @@ if (error) {
   const failures = []
   for (const [key, rows] of byMatch) {
     const cells = rows[0].board_size * rows[0].board_size
-    const board = bossBoard(rows[0].room_id, rows[0].square_set ?? DEFAULT_SET, cells, rows[0].board_seed, rows[0].board_perm)
+    const board = bossBoard(rows[0].room_id, rows[0].square_set ?? DEFAULT_SET, cells, rows[0].board_seed, rows[0].board_perm, rows.find((r) => r.board_dealt_at)?.board_dealt_at ?? null)
     const agrees = rows.every((r) => board[r.cell_index] === canonicalSquareName(r.challenge_name))
     if (agrees) matched++
     else {

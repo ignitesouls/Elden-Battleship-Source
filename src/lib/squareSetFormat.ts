@@ -237,6 +237,11 @@ export interface Challenge {
    * KeywordColor.
    */
   color?: string;
+  /**
+   * For a square added to a set after boards were already being dealt from it: the instant it starts
+   * being dealt. Absent on every square that was there from the start. See dealtPool.
+   */
+  dealtFrom?: string;
 }
 
 /**
@@ -1000,6 +1005,37 @@ export function buildBingoBoard(
     });
   }
   return out;
+}
+
+/**
+ * The squares a board dealt at `dealtAt` draws from: the list, minus any square whose `dealtFrom` is
+ * later than that board.
+ *
+ * This is how a square joins a set without re-dealing every board ever played. The shuffle consumes
+ * one draw per square, so a longer list deals a different board from the same room - every live
+ * match would change under its players and the Almanac could no longer rebuild a single archived
+ * one. Filtering BEFORE the shuffle hands an older board exactly the list it was dealt from, in the
+ * same order, so it comes out identical; only boards dealt after the date see the new square.
+ *
+ * `dealtAt` is `rooms.seed_set_at` for a live room and `match_events.board_dealt_at` for an archived
+ * match - the moment the board was rolled, stamped by the server. A missing stamp reads as "before",
+ * which is right for every board from before the column existed, and the same rule igonUnveiled
+ * follows. A `dealtFrom` that does not parse (e.g. "pending") means the square is not dealt yet.
+ *
+ * Returns the list itself when nothing is held back, so the common case costs nothing.
+ */
+export function dealtPool<T>(list: T[], dealtAt: string | null | undefined): T[] {
+  // Read loosely, because the Edge Functions declare their square lists without this field - and a
+  // list typed without it is exactly where the field going unnoticed would matter.
+  const fromOf = (sq: T) => (sq as { dealtFrom?: unknown }).dealtFrom;
+  if (!list.some((sq) => fromOf(sq) !== undefined)) return list;
+  const at = Date.parse(dealtAt ?? "");
+  return list.filter((sq) => {
+    const dealtFrom = fromOf(sq);
+    if (dealtFrom === undefined) return true;
+    const from = Date.parse(String(dealtFrom));
+    return Number.isFinite(from) && Number.isFinite(at) && at >= from;
+  });
 }
 
 /** Picks `count` squares from a plain `{ name, tooltip }` list, cycling if it runs short. */

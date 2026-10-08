@@ -706,7 +706,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   }
 
   const boardSize = room.board_size;
-  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm);
+  const challenges = challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at);
   /** Whether the squares may be named yet - see lib/overlayReveal.ts. */
   const revealed = squaresRevealed(room.status, battlePhase);
 

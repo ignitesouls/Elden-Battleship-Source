@@ -53,7 +53,7 @@ export async function archiveMatch(
   // Boss names indexed by cell, so match_events can be read back by name. The challenge grid is
   // seeded from room.id, so the same index means a different boss in every room - without this
   // the Almanac could never reconstruct which boss a shot was aimed at.
-  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm).map(
+  const challenges = challengesForRoom(room.id, room.board_size * room.board_size, room.square_set, room.seed, room.board_perm, room.seed_set_at).map(
     (c) => c?.name ?? ""
   );
 

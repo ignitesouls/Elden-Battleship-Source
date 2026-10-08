@@ -110,6 +110,23 @@ const OVERRIDES = {
   "HL Tree Sent Shield": { flag: 2050480860, why: "in-game: the survivor, to the north; tile 50,48" },
 };
 
+/* --- maintainer-supplied ----------------------------------------------------
+   Bosses Dionysus watches that er-overlay's data does not list at all, so there is nothing to join
+   against and no [N] prefix to read a scaling number from. The flag comes straight from the Dionysus
+   maintainer; the scaling number is ours, picked to weigh the square like the bosses named in `why`.
+
+   Kept apart from OVERRIDES on purpose: an override must name a flag the source has, and that check
+   is what catches the source moving under us. These are the one place it cannot apply - so if the
+   source ever does start listing one of them, the run says so, and the entry should move to the
+   ordinary join. */
+const PROVIDED = {
+  Devonia: {
+    flag: 2045470200,
+    scaling: 27,
+    why: "Dionysus maintainer, Oct 2026 - Crucible Knight Devonia; scaled like Ralva and the Golden Hippopotamus (27)",
+  },
+};
+
 /* --- helpers --------------------------------------------------------------- */
 
 /**
@@ -207,7 +224,7 @@ const scalingByFlag = new Map(flags.map((f) => [f.flag, f.scaling]));
 
 const table = {};
 const scaling = {};
-const counts = { exact: 0, "boss name": 0, "boss + region": 0, override: 0 };
+const counts = { exact: 0, "boss name": 0, "boss + region": 0, override: 0, provided: 0 };
 const unresolved = [];
 const unscaled = [];
 const collisions = [];
@@ -215,9 +232,17 @@ const collisions = [];
 for (const square of squares) {
   const tooltip = square.tooltip ?? "";
   const override = OVERRIDES[square.name];
+  const provided = PROVIDED[square.name];
 
   let flag;
-  if (override) {
+  if (provided) {
+    if (known.has(provided.flag)) {
+      console.warn(`note: ${source} now lists ${provided.flag} ("${square.name}") - move it off PROVIDED`);
+    }
+    flag = provided.flag;
+    counts.provided++;
+    scalingByFlag.set(flag, provided.scaling);
+  } else if (override) {
     // An override naming a flag the source doesn't have means the source moved under us - louder
     // failure than silently writing an id that will never fire.
     if (!known.has(override.flag)) {
@@ -308,7 +333,7 @@ console.log(`source   ${source}`);
 console.log(`flags    ${flags.length} distinct`);
 console.log(`squares  ${squares.length}`);
 console.log(
-  `  exact ${counts.exact}  |  boss name ${counts["boss name"]}  |  boss+region ${counts["boss + region"]}  |  override ${counts.override}`
+  `  exact ${counts.exact}  |  boss name ${counts["boss name"]}  |  boss+region ${counts["boss + region"]}  |  override ${counts.override}  |  provided ${counts.provided}`
 );
 console.log(`scaling  ${range.length} squares, [${Math.min(...range)}-${Math.max(...range)}]`);
 if (shared.length) {

@@ -141,7 +141,9 @@ pasting it will quietly revert people to old defaults.
 
 No new data file is required. Watching the standard boss list is fine: the server knows which flags
 map to squares and ignores the rest. The DLL stays a general boss-flag watcher with no Battleship
-knowledge. `src/data/bossFlags.json` currently maps 206 flags, one per square on the full boss set.
+knowledge. `src/data/bossFlags.json` currently maps 207 flags, one per square on the full boss set.
+Crucible Knight Devonia's (2045470200) is the one er-overlay's data does not list: it came straight
+from the Dionysus maintainer, and fires only on a Dionysus build that watches it.
 
 ## The loop
 

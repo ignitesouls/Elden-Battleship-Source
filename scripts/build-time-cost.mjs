@@ -170,10 +170,19 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function bossBoard(roomId, setId, cells, seed, perm) {
+// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack.
+function dealtPool(list, dealtAt) {
+  const at = Date.parse(dealtAt ?? "");
+  return list.filter((sq) => {
+    if (sq.dealtFrom === undefined) return true;
+    const from = Date.parse(sq.dealtFrom);
+    return Number.isFinite(from) && Number.isFinite(at) && at >= from;
+  });
+}
+function bossBoard(roomId, setId, cells, seed, perm, dealtAt) {
   const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`;
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base));
-  const pool = [...BOSS_SETS[setId]];
+  const pool = dealtPool(BOSS_SETS[setId], dealtAt);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(next() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -228,7 +237,7 @@ const rows = [];
 for (let page = 0; page < 40; page++) {
   const { data, error } = await supabase
     .from("match_events")
-    .select("match_key, room_id, cell_index, challenge_name, match_seconds, board_size, board_seed, board_perm, square_set, finished_at")
+    .select("match_key, room_id, cell_index, challenge_name, match_seconds, board_size, board_seed, board_perm, board_dealt_at, square_set, finished_at")
     .order("finished_at", { ascending: false })
     .range(page * 1000, page * 1000 + 999);
   if (error) throw new Error(`match_events: ${error.message}`);
@@ -262,7 +271,8 @@ for (const [key, evs] of byMatch) {
     setId,
     cells,
     evs.find((e) => e.board_seed)?.board_seed ?? null,
-    evs.find((e) => e.board_perm)?.board_perm ?? null
+    evs.find((e) => e.board_perm)?.board_perm ?? null,
+    evs.find((e) => e.board_dealt_at)?.board_dealt_at ?? null
   );
 
   const fired = evs.filter((e) => e.cell_index >= 0 && e.challenge_name);
@@ -326,13 +336,24 @@ for (const [, obs] of observations) {
 }
 const prior = measured.reduce((s, x) => s + x, 0) / measured.length;
 
+// A square added after launch (`dealtFrom`) starts with a hand-picked price borrowed from bosses it
+// plays like. Until it has been seen enough to measure, it keeps that price rather than dropping to
+// the board mean - which would quietly re-price it as an average boss the first time this ran.
+let committed = {};
+try {
+  committed = JSON.parse(readFileSync(OUT, "utf8"));
+} catch {
+  // No table yet: every thin square takes the board mean, as it always did.
+}
+
 const table = {};
 const thin = [];
 for (const square of BOSS_SETS[DEFAULT_SET]) {
   const obs = observations.get(square.tooltip) ?? [];
   if (obs.length < MIN_BOARDS) {
-    thin.push(`${square.name} (${obs.length} boards)`);
-    table[square.tooltip] = Math.round(prior);
+    const seeded = square.dealtFrom !== undefined && typeof committed[square.tooltip] === "number";
+    thin.push(`${square.name} (${obs.length} boards${seeded ? ", kept its starting price" : ""})`);
+    table[square.tooltip] = seeded ? committed[square.tooltip] : Math.round(prior);
     continue;
   }
   table[square.tooltip] = Math.round(restrictedMean(weigh(obs)));

@@ -83,6 +83,7 @@ export interface ArchivedEvent {
   square_set?: string | null;
   board_seed?: string | null;
   board_perm?: number[] | null;
+  board_dealt_at?: string | null;
 }
 
 /** Everything needed to draw one archived match's recap. */
@@ -198,6 +199,14 @@ export function fetchArchivedMatches(limit = ARCHIVE_LIST_LIMIT): Promise<Archiv
  * the replay path reading exactly where it always has is worth more than the few KB.
  */
 export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatchDetail> {
+  const EVENT_COLUMNS = "match_key,nickname,team,cell_index,challenge_name,result,match_seconds,board_size,room_id,square_set,board_seed,board_perm";
+  const eventsFor = (columns: string) => supabase.from("match_events").select(columns).eq("match_key", matchKey);
+  // board_dealt_at arrived with its own migration. A database without it would fail the whole read
+  // and blank the recap, so ask again without it - every match from before it rebuilds the same.
+  const withDealtAt = async () => {
+    const first = await eventsFor(`${EVENT_COLUMNS},board_dealt_at`);
+    return first.error ? eventsFor(EVENT_COLUMNS) : first;
+  };
   const [report, fleets, events] = await Promise.all([
     supabase
       .from("match_reports")
@@ -208,10 +217,7 @@ export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatc
       .from("match_fleets")
       .select("match_key,team,board_size,room_id,placements,ship_defs,square_set")
       .eq("match_key", matchKey),
-    supabase
-      .from("match_events")
-      .select("match_key,nickname,team,cell_index,challenge_name,result,match_seconds,board_size,room_id,square_set,board_seed,board_perm")
-      .eq("match_key", matchKey),
+    withDealtAt(),
   ]);
   return {
     report: (report.data as ArchivedMatch) ?? null,
@@ -219,7 +225,7 @@ export async function fetchArchivedMatch(matchKey: string): Promise<ArchivedMatc
     // A match old enough to predate a square's rename recorded the old name. The recap redraws the
     // board from today's set, so the two have to be speaking the same language - see
     // canonicalSquareName.
-    events: ((events.data as ArchivedEvent[]) ?? []).map((e) => ({
+    events: ((events.data as unknown as ArchivedEvent[]) ?? []).map((e) => ({
       ...e,
       challenge_name: canonicalSquareName(e.challenge_name),
     })),
@@ -252,11 +258,13 @@ export function archivedBoardSource(detail: ArchivedMatchDetail): {
   roomId: string | null;
   seed: string | null;
   perm: number[] | null;
+  dealtAt: string | null;
 } {
   return {
     roomId: detail.events.find((e) => e.room_id)?.room_id ?? detail.fleets.find((f) => f.room_id)?.room_id ?? null,
     seed: detail.events.find((e) => e.board_seed)?.board_seed ?? null,
     perm: detail.events.find((e) => e.board_perm)?.board_perm ?? null,
+    dealtAt: detail.events.find((e) => e.board_dealt_at)?.board_dealt_at ?? null,
   };
 }
 

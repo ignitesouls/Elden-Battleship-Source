@@ -41,7 +41,7 @@ import { formatDuration } from "../lib/matchTime";
 import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
-import { challengesForRoom, igonAnchor, squarePool, squareSet } from "../lib/challenges";
+import { challengesForRoom, igonAnchor } from "../lib/challenges";
 import type { Challenge } from "../lib/challenges";
 import { undealtOffered, undealtSquares } from "../lib/undealt";
 import { UndealtCard, UndealtToggle } from "../components/UndealtCard";
@@ -607,8 +607,8 @@ function SpectatorView({
   // derives it - id, set and seed - so a spectator calling out "they just took C4" is naming the
   // square the fleet has on their own screen.
   const dealtChallenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
-    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at]
   );
   // Held back through the RANDOMIZATION window, on the same beat as the players own board and the
   // overlays - a spectator reading out the squares ten seconds before the crews can see them would
@@ -630,9 +630,9 @@ function SpectatorView({
   const undealt = useMemo(
     () =>
       challenges.length > 0 && undealtOffered(boardSize, room.square_set)
-        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed)
+        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed, room.seed_set_at)
         : NO_CHALLENGES,
-    [challenges, boardSize, room.id, room.square_set, room.seed]
+    [challenges, boardSize, room.id, room.square_set, room.seed, room.seed_set_at]
   );
 
   /**
@@ -866,7 +866,7 @@ function SpectatorView({
           the deal is the room's - see the memo above. */}
       <UndealtCard
         squares={undealt}
-        pool={squarePool(squareSet(room.square_set))}
+        pool={boardSize * boardSize + undealt.length}
         open={undealtOpen}
         onClose={() => setUndealtOpen(false)}
       />

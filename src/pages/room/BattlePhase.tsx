@@ -23,7 +23,6 @@ import { HostTakeover } from "../../components/HostTakeover";
 import { useMatchLayout } from "../../hooks/useMatchLayout";
 import { PANEL_TITLES, type PanelBox, type PanelId } from "../../lib/matchLayout";
 import { challengesForRoom, rowSquareSet, igonAnchor, type Challenge } from "../../lib/challenges";
-import { squarePool, squareSet } from "../../lib/challenges";
 import { undealtOffered, undealtSquares } from "../../lib/undealt";
 import { UndealtCard, UndealtToggle } from "../../components/UndealtCard";
 import { squaresRevealed } from "../../lib/overlayReveal";
@@ -106,8 +105,8 @@ export function BattlePhase({
   const shipDefs = room.ship_defs;
   const opponentTeams = activeTeamsList.filter((t) => t !== myTeam);
   const dealtChallenges = useMemo(
-    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm),
-    [room.id, boardSize, room.square_set, room.seed, room.board_perm]
+    () => challengesForRoom(room.id, boardSize * boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at),
+    [room.id, boardSize, room.square_set, room.seed, room.board_perm, room.seed_set_at]
   );
 
   const incoming = attacks.filter((a) => a.defender_team === myTeam);
@@ -155,9 +154,9 @@ export function BattlePhase({
   const undealt = useMemo(
     () =>
       challenges.length > 0 && undealtOffered(boardSize, room.square_set)
-        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed)
+        ? undealtSquares(room.id, boardSize * boardSize, room.square_set, room.seed, room.seed_set_at)
         : NO_CHALLENGES,
-    [challenges, boardSize, room.id, room.square_set, room.seed]
+    [challenges, boardSize, room.id, room.square_set, room.seed, room.seed_set_at]
   );
 
   /**
@@ -841,7 +840,7 @@ export function BattlePhase({
           only offered on boards close enough to exhaust their set (see undealtOffered). */}
       <UndealtCard
         squares={undealt}
-        pool={squarePool(squareSet(room.square_set))}
+        pool={boardSize * boardSize + undealt.length}
         open={undealtOpen}
         onClose={() => setUndealtOpen(false)}
       />

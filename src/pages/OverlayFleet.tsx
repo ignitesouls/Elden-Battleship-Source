@@ -172,7 +172,8 @@ export function OverlayFleet(props: OverlaySourceProps = {}) {
     boardSize * boardSize,
     room.square_set,
     room.seed,
-    room.board_perm
+    room.board_perm,
+    room.seed_set_at
   );
 
   // Shots fired AT this fleet. Public rows out of the log, not anything the rejoin code unlocked -
