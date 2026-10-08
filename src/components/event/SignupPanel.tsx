@@ -5,6 +5,7 @@ import {
   parseLogins,
   registerTeam,
   respondToInvite,
+  setTeamLogo,
   signUpSolo,
   withdrawSolo,
   type EventDetail,
@@ -16,6 +17,7 @@ import { isTwitchLoginConfigured, signInWithTwitch } from "../../lib/supabase";
 import { accountName, type AccountProfile } from "../../hooks/useAuthProfile";
 import { useT } from "../../lib/language";
 import { MyTeamPanel } from "./MyTeamPanel";
+import { LogoField } from "./TeamLogo";
 
 interface Props {
   event: EventDetail;
@@ -191,6 +193,19 @@ function SignupForms({
   const [mates, setMates] = useState("");
   const [partner, setPartner] = useState("");
   const [note, setNote] = useState("");
+  // The logo is chosen before the team exists, so it waits here and is uploaded once signup has given
+  // the team an id - the folder it goes in is named for that id.
+  const [logo, setLogo] = useState<Blob | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(logo);
+    setLogoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
 
   const others = event.team_size - 1;
   const named = parseLogins(mates);
@@ -247,11 +262,21 @@ function SignupForms({
             {named.length < others && ` - ${t("you can add the rest later", "vous pourrez ajouter les autres plus tard")}`}
           </span>
         </label>
+        <div className="stack" style={{ gap: "0.3rem" }}>
+          <span className="muted">{t("Team logo (optional)", "Logo de l'équipe (facultatif)")}</span>
+          <LogoField current={logoPreview} disabled={busy} onPick={setLogo} onClear={() => setLogo(null)} />
+        </div>
         <div>
           <button
             className="primary"
             disabled={busy || teamName.trim().length < 2}
-            onClick={() => void act(() => registerTeam(event.id, teamName.trim(), named))}
+            onClick={() =>
+              void act(async () => {
+                const id = await registerTeam(event.id, teamName.trim(), named);
+                // The team is in either way; a logo that fails to upload can be added from the team panel.
+                if (logo) await setTeamLogo(id, logo, null);
+              })
+            }
           >
             {t("Sign up the team", "Inscrire l'équipe")}
           </button>

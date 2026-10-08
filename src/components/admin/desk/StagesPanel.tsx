@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { drawStage, saveSchedule, type AdminTeamRow, type MatchRow } from "../../../lib/tournament/api";
+import { drawStage, saveSchedule, teamLogos, type AdminTeamRow, type MatchRow } from "../../../lib/tournament/api";
 import { scheduleShape } from "../../../lib/tournament/schedule";
 import type { Schedule } from "../../../lib/tournament/schedule";
 import { planKnockout, planNextSwissRound, qualifierStatus } from "../../../lib/tournament/stages";
 import type { TMatch } from "../../../lib/tournament/types";
-import { useT } from "../../../lib/language";
+import { useLanguage, useT } from "../../../lib/language";
+import { groupLabel } from "../../../lib/tournament/groupNames";
 import { MatchList } from "../../event/MatchList";
 import { StandingsTable } from "../../event/StandingsTable";
 import { ScheduleEditor } from "../ScheduleEditor";
@@ -34,6 +35,7 @@ function previewRow(m: TMatch): MatchRow {
  */
 export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
   const t = useT();
+  const lang = useLanguage();
   const { event, config, stored, seeded, departed } = data;
   const [schedule, setSchedule] = useState<Schedule | null>(config?.schedule ?? null);
   const [advancing, setAdvancing] = useState<AdminTeamRow[] | null>(null);
@@ -110,9 +112,10 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
               key={g}
               rows={rows}
               names={data.names}
+              logos={teamLogos(data.teams)}
               departed={departed}
               cut={format.knockout ? (format.qualifier.format === "groups" ? format.qualifier.advancePerGroup : format.knockout.cutTo) : undefined}
-              title={format.qualifier.format === "groups" ? t(`Group ${String.fromCharCode(65 + g)}`, `Poule ${String.fromCharCode(65 + g)}`) : t("Standings", "Classement")}
+              title={format.qualifier.format === "groups" ? groupLabel(event.group_names, g, lang) : t("Standings", "Classement")}
             />
           ))}
         </div>

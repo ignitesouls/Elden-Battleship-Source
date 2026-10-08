@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, type AdminTeamRow } from "../../../lib/tournament/api";
+import { clearTeamLogo, handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow } from "../../../lib/tournament/api";
 import { useT } from "../../../lib/language";
+import { TeamLabel } from "../../event/TeamLogo";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
@@ -47,8 +48,20 @@ function TeamRow({
       <div className="stack" style={{ gap: "0.3rem", flex: 1, minWidth: "14rem" }}>
         <span>
           {team.seed !== null && <span style={{ color: "var(--accent-bright)", fontWeight: 600 }}>#{team.seed} </span>}
-          <strong>{team.name}</strong>
+          <strong><TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} /></strong>
           {gone && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("removed from the event", "retirée de l'événement")}</span>}
+          {/* Captains can't change their logo once signup has closed, so taking down a bad one is the desk's job. */}
+          {team.logo_path && (
+            <button
+              style={{ fontSize: "0.72rem", padding: "0.15rem 0.45rem", marginLeft: "0.5rem" }}
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(t(`Remove ${team.name}'s logo?`, `Retirer le logo de ${team.name} ?`))) void act(() => clearTeamLogo(team.id, team.logo_path!));
+              }}
+            >
+              {t("Remove logo", "Retirer le logo")}
+            </button>
+          )}
         </span>
 
         {teamSize > 1 &&

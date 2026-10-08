@@ -5,17 +5,20 @@ import {
   adminListEvents,
   adminTeams,
   cancelEvent,
+  clearTeamLogo,
   createEvent,
   createTestEvent,
   deleteEvent,
   regenerateEntryCode,
   setEventStatus,
   setTeamStatus,
+  teamLogoUrl,
   type AdminEventRow,
   type AdminTeamRow,
   type FreeAgentRow,
 } from "../lib/tournament/api";
 import { useT } from "../lib/language";
+import { TeamLabel } from "./event/TeamLogo";
 import "./Tournament.css";
 
 /**
@@ -415,7 +418,8 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
             <div className="t-item" key={team.id} style={{ alignItems: "flex-start" }}>
               <div className="stack" style={{ gap: "0.15rem", flex: 1, minWidth: "14rem" }}>
                 <span>
-                  <strong>{team.name}</strong>{" "}
+                  {/* Bigger than on the event page: whether a logo is fit to show is part of approving the team. */}
+                  <strong><TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={2} /></strong>{" "}
                   {team.status === "pending" && <span className="badge badge--warn">{t("awaiting approval", "en attente")}</span>}
                   {team.status === "approved" && <span className="badge badge--good">{t("approved", "approuvée")}</span>}
                   {team.status === "rejected" && <span className="badge badge--bad">{t("rejected", "refusée")}</span>}
@@ -455,6 +459,16 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                 )}
                 {team.status === "rejected" && (
                   <button disabled={busy} onClick={() => void onTeam(() => setTeamStatus(team.id, "pending"))}>{t("Reconsider", "Réexaminer")}</button>
+                )}
+                {team.logo_path && (
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(t(`Remove ${team.name}'s logo?`, `Retirer le logo de ${team.name} ?`))) void onTeam(() => clearTeamLogo(team.id, team.logo_path!));
+                    }}
+                  >
+                    {t("Remove logo", "Retirer le logo")}
+                  </button>
                 )}
               </div>
             </div>

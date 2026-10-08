@@ -112,3 +112,53 @@ textarea:focus {
   color: var(--accent-bright);
   font-weight: 600;
 }
+
+/* A team's logo beside its name. The empty one is a spacer for a slot with no team yet ("TBD"), so the
+   names in a bracket column still line up. */
+.team-logo {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.team-logo--empty {
+  visibility: hidden;
+}
+
+/* A team's name with its logo, kept on one line and cut short with an ellipsis rather than wrapping. */
+.team-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.team-label__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The logo chooser: a preview square on a checkerboard (so a transparent logo reads as transparent), then the buttons. */
+.logo-field {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.logo-field__preview {
+  width: 4.5rem;
+  height: 4.5rem;
+  flex: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.06) 0% 25%, transparent 0% 50%) 0 0 / 12px 12px, #061620;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

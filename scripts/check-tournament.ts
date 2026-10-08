@@ -1559,5 +1559,30 @@ console.log('\nPairing solo signups into teams')
   check('an individual event says nothing about crews or substitutes', !/substitute/.test(rule(book({}, 1), '2.2')))
 }
 
+{
+  console.log('\nGroup names')
+  const { groupLabel, pickGroupNames, groupNamesProblem, tidyGroupNames, GROUP_NAME_SETS, MAX_GROUP_NAME } = await import('../src/lib/tournament/groupNames.ts')
+  check('an unnamed group is its letter', groupLabel([], 2, 'en') === 'Group C' && groupLabel(null, 0, 'fr') === 'Poule A')
+  check('a named group is its name, in either language', groupLabel(['Limgrave', 'Caelid'], 1, 'en') === 'Caelid' && groupLabel(['Limgrave'], 0, 'fr') === 'Limgrave')
+  check('an empty entry falls back to the letter', groupLabel(['', 'Caelid'], 0, 'en') === 'Group A')
+  check('a group past the end of the list falls back too', groupLabel(['Limgrave'], 3, 'en') === 'Group D')
+
+  const regions = GROUP_NAME_SETS.find((s) => s.id === 'regions')!
+  const picked = pickGroupNames(regions, 4, rng(7))
+  check('filling from a list picks that many different names from it',
+    picked.length === 4 && new Set(picked).size === 4 && picked.every((n) => regions.names.includes(n)), picked.join())
+  check('...and a short list fills what it can', pickGroupNames({ id: 'x', label: ['x', 'x'], names: ['One', 'Two'] }, 5).length === 2)
+  check('every listed name is short enough to save, and no list repeats itself',
+    GROUP_NAME_SETS.every((s) => s.names.every((n) => n.length <= MAX_GROUP_NAME && n === n.trim()) && new Set(s.names.map((n) => n.toLowerCase())).size === s.names.length))
+  check('every list can name at least eight groups', GROUP_NAME_SETS.every((s) => s.names.length >= 8))
+
+  check('two groups with the same name is a problem, whatever the case', groupNamesProblem(['Limgrave', 'limgrave']) === 'duplicate')
+  check('...but any number of unnamed groups is fine', groupNamesProblem(['', 'Caelid', '']) === null)
+  check('a name over the limit is a problem', groupNamesProblem(['x'.repeat(MAX_GROUP_NAME + 1)]) === 'too-long')
+  check('saving trims names, squeezes spaces and drops unnamed groups at the end',
+    JSON.stringify(tidyGroupNames(['  Mt.   Gelmir ', '', 'Caelid', ' ', ''])) === JSON.stringify(['Mt. Gelmir', '', 'Caelid']))
+  check('...so naming nothing stores nothing', tidyGroupNames(['', ' ']).length === 0)
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) FAILED.`)
 process.exit(failures === 0 ? 0 : 1)

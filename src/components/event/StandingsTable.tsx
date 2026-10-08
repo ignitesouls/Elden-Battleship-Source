@@ -1,9 +1,12 @@
 import type { StandingRow } from "../../lib/tournament/standings";
 import { useT } from "../../lib/language";
+import { TeamLabel } from "./TeamLogo";
 
 interface Props {
   rows: StandingRow[];
   names: Map<string, string>;
+  /** Logo addresses by team id, for the teams that have their own; the rest show the default. */
+  logos?: Map<string, string>;
   /** Draw a line under this many rows: the teams that go through to the knockout. */
   cut?: number;
   /** Ids of teams an administrator has removed - shown, but marked. */
@@ -18,7 +21,7 @@ interface Props {
  * between them was decided by original seed alone and is marked with a dot, so nobody reads a coin flip
  * as a verdict - and so an administrator can see, before building the knockout, exactly where that is.
  */
-export function StandingsTable({ rows, names, cut, departed, title }: Props) {
+export function StandingsTable({ rows, names, logos, cut, departed, title }: Props) {
   const t = useT();
   if (rows.length === 0) return null;
 
@@ -50,7 +53,7 @@ export function StandingsTable({ rows, names, cut, departed, title }: Props) {
                 {row.tied && <span title={t("Level on every tiebreak - ordered by seed", "À égalité sur tous les critères - classé selon la tête de série")}> ·</span>}
               </td>
               <td>
-                {names.get(row.id) ?? "?"}
+                <TeamLabel name={names.get(row.id) ?? "?"} logo={logos?.get(row.id)} />
                 {departed?.has(row.id) && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("withdrawn", "retirée")}</span>}
               </td>
               <td>{row.wins}</td>

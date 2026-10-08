@@ -35,6 +35,8 @@ export interface EventDetail {
   description: string;
   /** What this event adds to the shared rulebook, shown above it on the rules page. Empty for most. */
   extra_rules: string;
+  /** The group stage's group names by group number; an empty or missing entry shows its letter. See groupNames.ts. */
+  group_names: string[];
   status: EventStatus;
   /** A test event: made-up teams, visible to administrators only. */
   is_test: boolean;
@@ -66,6 +68,8 @@ export interface TeamRow {
   captain_user_id: string;
   /** Signed up as a pair, waiting for an administrator to add a solo player. */
   looking_for_players: boolean;
+  /** Where the team's logo is in the team-logos bucket, or null. Turn it into an address with teamLogoUrl. */
+  logo_path: string | null;
   roster: RosterMember[];
 }
 
@@ -168,7 +172,7 @@ export async function fetchMyInbox(): Promise<InboxInvite[]> {
 // ===========================================================================
 
 const EVENT_COLUMNS =
-  "id, name, description, extra_rules, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
+  "id, name, description, extra_rules, group_names, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
 
 function toDetail(row: Record<string, unknown>): EventDetail {
   const champion = row.champion as { name: string } | { name: string }[] | null;
@@ -177,6 +181,7 @@ function toDetail(row: Record<string, unknown>): EventDetail {
     name: row.name as string,
     description: (row.description as string) ?? "",
     extra_rules: (row.extra_rules as string | undefined) ?? "",
+    group_names: (row.group_names as string[] | null | undefined) ?? [],
     status: row.status as EventStatus,
     is_test: (row.is_test as boolean | undefined) ?? false,
     team_size: row.team_size as number,
@@ -206,7 +211,7 @@ export async function fetchEvent(id: string): Promise<EventDetail | null> {
 export async function fetchTeams(eventId: string): Promise<TeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
-    .select("id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, roster:tournament_roster(user_id, display_name, is_captain)")
+    .select("id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain)")
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
   if (error) fail(error);
@@ -311,6 +316,70 @@ export async function renameTeam(entrantId: string, name: string): Promise<void>
   if (error) fail(error);
 }
 
+// -- Team logos -------------------------------------------------------------------------------------
+// The image is a file in a public storage bucket, in a folder named for the team; the entrant row holds
+// its path. Who may change either is the database's rule (captain while signup is open, administrator
+// any time) - see 20261008000000_team_logos.sql.
+
+const LOGO_BUCKET = "team-logos";
+
+/** The public address of a logo. Pure - building it costs no request. */
+export function teamLogoUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return supabase.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/** Every team's logo address in a list of teams, by team id - the shape the tables and bracket take. */
+export function teamLogos(teams: Pick<TeamRow, "id" | "logo_path">[]): Map<string, string> {
+  const logos = new Map<string, string>();
+  for (const team of teams) {
+    const url = teamLogoUrl(team.logo_path);
+    if (url) logos.set(team.id, url);
+  }
+  return logos;
+}
+
+/**
+ * Gives a team a new logo: uploads the (already shrunk) image under a fresh name, points the team at it,
+ * then removes the old file. A fresh name every time means a browser's cached copy of the old logo can
+ * never be shown in place of the new one, so the file can be cached for a year.
+ */
+export async function setTeamLogo(entrantId: string, image: Blob, oldPath: string | null): Promise<string> {
+  const ext = image.type === "image/png" ? "png" : "webp";
+  const path = `${entrantId}/${crypto.randomUUID()}.${ext}`;
+  const up = await supabase.storage.from(LOGO_BUCKET).upload(path, image, { contentType: image.type, cacheControl: "31536000", upsert: false });
+  if (up.error) fail(up.error);
+  const { error } = await supabase.from("tournament_entrants").update({ logo_path: path }).eq("id", entrantId);
+  if (error) {
+    // The row refused it, so nothing points at the file: take it back out rather than leave it behind.
+    await supabase.storage.from(LOGO_BUCKET).remove([path]);
+    fail(error);
+  }
+  if (oldPath) await supabase.storage.from(LOGO_BUCKET).remove([oldPath]);
+  return path;
+}
+
+/** Takes a team's logo away - the row first, so a failure there leaves the logo as it was. */
+export async function clearTeamLogo(entrantId: string, path: string): Promise<void> {
+  const { error } = await supabase.from("tournament_entrants").update({ logo_path: null }).eq("id", entrantId);
+  if (error) fail(error);
+  await supabase.storage.from(LOGO_BUCKET).remove([path]);
+}
+
+/**
+ * Removes every logo file belonging to these teams - each team's whole folder, so a file left behind by
+ * an interrupted replace goes too. For when an event is deleted: the rows go with the event, the files
+ * would not. Best effort, after the fact; one request per team, and deleting an event is rare.
+ */
+async function removeTeamLogoFiles(entrantIds: string[]): Promise<void> {
+  const bucket = supabase.storage.from(LOGO_BUCKET);
+  for (const id of entrantIds) {
+    const { data } = await bucket.list(id, { limit: 100 });
+    const paths = (data ?? []).map((f) => `${id}/${f.name}`);
+    if (paths.length > 0) await bucket.remove(paths);
+  }
+}
+
 export async function withdrawTeam(entrantId: string): Promise<void> {
   const { error } = await supabase.from("tournament_entrants").update({ status: "withdrawn" }).eq("id", entrantId);
   if (error) fail(error);
@@ -410,8 +479,11 @@ export async function cancelEvent(id: string, reason: string): Promise<void> {
  * played in it stay on the players' records - the database keeps those, it only drops the event.
  */
 export async function deleteEvent(id: string): Promise<void> {
+  // Which teams had logos has to be asked before the rows are gone.
+  const { data: withLogos } = await supabase.from("tournament_entrants").select("id").eq("tournament_id", id).not("logo_path", "is", null);
   const { error } = await supabase.rpc("delete_tournament", { p_tournament: id });
   if (error) fail(error);
+  await removeTeamLogoFiles((withLogos ?? []).map((row) => row.id as string)).catch(() => undefined);
 }
 
 /**
@@ -439,7 +511,7 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
     .select(
-      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(status)",
+      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(status)",
     )
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
@@ -645,6 +717,12 @@ export async function fetchEventConfig(eventId: string): Promise<EventConfig> {
   // where callers are forced to deal with "there is no format yet".
   const format = saved && typeof saved === "object" && saved.qualifier ? (saved as TournamentFormat) : null;
   return { format, schedule: data.schedule as Schedule };
+}
+
+/** Name the group stage's groups, by group number. Editable in any state; the database checks the names. */
+export async function saveGroupNames(eventId: string, names: string[]): Promise<void> {
+  const { error } = await supabase.from("tournaments").update({ group_names: names }).eq("id", eventId);
+  if (error) fail(error);
 }
 
 /** Save what an event adds to the shared rulebook. Editable in any state. */

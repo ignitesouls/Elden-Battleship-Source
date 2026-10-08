@@ -1,10 +1,13 @@
 import type { MatchRow } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
+import { TeamLabel } from "./TeamLogo";
 
 interface Props {
   /** The knockout matches only. */
   matches: MatchRow[];
   names: Map<string, string>;
+  /** Logo addresses by team id, for the teams that have their own; the rest show the default. */
+  logos?: Map<string, string>;
 }
 
 /**
@@ -18,7 +21,7 @@ interface Props {
 
 const ORDER = ["W", "L", "GF", "TP"] as const;
 
-export function BracketView({ matches, names }: Props) {
+export function BracketView({ matches, names, logos }: Props) {
   const t = useT();
   const label: Record<string, string> = {
     W: t("Winners bracket", "Tableau des vainqueurs"),
@@ -44,7 +47,7 @@ export function BracketView({ matches, names }: Props) {
                     .filter((m) => m.round === round)
                     .sort((a, b) => a.idx - b.idx)
                     .map((m) => (
-                      <Card key={m.id} match={m} names={names} />
+                      <Card key={m.id} match={m} names={names} logos={logos} />
                     ))}
                 </div>
               ))}
@@ -56,7 +59,7 @@ export function BracketView({ matches, names }: Props) {
   );
 }
 
-function Card({ match, names }: { match: MatchRow; names: Map<string, string> }) {
+function Card({ match, names, logos }: { match: MatchRow; names: Map<string, string>; logos?: Map<string, string> }) {
   const t = useT();
   const done = match.status === "done";
   const skipped = match.status === "skipped";
@@ -64,9 +67,12 @@ function Card({ match, names }: { match: MatchRow; names: Map<string, string> })
     const won = done && id !== null && match.winner === id;
     return (
       <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "nowrap", padding: "0.18rem 0.5rem", background: won ? "rgba(217, 164, 65, 0.16)" : undefined }}>
-        <span className={won ? "t-winner" : undefined} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {id ? names.get(id) ?? "?" : <span className="muted">{t("TBD", "À déterminer")}</span>}
-        </span>
+        {id ? (
+          <TeamLabel name={names.get(id) ?? "?"} logo={logos?.get(id)} className={won ? "t-winner" : undefined} />
+        ) : (
+          // No team yet: a blank where the logo goes, not the default - the default means "a team with no logo".
+          <TeamLabel name={<span className="muted">{t("TBD", "À déterminer")}</span>} logo={null} empty />
+        )}
         <span className="t-score" style={{ minWidth: "1.5ch" }}>{done || match.status === "in_progress" ? score : ""}</span>
       </div>
     );

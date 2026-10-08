@@ -543,6 +543,8 @@ async function rules() {
   await eventNames(admin, eve)
   await inviteInbox(admin)
   await pairsAndRosters(admin)
+  await teamLogos(admin)
+  await groupNames(admin, eve)
   await startRules(admin)
   await laterStages(admin)
   await officialMatches(admin)
@@ -1270,6 +1272,89 @@ async function pairsAndRosters(admin: Person) {
   await extra.client.rpc('sign_up_solo', { p_tournament: threes.id })
   refused('...which takes nobody else - there is no bench',
     (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: pairId, p_user: extra.id })).error, /full/)
+}
+
+// ===========================================================================================
+async function groupNames(admin: Person, visitor: Person) {
+  console.log('\nGroup names')
+  const ev = await newTournament({ team_size: 1, name: `Groups ${run}`, status: 'live', format: { qualifier: { format: 'groups', groupCount: 3, legs: 1, bestOf: 1, advancePerGroup: 1 }, knockout: null } })
+  const names = async () => (await svc.from('tournaments').select('group_names').eq('id', ev.id).single()).data?.group_names as string[]
+  check('an event starts with no names - every group shows its letter', (await names()).length === 0)
+
+  allowed('an administrator can name the groups of a running event (the format lock does not cover them)',
+    (await admin.client.from('tournaments').update({ group_names: ['Limgrave', '', 'Caelid'] }).eq('id', ev.id)).error)
+  check('...and the names are kept by group number, gaps included', JSON.stringify(await names()) === JSON.stringify(['Limgrave', '', 'Caelid']))
+  check('anyone can read them', JSON.stringify((await visitor.client.from('tournaments').select('group_names').eq('id', ev.id).single()).data?.group_names) === JSON.stringify(['Limgrave', '', 'Caelid']))
+  const sneaky = await visitor.client.from('tournaments').update({ group_names: ['Hijacked'] }).eq('id', ev.id).select()
+  check('a non-admin cannot rename them (the update matches nothing)', (sneaky.data ?? []).length === 0 && (await names())[0] === 'Limgrave')
+
+  refused('two groups cannot share a name, whatever the case',
+    (await admin.client.from('tournaments').update({ group_names: ['Limgrave', 'LIMGRAVE'] }).eq('id', ev.id)).error, /group_names_check/)
+  refused('a name over 40 characters is refused',
+    (await admin.client.from('tournaments').update({ group_names: ['x'.repeat(41)] }).eq('id', ev.id)).error, /group_names_check/)
+  refused('a name with padding is refused - the app trims before it saves',
+    (await admin.client.from('tournaments').update({ group_names: [' Limgrave'] }).eq('id', ev.id)).error, /group_names_check/)
+  refused('so is a missing entry',
+    (await admin.client.from('tournaments').update({ group_names: ['Limgrave', null] }).eq('id', ev.id)).error, /group_names_check/)
+  allowed('several unnamed groups are fine', (await admin.client.from('tournaments').update({ group_names: ['', '', 'Caelid'] }).eq('id', ev.id)).error)
+  allowed('and clearing them all is fine', (await admin.client.from('tournaments').update({ group_names: [] }).eq('id', ev.id)).error)
+}
+
+// ===========================================================================================
+async function teamLogos(admin: Person) {
+  console.log('\nTeam logos')
+  const cap = await person('lg_cap')
+  const mate = await person('lg_mate')
+  const rival = await person('lg_rival')
+  const ev = await newTournament({ team_size: 2, name: `Logos ${run}` })
+  const team = (await cap.client.rpc('register_team', { p_tournament: ev.id, p_name: 'Painted', p_logins: [mate.login] })).data as string
+  const rivalTeam = (await rival.client.rpc('register_team', { p_tournament: ev.id, p_name: 'Plain' })).data as string
+  const inv = ((await mate.client.from('tournament_invites').select('id').eq('entrant_id', team)).data ?? [])[0]?.id as string
+  await mate.client.rpc('respond_to_roster_invite', { p_invite: inv, p_accept: true })
+
+  // Storage only looks at the declared type, so a few bytes stand in for a picture.
+  const image = (type = 'image/webp') => new Blob([new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0])], { type })
+  const bucket = (who: Person) => who.client.storage.from('team-logos')
+  const path = (entrant: string, name = `${run}aaaa`) => `${entrant}/${name}.webp`
+
+  allowed('a captain can upload a logo into their own team\'s folder',
+    (await bucket(cap).upload(path(team), image(), { contentType: 'image/webp' })).error)
+  refused('a teammate cannot - the logo is the captain\'s call, like the name',
+    (await bucket(mate).upload(path(team, `${run}bbbb`), image(), { contentType: 'image/webp' })).error)
+  refused('another team\'s captain cannot put a file in it',
+    (await bucket(rival).upload(path(team, `${run}cccc`), image(), { contentType: 'image/webp' })).error)
+  refused('a file outside any team\'s folder is refused',
+    (await bucket(cap).upload(`loose-${run}.webp`, image(), { contentType: 'image/webp' })).error)
+  refused('the bucket takes pictures only',
+    (await bucket(cap).upload(path(team, `${run}dddd`).replace('.webp', '.html'), new Blob(['<script>'], { type: 'text/html' }), { contentType: 'text/html' })).error)
+
+  allowed('the captain can point the team at its logo',
+    (await cap.client.from('tournament_entrants').update({ logo_path: path(team) }).eq('id', team)).error)
+  refused('...but not at another team\'s folder',
+    (await rival.client.from('tournament_entrants').update({ logo_path: path(team) }).eq('id', rivalTeam)).error, /logo_path_check/)
+  refused('...or at something that is not a logo name',
+    (await cap.client.from('tournament_entrants').update({ logo_path: `${team}/../../evil.webp` }).eq('id', team)).error, /logo_path_check/)
+  const hijack = await rival.client.from('tournament_entrants').update({ logo_path: null }).eq('id', team).select()
+  check('another captain cannot touch it (the update matches nothing)', (hijack.data ?? []).length === 0)
+
+  const url = bucket(cap).getPublicUrl(path(team)).data.publicUrl
+  const fetched = await fetch(url)
+  check('anyone can load the logo by its address, signed in or not', fetched.ok, `HTTP ${fetched.status}`)
+  check('...and it is served as a picture', (fetched.headers.get('content-type') ?? '').startsWith('image/webp'), String(fetched.headers.get('content-type')))
+
+  console.log('\nTeam logos once signup closes')
+  await svc.from('tournaments').update({ status: 'live' }).eq('id', ev.id)
+  refused('a captain cannot upload once signup has closed',
+    (await bucket(cap).upload(path(team, `${run}eeee`), image(), { contentType: 'image/webp' })).error)
+  refused('...or change the logo',
+    (await cap.client.from('tournament_entrants').update({ logo_path: null }).eq('id', team)).error, /change the team logo/)
+  const kept = await bucket(cap).remove([path(team)])
+  check('...or delete the file', (kept.data ?? []).length === 0, JSON.stringify(kept))
+  check('...so it is still there', (await fetch(url)).ok)
+  allowed('an administrator can take a logo down',
+    (await admin.client.from('tournament_entrants').update({ logo_path: null }).eq('id', team)).error)
+  const removed = await bucket(admin).remove([path(team)])
+  check('...and delete the file', (removed.data ?? []).length === 1, JSON.stringify(removed))
 }
 
 async function startRules(admin: Person) {

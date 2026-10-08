@@ -5,6 +5,7 @@ import { useT } from "../../../lib/language";
 import { tournamentComplete } from "../../../lib/tournament/complete";
 import "../../Tournament.css";
 import { EventRulesPanel } from "./EventRulesPanel";
+import { GroupNamesPanel } from "./GroupNamesPanel";
 import { MatchRulesPanel } from "./MatchRulesPanel";
 import { OfficialFailuresPanel } from "./OfficialFailuresPanel";
 import { OverduePanel } from "./OverduePanel";
@@ -96,6 +97,7 @@ export function DeskView({ eventId }: { eventId: string }) {
       <OfficialFailuresPanel act={act} busy={busy} version={data.stored} />
       <OverduePanel data={data} act={act} busy={busy} />
       <StagesPanel data={data} act={act} busy={busy} />
+      {event.status !== "cancelled" && <GroupNamesPanel data={data} act={act} busy={busy} />}
       {event.status !== "cancelled" && matches.length > 0 && <ResultsPanel data={data} act={act} busy={busy} />}
       <PairingPanel data={data} act={act} busy={busy} />
       <TeamsPanel data={data} act={act} busy={busy} />

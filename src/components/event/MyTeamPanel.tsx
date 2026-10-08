@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import {
   cancelInvite,
+  clearTeamLogo,
   fetchEntryCode,
   fetchTeamInvites,
   inviteToTeam,
   leaveTeam,
   parseLogins,
   renameTeam,
+  setTeamLogo,
+  teamLogoUrl,
   withdrawTeam,
   type EventDetail,
   type InviteRow,
   type TeamRow,
 } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
+import { LogoField, TeamLabel } from "./TeamLogo";
 
 interface Props {
   event: EventDetail;
@@ -96,14 +100,24 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
       {error && <div className="error-text">{error}</div>}
 
       {isCaptain ? (
-        <div className="row">
-          <input style={{ flex: 1, minWidth: "10rem" }} value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
-          <button disabled={busy || name.trim() === team.name || name.trim().length < 2} onClick={() => void act(() => renameTeam(team.id, name.trim()))}>
-            {t("Rename", "Renommer")}
-          </button>
-        </div>
+        <>
+          <div className="row">
+            <input style={{ flex: 1, minWidth: "10rem" }} value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
+            <button disabled={busy || name.trim() === team.name || name.trim().length < 2} onClick={() => void act(() => renameTeam(team.id, name.trim()))}>
+              {t("Rename", "Renommer")}
+            </button>
+          </div>
+          <LogoField
+            current={teamLogoUrl(team.logo_path)}
+            disabled={busy}
+            onPick={(image) => void act(() => setTeamLogo(team.id, image, team.logo_path))}
+            onClear={team.logo_path ? () => void act(() => clearTeamLogo(team.id, team.logo_path!)) : undefined}
+          />
+        </>
       ) : (
-        <strong style={{ fontSize: "1.1rem" }}>{team.name}</strong>
+        <strong style={{ fontSize: "1.1rem" }}>
+          <TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} />
+        </strong>
       )}
 
       <p className="muted" style={{ margin: 0 }}>

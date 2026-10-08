@@ -6,6 +6,7 @@ import {
   fetchMatches,
   fetchStoredMatches,
   fetchTeams,
+  teamLogos,
   type EventConfig,
   type EventDetail,
   type MatchRow,
@@ -14,6 +15,7 @@ import {
 import { signupHeadline, signupIsOpen } from "../lib/tournament/frontPage";
 import { squareSetLabel } from "../lib/squareSets";
 import { qualifierStatus } from "../lib/tournament/stages";
+import { groupLabel } from "../lib/tournament/groupNames";
 import type { TMatch } from "../lib/tournament/types";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useAuthProfile } from "../hooks/useAuthProfile";
@@ -23,6 +25,7 @@ import { SignupPanel } from "../components/event/SignupPanel";
 import { MatchList } from "../components/event/MatchList";
 import { BracketView } from "../components/event/BracketView";
 import { StandingsTable } from "../components/event/StandingsTable";
+import { TeamLabel } from "../components/event/TeamLogo";
 import "../components/Tournament.css";
 
 /** How often a running event is re-read, so results show up without a reload. */
@@ -146,6 +149,7 @@ export function Event() {
   const open = signupIsOpen({ status: event.status, signupClosesAt: event.signup_closes_at }, new Date());
   const approved = teams.filter((team) => team.status === "approved");
   const names = new Map(teams.map((team) => [team.id, team.name]));
+  const logos = teamLogos(teams);
   const knockoutMatches = matches.filter((m) => m.stage === "knockout");
   const departedIds = new Set(teams.filter((team) => team.forfeited_at).map((team) => team.id));
   const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "long", day: "numeric", year: "numeric" });
@@ -226,9 +230,10 @@ export function Event() {
               key={g}
               rows={rows}
               names={names}
+              logos={logos}
               departed={departedIds}
               cut={standings.cut}
-              title={standings.grouped ? t(`Group ${String.fromCharCode(65 + g)}`, `Poule ${String.fromCharCode(65 + g)}`) : undefined}
+              title={standings.grouped ? groupLabel(event.group_names, g, lang) : undefined}
             />
           ))}
           {standings.cut !== undefined && (
@@ -242,14 +247,14 @@ export function Event() {
       {(event.status === "live" || event.status === "finished") && knockoutMatches.length > 0 && (
         <div className="panel stack">
           <h3>{t("Bracket", "Tableau")}</h3>
-          <BracketView matches={knockoutMatches} names={names} />
+          <BracketView matches={knockoutMatches} names={names} logos={logos} />
         </div>
       )}
 
       {(event.status === "live" || event.status === "finished") && (
         <div className="panel stack">
           <h3>{t("Schedule and results", "Calendrier et résultats")}</h3>
-          <MatchList matches={matches} names={names} />
+          <MatchList matches={matches} names={names} groupNames={event.group_names} />
         </div>
       )}
 
@@ -270,7 +275,7 @@ export function Event() {
               {approved.map((team) => (
                 <div className="t-item" key={team.id}>
                   <span>
-                    <strong>{team.name}</strong>
+                    <strong><TeamLabel name={team.name} logo={logos.get(team.id)} size={1.6} /></strong>
                     {team.forfeited_at && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("withdrawn", "retirée")}</span>}
                   </span>
                   {event.team_size > 1 && (

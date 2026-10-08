@@ -1,5 +1,6 @@
 import type { MatchRow } from "../../lib/tournament/api";
 import { useLanguage, useT } from "../../lib/language";
+import { groupLabel } from "../../lib/tournament/groupNames";
 
 /**
  * Every match of a running or finished event, grouped by round.
@@ -17,6 +18,8 @@ interface Props {
   matches: MatchRow[];
   /** Team names by id. A match whose team is not in the map (not public yet) shows as "TBD". */
   names: Map<string, string>;
+  /** The event's group names, so a group match can say which group it is in. */
+  groupNames?: string[];
 }
 
 const BRACKET_LABEL: Record<string, [string, string]> = {
@@ -26,7 +29,7 @@ const BRACKET_LABEL: Record<string, [string, string]> = {
   TP: ["Third place", "Troisième place"],
 };
 
-export function MatchList({ matches, names }: Props) {
+export function MatchList({ matches, names, groupNames }: Props) {
   const t = useT();
   const lang = useLanguage();
 
@@ -63,6 +66,9 @@ export function MatchList({ matches, names }: Props) {
   // playoff, a grand final) are worth naming either way.
   const hasLosers = matches.some((m) => m.bracket === "L" || m.bracket === "GF");
   const showBracket = (bracket: string | null) => !!bracket && (hasLosers || bracket !== "W");
+  // Group rounds list every group's matches together, so each one says which group it belongs to - unless
+  // there is only the one group, where it would say the same thing on every line.
+  const manyGroups = new Set(matches.filter((m) => m.stage === "group").map((m) => m.grp)).size > 1;
 
   const when = (iso: string) =>
     new Date(iso).toLocaleString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -89,6 +95,12 @@ export function MatchList({ matches, names }: Props) {
                       <span className="muted" style={{ fontSize: "0.72rem" }}>
                         {" "}
                         · {t(bracket[0], bracket[1])}
+                      </span>
+                    )}
+                    {manyGroups && m.stage === "group" && m.grp !== null && (
+                      <span className="muted" style={{ fontSize: "0.72rem" }}>
+                        {" "}
+                        · {groupLabel(groupNames, m.grp, lang)}
                       </span>
                     )}
                   </span>
