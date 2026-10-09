@@ -406,24 +406,16 @@ async function personalBests(
 }
 
 /**
- * The PB line's payload, or null to leave `pb` out of the reply entirely.
- *
- * Null on a captain's first game on this board size and fleet (nothing archived to beat - their
- * bests on other boards are deliberately not offered instead) and on ANY failure. This rides on the
- * same request that fires shots, and a PB lookup going wrong must never be the reason a kill's reply
- * comes back as an error - the shots have already landed by the time this runs.
- *
- * `pb_beaten` is decided here rather than in the DLL so the floors and the which-way-is-better
- * rules live in one place. A stat is only beaten against a PB that exists, and strictly - a tie
- * goes to the earlier game, as it does in the record book.
+ * The captain's bests for this match's board and fleet, cached per match, or null on ANY failure.
+ * This rides on the same request that fires shots, and a PB lookup going wrong must never be the
+ * reason a kill's reply comes back as an error - the shots have already landed by the time this runs.
  */
-async function pbPayload(
+async function loadBests(
   admin: SupabaseClient,
   userId: string,
   room: { id: string; board_size: number; ship_defs: { size: number }[] | null },
-  matchStartedAt: string | null,
-  tally: LiveTally
-): Promise<{ pb: Record<string, number | null>; pb_beaten: string[] } | null> {
+  matchStartedAt: string | null
+): Promise<PersonalBests | null> {
   try {
     const shape = fleetShape(room.ship_defs)
     const key = `${userId}|${room.id}|${matchStartedAt}|${room.board_size}|${shape}`
@@ -434,7 +426,28 @@ async function pbPayload(
       pbCache.set(key, hit)
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }
-    const b = hit.bests
+    return hit.bests
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The PB line's payload, or null to leave `pb` out of the reply entirely.
+ *
+ * Null on a captain's first game on this board size and fleet (nothing archived to beat - their
+ * bests on other boards are deliberately not offered instead). Split from loadBests so the read can
+ * run alongside liveStats rather than after it - only this half needs the tally.
+ *
+ * `pb_beaten` is decided here rather than in the DLL so the floors and the which-way-is-better
+ * rules live in one place. A stat is only beaten against a PB that exists, and strictly - a tie
+ * goes to the earlier game, as it does in the record book.
+ */
+function pbPayload(
+  b: PersonalBests,
+  tally: LiveTally
+): { pb: Record<string, number | null>; pb_beaten: string[] } | null {
+  try {
     if (
       b.hits === null &&
       b.sunk === null &&
@@ -580,17 +593,30 @@ Deno.serve(async (req) => {
     const cells = room.board_size * room.board_size
     const byTooltip = boardIndex(room.id, setId, cells, room.seed, room.board_perm, room.seed_set_at)
 
-    const { data: roster } = await admin.from('players').select('team').eq('room_id', room.id)
+    // Three independent reads, sent together. Every read here is a round trip to the database, and
+    // the overlay gives up on a reply that takes too long - so a request built as a queue of
+    // one-at-a-time reads is how a kill used to end up stuck in the overlay's retry loop for half
+    // a minute. Same reads, same count, just not waiting on each other.
+    const [{ data: roster }, { data: mine }, { data: markerRow }] = await Promise.all([
+      admin.from('players').select('team').eq('room_id', room.id),
+      // Everything this team has already put on the board, so a re-reported kill - or a square the
+      // player clicked manually before the mod got to it - is skipped rather than duplicated.
+      admin.from('attacks').select('cell_index').eq('room_id', room.id).eq('attacker_team', seat.team),
+      // The start marker, room-wide rather than keyed to this player - see MATCH_START_MARKER. Every
+      // room reaches 'battle' with one already written (startBattle checks the insert before
+      // flipping status), so a live match missing one here is the rare room from before the marker
+      // existed. Read up front because nothing below changes it.
+      admin
+        .from('attacks')
+        .select('created_at')
+        .eq('room_id', room.id)
+        .eq('cell_index', MATCH_START_MARKER)
+        .limit(1)
+        .maybeSingle(),
+    ])
     const defenders = activeTeams(roster ?? []).filter((t) => t !== seat.team)
-
-    // Everything this team has already put on the board, so a re-reported kill - or a square the
-    // player clicked manually before the mod got to it - is skipped rather than duplicated.
-    const { data: mine } = await admin
-      .from('attacks')
-      .select('cell_index')
-      .eq('room_id', room.id)
-      .eq('attacker_team', seat.team)
     const alreadyFired = new Set((mine ?? []).map((a) => a.cell_index))
+    const matchStartedAt: string | null = markerRow?.created_at ?? null
 
     const now = Date.now()
     const fired: { flag: number; cell: number; result: string | null }[] = []
@@ -665,9 +691,12 @@ Deno.serve(async (req) => {
           continue
         }
 
+        // Each opposing fleet's row resolves on its own, so they go together rather than in turn.
+        const results = await Promise.all(
+          inserted.map((row) => admin.rpc('resolve_attack', { p_attack_id: row.id }))
+        )
         let verdict: string | null = null
-        for (const row of inserted ?? []) {
-          const { data: result } = await admin.rpc('resolve_attack', { p_attack_id: row.id })
+        for (const { data: result } of results) {
           // One shot, one verdict: connecting with any fleet makes the shot a hit, matching how the
           // scoreboard and the archive both count it. `sunk` is the strongest verdict and wins over
           // a plain `hit`; without that a shot that sank a ship on one board and missed another
@@ -682,21 +711,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // The start marker, room-wide rather than keyed to this player - see MATCH_START_MARKER. Every
-    // room reaches 'battle' with one already written (startBattle checks the insert before flipping
-    // status), so a live match missing one here is the rare room from before the marker existed.
-    const { data: markerRow } = await admin
-      .from('attacks')
-      .select('created_at')
-      .eq('room_id', room.id)
-      .eq('cell_index', MATCH_START_MARKER)
-      .limit(1)
-      .maybeSingle()
-
-    const tally = await liveStats(admin, room.id, seat.id, room)
+    // The tally has to wait for the shots above; the bests do not depend on it, so the two are
+    // read together.
+    const [tally, bests] = await Promise.all([
+      liveStats(admin, room.id, seat.id, room),
+      loadBests(admin, tokenRow.user_id, room, matchStartedAt),
+    ])
     // Spread rather than assigned, so a captain with no PBs gets no `pb` key at all - which is how
     // the overlay knows to draw no PB line, and how an older DLL never sees a field it can't read.
-    const pb = await pbPayload(admin, tokenRow.user_id, room, markerRow?.created_at ?? null, tally)
+    const pb = bests ? pbPayload(bests, tally) : null
 
     return jsonResponse({
       ok: true,
@@ -704,7 +727,7 @@ Deno.serve(async (req) => {
       skipped,
       tally,
       ...(pb ?? {}),
-      clock: computeClock(room, markerRow?.created_at ?? null, Date.now()),
+      clock: computeClock(room, matchStartedAt, Date.now()),
     })
   } catch (err) {
     return jsonResponse({ ok: false, error: 'internal', detail: String(err) }, 500)

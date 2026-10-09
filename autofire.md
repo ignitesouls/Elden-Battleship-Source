@@ -290,9 +290,15 @@ opponent (a single shot lands on every opposing board at once), and `accuracy = 
   per-invocation wall-clock limit and matches run over an hour, so a held-open socket would be
   killed partway through.
 - Worker thread. Never block the game thread.
-- ~5s timeout.
-- Retry with backoff (1s, 2s, 4s, cap 30s). On permanent failure do nothing special. The kill stays
-  in the local set and rides along on the next successful send.
+- ~15s timeout. It was 5s, and that was the cause of kills taking ~30s to mark: the server writes
+  the shot before building its reply, so a slow reply was nearly always a kill that had landed, but
+  the DLL counted it as a failure and went into its backoff chain - holding back any kill made in
+  the meantime until the chain ended.
+- Retry with backoff (1s, 2s, 4s, cap 30s), rebuilding the body on every attempt. A kill seen
+  during a backoff wait ends the wait and goes out on the next attempt. If every attempt fails the
+  kill stays in the local set and is retried 15s later rather than at the next heartbeat.
+- The edge function runs its independent reads in parallel, so a reply is ~6 round trips to the
+  database end to end rather than ~10 - same number of reads, less waiting.
 
 Volume is low: roughly 20-40 kills per player per match, about one every four minutes.
 
