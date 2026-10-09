@@ -370,8 +370,8 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
           title: tr("Required setup", "Installation requise"),
           body: [
             tr(
-              "Play on the current Elden Ring patch through Dionysus, with the randomizer settings the event announces. Every player must have auto-marking working before the match (4.4). If the game is patched mid-event, the organizers will announce how to proceed.",
-              "Jouez sur la version actuelle d'Elden Ring via Dionysus, avec les réglages du randomizer annoncés par l'événement. Chaque joueur doit avoir le marquage automatique fonctionnel avant le match (4.4). Si le jeu reçoit un patch en cours d'événement, les organisateurs annonceront la marche à suivre.",
+              "Play on the current Elden Ring patch through Dionysus, with the randomizer settings the event announces. Auto-marking is recommended (4.4). If the game is patched mid-event, the organizers will announce how to proceed.",
+              "Jouez sur la version actuelle d'Elden Ring via Dionysus, avec les réglages du randomizer annoncés par l'événement. Le marquage automatique est recommandé (4.4). Si le jeu reçoit un patch en cours d'événement, les organisateurs annonceront la marche à suivre.",
             ),
           ],
         },
@@ -508,33 +508,52 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
         },
         {
           n: "4.4",
-          title: tr("Auto-marking", "Marquage automatique"),
+          title: tr("Marking", "Marquage"),
           body: ctx.bossBoard
             ? [
                 tr(
-                  "All kills must be auto-marked. Every player runs the Ignite overlay with their own token, set up from the site's OBS & auto-marking page. It fires the square the moment the boss dies. Check before the match that the overlay's one-line tally is showing. Do not fire squares by hand.",
-                  "Toutes les victoires doivent être marquées automatiquement. Chaque joueur utilise l'overlay Ignite avec son propre jeton, configuré depuis la page OBS et marquage automatique du site. Il tire sur la case à l'instant où le boss meurt. Vérifiez avant le match que la ligne de décompte de l'overlay s'affiche. Ne tirez pas sur les cases à la main.",
+                  "You may mark squares with auto-marking or by hand. Auto-marking is recommended: the Ignite overlay, run with your own token from the site's OBS & auto-marking page, fires the square the moment the boss dies. If you click by hand, click the square within 30 seconds of the kill (4.8), and never before it.",
+                  "Vous pouvez marquer les cases avec le marquage automatique ou à la main. Le marquage automatique est recommandé : l'overlay Ignite, utilisé avec votre propre jeton depuis la page OBS et marquage automatique du site, tire sur la case à l'instant où le boss meurt. Si vous cliquez à la main, cliquez sur la case dans les 30 secondes qui suivent la victoire (4.8), et jamais avant.",
                 ),
               ]
             : [
                 tr(
-                  "This event's board is not a boss board, so auto-marking cannot fire its squares. How squares are marked is set out in the rules for this event, above.",
-                  "Le plateau de cet événement n'est pas un plateau de boss : le marquage automatique ne peut pas tirer sur ses cases. La façon de marquer les cases est précisée dans les règles propres à cet événement, plus haut.",
+                  "This event's board is not a boss board, so auto-marking cannot fire its squares: click each one by hand within 30 seconds of completing it, and never before. What completes a square is set out in the rules for this event, above.",
+                  "Le plateau de cet événement n'est pas un plateau de boss : le marquage automatique ne peut pas tirer sur ses cases. Cliquez sur chacune à la main dans les 30 secondes qui suivent sa réalisation, et jamais avant. Ce qui valide une case est précisé dans les règles propres à cet événement, plus haut.",
                 ),
               ],
         },
         {
           n: "4.5",
-          title: tr("When auto-marking fails", "Si le marquage automatique ne fonctionne pas"),
+          title: tr("Mismarks", "Erreurs de marquage"),
           body: [
+            ctx.bossBoard
+              ? tr(
+                  "A mismark is a square clicked before its boss was killed, or one whose boss was never killed (a wrong square). The player quits out for 30 seconds, and the boss on the mismarked square must be the next boss they kill.",
+                  "Une erreur de marquage est une case cliquée avant que son boss ne soit vaincu, ou dont le boss n'a jamais été vaincu (mauvaise case). Le joueur quitte le jeu pendant 30 secondes, puis le boss de la case mal marquée doit être le prochain boss qu'il tue.",
+                )
+              : tr(
+                  "A mismark is a square clicked before it was completed, or one that was never completed (a wrong square). The player quits out for 30 seconds, and the mismarked square must be the next square they complete.",
+                  "Une erreur de marquage est une case cliquée avant d'être réalisée, ou qui n'a jamais été réalisée (mauvaise case). Le joueur quitte le jeu pendant 30 secondes, puis la case mal marquée doit être la prochaine case qu'il réalise.",
+                ),
             tr(
-              "If auto-marking is not working, a pause can be taken to fix it (5.4). The overlay shows [!] when your last kill did not land. Kills made while it was down fire on their own once it reconnects.",
-              "Si le marquage automatique ne fonctionne pas, une pause peut être prise pour le réparer (5.4). L'overlay affiche [!] quand votre dernière victoire n'a pas été transmise. Les victoires obtenues pendant la panne tirent d'elles-mêmes dès la reconnexion.",
+              "A click more than 30 seconds after the kill is a late mark: the player quits out for 30 seconds. Either way the shot itself stands (4.9).",
+              "Un clic plus de 30 secondes après la victoire est un marquage tardif : le joueur quitte le jeu pendant 30 secondes. Dans tous les cas, le tir lui-même reste sur le plateau (4.9).",
             ),
           ],
         },
         {
           n: "4.6",
+          title: tr("When auto-marking fails", "Si le marquage automatique ne fonctionne pas"),
+          body: [
+            tr(
+              "If auto-marking stops working, mark by hand (4.4), or take a pause to fix it (5.4). The overlay shows [!] when your last kill did not land. Kills made while it was down fire on their own once it reconnects, unless you have already clicked them.",
+              "Si le marquage automatique cesse de fonctionner, marquez à la main (4.4), ou prenez une pause pour le réparer (5.4). L'overlay affiche [!] quand votre dernière victoire n'a pas été transmise. Les victoires obtenues pendant la panne tirent d'elles-mêmes dès la reconnexion, sauf si vous les avez déjà cliquées.",
+            ),
+          ],
+        },
+        {
+          n: "4.7",
           title: tr("Fresh character", "Nouveau personnage"),
           body: [
             tr(
@@ -544,17 +563,17 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
           ],
         },
         {
-          n: "4.7",
+          n: "4.8",
           title: tr("When a kill counts", "Quand une victoire compte"),
           body: [
             tr(
-              `A boss or invader is killed when "Enemy Felled" (or similar) appears on screen. An enemy without victory text is killed when you receive its runes. A duo fight on two squares fires both when the fight is won.`,
-              "Un boss ou un envahisseur est vaincu quand « Ennemi abattu » (ou équivalent) s'affiche à l'écran. Un ennemi sans texte de victoire est vaincu quand vous recevez ses runes. Un combat en duo occupant deux cases tire sur les deux une fois le combat gagné.",
+              `A boss or invader is killed when "Enemy Felled" (or similar) appears on screen. An enemy without victory text is killed when you receive its runes. A duo fight on two squares counts for both when the fight is won.`,
+              "Un boss ou un envahisseur est vaincu quand « Ennemi abattu » (ou équivalent) s'affiche à l'écran. Un ennemi sans texte de victoire est vaincu quand vous recevez ses runes. Un combat en duo occupant deux cases compte pour les deux une fois le combat gagné.",
             ),
           ],
         },
         {
-          n: "4.8",
+          n: "4.9",
           title: tr("Shots are final", "Les tirs sont définitifs"),
           body: [
             tr(
@@ -705,8 +724,8 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
           title: tr("Illegal shots", "Tirs illégaux"),
           body: [
             tr(
-              "A shot cannot be taken back (4.8), so a shot from a kill that does not count stands on the board. The referee offsets it with a time penalty. If the illegal shot sank a ship or decided the match, the organizers may award the match to the opponent.",
-              "Un tir ne peut pas être annulé (4.8) : un tir issu d'une victoire qui ne compte pas reste donc sur le plateau. L'arbitre le compense par une pénalité de temps. Si ce tir a coulé un navire ou décidé du match, les organisateurs peuvent attribuer la victoire à l'adversaire.",
+              "A shot cannot be taken back (4.9), so a shot from a kill that does not count stands on the board. The referee offsets it with a time penalty. If the illegal shot sank a ship or decided the match, the organizers may award the match to the opponent.",
+              "Un tir ne peut pas être annulé (4.9) : un tir issu d'une victoire qui ne compte pas reste donc sur le plateau. L'arbitre le compense par une pénalité de temps. Si ce tir a coulé un navire ou décidé du match, les organisateurs peuvent attribuer la victoire à l'adversaire.",
             ),
           ],
         },
