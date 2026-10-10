@@ -14,6 +14,9 @@
  * revert whoever pasted it to the old defaults. That trade is worth it: a stale default costs
  * somebody a setting they can set again, a mangled TOML costs them the whole overlay.
  *
+ * Last copied from the Dionysus Arcade 0.2 (Automark and Clock Sync) config: [ingest] moved to the
+ * end, the boss list is all_bosses.json, and [victory] is new.
+ *
  * Nothing is imported here on purpose. The endpoint URL arrives as an argument so this stays a
  * plain description of a file rather than something that reaches into the app's config.
  */
@@ -26,18 +29,10 @@ export const CONFIG_FILENAME = "overlay_config.toml";
  *
  * The token is interpolated rather than pasted in as a literal for what should be an obvious
  * reason: this file is in a public repository, and the config it was copied from was a real
- * install with a real working token sitting on line five.
+ * install with a real working token in its [ingest] section.
  */
 export function overlayConfigFile(token: string, url: string): string {
-  return `[ingest]
-# An empty token disables all networking.
-# Changes to timing settings require a restart.
-url = "${url}"
-token = "${token}"
-interval_ms = 1000
-heartbeat_s = 60
-
-[common]
+  return `[common]
 # Reuse an inherited/ModEngine3 console when available. Otherwise the DLL
 # attaches to its parent console or creates one as a last resort.
 console=false
@@ -67,49 +62,6 @@ charset=""
 language=""
 
 [input]
-# You can bind any of the following key names:
-# Use uppercase names. Combine multiple keys with '+', e.g. CTRL+SHIFT+F1
-#
-# --- Modifier keys ---
-#   CTRL, LCTRL, RCTRL, SHIFT, LSHIFT, RSHIFT, ALT, LALT, RALT, WIN, LWIN, RWIN
-#
-# --- Mouse buttons ---
-#   LBUTTON, RBUTTON, MBUTTON, XBUTTON1, XBUTTON2
-#
-# --- Navigation & control ---
-#   BACK, BACKSPACE, TAB, RETURN, ENTER, ESC, ESCAPE,
-#   SPACE, INSERT, DELETE, HOME, END, PRIOR, PAGEUP, NEXT, PAGEDOWN,
-#   LEFT, RIGHT, UP, DOWN
-#
-# --- Function keys ---
-#   F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12
-#
-# --- Letters (A–Z) ---
-#   A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z
-#
-# --- Number row (0–9) ---
-#   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, HYPHEN (- or MINUS)
-#
-# --- Numpad keys ---
-#   NUMPAD0–NUMPAD9, NUM0–NUM9,
-#   DECIMAL (NUMPADPERIOD), DIVIDE (/), MULTIPLY (*), SUBTRACT (NUMPADSUBTRACT), ADD (+), EQUAL (=)
-#
-# --- Lock keys ---
-#   CAPSLOCK, CAPITAL, NUMLOCK, SCROLL, SCROLLLOCK
-#
-# --- Symbols ---
-#   ',', ';', "'", '[', ']', '\\\\', '~', '.' (PERIOD)
-#
-# --- Misc / System ---
-#   PRINT, PRINTSCREEN, SNAPSHOT, PAUSE
-#
-# Example:
-#   toggle_full_mode = "F1"
-#
-# Notes:
-# - F13–F24 and other OEM / multimedia keys are NOT supported.
-# - Ensure no spaces around '+' in combined bindings.
-
 # shortcut key to toggle full mode
 toggle_full_mode="="
 # shortcut key to trigger a mouse click
@@ -137,12 +89,14 @@ panel_dim=[0.30, 0.92]
 
 [boss]
 # data filename for boss list, which is located in \`data/<language>\` folder
-data_file="bosses.json"
+data_file="all_bosses.json"
 
 [overlay]
 # Optional fixed compact-mode width in pixels. Remove this setting to size the
 # compact window from its current text content.
 # closed_width=320
+# Show server-reported Automark status in the overlay when reporting is enabled.
+show_ingest_tally = true
 # how to display the text on the overlay
 # display text = "IGT: {igt}$nBosses: {kills}/{total}$nGreat Runes: {runes}$nShards: {shards}$nDeaths: {deaths}"
 #  $n = newline
@@ -153,7 +107,6 @@ data_file="bosses.json"
 #  {shards}= Number of messmer's kindling shards acquired
 #  {runes} = Number of great runes acquired
 display_text = "Deaths: {deaths}"
-show_ingest_tally = true
 
 [timer]
 # Regular: elapsed IGT
@@ -164,5 +117,27 @@ mode="Regular"
 prep_minutes=2
 timer_minutes=0
 
+[victory]
+# None: victory tracking is disabled.
+# Checklist: complete after every boss in the selected [boss].data_file.
+# BossIds: complete after every ID in boss_ids, whether or not listed in the checklist.
+# OneBoss: complete after boss_id, whether or not listed in the checklist.
+mode="None"
+
+# BossIds example:
+# mode="BossIds"
+# boss_ids=[10000800,19000800]
+
+# OneBoss example, Radagon and Elden Beast:
+# mode="OneBoss"
+# boss_id=19000800
+
+[ingest]
+# Reporting stays disabled until both values are supplied by a compatible
+# generic webhook service.
+url = "${url}"
+token = "${token}"
+interval_ms = 1000
+heartbeat_s = 60
 `;
 }

@@ -428,7 +428,7 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
                 tr("Gravity kills, or running bosses into kill planes", "Faire tomber un ennemi dans le vide, ou attirer un boss dans une zone de mort"),
                 tr("Stake skips, or skipping a boss the route requires", "Les skips par Pieu de Marika, ou éviter un boss obligatoire sur le chemin"),
                 tr("Breaking enemy AI so it cannot meaningfully damage you", "Bloquer l'IA d'un ennemi pour qu'il ne puisse plus vraiment vous blesser"),
-                tr("Fall-damage cancelling", "L'annulation des dégâts de chute"),
+                tr("Fall-damage canceling", "L'annulation des dégâts de chute"),
                 tr("Clipping out of bounds", "Passer à travers le décor hors des limites"),
                 tr("Glitching the game for an advantage, including infinite damage or infinite runes", "Exploiter un bug pour un avantage, y compris des dégâts ou des runes infinis"),
                 tr("Quit-outs used to skip required dialogue or actions", "Quitter le jeu pour sauter un dialogue ou une action obligatoire"),
@@ -539,6 +539,10 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
             tr(
               "A click more than 30 seconds after the kill is a late mark: the player quits out for 30 seconds. Either way the shot itself stands (4.9).",
               "Un clic plus de 30 secondes après la victoire est un marquage tardif : le joueur quitte le jeu pendant 30 secondes. Dans tous les cas, le tir lui-même reste sur le plateau (4.9).",
+            ),
+            tr(
+              "If a mismark sinks the last ship and ends the game, the game is awarded to the opponent. A late mark that ends the game stands, since the kill was real.",
+              "Si une erreur de marquage coule le dernier navire et met fin à la partie, la partie est attribuée à l'adversaire. Un marquage tardif qui met fin à la partie reste valable, puisque la victoire était réelle.",
             ),
           ],
         },

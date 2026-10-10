@@ -136,9 +136,13 @@ function EventBanner({ banner }: { banner: Banner }) {
             </span>
           )}
         </BannerHead>
-        <div style={{ textAlign: "center" }}>
+        {/* The rules beside the button, so a player can read what they are signing up to first. */}
+        <div className="row" style={{ justifyContent: "center" }}>
           <Link to={to} className="link-button primary">
             {t("Sign up", "S'inscrire")}
+          </Link>
+          <Link to={`${to}/rules`} className="link-button">
+            {t("Read the rules", "Lire le règlement")}
           </Link>
         </div>
       </div>

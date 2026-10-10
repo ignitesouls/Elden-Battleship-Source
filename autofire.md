@@ -99,7 +99,7 @@ Dionysus\
          ├─ overlay_config.toml        ← the only file a player touches
          └─ data\
             └─ engus\
-               └─ bosses.json
+               └─ all_bosses.json   (bosses.json too; other languages have bosses.json only)
 ```
 
 Rerolling does not disturb it. The randomizer loads as a `[[package]]`, a separate mechanism from
@@ -111,23 +111,23 @@ The filename is compiled into the DLL, which looks only in its own folder. Renam
 loads with no configuration at all.
 
 ```toml
-[ingest]
-# An empty token disables all networking.
-# Changes to timing settings require a restart.
-url = "https://<project>.supabase.co/functions/v1/auto-fire"
-token = "per-player, pasted once from the website"
-interval_ms = 1000
-heartbeat_s = 60
+[boss]
+data_file="all_bosses.json"   # every boss on the site's board is in it, Devonia included
 
 [overlay]
 show_ingest_tally = true      # the one-line HUD, see "Overlay" below
 
-[boss]
-data_file = "bosses.json"     # existing format, unchanged
+[ingest]                      # last in the file since Dionysus Arcade 0.2
+url = "https://<project>.supabase.co/functions/v1/auto-fire"
+token = "per-player, pasted once from the website"
+interval_ms = 1000
+heartbeat_s = 60
 ```
 
-The file carries a lot more than this (`[common]`, `[input]`, `[style]`, `[timer]`), all of it the
-overlay's own business and none of it Battleship's.
+The file carries a lot more than this (`[common]`, `[input]`, `[style]`, `[timer]`, `[victory]`),
+all of it the overlay's own business and none of it Battleship's. `all_bosses.json` exists only
+under `engus`, which is what the pasted file's empty `language` selects; a player who sets another
+language would need `data_file="bosses.json"` instead.
 
 **How a player fills it in.** The setup page hands over the entire file with `url` and `token`
 already filled, and the guide is four steps: get current Dionysus, open the file, `Ctrl+A` `Ctrl+V`,
