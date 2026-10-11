@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  adminAddToRoster,
   adminFreeAgents,
   adminListEvents,
+  adminRemoveFromRoster,
   adminTeams,
   cancelEvent,
   clearEventLogo,
@@ -12,6 +14,7 @@ import {
   deleteFreeAgent,
   deleteTeam,
   eventLogoUrl,
+  handOverCaptain,
   regenerateEntryCode,
   setEventLogo,
   setEventStatus,
@@ -551,9 +554,15 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                     </span>
                   )}
                 </span>
-                <span className="muted" style={{ fontSize: "0.8rem" }}>
-                  {team.roster.map((m) => m.display_name + (m.is_captain ? " (c)" : "")).join(", ")}
-                </span>
+                {/* Before the start, a team's roster can be edited here - for players who never found the
+                    invitation's Join button. After that, roster changes are the desk's substitutions. */}
+                {canDelete && event.team_size > 1 && (team.status === "pending" || team.status === "approved") ? (
+                  <RosterEditor team={team} teamSize={event.team_size} busy={busy} onTeam={onTeam} />
+                ) : (
+                  <span className="muted" style={{ fontSize: "0.8rem" }}>
+                    {team.roster.map((m) => m.display_name + (m.is_captain ? " (c)" : "")).join(", ")}
+                  </span>
+                )}
                 {team.entry_code && (
                   <span>
                     <span className="muted" style={{ fontSize: "0.75rem" }}>{t("entry code", "code d'entrée")} </span>
@@ -618,6 +627,84 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SMALL_BUTTON = { fontSize: "0.72rem", padding: "0.15rem 0.45rem" } as const;
+
+/**
+ * A team's roster with the admin's hands on it, before the event starts: take a player off, hand on the
+ * captaincy, add someone by Twitch name, or add a player the captain invited who never accepted. The
+ * database checks each one (roster full, on another team, never signed in) and says why in its own words.
+ */
+function RosterEditor({
+  team, teamSize, busy, onTeam,
+}: { team: AdminTeamRow; teamSize: number; busy: boolean; onTeam: (action: () => Promise<unknown>) => Promise<void> }) {
+  const t = useT();
+  const [login, setLogin] = useState("");
+  const full = team.roster.length >= teamSize;
+
+  return (
+    <div className="stack" style={{ gap: "0.25rem", fontSize: "0.8rem" }}>
+      {team.roster.map((m) => (
+        <div key={m.user_id} className="row" style={{ gap: "0.4rem" }}>
+          <span className="muted">
+            {m.display_name}
+            {m.is_captain && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("captain", "capitaine")}</span>}
+          </span>
+          {!m.is_captain && (
+            <>
+              <button style={SMALL_BUTTON} disabled={busy} onClick={() => void onTeam(() => handOverCaptain(team.id, m.user_id))}>
+                {t("Make captain", "Nommer capitaine")}
+              </button>
+              <button
+                className="danger"
+                style={SMALL_BUTTON}
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(t(`Take ${m.display_name} off ${team.name}?`, `Retirer ${m.display_name} de ${team.name} ?`))) {
+                    void onTeam(() => adminRemoveFromRoster(team.id, m.user_id));
+                  }
+                }}
+              >
+                {t("Remove", "Retirer")}
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+
+      {team.pending_invite_logins.map((invited) => (
+        <div key={invited} className="row" style={{ gap: "0.4rem" }}>
+          <span className="muted" style={{ fontStyle: "italic" }}>
+            {t(`${invited} - invited, hasn't joined`, `${invited} - invité, n'a pas rejoint`)}
+          </span>
+          {!full && (
+            <button style={SMALL_BUTTON} disabled={busy} onClick={() => void onTeam(() => adminAddToRoster(team.id, invited))}>
+              {t("Add them now", "L'ajouter maintenant")}
+            </button>
+          )}
+        </div>
+      ))}
+
+      {!full && (
+        <div className="row" style={{ gap: "0.4rem" }}>
+          <input
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder={t("Twitch username", "Nom Twitch")}
+            style={{ minWidth: "10rem", fontSize: "0.8rem" }}
+          />
+          <button
+            style={SMALL_BUTTON}
+            disabled={busy || login.trim().length < 3}
+            onClick={() => void onTeam(async () => { await adminAddToRoster(team.id, login); setLogin(""); })}
+          >
+            {t("Add player", "Ajouter le joueur")}
+          </button>
         </div>
       )}
     </div>

@@ -723,6 +723,51 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
     (await admin.client.rpc('admin_delete_entrant', { p_entrant: secondChance })).error, /^There is no such team$/)
   allowed('an admin can delete a team signed up directly', (await admin.client.rpc('admin_delete_entrant', { p_entrant: outsiderTeam })).error)
 
+  // Now: Draftees has p1 and p2 (captain), 2 of 3; Self Starters is p4 alone; p7 waits in the pool;
+  // outsider is on no team.
+  console.log('\nAdmins adding and removing players')
+  const selfStarters = (await svc.from('tournament_entrants').select('id').eq('tournament_id', T.id).eq('captain_user_id', p4.id).single()).data!.id as string
+  const rosterOf = async (team: string) => ((await svc.from('tournament_roster').select('user_id').eq('entrant_id', team)).data ?? []).map((r) => r.user_id as string)
+  refused('a captain cannot add a player directly - they invite',
+    (await p2.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: outsider.login })).error, /^Only an administrator can add a player to a team$/)
+  refused('a name nobody has signed in with is refused',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: `nobody${run}` })).error, /has signed in on this site/)
+  refused('a player on another team cannot be added',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: p4.login })).error, /already on another team/)
+  await p4.client.rpc('invite_to_roster', { p_entrant: selfStarters, p_logins: [p7.login] })
+  allowed('an admin can add a player the captain invited, without them accepting',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: selfStarters, p_login: '@' + p7.login.toUpperCase() })).error)
+  check('...they are on the roster', (await rosterOf(selfStarters)).includes(p7.id))
+  check('...their invitation is marked accepted, so it leaves their inbox',
+    (await svc.from('tournament_invites').select('status').eq('entrant_id', selfStarters).eq('twitch_login', p7.login).single()).data?.status === 'accepted' &&
+      ((await p7.client.rpc('my_roster_invites')).data ?? []).length === 0)
+  check('...and they left the solo pool', !(await pool(admin.client)).some((r) => r.user_id === p7.id))
+  refused('adding the same player twice is refused',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: selfStarters, p_login: p7.login })).error, /already on this team/)
+  allowed('an admin can add someone who was never invited',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: outsider.login })).error)
+  const extra = await person('faextra')
+  refused('...but not past the team size',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: extra.login })).error, /^That team is full \(3 players\)$/)
+
+  refused('a captain cannot use the admin removal',
+    (await p2.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: p1.id })).error, /^Only an administrator can remove a player from a team$/)
+  refused('the captain cannot be removed',
+    (await admin.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: p2.id })).error, /make someone else captain first/)
+  refused('someone not on the team cannot be removed from it',
+    (await admin.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: p7.id })).error, /^That player is not on this team$/)
+  allowed('an admin can take a player off a team', (await admin.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: outsider.id })).error)
+  check('...and they are off the roster', !(await rosterOf(draftees)).includes(outsider.id))
+  allowed('...a pool player too', (await admin.client.rpc('admin_remove_from_roster', { p_entrant: selfStarters, p_user: p7.id })).error)
+  check('...who goes back to waiting', (await pool(admin.client)).some((r) => r.user_id === p7.id))
+
+  await svc.from('tournaments').update({ status: 'draft' }).eq('id', T.id)
+  allowed('an admin can hand on a captaincy while the event is a draft',
+    (await admin.client.rpc('hand_over_tournament_captaincy', { p_entrant: draftees, p_new_captain: p1.id })).error)
+  allowed('...after which the old captain can be removed', (await admin.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: p2.id })).error)
+  allowed('...and added back', (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: p2.login })).error)
+  await svc.from('tournaments').update({ status: 'signup' }).eq('id', T.id)
+
   // Pairing closes when the event starts.
   const late = await person('falate')
   await late.client.rpc('sign_up_solo', { p_tournament: T.id })
@@ -734,6 +779,10 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
   const lateRow = (await admin.client.from('tournament_free_agents').select('id').eq('tournament_id', T.id).eq('user_id', late.id).single()).data!.id as string
   refused('...nor a solo signup',
     (await admin.client.rpc('admin_delete_free_agent', { p_free_agent: lateRow })).error, /^Solo signups can only be deleted before the event starts$/)
+  refused('...nor can a player be added by name - that is a substitution now',
+    (await admin.client.rpc('admin_add_to_roster', { p_entrant: draftees, p_login: extra.login })).error, /^Players can only be added before the event starts - substitute instead$/)
+  refused('...or removed',
+    (await admin.client.rpc('admin_remove_from_roster', { p_entrant: draftees, p_user: p1.id })).error, /^Players can only be removed before the event starts - substitute instead$/)
   // A running event still loses players; the pool can top a team up (Draftees has 2 of 3 since p3 left).
   allowed('...but a waiting player can still be placed on a team that has room',
     (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: late.id })).error)

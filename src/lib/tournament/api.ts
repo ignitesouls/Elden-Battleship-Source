@@ -641,6 +641,8 @@ export interface AdminTeamRow extends TeamRow {
    * and then have no room for the partner.
    */
   pending_invites: number;
+  /** Who those invitations are for, by Twitch login - an admin can add any of them straight to the roster. */
+  pending_invite_logins: string[];
 }
 
 /** Every team in an event including pending ones, with entry codes - administrators only. */
@@ -648,7 +650,7 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
     .select(
-      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(status)",
+      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(twitch_login, status)",
     )
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
@@ -656,13 +658,15 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
     const { secrets, invites, ...team } = row as Record<string, unknown> & {
       secrets: { entry_code: string | null } | { entry_code: string | null }[] | null;
-      invites: { status: string }[] | null;
+      invites: { twitch_login: string; status: string }[] | null;
     };
     const code = Array.isArray(secrets) ? secrets[0]?.entry_code : secrets?.entry_code;
+    const pending = (invites ?? []).filter((i) => i.status === "pending").map((i) => i.twitch_login);
     return {
       ...(team as unknown as TeamRow),
       entry_code: code ?? null,
-      pending_invites: (invites ?? []).filter((i) => i.status === "pending").length,
+      pending_invites: pending.length,
+      pending_invite_logins: pending,
     };
   });
 }
@@ -686,6 +690,21 @@ export async function deleteTeam(entrantId: string): Promise<void> {
 /** Deletes a solo player waiting in the pool, before the event starts. */
 export async function deleteFreeAgent(freeAgentId: string): Promise<void> {
   const { error } = await supabase.rpc("admin_delete_free_agent", { p_free_agent: freeAgentId });
+  if (error) fail(error);
+}
+
+/**
+ * Puts a player straight on a team's roster by Twitch name, before the event starts - no invitation to
+ * accept. They must have signed in on the site once. An invitation to them from this team is marked accepted.
+ */
+export async function adminAddToRoster(entrantId: string, login: string): Promise<void> {
+  const { error } = await supabase.rpc("admin_add_to_roster", { p_entrant: entrantId, p_login: login });
+  if (error) fail(error);
+}
+
+/** Takes a player (never the captain) off a roster before the event starts; a pool player waits again. */
+export async function adminRemoveFromRoster(entrantId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc("admin_remove_from_roster", { p_entrant: entrantId, p_user: userId });
   if (error) fail(error);
 }
 
