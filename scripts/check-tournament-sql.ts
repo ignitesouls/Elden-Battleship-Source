@@ -698,12 +698,42 @@ async function freeAgents(admin: Person, outsider: Person, stranger: Person) {
   allowed('...and can be paired into a new team', reformed.error)
   check('...which takes them out of the pool', (await pool(admin.client)).length === 1 && (await pool(admin.client))[0].user_id === p7.id)
 
+  console.log('\nAdmins deleting signups')
+  const secondChance = reformed.data as string
+  const p7Row = (await admin.client.from('tournament_free_agents').select('id').eq('tournament_id', T.id).eq('user_id', p7.id).single()).data!.id as string
+  const p5Row = (await admin.client.from('tournament_free_agents').select('id').eq('tournament_id', T.id).eq('user_id', p5.id).single()).data!.id as string
+  refused('a player cannot delete a team',
+    (await p2.client.rpc('admin_delete_entrant', { p_entrant: secondChance })).error, /^Only an administrator can delete a team$/)
+  refused('a player cannot delete a solo signup',
+    (await p7.client.rpc('admin_delete_free_agent', { p_free_agent: p7Row })).error, /^Only an administrator can delete a solo signup$/)
+  refused('a placed player is deleted with their team, not on their own',
+    (await admin.client.rpc('admin_delete_free_agent', { p_free_agent: p5Row })).error, /^That player is on a team - take them off the roster first$/)
+  allowed('an admin can delete a waiting solo player', (await admin.client.rpc('admin_delete_free_agent', { p_free_agent: p7Row })).error)
+  check('...whose pool row is gone', !(await svc.from('tournament_free_agents').select('id').eq('id', p7Row)).data?.length)
+  allowed('...and who can sign up solo again', (await p7.client.rpc('sign_up_solo', { p_tournament: T.id })).error)
+  allowed('an admin can delete a team built from the pool', (await admin.client.rpc('admin_delete_entrant', { p_entrant: secondChance })).error)
+  check('...the team, roster and entry code are gone',
+    !(await svc.from('tournament_entrants').select('id').eq('id', secondChance)).data?.length &&
+      !(await svc.from('tournament_roster').select('user_id').eq('entrant_id', secondChance)).data?.length &&
+      !(await svc.from('tournament_entrant_secrets').select('entrant_id').eq('entrant_id', secondChance)).data?.length)
+  const leftover = ((await svc.from('tournament_free_agents').select('user_id').eq('tournament_id', T.id)).data ?? []).map((r) => r.user_id)
+  check('...and its pool players left the pool rather than waiting again',
+    ![p5.id, p6.id, p3.id].some((id) => leftover.includes(id)), `${leftover.length} rows`)
+  refused('deleting a team twice says there is none',
+    (await admin.client.rpc('admin_delete_entrant', { p_entrant: secondChance })).error, /^There is no such team$/)
+  allowed('an admin can delete a team signed up directly', (await admin.client.rpc('admin_delete_entrant', { p_entrant: outsiderTeam })).error)
+
   // Pairing closes when the event starts.
   const late = await person('falate')
   await late.client.rpc('sign_up_solo', { p_tournament: T.id })
   await svc.from('tournaments').update({ status: 'live' }).eq('id', T.id)
   refused('teams cannot be formed once the event is live',
     (await admin.client.rpc('form_team_from_free_agents', { p_tournament: T.id, p_name: 'Too Late', p_user_ids: [late.id] })).error, /before the event starts/)
+  refused('a team cannot be deleted once the event is live - it forfeits instead',
+    (await admin.client.rpc('admin_delete_entrant', { p_entrant: draftees })).error, /^Teams can only be deleted before the event starts - forfeit the team instead$/)
+  const lateRow = (await admin.client.from('tournament_free_agents').select('id').eq('tournament_id', T.id).eq('user_id', late.id).single()).data!.id as string
+  refused('...nor a solo signup',
+    (await admin.client.rpc('admin_delete_free_agent', { p_free_agent: lateRow })).error, /^Solo signups can only be deleted before the event starts$/)
   // A running event still loses players; the pool can top a team up (Draftees has 2 of 3 since p3 left).
   allowed('...but a waiting player can still be placed on a team that has room',
     (await admin.client.rpc('assign_free_agent_to_team', { p_entrant: draftees, p_user: late.id })).error)

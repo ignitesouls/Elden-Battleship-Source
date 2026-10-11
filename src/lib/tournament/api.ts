@@ -672,6 +672,23 @@ export async function setTeamStatus(entrantId: string, status: "approved" | "rej
   if (error) fail(error);
 }
 
+/**
+ * Deletes a team (in an individual event, a player's signup) before the event starts - roster,
+ * invitations and entry code with it, and any pool players an admin placed on it. Its logo files go
+ * afterwards, best effort, like when an event is deleted.
+ */
+export async function deleteTeam(entrantId: string): Promise<void> {
+  const { error } = await supabase.rpc("admin_delete_entrant", { p_entrant: entrantId });
+  if (error) fail(error);
+  await removeTeamLogoFiles([entrantId]);
+}
+
+/** Deletes a solo player waiting in the pool, before the event starts. */
+export async function deleteFreeAgent(freeAgentId: string): Promise<void> {
+  const { error } = await supabase.rpc("admin_delete_free_agent", { p_free_agent: freeAgentId });
+  if (error) fail(error);
+}
+
 export async function regenerateEntryCode(entrantId: string): Promise<string> {
   const { data, error } = await supabase.rpc("regenerate_entry_code", { p_entrant: entrantId });
   if (error) fail(error);

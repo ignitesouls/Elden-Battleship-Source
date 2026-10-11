@@ -9,6 +9,8 @@ import {
   createEvent,
   createTestEvent,
   deleteEvent,
+  deleteFreeAgent,
+  deleteTeam,
   eventLogoUrl,
   regenerateEntryCode,
   setEventLogo,
@@ -514,6 +516,14 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
   const order = { pending: 0, approved: 1, rejected: 2, withdrawn: 3 } as const;
   const sorted = [...teams].sort((a, b) => order[a.status] - order[b.status]);
   const short = (team: AdminTeamRow) => Math.max(0, event.team_size - team.roster.length);
+  // Deleting is for before the start; once the event is live a team leaves by forfeit, on the desk.
+  const canDelete = event.status === "draft" || event.status === "signup";
+  const deleteTeamClicked = (team: AdminTeamRow) => {
+    const fromPool = event.team_size > 1 ? t(" Any solo players placed on it leave the pool too.", " Les joueurs solo placés dans l'équipe quittent aussi la liste.") : "";
+    if (window.confirm(t(`Delete "${team.name}" for good?${fromPool}`, `Supprimer « ${team.name} » définitivement ?${fromPool}`))) {
+      void onTeam(() => deleteTeam(team.id));
+    }
+  };
 
   return (
     <div className="stack" style={{ gap: "0.6rem" }}>
@@ -572,6 +582,9 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                 {event.team_size > 1 && (
                   <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={onTeam} />
                 )}
+                {canDelete && (
+                  <button className="danger" disabled={busy} onClick={() => deleteTeamClicked(team)}>{t("Delete", "Supprimer")}</button>
+                )}
               </div>
             </div>
           ))}
@@ -588,6 +601,20 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
               <div className="t-item" key={a.id}>
                 <strong>{a.display_name}</strong>
                 {a.note && <span className="muted" style={{ fontSize: "0.8rem" }}>{a.note}</span>}
+                {canDelete && (
+                  <button
+                    className="danger"
+                    disabled={busy}
+                    style={{ marginLeft: "auto" }}
+                    onClick={() => {
+                      if (window.confirm(t(`Remove ${a.display_name} from the solo list?`, `Retirer ${a.display_name} de la liste des joueurs solo ?`))) {
+                        void onTeam(() => deleteFreeAgent(a.id));
+                      }
+                    }}
+                  >
+                    {t("Delete", "Supprimer")}
+                  </button>
+                )}
               </div>
             ))}
           </div>
