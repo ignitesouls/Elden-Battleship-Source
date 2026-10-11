@@ -7,6 +7,7 @@ import {
   adminRemoveFromRoster,
   adminTeams,
   cancelEvent,
+  cancelInvite,
   clearEventLogo,
   createEvent,
   createTestEvent,
@@ -677,16 +678,28 @@ function RosterEditor({
         </div>
       ))}
 
-      {team.pending_invite_logins.map((invited) => (
-        <div key={invited} className="row" style={{ gap: "0.4rem" }}>
+      {team.pending_invite_list.map((invite) => (
+        <div key={invite.id} className="row" style={{ gap: "0.4rem" }}>
           <span className="muted" style={{ fontStyle: "italic" }}>
-            {t(`${invited} - invited, hasn't joined`, `${invited} - invité, n'a pas rejoint`)}
+            {t(`${invite.twitch_login} - invited, hasn't joined`, `${invite.twitch_login} - invité, n'a pas rejoint`)}
           </span>
           {!full && (
-            <button style={SMALL_BUTTON} disabled={busy} onClick={() => void onTeam(() => adminAddToRoster(team.id, invited))}>
+            <button style={SMALL_BUTTON} disabled={busy} onClick={() => void onTeam(() => adminAddToRoster(team.id, invite.twitch_login))}>
               {t("Add them now", "L'ajouter maintenant")}
             </button>
           )}
+          <button
+            className="danger"
+            style={SMALL_BUTTON}
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm(t(`Cancel ${invite.twitch_login}'s invitation to ${team.name}?`, `Annuler l'invitation de ${invite.twitch_login} à ${team.name} ?`))) {
+                void onTeam(() => cancelInvite(invite.id));
+              }
+            }}
+          >
+            {t("Cancel invite", "Annuler l'invitation")}
+          </button>
         </div>
       ))}
 

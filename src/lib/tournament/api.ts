@@ -641,8 +641,8 @@ export interface AdminTeamRow extends TeamRow {
    * and then have no room for the partner.
    */
   pending_invites: number;
-  /** Who those invitations are for, by Twitch login - an admin can add any of them straight to the roster. */
-  pending_invite_logins: string[];
+  /** Those invitations, by Twitch login - an admin can add any of them straight to the roster, or cancel it. */
+  pending_invite_list: { id: string; twitch_login: string }[];
 }
 
 /** Every team in an event including pending ones, with entry codes - administrators only. */
@@ -650,7 +650,7 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   const { data, error } = await supabase
     .from("tournament_entrants")
     .select(
-      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(twitch_login, status)",
+      "id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain), secrets:tournament_entrant_secrets(entry_code), invites:tournament_invites(id, twitch_login, status)",
     )
     .eq("tournament_id", eventId)
     .order("created_at", { ascending: true });
@@ -658,15 +658,15 @@ export async function adminTeams(eventId: string): Promise<AdminTeamRow[]> {
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
     const { secrets, invites, ...team } = row as Record<string, unknown> & {
       secrets: { entry_code: string | null } | { entry_code: string | null }[] | null;
-      invites: { twitch_login: string; status: string }[] | null;
+      invites: { id: string; twitch_login: string; status: string }[] | null;
     };
     const code = Array.isArray(secrets) ? secrets[0]?.entry_code : secrets?.entry_code;
-    const pending = (invites ?? []).filter((i) => i.status === "pending").map((i) => i.twitch_login);
+    const pending = (invites ?? []).filter((i) => i.status === "pending").map(({ id, twitch_login }) => ({ id, twitch_login }));
     return {
       ...(team as unknown as TeamRow),
       entry_code: code ?? null,
       pending_invites: pending.length,
-      pending_invite_logins: pending,
+      pending_invite_list: pending,
     };
   });
 }
