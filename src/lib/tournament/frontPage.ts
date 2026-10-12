@@ -38,8 +38,16 @@ export function displayName(name: string): string {
  * angle brackets rather than as anything a browser would run.
  */
 export function signupHeadline(name: string, lang: Language): string {
+  return signupHeadlineParts(name, lang).join("");
+}
+
+/**
+ * The same headline in three pieces - the words before the name, the name, the words after - so the
+ * front-page banner can colour the name on its own. Joined, they are exactly signupHeadline.
+ */
+export function signupHeadlineParts(name: string, lang: Language): [string, string, string] {
   const shown = displayName(name);
-  return lang === "fr" ? `Inscrivez-vous à ${shown} dès maintenant !` : `Sign up for ${shown} now!`;
+  return lang === "fr" ? ["Inscrivez-vous à ", shown, " dès maintenant !"] : ["Sign up for ", shown, " now!"];
 }
 
 const DAY_MS = 86_400_000;

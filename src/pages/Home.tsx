@@ -7,6 +7,7 @@ import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { SiteFooter } from "../components/SiteFooter";
 import { EventBanners } from "../components/EventBanners";
+import { DionysusCard } from "../components/DionysusCard";
 import { ScheduledMatches } from "../components/ScheduledMatches";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
@@ -160,12 +161,15 @@ export function Home() {
             className="brand-logo"
           />
         </h1>
-        <p className="muted">{t("Place your fleet, take aim, sink your rivals.", "Placez votre flotte, visez, coulez vos rivaux.")}</p>
       </div>
 
       {/* Tournament notices sit above the join form because an open signup is the one thing on this
           page a visitor might not know to look for. Nothing renders while there is nothing to say. */}
       <EventBanners />
+
+      {/* Under the event banners and above the join form: nobody can play without Dionysus, so a new
+          visitor needs to see this before they try to join anything. */}
+      <DionysusCard />
 
       {!isSupabaseConfigured && (
         <div className="panel" style={{ borderColor: "var(--danger)" }}>
@@ -182,8 +186,12 @@ export function Home() {
       )}
 
       <div className="panel stack">
+        {/* A bare nickname box, code box and button read as a form with no stated purpose, so name
+            the panel and say which half is which: you either join someone's room or host your own. */}
+        <h3 style={{ margin: 0, textAlign: "center" }}>{t("Play a match", "Jouer une partie")}</h3>
+
         <label className="stack" style={{ gap: "0.3rem" }}>
-          <span className="muted">{t("Nickname", "Pseudo")}</span>
+          <span className="muted" style={{ textAlign: "center" }}>{t("Nickname", "Pseudo")}</span>
           <input
             value={nickname}
             onChange={(e) => {
@@ -227,6 +235,9 @@ export function Home() {
 
         {error && <div className="error-text">{error}</div>}
 
+        <span className="muted" style={{ marginBottom: "-0.35rem", textAlign: "center" }}>
+          {t("Have a room code? Join a friend's room", "Vous avez un code ? Rejoignez la partie d'un ami")}
+        </span>
         <form onSubmit={handleJoin} className="row">
           <input
             style={{ flex: 1, textTransform: "uppercase" }}
@@ -242,7 +253,15 @@ export function Home() {
           </button>
         </form>
 
-        <hr style={{ width: "100%", border: "none", borderTop: "1px solid var(--panel-border)" }} />
+        <div className="row" style={{ alignItems: "center", gap: "0.6rem" }}>
+          <hr style={{ flex: 1, margin: 0, border: "none", borderTop: "1px solid var(--panel-border)" }} />
+          <span className="muted" style={{ fontSize: "0.8rem" }}>{t("or", "ou")}</span>
+          <hr style={{ flex: 1, margin: 0, border: "none", borderTop: "1px solid var(--panel-border)" }} />
+        </div>
+
+        <span className="muted" style={{ marginBottom: "-0.35rem", textAlign: "center" }}>
+          {t("Start your own room and share the code", "Créez votre propre partie et partagez le code")}
+        </span>
 
         {/* Board size, fleet, squares and prep time used to live here, behind a "Match settings"
             disclosure. They belong to the host in the lobby now, where the whole room can see them

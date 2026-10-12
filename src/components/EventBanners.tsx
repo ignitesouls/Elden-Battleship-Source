@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { EventLogo } from "./event/EventLogo";
 import { fetchFrontPageEvents, fetchMyInbox, type InboxInvite } from "../lib/tournament/api";
-import { frontPageBanners, signupHeadline, type Banner, type EventSummary } from "../lib/tournament/frontPage";
+import { frontPageBanners, signupHeadlineParts, type Banner, type EventSummary } from "../lib/tournament/frontPage";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { serverNow } from "../lib/serverTime";
 import { useAuthProfile } from "../hooks/useAuthProfile";
@@ -104,9 +104,26 @@ export function EventBanners() {
   );
 }
 
-/** A date for a banner: short, in the reader's language, in their own time zone. */
-function shortDate(iso: string, lang: "en" | "fr"): string {
-  return new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric" });
+/**
+ * A signup deadline with its time: "Sat, Oct 18 · 8:00 PM EDT". In the reader's own time zone, and
+ * the zone is printed, because players in an event are spread across several and a bare "8:00 PM"
+ * would be read as everybody's own evening.
+ */
+function deadline(iso: string, lang: "en" | "fr"): string {
+  const when = new Date(iso);
+  const locale = lang === "fr" ? "fr-FR" : undefined;
+  const day = when.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
+  const time = when.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  return `${day} · ${time}`;
+}
+
+function ClockMark() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" style={{ flex: "none" }}>
+      <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8 4.2V8l2.6 1.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 /** A banner's headline and the line under it, with the event's logo (if it has one) to their left. */
@@ -126,13 +143,26 @@ function EventBanner({ banner }: { banner: Banner }) {
   const to = `/event/${event.id}`;
 
   if (kind === "signup") {
+    // The event's name in gold, so it stands out from the "Sign up for ... now!" around it.
+    const [before, name, after] = signupHeadlineParts(event.name, lang);
     return (
       <div className="panel stack event-banner event-banner--signup" style={{ gap: "0.5rem" }}>
         <BannerHead event={event}>
-          <h3 style={{ margin: 0 }}>{signupHeadline(event.name, lang)}</h3>
+          <h3 style={{ margin: 0 }}>
+            {before}
+            <span className="event-banner__name">{name}</span>
+            {after}
+          </h3>
+          {/* The deadline is the one thing on this banner with a clock on it, so it gets a pill of its
+              own, and the time as well as the day: "Oct 18" alone leaves a player guessing whether
+              they have until the morning or the evening. */}
           {event.signupClosesAt && (
-            <span className="muted">
-              {t(`Signup closes ${shortDate(event.signupClosesAt, lang)}`, `Inscriptions jusqu'au ${shortDate(event.signupClosesAt, lang)}`)}
+            <span className="event-banner__deadline">
+              <ClockMark />
+              {t(
+                `Signups close ${deadline(event.signupClosesAt, lang)}`,
+                `Inscriptions jusqu'au ${deadline(event.signupClosesAt, lang)}`
+              )}
             </span>
           )}
         </BannerHead>

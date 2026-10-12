@@ -1,0 +1,132 @@
+/* The Dionysus card. Wine purple and gold, so it reads as a different kind of thing from the blue
+   panels around it: an errand to run before playing, not part of the game. */
+.dionysus-card {
+  --wine: #7b3fa0;
+  --wine-deep: #2a1238;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  padding: 1.2rem 1.35rem 1.35rem;
+  border: 1px solid var(--accent);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(123, 63, 160, 0.55), transparent 60%),
+    radial-gradient(90% 80% at 100% 100%, rgba(217, 164, 65, 0.18), transparent 65%),
+    linear-gradient(180deg, var(--wine-deep), var(--panel));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(217, 164, 65, 0.15),
+    0 4px 22px rgba(123, 63, 160, 0.35);
+}
+
+.dionysus-card__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dionysus-card__icon {
+  flex: none;
+  width: 3.6rem;
+  height: 3.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3d1d52, #1a0b24);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 14px rgba(217, 164, 65, 0.35);
+}
+
+.dionysus-card__logo {
+  display: block;
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+
+.dionysus-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.dionysus-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  line-height: 1.1;
+  color: #fbe7bd;
+  text-shadow: 0 0 18px rgba(240, 189, 92, 0.35);
+}
+
+.dionysus-card__blurb {
+  font-size: 0.85rem;
+  color: #d8cde0;
+}
+
+.dionysus-card__version {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--accent-bright);
+}
+
+.dionysus-card__version strong {
+  color: #fbe7bd;
+}
+
+/* The button. Full width and gold, the loudest control on the page. */
+.dionysus-card__cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent-bright);
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  color: #241703;
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+
+a.dionysus-card__cta:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 0 14px rgba(240, 189, 92, 0.45);
+}
+
+a.dionysus-card__cta:focus-visible {
+  outline: 2px solid #fbe7bd;
+  outline-offset: 2px;
+}
+
+/* No link yet: same colours so the card still looks finished, but it does not pretend it can be
+   clicked. */
+.dionysus-card__cta--pending {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.dionysus-card__gh {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+}
+
+@media (max-width: 420px) {
+  .dionysus-card__title {
+    font-size: 1.02rem;
+  }
+  .dionysus-card__icon {
+    width: 3rem;
+    height: 3rem;
+  }
+}

@@ -96,7 +96,7 @@ Dionysus\
       ├─ RandomizerHelper\    RandomizerHelper.dll + _config.ini
       └─ EROverlay\
          ├─ er_overlay.dll
-         ├─ overlay_config.toml        ← the only file a player touches
+         ├─ overlay_config.toml        ← written by Dionysus Arcade; players never open it
          └─ data\
             └─ engus\
                └─ all_bosses.json   (bosses.json too; other languages have bosses.json only)
@@ -129,13 +129,16 @@ all of it the overlay's own business and none of it Battleship's. `all_bosses.js
 under `engus`, which is what the pasted file's empty `language` selects; a player who sets another
 language would need `data_file="bosses.json"` instead.
 
-**How a player fills it in.** The setup page hands over the entire file with `url` and `token`
-already filled, and the guide is four steps: get current Dionysus, open the file, `Ctrl+A` `Ctrl+V`,
-`Ctrl+S`. Whole file rather than the `[ingest]` table alone, because "replace exactly this section
-and don't leave the old one behind" is several instructions, and getting any of them wrong produces
-a config TOML refuses to parse. The template lives in `src/lib/overlayConfig.ts` and is a verbatim copy of the
-stock config, which means **it has to be re-copied whenever the mod's default config changes** or
-pasting it will quietly revert people to old defaults.
+**How a player fills it in.** Since Dionysus Arcade 0.3 they don't touch the file. Dionysus has a
+*Battleship token* field in its Settings window (gear, top right) and writes `[ingest]` itself,
+`url` included; it takes effect on the next Elden Ring launch. The website hands over the token
+alone, and the guide is four steps with a screenshot of each window (`public/autofire/`): open
+Dionysus Arcade, click the gear, copy the token from the site, paste it and click Save.
+
+Until 0.3 the site handed over the entire config file with `url` and `token` interpolated into a
+verbatim copy of the stock config (`src/lib/overlayConfig.ts`, now deleted), and the guide was
+open the file, `Ctrl+A` `Ctrl+V`, `Ctrl+S`. That template had to be re-copied whenever the mod's
+defaults changed; Dionysus owning the file removed that maintenance.
 
 ## Data
 

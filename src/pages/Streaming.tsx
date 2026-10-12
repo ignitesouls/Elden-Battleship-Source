@@ -231,7 +231,7 @@ export function Streaming() {
         -- auto-marking, first -----------------------------------------------------------------
 
         Ahead of the overlay because it is the one with a prerequisite outside this website. It ends
-        in "open this file in Notepad and paste", so somebody who has not got Dionysus installed
+        in "paste your token into Dionysus Arcade", so somebody who has not got Dionysus installed
         needs to find that out at the top of the page rather than after they have built a scene.
         The overlay below needs nothing but OBS, so it can wait its turn.
       */}

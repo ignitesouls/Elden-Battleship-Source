@@ -55,6 +55,35 @@ a.link-button.primary:hover {
   min-width: 0;
 }
 
+/* The signup banner is centred, headline and deadline, to sit over its centred buttons. */
+.event-banner--signup .event-banner__head {
+  justify-content: center;
+}
+
+.event-banner--signup .event-banner__text {
+  align-items: center;
+  text-align: center;
+}
+
+/* When signups close, in a pill of its own so it is not lost under the headline. */
+.event-banner__deadline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid rgba(217, 164, 65, 0.6);
+  border-radius: 999px;
+  background: rgba(217, 164, 65, 0.1);
+  color: var(--accent-bright);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* An event's name inside a banner headline: the same gold as the primary buttons. */
+.event-banner__name {
+  color: var(--accent);
+}
+
 .event-banner__text {
   display: flex;
   flex-direction: column;

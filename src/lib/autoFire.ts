@@ -1,6 +1,5 @@
 import { supabase } from "./supabase";
 import { DEFAULT_SQUARE_SET, displaySquareSet } from "./squareSets";
-import { overlayConfigFile } from "./overlayConfig";
 
 /**
  * The player's side of auto-marking: the token the game mod carries, and who may have one.
@@ -13,7 +12,8 @@ import { overlayConfigFile } from "./overlayConfig";
  * couple of seconds of alt-tabbing into every record; this removes that.
  *
  * Nothing here talks to the mod. The website's whole contribution is minting the token a player
- * pastes into it once, and saying whether the current board supports the feature at all.
+ * pastes into Dionysus Arcade's Settings window once, and saying whether the current board supports
+ * the feature at all. Dionysus writes the overlay's config itself, endpoint URL included.
  */
 
 /**
@@ -83,26 +83,6 @@ export async function regenerateIngestToken(): Promise<string> {
   const { error: delError } = await supabase.from("ingest_tokens").delete().eq("user_id", userId);
   if (delError) throw delError;
   return createIngestToken();
-}
-
-/** Where the mod sends its kill reports. Same project as everything else the site talks to. */
-export function ingestUrl(): string {
-  return `${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/auto-fire`;
-}
-
-/**
- * The whole config file a player pastes into the mod, with their token in it.
- *
- * Handed over as an entire file rather than as the three lines that matter, because "find the
- * [ingest] section and replace exactly that, without leaving the old one behind" is several
- * instructions and every one of them ends in a config TOML will not parse. Select all, paste, save
- * cannot be got half right.
- *
- * The template lives in ./overlayConfig, which knows nothing about this app; the endpoint URL is
- * passed into it so there is still one definition of where kills go.
- */
-export function configFile(token: string): string {
-  return overlayConfigFile(token, ingestUrl());
 }
 
 /** Enough of the token to recognise it, without putting the whole secret on screen. */
