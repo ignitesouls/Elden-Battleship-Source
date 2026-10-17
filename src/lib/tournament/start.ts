@@ -1,7 +1,7 @@
 import { buildKnockout } from "./bracket";
 import { groupsFor, prunePlacement, validateFormat, type TournamentFormat } from "./format";
 import { buildGroupStage } from "./groups";
-import { applySchedule, scheduleShape, validateSchedule, type Schedule } from "./schedule";
+import { applySchedule, flexWeekProblems, scheduleShape, validateSchedule, type Schedule } from "./schedule";
 import { pairSwissRound } from "./swiss";
 import type { MatchStage, Pointer, TMatch } from "./types";
 
@@ -49,6 +49,9 @@ export function planStart(given: TournamentFormat, seeded: string[], schedule: S
   } else if (q.format === "groups") {
     stage = "group";
     drawn = buildGroupStage(groupsFor(q, seeded), q.legs, q.bestOf);
+    // Fixed-plus-flex weeks with clashing pins: the layout can't be clean, so don't start until it is.
+    const clashes = flexWeekProblems(drawn, schedule, ctx);
+    if (clashes.length > 0) return { ok: false, problems: clashes };
   } else {
     stage = "knockout";
     drawn = buildKnockout(seeded, format.knockout!);

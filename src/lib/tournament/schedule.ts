@@ -1,6 +1,7 @@
 import { buildKnockout } from "./bracket";
 import { effectiveCut, groupSizes } from "./format";
 import type { TournamentFormat } from "./format";
+import { groupLetter } from "./groupNames";
 import { roundRobin } from "./groups";
 import type { MatchStage, TMatch } from "./types";
 
@@ -32,11 +33,18 @@ export interface Schedule {
   groupWeeks?: ScheduleWeek[];
   /**
    * Group matches the organizer put in a week by hand, keyed by pairing (see pairingKey), to a week's
-   * index in groupWeeks. Everything else is dealt around them. Keyed by who plays rather than by match
-   * key so a move follows the matchup if the seeding changes; a move to a week that no longer exists, or
-   * a pairing no longer drawn, is ignored.
+   * index in groupWeeks - or, in "flex" mode, to "flex". Everything else is dealt around them. Keyed by
+   * who plays rather than by match key so a move follows the matchup if the seeding changes; a move to a
+   * week that no longer exists, a pairing no longer drawn, or "flex" outside flex mode is ignored.
    */
-  weekMoves?: Record<string, number>;
+  weekMoves?: Record<string, number | "flex">;
+  /**
+   * How group matches are dealt into the weeks. "standard" (the default, and what a schedule saved
+   * without this field means): every match goes in a week, and the extra games are shared out as double
+   * weeks - assignGroupWeeks. "flex": every week is a clean round where nobody plays twice, and the
+   * matches that don't fit are flex matches, playable any week of the group stage - assignFlexWeeks.
+   */
+  groupWeekMode?: "standard" | "flex";
   /**
    * The playoffs planned on their own, after a qualifier: a fixed date for the knockout's first round
    * (absent: it follows the qualifier's last deadline plus stageGapDays) and its own days per round
@@ -106,6 +114,41 @@ export interface WeekSlot {
   moved: boolean;
 }
 
+/** Which way group matches are dealt into weeks; a schedule saved before there was a choice is standard. */
+export function groupWeekModeOf(schedule: Pick<Schedule, "groupWeekMode">): "standard" | "flex" {
+  return schedule.groupWeekMode === "flex" ? "flex" : "standard";
+}
+
+/** Each group's played matches (both sides known), by group number, each list in round order. */
+function groupLists(matches: TMatch[]): Array<[number, TMatch[]]> {
+  const groups = new Map<number, TMatch[]>();
+  for (const m of matches) {
+    if (m.stage !== "group" || !m.a || !m.b) continue;
+    const g = m.group ?? 0;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(m);
+  }
+  const out = [...groups.entries()].sort((x, y) => x[0] - y[0]);
+  for (const [, list] of out) list.sort((x, y) => x.round - y.round || x.index - y.index);
+  return out;
+}
+
+/** The weekMoves key of each match in one group's list (see pairingKey), counting repeat meetings. */
+function pairingsOf(g: number, list: TMatch[]): string[] {
+  const meetings = new Map<string, number>();
+  return list.map((m) => {
+    const base = pairingKey(g, m.a!, m.b!, 0).replace(/#0$/, "");
+    const n = (meetings.get(base) ?? 0) + 1;
+    meetings.set(base, n);
+    return `${base}#${n}`;
+  });
+}
+
+/** A pin to a week that exists, or null - for anything else, "flex" included. */
+function weekPin(move: number | "flex" | undefined, W: number): number | null {
+  return typeof move === "number" && Number.isInteger(move) && move >= 0 && move < W ? move : null;
+}
+
 /**
  * Deals each group's matches into `weekCount` weeks. Each group is dealt on its own:
  *
@@ -122,31 +165,14 @@ export interface WeekSlot {
  * local search - the same matches, weeks and moves always give the same layout, so the preview the
  * organizer approves is the schedule that gets started.
  */
-export function assignGroupWeeks(matches: TMatch[], weekCount: number, moves: Record<string, number> = {}): WeekSlot[] {
+export function assignGroupWeeks(matches: TMatch[], weekCount: number, moves: Record<string, number | "flex"> = {}): WeekSlot[] {
   const W = Math.max(1, Math.floor(weekCount));
   const out: WeekSlot[] = [];
-  const groups = new Map<number, TMatch[]>();
-  for (const m of matches) {
-    if (m.stage !== "group" || !m.a || !m.b) continue;
-    const g = m.group ?? 0;
-    if (!groups.has(g)) groups.set(g, []);
-    groups.get(g)!.push(m);
-  }
 
-  for (const [g, list] of [...groups.entries()].sort((x, y) => x[0] - y[0])) {
-    list.sort((x, y) => x.round - y.round || x.index - y.index);
+  for (const [g, list] of groupLists(matches)) {
     const M = list.length;
-    const meetings = new Map<string, number>();
-    const pairings = list.map((m) => {
-      const base = pairingKey(g, m.a!, m.b!, 0).replace(/#0$/, "");
-      const n = (meetings.get(base) ?? 0) + 1;
-      meetings.set(base, n);
-      return `${base}#${n}`;
-    });
-    const pinned = pairings.map((p) => {
-      const w = moves[p];
-      return Number.isInteger(w) && w >= 0 && w < W ? w : null;
-    });
+    const pairings = pairingsOf(g, list);
+    const pinned = pairings.map((p) => weekPin(moves[p], W));
 
     const teams = [...new Set(list.flatMap((m) => [m.a!, m.b!]))];
     const tix = new Map(teams.map((t, i) => [t, i]));
@@ -219,6 +245,181 @@ export function assignGroupWeeks(matches: TMatch[], weekCount: number, moves: Re
   return out;
 }
 
+/** One group match's place in a fixed-plus-flex layout. */
+export interface FlexSlot {
+  match: TMatch;
+  /** The week it is fixed in, or null for a flex match - playable in any week of the group stage. */
+  week: number | null;
+  pairing: string;
+  /** Put in its week, or made flex, by hand (weekMoves) rather than dealt. */
+  moved: boolean;
+  /**
+   * Pinned by hand into a week where one of its teams is pinned to play another match too. The layout
+   * can't be clean while it stands, so the event can't start (flexWeekProblems) until a pin moves.
+   */
+  conflict: boolean;
+  /** For a flex match: the weeks where one of its teams has no fixed match, which is where it fits best. */
+  byeWeeks: number[];
+}
+
+/** How many tries the flex search makes per group before keeping the best layout it has found. */
+const FLEX_SEARCH_BUDGET = 200_000;
+
+/**
+ * Deals each group's matches into `weekCount` clean weeks plus flex. Each group is dealt on its own:
+ *
+ *   - No team plays twice in a week, so a week holds at most floor(n / 2) matches.
+ *   - As many matches as possible are fixed in a week; the rest are flex, playable in any week. Four
+ *     weeks fix 12 of a group of six's 15 matches (three a week, nobody idle) and 8 of a group of five's
+ *     10 (two a week, one team off each week).
+ *   - Among layouts with that few flex matches: no team has more than one flex match where that can be
+ *     avoided, then flex matches go to teams that have a week off to play them in, then earlier
+ *     matchdays stay in earlier weeks.
+ *
+ * Pins (weekMoves, by pairing) are honoured exactly: a match pinned to a week stays there, one pinned to
+ * "flex" stays flex, and everything else is dealt around them. Two pins that put a team in one week twice
+ * can't both be honoured cleanly; both stay where they were pinned, marked `conflict`, and the rest is
+ * still dealt. A small exhaustive search - groups are a handful of teams - started from the circle
+ * method's own rounds, with weeks no pin tells apart tried only once, and capped at FLEX_SEARCH_BUDGET
+ * steps in case of a very large group. Deterministic: the preview is the schedule that gets started.
+ */
+export function assignFlexWeeks(matches: TMatch[], weekCount: number, moves: Record<string, number | "flex"> = {}): FlexSlot[] {
+  const W = Math.max(1, Math.floor(weekCount));
+  const out: FlexSlot[] = [];
+
+  for (const [g, list] of groupLists(matches)) {
+    const pairings = pairingsOf(g, list);
+    const pin = pairings.map((p): number | "flex" | null => (moves[p] === "flex" ? "flex" : weekPin(moves[p], W)));
+    const teams = [...new Set(list.flatMap((m) => [m.a!, m.b!]))];
+    const tix = new Map(teams.map((t, i) => [t, i]));
+    const ta = list.map((m) => tix.get(m.a!)!);
+    const tb = list.map((m) => tix.get(m.b!)!);
+
+    // Who is already busy in each week from the pins, and which pinned matches clash.
+    const busy = Array.from({ length: W }, () => new Array<number>(teams.length).fill(0));
+    pin.forEach((p, i) => {
+      if (typeof p === "number") {
+        busy[p][ta[i]]++;
+        busy[p][tb[i]]++;
+      }
+    });
+    const conflict = pin.map((p, i) => typeof p === "number" && (busy[p][ta[i]] > 1 || busy[p][tb[i]] > 1));
+    // A week no pin touches is like any other untouched week, so the search only ever opens the first
+    // empty one of those - the rest are the same layout with the weeks relabelled.
+    const pinnedWeek = Array.from({ length: W }, (_, w) => pin.some((p) => p === w));
+
+    const free = list.map((_, i) => i).filter((i) => pin[i] === null);
+    const ideal = (i: number) => Math.min(W - 1, list[i].round - 1);
+    const week = pin.map((p) => (typeof p === "number" ? p : null));
+    const used = Array.from({ length: W }, (_, w) => pin.some((p) => p === w));
+    let flexCount = pin.filter((p) => p === "flex").length;
+
+    // Layouts are compared on [flex matches, extra flex matches per team, flex matches with no team
+    // that has a week off, distance of matchdays from their natural week]; smaller is better.
+    let best: { score: number[]; week: Array<number | null> } | null = null;
+    const better = (a: number[], b: number[]) => {
+      for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] < b[k];
+      return false;
+    };
+    const score = (layout: Array<number | null>): number[] => {
+      const fixedCount = new Array<number>(teams.length).fill(0);
+      const flexOf = new Array<number>(teams.length).fill(0);
+      layout.forEach((w, i) => {
+        const bump = w === null ? flexOf : fixedCount;
+        bump[ta[i]]++;
+        bump[tb[i]]++;
+      });
+      const flex = layout.filter((w) => w === null).length;
+      const extra = flexOf.reduce((s, c) => s + Math.max(0, c - 1), 0);
+      const noBye = layout.filter((w, i) => w === null && fixedCount[ta[i]] >= W && fixedCount[tb[i]] >= W).length;
+      const order = layout.reduce((s: number, w, i) => s + (w === null ? 0 : Math.abs(w - ideal(i))), 0);
+      return [flex, extra, noBye, order];
+    };
+    /** Relabels the weeks no pin touches so earlier matchdays sit in earlier weeks - same layout otherwise. */
+    const tidy = (layout: Array<number | null>): Array<number | null> => {
+      const open = Array.from({ length: W }, (_, w) => w).filter((w) => !pinnedWeek[w]);
+      const avg = (w: number) => {
+        const rs = layout.flatMap((x, i) => (x === w ? [list[i].round] : []));
+        return rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : Number.POSITIVE_INFINITY;
+      };
+      const sorted = [...open].sort((x, y) => avg(x) - avg(y) || x - y);
+      const relabel = new Map(sorted.map((w, k) => [w, open[k]]));
+      return layout.map((w) => (w === null ? null : (relabel.get(w) ?? w)));
+    };
+
+    let steps = 0;
+    const place = (k: number) => {
+      if (++steps > FLEX_SEARCH_BUDGET) return;
+      // Every match left could at best be fixed; if that still loses on flex count, stop here.
+      if (best && flexCount > best.score[0]) return;
+      if (k === free.length) {
+        const layout = tidy(week);
+        const s = score(layout);
+        if (!best || better(s, best.score)) best = { score: s, week: layout };
+        return;
+      }
+      const i = free[k];
+      const candidates = Array.from({ length: W }, (_, w) => w).sort((x, y) => Math.abs(x - ideal(i)) - Math.abs(y - ideal(i)) || x - y);
+      let openedEmpty = false;
+      for (const w of candidates) {
+        if (busy[w][ta[i]] || busy[w][tb[i]]) continue;
+        if (!used[w] && !pinnedWeek[w]) {
+          if (openedEmpty) continue;
+          openedEmpty = true;
+        }
+        const wasUsed = used[w];
+        busy[w][ta[i]]++;
+        busy[w][tb[i]]++;
+        used[w] = true;
+        week[i] = w;
+        place(k + 1);
+        week[i] = null;
+        used[w] = wasUsed;
+        busy[w][ta[i]]--;
+        busy[w][tb[i]]--;
+      }
+      flexCount++;
+      place(k + 1);
+      flexCount--;
+    };
+    place(0);
+
+    const final: Array<number | null> = best ? (best as { week: Array<number | null> }).week : week;
+    const fixedIn = Array.from({ length: W }, () => new Set<number>());
+    final.forEach((w, i) => {
+      if (w !== null) {
+        fixedIn[w].add(ta[i]);
+        fixedIn[w].add(tb[i]);
+      }
+    });
+    list.forEach((m, i) =>
+      out.push({
+        match: m,
+        week: final[i],
+        pairing: pairings[i],
+        moved: pin[i] !== null,
+        conflict: conflict[i],
+        byeWeeks: final[i] === null ? fixedIn.flatMap((s, w) => (!s.has(ta[i]) || !s.has(tb[i]) ? [w] : [])) : [],
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * What stops a fixed-plus-flex group stage from starting: pins that put a team in one week twice. One
+ * line per clash, for the start page's problem list; the preview marks the matches themselves.
+ */
+export function flexWeekProblems(matches: TMatch[], schedule: Schedule, ctx: ScheduleContext): string[] {
+  const weeks = groupWeeksOf(schedule, ctx);
+  if (!weeks || weeks.length === 0 || groupWeekModeOf(schedule) !== "flex") return [];
+  const clashes = new Set<string>();
+  for (const s of assignFlexWeeks(matches, weeks.length, schedule.weekMoves)) {
+    if (s.conflict && s.week !== null) clashes.add(`Group ${groupLetter(s.match.group ?? 0)}, week ${s.week + 1}: a team is pinned to two matches - move one of them.`);
+  }
+  return [...clashes];
+}
+
 /**
  * The window for one round. Rounds are laid end to end from the start date, so a change to one
  * round's length moves every later round with it - which is what an organizer means by "give round 2
@@ -259,12 +460,28 @@ export function windowFor(
  */
 export function applySchedule(matches: TMatch[], schedule: Schedule, ctx: ScheduleContext): TMatch[] {
   const weeks = groupWeeksOf(schedule, ctx);
-  const dealt = weeks && weeks.length > 0 ? new Map(assignGroupWeeks(matches, weeks.length, schedule.weekMoves).map((s) => [s.match.key, s.week])) : null;
+  const flex = groupWeekModeOf(schedule) === "flex";
+  const dealt =
+    weeks && weeks.length > 0
+      ? new Map<string, number | null>(
+          (flex ? assignFlexWeeks(matches, weeks.length, schedule.weekMoves) : assignGroupWeeks(matches, weeks.length, schedule.weekMoves)).map((s) => [s.match.key, s.week]),
+        )
+      : null;
+  // A flex match is open for the whole group stage: from the first week opening to the last one closing.
+  const whole = weeks && weeks.length > 0 ? groupStageWindow(weeks) : null;
   return matches.map((m) => {
     const wk = dealt?.get(m.key);
-    if (weeks && wk !== undefined) return { ...m, opensAt: weeks[wk].opensAt, dueAt: weeks[wk].dueAt };
+    if (weeks && wk !== undefined) return wk === null ? { ...m, ...whole! } : { ...m, opensAt: weeks[wk].opensAt, dueAt: weeks[wk].dueAt };
     return { ...m, ...windowFor(schedule, ctx, m.stage, m.phase) };
   });
+}
+
+/** The whole group stage laid out by week: the earliest week's opening to the latest week's deadline. */
+export function groupStageWindow(weeks: ScheduleWeek[]): { opensAt: string; dueAt: string } {
+  return {
+    opensAt: new Date(Math.min(...weeks.map((w) => Date.parse(w.opensAt)))).toISOString(),
+    dueAt: new Date(Math.max(...weeks.map((w) => Date.parse(w.dueAt)))).toISOString(),
+  };
 }
 
 /**

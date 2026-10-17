@@ -70,6 +70,18 @@ try {
   await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'group-weeks.png'), session: data.session, width: 1000, settleMs: 6000 })
   console.log(`  shot  ${join(outDir, 'group-weeks.png')}`)
 
+  // Fixed + flex: clean weeks with the rest as flex matches, then two pins that clash (Crew 1 twice in
+  // week 3 - Crews 1, 6 and 7 are dealt into group A).
+  const { pairingKey } = await import('../src/lib/tournament/schedule.ts')
+  const flexPlan = (weekMoves: Record<string, number | 'flex'>) =>
+    svc.from('tournament_plans').update({ schedule: { ...schedule, groupWeekMode: 'flex', weekMoves } }).eq('tournament_id', id)
+  await flexPlan({})
+  await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'group-flex.png'), session: data.session, width: 1000, settleMs: 6000 })
+  await flexPlan({ [pairingKey(0, order[0], order[5], 1)]: 2, [pairingKey(0, order[0], order[6], 1)]: 2 })
+  await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'group-flex-clash.png'), session: data.session, width: 1000, settleMs: 6000 })
+  console.log('  shot  group-flex.png, group-flex-clash.png')
+  await flexPlan({})
+
   // Divisions: the split panel open, then the last six teams split off the way the panel does it.
   const openPanel = `(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Divisions')); if (!d) throw new Error('nothing to click: divisions'); d.open = true; return true })()`
   await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'split-panel.png'), session: data.session, width: 1000, settleMs: 5000, steps: [openPanel] })

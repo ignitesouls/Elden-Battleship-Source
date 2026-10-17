@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { groupLabel } from "../../lib/tournament/groupNames";
 import { toLocalInput } from "../../lib/tournament/localTime";
 import {
+  assignFlexWeeks,
   assignGroupWeeks,
+  groupStageWindow,
+  groupWeekModeOf,
   groupWeeksOf,
   scheduleEnd,
   spreadGroupWeeks,
   windowFor,
+  type FlexSlot,
   type Schedule,
   type ScheduleShape,
   type ScheduleWeek,
@@ -84,9 +88,10 @@ export function ScheduleEditor({ schedule, shape, onChange, groupMatches, names,
     const order = next.map((w, i) => ({ w, from: from[i] })).sort((a, b) => Date.parse(a.w.opensAt) - Date.parse(b.w.opensAt));
     const newIndex = new Map<number, number>();
     order.forEach((o, i) => o.from !== null && newIndex.set(o.from, i));
-    const weekMoves: Record<string, number> = {};
+    const weekMoves: Record<string, number | "flex"> = {};
     for (const [pairing, wk] of Object.entries(schedule.weekMoves ?? {})) {
-      const moved = newIndex.get(wk);
+      // A flex pin isn't in any week, so reordering weeks leaves it as it is.
+      const moved = wk === "flex" ? wk : newIndex.get(wk);
       if (moved !== undefined) weekMoves[pairing] = moved;
     }
     onChange({ ...schedule, groupWeeks: order.map((o) => o.w), weekMoves, startsAt: order[0]?.w.opensAt ?? schedule.startsAt });
@@ -117,12 +122,18 @@ export function ScheduleEditor({ schedule, shape, onChange, groupMatches, names,
     const move = (at: string) => new Date(Date.parse(at) + shift).toISOString();
     onChange({ ...schedule, startsAt: iso, groupWeeks: weeks.map((w) => ({ opensAt: move(w.opensAt), dueAt: move(w.dueAt) })) });
   };
-  /** Pins one pairing to a week, or (null) hands it back to the dealing. */
-  const moveMatch = (pairing: string, wk: number | null) => {
+  /** Pins one pairing to a week or to flex, or (null) hands it back to the dealing. */
+  const moveMatch = (pairing: string, wk: number | "flex" | null) => {
     const weekMoves = { ...(schedule.weekMoves ?? {}) };
     if (wk === null) delete weekMoves[pairing];
     else weekMoves[pairing] = wk;
     onChange({ ...schedule, weekMoves });
+  };
+  const mode = groupWeekModeOf(schedule);
+  /** Switches how matches are dealt. Flex pins mean nothing to the standard dealing, so they go with the mode. */
+  const setMode = (next: "standard" | "flex") => {
+    const weekMoves = Object.fromEntries(Object.entries(schedule.weekMoves ?? {}).filter(([, wk]) => next === "flex" || wk !== "flex"));
+    onChange({ ...schedule, groupWeekMode: next, weekMoves });
   };
 
   const hasBoth = ctx.qualifierRounds > 0 && knockoutPhases > 0;
@@ -195,16 +206,30 @@ export function ScheduleEditor({ schedule, shape, onChange, groupMatches, names,
               {weeks ? t("Lay the weeks out again", "Refaire les semaines") : t("Lay out the weeks", "Créer les semaines")}
             </button>
             {weeks && (
-              <button type="button" onClick={() => onChange({ ...schedule, groupWeeks: undefined, weekMoves: undefined })}>
+              <button type="button" onClick={() => onChange({ ...schedule, groupWeeks: undefined, weekMoves: undefined, groupWeekMode: undefined })}>
                 {t("Back to one matchday after another", "Revenir à une journée après l'autre")}
               </button>
             )}
           </div>
+          {weeks && (
+            <label className="row" style={{ gap: "0.5rem" }}>
+              <span className="muted">{t("Matches that don't fit", "Matchs qui ne rentrent pas")}</span>
+              <select value={mode} onChange={(e) => setMode(e.target.value === "flex" ? "flex" : "standard")}>
+                <option value="standard">{t("Standard - shared out as double weeks", "Standard - répartis en semaines doubles")}</option>
+                <option value="flex">{t("Fixed + flex - clean weeks, the rest playable any week", "Fixes + flex - semaines nettes, le reste jouable n'importe quand")}</option>
+              </select>
+            </label>
+          )}
           <span className="muted" style={{ fontSize: "0.8rem" }}>
-            {t(
-              `The groups have ${ctx.qualifierRounds} matchday${ctx.qualifierRounds === 1 ? "" : "s"}. In fewer weeks than that, some teams play twice in a week: the site picks the matches so those doubles are shared out - each team doubles up as rarely as it can, and not all in the same week. Move any match by hand below and the rest are dealt around it.`,
-              `Les poules ont ${ctx.qualifierRounds} journée(s). En moins de semaines, certaines équipes jouent deux fois dans une semaine : le site choisit les matchs pour répartir ces doublés - chaque équipe en a le moins possible, et pas tous la même semaine. Déplacez un match à la main ci-dessous et les autres sont répartis autour.`,
-            )}
+            {mode === "flex" && weeks
+              ? t(
+                  `The groups have ${ctx.qualifierRounds} matchday${ctx.qualifierRounds === 1 ? "" : "s"}. Each week is a clean round - nobody plays twice in it - and the matches that don't fit are flex matches, playable in any week of the group stage. The site fixes as many matches as it can and gives flex matches to teams with a week off where possible. Pin any match to a week or to flex below and the rest are dealt around it.`,
+                  `Les poules ont ${ctx.qualifierRounds} journée(s). Chaque semaine est un tour net - personne n'y joue deux fois - et les matchs qui ne rentrent pas sont des matchs flex, jouables n'importe quelle semaine de la phase de poules. Le site fixe le plus de matchs possible et confie les matchs flex aux équipes qui ont une semaine libre quand c'est possible. Épinglez un match à une semaine ou en flex ci-dessous et les autres sont répartis autour.`,
+                )
+              : t(
+                  `The groups have ${ctx.qualifierRounds} matchday${ctx.qualifierRounds === 1 ? "" : "s"}. In fewer weeks than that, some teams play twice in a week: the site picks the matches so those doubles are shared out - each team doubles up as rarely as it can, and not all in the same week. Move any match by hand below and the rest are dealt around it.`,
+                  `Les poules ont ${ctx.qualifierRounds} journée(s). En moins de semaines, certaines équipes jouent deux fois dans une semaine : le site choisit les matchs pour répartir ces doublés - chaque équipe en a le moins possible, et pas tous la même semaine. Déplacez un match à la main ci-dessous et les autres sont répartis autour.`,
+                )}
           </span>
 
           {weeks && (
@@ -240,7 +265,11 @@ export function ScheduleEditor({ schedule, shape, onChange, groupMatches, names,
           )}
 
           {weeks && weeks.length > 0 && groupMatches && groupMatches.length > 0 && (
-            <WeekPreview weeks={weeks} schedule={schedule} matches={groupMatches} names={names} groupNames={groupNames} onMove={moveMatch} />
+            mode === "flex" ? (
+              <FlexPreview weeks={weeks} schedule={schedule} matches={groupMatches} names={names} groupNames={groupNames} onMove={moveMatch} />
+            ) : (
+              <WeekPreview weeks={weeks} schedule={schedule} matches={groupMatches} names={names} groupNames={groupNames} onMove={moveMatch} />
+            )
           )}
         </div>
       )}
@@ -381,6 +410,159 @@ function WeekPreview({
         {t(
           "Bold matches were moved by hand; set one back to auto to let the site place it again.",
           "Les matchs en gras ont été déplacés à la main ; remettez-en un sur auto pour que le site le replace.",
+        )}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Who plays when, in fixed-plus-flex mode: each group's clean weeks, then its flex matches - playable in
+ * any week, so shown with the whole window and the weeks where one of the teams is free (assignFlexWeeks).
+ * Every match has a picker: auto, a week, or flex.
+ *
+ * Nobody plays twice in a fixed week by construction. The one way it happens is two pins clashing,
+ * which is marked on the matches themselves (and stops the event starting). Anything else would be a
+ * bug in the dealing, so it is shouted about - in red here, and in the console.
+ */
+function FlexPreview({
+  weeks,
+  schedule,
+  matches,
+  names,
+  groupNames,
+  onMove,
+}: {
+  weeks: ScheduleWeek[];
+  schedule: Schedule;
+  matches: TMatch[];
+  names?: Map<string, string>;
+  groupNames?: readonly string[];
+  onMove: (pairing: string, week: number | "flex" | null) => void;
+}) {
+  const t = useT();
+  const lang = useLanguage();
+  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric" });
+  const name = (id: string | null) => (id ? (names?.get(id) ?? id) : "?");
+  // The search is quick for real groups but not free, so it runs when the layout's inputs change, not on
+  // every render. Keyed on the draw's content: the start page hands over a freshly built list each render.
+  const drawKey = matches.map((m) => `${m.key}:${m.a}:${m.b}`).join("|");
+  const movesKey = JSON.stringify(schedule.weekMoves ?? {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const slots = useMemo(() => assignFlexWeeks(matches, weeks.length, schedule.weekMoves), [drawKey, weeks.length, movesKey]);
+  const groups = [...new Set(slots.map((s) => s.match.group ?? 0))].sort((a, b) => a - b);
+  const whole = groupStageWindow(weeks);
+
+  // A team twice in a fixed week that no clashing pin explains.
+  const bugs: string[] = [];
+  for (const g of groups) {
+    for (let w = 0; w < weeks.length; w++) {
+      const inWeek = slots.filter((s) => (s.match.group ?? 0) === g && s.week === w);
+      if (inWeek.some((s) => s.conflict)) continue;
+      const seen = inWeek.flatMap((s) => [s.match.a!, s.match.b!]);
+      const twice = [...new Set(seen.filter((id, i) => seen.indexOf(id) !== i))];
+      if (twice.length > 0) bugs.push(`${groupLabel(groupNames, g, "en")} week ${w + 1}: ${twice.map(name).join(", ")}`);
+    }
+  }
+  const bugKey = bugs.join("|");
+  useEffect(() => {
+    if (bugKey) console.error(`Fixed + flex schedule put a team in a fixed week twice (a bug in assignFlexWeeks): ${bugKey}`);
+  }, [bugKey]);
+
+  const picker = (s: FlexSlot) => (
+    <select
+      value={s.moved ? (s.week === null ? "flex" : String(s.week)) : ""}
+      onChange={(e) => onMove(s.pairing, e.target.value === "" ? null : e.target.value === "flex" ? "flex" : Number(e.target.value))}
+      style={{ fontSize: "0.75rem", padding: "0.1rem 0.2rem" }}
+      aria-label={t(`Week for ${name(s.match.a)} vs ${name(s.match.b)}`, `Semaine de ${name(s.match.a)} contre ${name(s.match.b)}`)}
+    >
+      <option value="">{t("auto", "auto")}</option>
+      {weeks.map((_, k) => (
+        <option key={k} value={k}>
+          {t(`week ${k + 1}`, `semaine ${k + 1}`)}
+        </option>
+      ))}
+      <option value="flex">{t("flex", "flex")}</option>
+    </select>
+  );
+  const matchRow = (s: FlexSlot) => (
+    <div key={s.match.key} className="row" style={{ gap: "0.4rem", justifyContent: "space-between", fontSize: "0.85rem" }}>
+      <span style={s.moved ? { fontWeight: 600 } : undefined}>
+        {name(s.match.a)} <span className="muted">vs</span> {name(s.match.b)}
+        {s.conflict && (
+          <span className="error-text" style={{ display: "block", fontSize: "0.75rem", fontWeight: 400 }}>
+            {t("Clashes with another pin this week - a team would play twice. Move one of them.", "Entre en conflit avec un autre épinglage cette semaine - une équipe jouerait deux fois. Déplacez l'un des deux.")}
+          </span>
+        )}
+      </span>
+      {picker(s)}
+    </div>
+  );
+
+  return (
+    <div className="stack" style={{ gap: "0.8rem" }}>
+      <strong>{t("Who plays when", "Qui joue quand")}</strong>
+      {bugs.length > 0 && (
+        <div className="panel error-text" style={{ borderColor: "var(--danger)", padding: "0.6rem" }}>
+          {t("Something went wrong laying out the weeks - a team plays twice in a fixed week:", "Erreur dans la répartition - une équipe joue deux fois dans une semaine fixe :")} {bugs.join("; ")}.{" "}
+          {t("Please report this; don't start the event on this layout.", "Merci de le signaler ; ne lancez pas l'événement sur cette répartition.")}
+        </div>
+      )}
+      {groups.map((g) => {
+        const mine = slots.filter((s) => (s.match.group ?? 0) === g);
+        const flex = mine.filter((s) => s.week === null);
+        return (
+          <div key={g} className="stack" style={{ gap: "0.4rem" }}>
+            <span style={{ fontWeight: 600 }}>{groupLabel(groupNames, g, lang)}</span>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.5rem" }}>
+              {weeks.map((week, w) => {
+                const inWeek = mine.filter((s) => s.week === w);
+                return (
+                  <div key={w} className="t-item" style={{ flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", gap: "0.3rem" }}>
+                    <span className="muted" style={{ fontSize: "0.78rem" }}>
+                      {t(`Week ${w + 1}`, `Semaine ${w + 1}`)} · {day(week.opensAt)} → {day(week.dueAt)} · {t(`${inWeek.length} match${inWeek.length === 1 ? "" : "es"}`, `${inWeek.length} match(s)`)}
+                    </span>
+                    {inWeek.map(matchRow)}
+                  </div>
+                );
+              })}
+            </div>
+            {flex.length > 0 && (
+              <div
+                className="t-item"
+                style={{ flexDirection: "column", alignItems: "stretch", gap: "0.35rem", border: "1px dashed var(--panel-border)", borderRadius: "6px", padding: "0.5rem 0.7rem" }}
+              >
+                <span className="muted" style={{ fontSize: "0.78rem" }}>
+                  {t(
+                    `Flex matches · ${day(whole.opensAt)} → ${day(whole.dueAt)} · ${flex.length} match${flex.length === 1 ? "" : "es"}, playable in any week`,
+                    `Matchs flex · ${day(whole.opensAt)} → ${day(whole.dueAt)} · ${flex.length} match(s), jouables n'importe quelle semaine`,
+                  )}
+                </span>
+                {flex.map((s) => (
+                  <div key={s.match.key} className="stack" style={{ gap: "0.1rem" }}>
+                    {matchRow(s)}
+                    <span className="muted" style={{ fontSize: "0.75rem" }}>
+                      {s.byeWeeks.length > 0
+                        ? t(
+                            `Fits best in ${s.byeWeeks.map((w) => `week ${w + 1}`).join(" or ")}, when one of the two is free.${s.byeWeeks.length < weeks.length ? " In any other week one of them plays twice - that's expected for a flex match." : ""}`,
+                            `Idéal en ${s.byeWeeks.map((w) => `semaine ${w + 1}`).join(" ou ")}, quand l'une des deux est libre.${s.byeWeeks.length < weeks.length ? " Toute autre semaine, l'une d'elles jouera deux fois - c'est normal pour un match flex." : ""}`,
+                          )
+                        : t(
+                            "Both teams have a fixed match every week, so one of them plays twice in whichever week this is played - that's expected for a flex match.",
+                            "Les deux équipes ont un match fixe chaque semaine : l'une d'elles jouera deux fois la semaine où ce match sera joué - c'est normal pour un match flex.",
+                          )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <span className="muted" style={{ fontSize: "0.78rem" }}>
+        {t(
+          "Bold matches were pinned by hand; set one back to auto to let the site place it again.",
+          "Les matchs en gras ont été épinglés à la main ; remettez-en un sur auto pour que le site le replace.",
         )}
       </span>
     </div>

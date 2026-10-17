@@ -37,7 +37,7 @@ const { qualifierStatus, planNextSwissRound, planKnockout, groupsFromMatches } =
 const { defaultQualifier, defaultKnockout } = await import('../src/lib/tournament/formatDefaults.ts')
 const { frontPageBanners, signupIsOpen, withinChampionWindow, CHAMPION_BANNER_DAYS, signupHeadline, displayName } =
   await import('../src/lib/tournament/frontPage.ts')
-const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, assignGroupWeeks, pairingKey, overdueMatches, isOverdue } =
+const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, assignGroupWeeks, assignFlexWeeks, pairingKey, overdueMatches, isOverdue } =
   await import('../src/lib/tournament/schedule.ts')
 const { computeStandings, cutLineTied } = await import('../src/lib/tournament/standings.ts')
 const { pairSwissRound, recommendedSwissRounds, swissRoundComplete } = await import('../src/lib/tournament/swiss.ts')
@@ -947,6 +947,101 @@ console.log('\nSchedule')
   check('a group stage started by week dates every match from the week it was dealt into',
     gStart.ok && gStart.plan.matches.every((m) => gWeeks[gDealt.get(m.key)!].opensAt === m.opensAt && gWeeks[gDealt.get(m.key)!].dueAt === m.dueAt))
   check('...and a start with no weeks is refused', !planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: [] }).ok)
+
+  // Standard is still what it always was: the layout is pinned, and a schedule saved without a mode,
+  // or with a stray flex pin, is dealt exactly the same.
+  check('standard mode deals 5/5/6 over four weeks exactly as before',
+    dealt.map((s) => s.week).join('') === '00011122330001112233000011112222333', dealt.map((s) => s.week).join(''))
+  check('...a flex pin means nothing to it', JSON.stringify(assignGroupWeeks(stage556, 4, { [target.pairing]: 'flex' })) === JSON.stringify(dealt))
+  const std = { ...schedule, groupWeeks: gWeeks }
+  check('...and "standard" written out is the same as no mode at all',
+    JSON.stringify(applySchedule(stage556, std, gCtx)) === JSON.stringify(applySchedule(stage556, { ...std, groupWeekMode: 'standard' as const }, gCtx)))
+
+  // Fixed + flex: clean weeks, and the rest playable any week.
+  /** Every fixed week has nobody twice, and every pairing is in the layout exactly once. */
+  const flexSound = (slots: ReturnType<typeof assignFlexWeeks>, weeks: number) => {
+    const problems: string[] = []
+    const groupsSeen = [...new Set(slots.map((s) => s.match.group))]
+    for (const g of groupsSeen) {
+      for (let wk = 0; wk < weeks; wk++) {
+        const seen = slots.filter((s) => s.match.group === g && s.week === wk && !s.conflict).flatMap((s) => [s.match.a, s.match.b])
+        if (seen.length !== new Set(seen).size) problems.push(`group ${g} week ${wk + 1} has a team twice`)
+      }
+    }
+    if (new Set(slots.map((s) => s.pairing)).size !== slots.length) problems.push('a pairing appears twice')
+    return problems
+  }
+  const counts = (slots: ReturnType<typeof assignFlexWeeks>, g: number) =>
+    `${slots.filter((s) => s.match.group === g && s.week !== null).length}+${slots.filter((s) => s.match.group === g && s.week === null).length}`
+  const flexDealt = assignFlexWeeks(stage556, 4)
+  check('fixed + flex deals every group match exactly once', flexDealt.length === stage556.length && new Set(flexDealt.map((s) => s.match.key)).size === stage556.length)
+  check('...nobody plays twice in a fixed week', flexSound(flexDealt, 4).length === 0, flexSound(flexDealt, 4).join('; '))
+  check('...a group of six over four weeks: 12 fixed (3 a week), 3 flex', counts(flexDealt, 2) === '12+3' && [0, 1, 2, 3].every((wk) => flexDealt.filter((s) => s.match.group === 2 && s.week === wk).length === 3), counts(flexDealt, 2))
+  check('...a group of five: 8 fixed (2 a week), 2 flex', counts(flexDealt, 0) === '8+2' && [0, 1, 2, 3].every((wk) => flexDealt.filter((s) => s.match.group === 0 && s.week === wk).length === 2), counts(flexDealt, 0))
+  const flexPerTeam = (g: number) => {
+    const per = new Map<string, number>()
+    for (const s of flexDealt.filter((x) => x.match.group === g && x.week === null)) for (const id of [s.match.a!, s.match.b!]) per.set(id, (per.get(id) ?? 0) + 1)
+    return [...per.values()]
+  }
+  check('...no team has more than one flex match', [0, 1, 2].every((g) => flexPerTeam(g).every((c) => c <= 1)))
+  check('...in a group of five, every flex match has a team with a week off to play it in',
+    flexDealt.filter((s) => s.match.group === 0 && s.week === null).every((s) => s.byeWeeks.length > 0))
+  check('...and in a group of six, where nobody has a week off, the flex matches say so (no best week)',
+    flexDealt.filter((s) => s.match.group === 2 && s.week === null).every((s) => s.byeWeeks.length === 0))
+  check('fixed + flex is deterministic', JSON.stringify(assignFlexWeeks(stage556, 4)) === JSON.stringify(flexDealt))
+  const fiveWeekFlex = assignFlexWeeks(stage556, 5)
+  check('with as many weeks as matchdays there is nothing to flex', fiveWeekFlex.every((s) => s.week !== null) && flexSound(fiveWeekFlex, 5).length === 0)
+
+  // Pins, with the names of a real group: placeholders and apostrophes are just names.
+  const real = ["Vyke's Crack Carrack", 'Ship of Theseus', 'White Monster', 'The Jolliest Rogers', 'KITTIES']
+  const realStage = buildGroupStage([real], 1, 3)
+  const realPins = {
+    [pairingKey(0, 'White Monster', 'Ship of Theseus', 1)]: 2,
+    [pairingKey(0, "Vyke's Crack Carrack", 'Ship of Theseus', 1)]: 3,
+    [pairingKey(0, 'The Jolliest Rogers', 'KITTIES', 1)]: 3,
+  }
+  const pinnedFlex = assignFlexWeeks(realStage, 4, realPins)
+  const at = (a: string, b: string) => pinnedFlex.find((s) => s.pairing === pairingKey(0, a, b, 1))!
+  check('pinned matches stay in their weeks',
+    at('White Monster', 'Ship of Theseus').week === 2 && at("Vyke's Crack Carrack", 'Ship of Theseus').week === 3 && at('The Jolliest Rogers', 'KITTIES').week === 3)
+  check('...and the rest is dealt cleanly around them: 8 fixed, 2 flex, nobody twice in a week',
+    counts(pinnedFlex, 0) === '8+2' && flexSound(pinnedFlex, 4).length === 0 && pinnedFlex.every((s) => !s.conflict), `${counts(pinnedFlex, 0)} ${flexSound(pinnedFlex, 4).join('; ')}`)
+  const tbd = assignFlexWeeks(buildGroupStage([['TBD 1', 'TBD 2', 'TBD 3', 'KITTIES', 'White Monster']], 1, 3), 4, { [pairingKey(0, 'TBD 1', 'TBD 2', 1)]: 0 })
+  check('"TBD N" placeholders deal and pin like any team', counts(tbd, 0) === '8+2' && flexSound(tbd, 4).length === 0 && tbd.find((s) => s.pairing === pairingKey(0, 'TBD 1', 'TBD 2', 1))!.week === 0)
+  const toFlex = pairingKey(2, 'e11', 'e12', 1)
+  const flexPinned = assignFlexWeeks(stage556, 4, { [toFlex]: 'flex' })
+  check('a match pinned to flex stays flex, and the group still fixes 12', flexPinned.find((s) => s.pairing === toFlex)!.week === null && counts(flexPinned, 2) === '12+3' && flexSound(flexPinned, 4).length === 0, counts(flexPinned, 2))
+  check('a pin to a week that does not exist is ignored', JSON.stringify(assignFlexWeeks(stage556, 4, { [toFlex]: 9 })) === JSON.stringify(flexDealt))
+
+  // Pins that can't both be honoured.
+  const clash = { [pairingKey(2, 'e11', 'e12', 1)]: 0, [pairingKey(2, 'e11', 'e13', 1)]: 0 }
+  const clashed = assignFlexWeeks(stage556, 4, clash)
+  check('two pins putting a team in one week twice are both kept, and marked',
+    clashed.filter((s) => s.conflict).length === 2 && clashed.filter((s) => s.conflict).every((s) => s.week === 0))
+  check('...while the rest of the group is still dealt cleanly', flexSound(clashed, 4).length === 0, flexSound(clashed, 4).join('; '))
+  // Sixteen teams in three groups (5, 5, 6), as an event would start them.
+  const threeGroups = { ...groupsFormat, qualifier: { ...groupsFormat.qualifier, groupCount: 3 } }
+  const flexSchedule = { ...schedule, groupWeeks: gWeeks, groupWeekMode: 'flex' as const }
+  const flexStart = planStart(threeGroups, ids(16), flexSchedule)
+  // Two of the drawn matches that share a team, pinned to the same week.
+  const drawnG0 = flexStart.ok ? assignFlexWeeks(flexStart.plan.matches, 4).filter((s) => s.match.group === 0) : []
+  const first = drawnG0[0]
+  const sharing = drawnG0.find((s) => s !== first && (s.match.a === first?.match.a || s.match.b === first?.match.a))
+  check('...and an event with clashing pins cannot start, and says why',
+    !!first && !!sharing && (() => {
+      const r = planStart(threeGroups, ids(16), { ...flexSchedule, weekMoves: { [first.pairing]: 1, [sharing!.pairing]: 1 } })
+      return !r.ok && r.problems.some((p) => p.includes('pinned to two matches'))
+    })())
+
+  // Starting with flex.
+  const flexLayout = flexStart.ok ? new Map(assignFlexWeeks(flexStart.plan.matches, 4).map((s) => [s.match.key, s.week])) : new Map()
+  const whole = { opensAt: gWeeks[0].opensAt, dueAt: gWeeks[3].dueAt }
+  check('a fixed + flex start dates fixed matches from their week and flex matches across the whole group stage',
+    flexStart.ok && flexStart.plan.matches.every((m) => {
+      const wk = flexLayout.get(m.key)
+      return wk === null ? m.opensAt === whole.opensAt && m.dueAt === whole.dueAt : m.opensAt === gWeeks[wk].opensAt && m.dueAt === gWeeks[wk].dueAt
+    }))
+  check('...and has some flex matches to date', [...flexLayout.values()].some((wk) => wk === null))
 
   // The playoffs planned on their own.
   const ownKo = { ...weekly, knockoutStartsAt: '2026-11-01T18:00:00.000Z', knockoutRoundDays: 3 }
