@@ -54,6 +54,18 @@ export interface EventDetail {
   champion_name: string | null;
   /** Where the event's logo is in the event-logos bucket, or null. Turn it into an address with eventLogoUrl. */
   logo_path: string | null;
+  /** The event this division was split from (see split_division), or null for one that never was. */
+  division_of: string | null;
+  /** This division's label in the switcher - "Upper Division" - or empty. */
+  division_name: string;
+}
+
+/** One division of a split tournament, for the switcher between them. */
+export interface DivisionLink {
+  id: string;
+  name: string;
+  division_name: string;
+  status: EventStatus;
 }
 
 export interface RosterMember {
@@ -178,7 +190,7 @@ export async function fetchMyInbox(): Promise<InboxInvite[]> {
 // ===========================================================================
 
 const EVENT_COLUMNS =
-  "id, name, description, extra_rules, group_names, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, logo_path, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
+  "id, name, description, extra_rules, group_names, status, is_test, team_size, max_entrants, match_settings, signup_closes_at, starts_at, finished_at, cancelled_at, cancel_reason, logo_path, division_of, division_name, champion:tournament_entrants!tournaments_champion_id_fkey(name)";
 
 function toDetail(row: Record<string, unknown>): EventDetail {
   const champion = row.champion as { name: string } | { name: string }[] | null;
@@ -200,7 +212,44 @@ function toDetail(row: Record<string, unknown>): EventDetail {
     cancel_reason: (row.cancel_reason as string | null) ?? null,
     champion_name: (Array.isArray(champion) ? champion[0]?.name : champion?.name) ?? null,
     logo_path: (row.logo_path as string | null | undefined) ?? null,
+    division_of: (row.division_of as string | null | undefined) ?? null,
+    division_name: (row.division_name as string | null | undefined) ?? "",
   };
+}
+
+/**
+ * Every division of the tournament `event` belongs to, oldest first - the event it all started from,
+ * then each division split off it. Empty for an event that was never split. Drafts are only returned to
+ * administrators, like any event.
+ */
+export async function fetchDivisions(event: Pick<EventDetail, "id" | "division_of">): Promise<DivisionLink[]> {
+  const root = event.division_of ?? event.id;
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, name, division_name, status")
+    .or(`id.eq.${root},division_of.eq.${root}`)
+    .order("created_at");
+  if (error) fail(error);
+  const rows = (data ?? []) as DivisionLink[];
+  return rows.length > 1 ? rows : [];
+}
+
+/**
+ * Splits the teams `entrantIds` off `eventId` into a new event, linked to it as another division, and
+ * returns the new event's id. Labels name the two divisions in the switcher ("Upper Division" for this
+ * one, "Lower Division" for the new one); an empty label leaves this event's as it is. Administrators
+ * only, before the event starts. See split_division.
+ */
+export async function splitDivision(eventId: string, entrantIds: string[], name: string, thisLabel: string, newLabel: string): Promise<string> {
+  const { data, error } = await supabase.rpc("split_division", {
+    p_event: eventId,
+    p_entrants: entrantIds,
+    p_name: name,
+    p_this_label: thisLabel,
+    p_new_label: newLabel,
+  });
+  if (error) fail(error);
+  return data as string;
 }
 
 /** One event, or null if it does not exist - which, for a draft and a non-admin, is what it looks like. */

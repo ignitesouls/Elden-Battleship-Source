@@ -14,6 +14,7 @@ import { BracketView } from "../components/event/BracketView";
 import { StandingsTable } from "../components/event/StandingsTable";
 import { EntrantLabel, RosterNames } from "../components/event/TeamLogo";
 import { EventLogo } from "../components/event/EventLogo";
+import { DivisionSwitcher } from "../components/event/DivisionSwitcher";
 import { JustForFun, PowerTag } from "../components/event/PowerLine";
 import { NextMatchCard } from "../components/event/NextMatchCard";
 import "../components/Tournament.css";
@@ -79,6 +80,7 @@ export function Event() {
       <div style={{ textAlign: "center" }}>
         <EventLogo path={event.logo_path} size={8} className="event-logo--header" />
         <h1>{open ? signupHeadline(event.name, lang) : event.name}</h1>
+        <DivisionSwitcher event={event} />
         <div className="row" style={{ justifyContent: "center" }}>
           {event.is_test && <span className="badge badge--warn" title={t("Only administrators can see this event", "Seuls les administrateurs voient cet événement")}>{t("TEST", "TEST")}</span>}
           <StatusBadge event={event} open={open} />

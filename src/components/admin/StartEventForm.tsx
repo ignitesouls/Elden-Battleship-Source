@@ -9,6 +9,7 @@ import {
   saveEventPlan,
   saveGroupNames,
   saveMatchSettings,
+  splitDivision,
   startEvent,
   type AdminTeamRow,
   type EventDetail,
@@ -42,6 +43,8 @@ import { DEFAULT_MATCH_RULES, rulesFrom, rulesProblem, toMatchSettings, type Mat
 import { MatchRulesEditor, SET_CAPS } from "./MatchRulesEditor";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { SeedList } from "./SeedList";
+import { SplitDivisionPanel } from "./SplitDivisionPanel";
+import { DivisionSwitcher } from "../event/DivisionSwitcher";
 import "../Tournament.css";
 
 /** The next whole hour: a sensible default for "when does round 1 open" that is not in the past. */
@@ -243,6 +246,23 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
     }
   }
 
+  /** Saves the plan, moves the picked teams into a new division, and opens that division's plan. */
+  async function split(entrantIds: string[], name: string, thisLabel: string, newLabel: string) {
+    if (!event) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Saved first so the new division starts from the plan as it is on screen, not as last saved.
+      await persist();
+      const newId = await splitDivision(event.id, entrantIds, name, thisLabel, newLabel);
+      setBusy(false);
+      navigate(`/admin/event/${newId}/${mode}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  }
+
   async function start() {
     if (!plan || !plan.ok || !format || !schedule || !event) return;
     const ok = window.confirm(
@@ -273,6 +293,7 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
         <h1>{mode === "plan" ? t("Plan", "Préparer") : t("Start", "Lancer")} {event.name}</h1>
+        <DivisionSwitcher event={event} to={(id) => `/admin/event/${id}/${mode}`} />
         <p className="muted">
           {mode === "plan"
             ? t(
@@ -319,6 +340,15 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
           )}
         </div>
       )}
+
+      <SplitDivisionPanel
+        key={event.id}
+        event={event}
+        teams={[...order, ...pending]}
+        powers={powers}
+        busy={busy}
+        onSplit={(ids, name, thisLabel, newLabel) => void split(ids, name, thisLabel, newLabel)}
+      />
 
       <div className="panel stack">
         <h3>{t(`1. Seeding (${n} ${event.team_size === 1 ? "players" : "teams"})`, `1. Têtes de série (${n} ${event.team_size === 1 ? "joueurs" : "équipes"})`)}</h3>

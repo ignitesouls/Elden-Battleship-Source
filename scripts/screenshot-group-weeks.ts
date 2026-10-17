@@ -69,6 +69,17 @@ try {
   if (error || !data.session) throw new Error(`session: ${error?.message}`)
   await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'group-weeks.png'), session: data.session, width: 1000, settleMs: 6000 })
   console.log(`  shot  ${join(outDir, 'group-weeks.png')}`)
+
+  // Divisions: the split panel open, then the last six teams split off the way the panel does it.
+  const openPanel = `(() => { const d = [...document.querySelectorAll('details')].find((x) => x.textContent.includes('Divisions')); if (!d) throw new Error('nothing to click: divisions'); d.open = true; return true })()`
+  await shot({ base: BASE, route: `#/admin/event/${id}/plan`, out: join(outDir, 'split-panel.png'), session: data.session, width: 1000, settleMs: 5000, steps: [openPanel] })
+  console.log(`  shot  ${join(outDir, 'split-panel.png')}`)
+  const split = await admin.client.rpc('split_division', { p_event: id, p_entrants: order.slice(10), p_name: `Weeks Cup ${run} - Lower Division`, p_this_label: 'Upper Division', p_new_label: 'Lower Division' })
+  if (split.error) throw new Error(split.error.message)
+  trackTournament(split.data as string)
+  await shot({ base: BASE, route: `#/event/${id}`, out: join(outDir, 'divisions-event.png'), session: data.session, width: 900, settleMs: 5000 })
+  await shot({ base: BASE, route: `#/admin/event/${split.data}/plan`, out: join(outDir, 'divisions-lower-plan.png'), session: data.session, width: 1000, settleMs: 6000 })
+  console.log(`  shot  divisions-event.png, divisions-lower-plan.png`)
 } finally {
   await finish()
 }
