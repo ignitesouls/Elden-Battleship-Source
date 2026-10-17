@@ -78,7 +78,7 @@ export function Event() {
   return (
     <div className="stack" style={{ width: "min(720px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
-        <EventLogo path={event.logo_path} size={8} className="event-logo--header" />
+        <EventLogo path={event.logo_path} size="min(16rem, 70vw)" className="event-logo--header" />
         <h1>{open ? signupHeadline(event.name, lang) : event.name}</h1>
         <DivisionSwitcher event={event} />
         <div className="row" style={{ justifyContent: "center" }}>
