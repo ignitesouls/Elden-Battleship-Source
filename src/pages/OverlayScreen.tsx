@@ -139,6 +139,9 @@ function TwitchStream({
           // Whatever host this page is served from IS the correct embed parent - the deployed
           // Pages domain in a browser source, `localhost` in dev. Nothing to hardcode.
           parent: [window.location.hostname],
+          // The popout player - the bare POV, as at player.twitch.tv/?channel=x&player=popout. The
+          // embed script copies every option into the iframe's query string, so this rides along.
+          player: "popout",
           muted: true,
           autoplay: true,
           controls: false,
