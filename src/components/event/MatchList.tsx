@@ -1,9 +1,10 @@
+import { Link } from "react-router-dom";
 import type { MatchRow } from "../../lib/tournament/api";
 import { useLanguage, useT } from "../../lib/language";
 import { groupLabel } from "../../lib/tournament/groupNames";
 import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
 import { MatchOdds } from "./PowerLine";
-import { TeamLogo } from "./TeamLogo";
+import { PlayerName, TeamLogo } from "./TeamLogo";
 
 /**
  * Every match of a running or finished event, grouped by round.
@@ -27,6 +28,10 @@ interface Props {
   powers?: Map<string, TeamPowerInfo> | null;
   /** Logo addresses by team id. Given, every named team shows its logo (or the default) beside its name. */
   logos?: Map<string, string>;
+  /** Twitch logins by team id, in an individual event: each name then opens that player's channel. */
+  twitch?: Map<string, string>;
+  /** Given, every match with both teams known links to their tale of the tape. */
+  eventId?: string;
 }
 
 const BRACKET_LABEL: Record<string, [string, string]> = {
@@ -36,7 +41,7 @@ const BRACKET_LABEL: Record<string, [string, string]> = {
   TP: ["Third place", "Troisième place"],
 };
 
-export function MatchList({ matches, names, groupNames, powers, logos }: Props) {
+export function MatchList({ matches, names, groupNames, powers, logos, twitch, eventId }: Props) {
   const t = useT();
   const lang = useLanguage();
 
@@ -96,10 +101,10 @@ export function MatchList({ matches, names, groupNames, powers, logos }: Props) 
                 <div className="t-item" key={m.id}>
                   <span style={{ flex: 1, minWidth: "12rem" }}>
                     {logos && <TeamLogo url={m.entrant_a ? logos.get(m.entrant_a) : null} empty={!m.entrant_a} size={1.15} />}{logos && " "}
-                    <span className={done && m.winner === m.entrant_a ? "t-winner" : undefined}>{a}</span>
+                    <PlayerName name={a} login={m.entrant_a ? twitch?.get(m.entrant_a) : null} className={done && m.winner === m.entrant_a ? "t-winner" : undefined} />
                     <span className="muted"> {t("vs", "contre")} </span>
                     {logos && <TeamLogo url={m.entrant_b ? logos.get(m.entrant_b) : null} empty={!m.entrant_b} size={1.15} />}{logos && " "}
-                    <span className={done && m.winner === m.entrant_b ? "t-winner" : undefined}>{b}</span>
+                    <PlayerName name={b} login={m.entrant_b ? twitch?.get(m.entrant_b) : null} className={done && m.winner === m.entrant_b ? "t-winner" : undefined} />
                     {bracket && (
                       <span className="muted" style={{ fontSize: "0.72rem" }}>
                         {" "}
@@ -132,6 +137,11 @@ export function MatchList({ matches, names, groupNames, powers, logos }: Props) 
                       <span className="muted" style={{ fontSize: "0.72rem" }}>
                         {t("due", "avant le")} {day(m.due_at)}
                       </span>
+                    )}
+                    {eventId && m.entrant_a && m.entrant_b && (
+                      <Link to={`/event/${eventId}/vs/${m.entrant_a}/${m.entrant_b}`} style={{ fontSize: "0.75rem" }}>
+                        {t("Tale of the tape", "Fiche du combat")} ›
+                      </Link>
                     )}
                   </span>
                   {/* The line, for a match still to be decided with both teams known. */}

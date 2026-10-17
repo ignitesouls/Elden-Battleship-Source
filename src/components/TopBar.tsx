@@ -7,6 +7,7 @@ import { isColorblindMode, setColorblindMode } from "../lib/teamColors";
 import { isTwitchLoginConfigured, signInWithTwitch, signOut } from "../lib/supabase";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import { useAdminStatus } from "../lib/admin";
+import { useMyCrews } from "../hooks/useMyCrews";
 import { useLanguage, setLanguage, useT } from "../lib/language";
 import { OutreachLinks } from "./OutreachLinks";
 import "./TopBar.css";
@@ -43,6 +44,8 @@ export function TopBar() {
   // an admin logs in rather than after a reload.
   const { isAdmin } = useAdminStatus(!!profile?.isTwitch);
   const { pathname } = useLocation();
+  // The crews this player is on in open or running events - asked once per sign-in, see useMyCrews.
+  const crews = useMyCrews(profile?.isTwitch ? profile.userId : null);
   // Checked against the database, not merely remembered - see useActiveRoom for why a stored code
   // was never evidence that there was anything on the other end of it.
   const activeRoom = useActiveRoom();
@@ -146,6 +149,22 @@ export function TopBar() {
       <div className="tb-right">
         {profile?.isTwitch ? (
           <>
+            {/* Just left of the account, accented like the way back to a room: during an event this is
+                the page a player keeps returning to. One per crew, which is one for nearly everybody;
+                a player in two events at once gets each event's name on its link. */}
+            {crews.map((crew) => (
+              <Link
+                key={crew.event_id}
+                to={`/event/${crew.event_id}/quarters`}
+                className="tb-item tb-crew"
+                title={t(`Your Crew Quarters - ${crew.team_name} in ${crew.event_name}`, `Vos quartiers d'équipage - ${crew.team_name} dans ${crew.event_name}`)}
+              >
+                <span className="tb-emoji">🧭</span>
+                <span className="tb-label">
+                  {crews.length > 1 ? crew.event_name : t("Your Crew Quarters", "Vos quartiers d'équipage")}
+                </span>
+              </Link>
+            ))}
             <Link to={`/player/${profile.userId}`} className="tb-item tb-account" title={t("Your stats", "Vos statistiques")}>
               {profile.avatarUrl ? (
                 <img src={profile.avatarUrl} alt="" width={20} height={20} className="tb-avatar" />

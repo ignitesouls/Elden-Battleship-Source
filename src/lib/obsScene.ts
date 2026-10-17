@@ -1,6 +1,6 @@
 // The pure half, deliberately - this module has to be runnable in Node so scripts/check-obs-scene.ts
 // can build a collection and pull it apart. See the note at the top of streamSources.
-import type { SceneKind, StreamSource } from "./streamSources";
+import { sourcesFor, streamSourceUrl, type SceneKind, type StreamSource } from "./streamSources.ts";
 // Explicit .ts, like roomCode.ts and careerStats.ts elsewhere: this module is run directly by
 // scripts/check-obs-scene and scripts/check-cast-scene under Node, which does not resolve an
 // extensionless relative import.
@@ -8,7 +8,12 @@ import {
   screenRects,
   boardRect,
   clockRect,
+  playerFireRect,
+  playerGameRect,
+  playerFleetRect,
+  playerCamRect,
   CAST_CANVAS,
+  type Rect,
 } from "./castSceneLayout.ts";
 
 /**
@@ -179,20 +184,44 @@ function browserSource(entry: SceneEntry, uuid: string) {
  * Both `name` and `source_uuid` are written. Older OBS matches scene items to sources by name and
  * newer ones by uuid, and carrying both is what lets one file import cleanly across the versions
  * people actually have installed.
+ *
+ * `fit` is for a source whose size the file cannot know - a game capture or a webcam, which are
+ * whatever resolution the player's game and camera happen to be. It gives the item an OBS bounding
+ * box the size of its hole instead of a scale, so it lands right whatever comes out of the capture.
  */
-function sceneItem(entry: SceneEntry, uuid: string, at: SourcePlacement, id: number) {
+function sceneItem(name: string, uuid: string, at: SourcePlacement, id: number, fit?: SceneFit) {
+  const { w, h } = CANVAS;
   return {
-    name: entry.source.obsName,
+    name,
     source_uuid: uuid,
     visible: true,
     locked: false,
     rot: 0.0,
     pos: { x: at.x, y: at.y },
     scale: { x: at.scale, y: at.scale },
+    /**
+     * The same placement again, relative to the canvas - what OBS 31+ reads when all three are present.
+     *
+     * The plain `pos`/`scale`/`bounds` above are taken as pixels of whatever canvas the streamer has,
+     * so on a 1280x720 or 2560x1440 canvas a 1080p layout lands in the wrong place. The relative form
+     * is stored against a reference size and rescaled to the real canvas on load, so a frame scene
+     * still fits its canvas exactly. Older OBS ignores these keys and falls back to the pixels.
+     *
+     * The arithmetic is OBS's own pos_from_absolute / size_from_absolute (libobs/obs-scene.c):
+     * height-normalised, so the canvas's height spans -1..1.
+     */
+    pos_rel: { x: (2 * at.x - w) / h, y: (2 * at.y) / h - 1 },
+    scale_rel: { x: at.scale, y: at.scale },
+    scale_ref: { x: w, y: h },
+    bounds_rel: { x: fit ? (2 * fit.w) / h : 0.0, y: fit ? (2 * fit.h) / h : 0.0 },
     align: 5,
-    bounds_type: 0,
+    bounds_type: fit ? fit.type : 0,
+    // Centred in the box, so the overhang a "cover" fit trims comes off both sides evenly.
     bounds_align: 0,
-    bounds: { x: 0.0, y: 0.0 },
+    bounds: { x: fit ? fit.w : 0.0, y: fit ? fit.h : 0.0 },
+    // OBS 30.1+. Older versions ignore it, which is harmless here: the frame art sits over every
+    // capture, so whatever spills past a hole is under opaque art either way.
+    bounds_crop: Boolean(fit?.crop),
     crop_left: 0,
     crop_top: 0,
     crop_right: 0,
@@ -206,6 +235,17 @@ function sceneItem(entry: SceneEntry, uuid: string, at: SourcePlacement, id: num
     hide_transition: { duration: 0 },
     private_settings: {},
   };
+}
+
+/** OBS's bounding-box types, the two this file uses. */
+const BOUNDS_FIT_INSIDE = 2; // "Scale to inner bounds" - the whole picture, letterboxed if it must be
+const BOUNDS_COVER = 3; // "Scale to outer bounds" - fills the box, overhang trimmed with bounds_crop
+
+export interface SceneFit {
+  type: number;
+  w: number;
+  h: number;
+  crop: boolean;
 }
 
 export interface BuildSceneOptions {
@@ -239,7 +279,7 @@ export function buildObsScene({ kind, entries, sceneName, newId }: BuildSceneOpt
   const items = [...withIds]
     .reverse()
     .map(({ entry, uuid: id }, i) =>
-      sceneItem(entry, id, where[entry.source.id] ?? { x: 0, y: 0, scale: 1 }, i + 1)
+      sceneItem(entry.source.obsName, id, where[entry.source.id] ?? { x: 0, y: 0, scale: 1 }, i + 1)
     );
 
   const sceneUuid = uuid();
@@ -529,7 +569,7 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
    */
   function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement }>) {
     const withIds = parts.map((p) => ({ ...p, uuid: uuid() }));
-    const items = withIds.map((p, i) => sceneItem(p.entry, p.uuid, p.at, i + 1));
+    const items = withIds.map((p, i) => sceneItem(p.entry.source.obsName, p.uuid, p.at, i + 1));
     const sceneObj = {
       prev_ver: PREV_VER,
       name,
@@ -584,4 +624,263 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
 /** Filenames for the casting downloads, recognisable in a downloads folder. */
 export function castSceneFilename(): string {
   return "elden-battleship-casting-scene.json";
+}
+
+/* ======================================================================================
+ *  The player frame scene - one crew member's own stream, composed.
+ *
+ *  The player's other download (buildObsScene) is the element menu: sources dropped in a corner
+ *  for the streamer to arrange. This is the finished shot instead, built around the player frame
+ *  art (lib/castSceneLayout): fire board top left, gameplay top right, fleet bottom left, webcam
+ *  under the game.
+ *
+ *  The gameplay and the webcam are the two things a website cannot hand over, so they arrive as
+ *  OBS's own Game Capture and Video Capture Device, already sitting in their holes with a bounding
+ *  box. The game capture is aimed at Elden Ring too, so the player's one job is picking their
+ *  camera. Both are Windows source types; on any other OS they import as sources OBS can't open,
+ *  and the player swaps in their own.
+ * ==================================================================================== */
+
+export const PLAYER_SCENE = "EB Player";
+
+/** One source in the player frame scene. */
+export interface PlayerPart {
+  name: string;
+  /** The browser source and its URL - null for the two capture sources OBS supplies. */
+  entry: SceneEntry | null;
+  capture?: "game" | "webcam";
+  at: SourcePlacement;
+  /** A bounding box, for the captures whose size the file cannot know. */
+  fit?: SceneFit;
+  /** What the setup page says it is, for a player building the scene by hand. */
+  what: string;
+}
+
+export interface PlayerSceneOptions {
+  /** Origin + path the URLs are built against - `window.location` in the page, a constant in a test. */
+  base: string;
+  token: string;
+  /** The fire board's text size multiplier. 1 writes nothing. */
+  textSize?: number;
+  /** The player's own fleet in its hole. On unless turned off - see the spoiler note on the page. */
+  fleet?: boolean;
+  /**
+   * The find alert, over the gameplay. OFF unless asked for: a card bursting over the game with no
+   * warning is the last thing a player who didn't choose it wants mid-fight.
+   */
+  finds?: boolean;
+  /** How long a find holds the screen, in seconds. */
+  alertSecs?: number;
+  /** The board's sound as its own source, for the OBS mixer. On unless turned off. */
+  sound?: boolean;
+}
+
+/**
+ * Every source in the player frame scene, bottom of the stack first.
+ *
+ * The one list both halves of the setup page read, like castSceneParts: the download is built from
+ * it and the build-it-yourself list prints it, so the two can't disagree. The frame art sits over
+ * everything that shows through a hole; the find alert is the one thing above the art, because it
+ * is centred on the gameplay and runs past nothing there that should hide it.
+ */
+export function playerSceneParts({
+  base,
+  token,
+  textSize = 1,
+  fleet = true,
+  finds = false,
+  alertSecs = CAST_DEFAULT_ALERT_SECS,
+  sound = true,
+}: PlayerSceneOptions): PlayerPart[] {
+  const catalogue = sourcesFor("player");
+  const pick = (id: string) => catalogue.find((s) => s.id === id)!;
+  const defaults = { opacity: 1, textSize: 1, emptyFade: 1, alertSecs: CAST_DEFAULT_ALERT_SECS };
+  const look = { ...defaults, textSize, alertSecs };
+  const browser = (source: StreamSource): SceneEntry => ({
+    source,
+    url: streamSourceUrl(base, source, token, look, defaults),
+  });
+
+  const fire = playerFireRect();
+  const game = playerGameRect();
+  const fleetHole = playerFleetRect();
+  const cam = playerCamRect();
+  const hole = (r: Rect): SourcePlacement => ({ x: r.x, y: r.y, scale: 1 });
+
+  const parts: PlayerPart[] = [];
+  if (sound) {
+    const source = pick("audio");
+    parts.push({
+      name: source.obsName,
+      entry: browser(source),
+      at: { x: 0, y: 0, scale: 1 },
+      what: "the board's sound, no picture - its own fader in the OBS mixer",
+    });
+  }
+  parts.push({
+    // ER, not EB: it is Elden Ring itself, not one of ours.
+    name: "ER Gameplay",
+    entry: null,
+    capture: "game",
+    at: hole(game),
+    // The hole is 16:9 to the pixel, so a 16:9 game fills it exactly; anything else is letterboxed
+    // rather than cut, because the edges of a game are its HUD.
+    fit: { type: BOUNDS_FIT_INSIDE, w: game.w, h: game.h, crop: false },
+    what: "Game Capture, already aimed at Elden Ring",
+  });
+  parts.push({
+    // Not "EB" like the rest: it is the player's own camera, and the file only reserves its box.
+    name: "Your Webcam",
+    entry: null,
+    capture: "webcam",
+    at: hole(cam),
+    // The hole is nearly 4:3 and most webcams are 16:9, so it fills the box and trims the sides.
+    fit: { type: BOUNDS_COVER, w: cam.w, h: cam.h, crop: true },
+    what: "Video Capture Device - pick your camera in its properties",
+  });
+  // The board and the fleet are given their hole's own size rather than a native size scaled down,
+  // so a player building this by hand types one size and one position and is done - and the page
+  // renders at the pixels it is shown at. Both pages measure their box, so any size draws right.
+  const sized = (source: StreamSource, r: Rect): StreamSource => ({ ...source, width: r.w, height: r.h });
+  parts.push({
+    name: pick("board").obsName,
+    entry: browser(sized(pick("board"), fire)),
+    at: hole(fire),
+    what: "your own shots - the board you're playing off",
+  });
+  if (fleet) {
+    parts.push({
+      name: pick("fleet").obsName,
+      entry: browser(sized(pick("fleet"), fleetHole)),
+      at: hole(fleetHole),
+      what: "your ships and the damage they've taken",
+    });
+  }
+  parts.push({
+    name: "EB Player Frame",
+    entry: {
+      source: castSource("player-frame", "frame", "EB Player Frame", CAST_CANVAS.w, CAST_CANVAS.h),
+      url: `${base}#/stream/frame?token=${token}&layout=player`,
+    },
+    at: { x: 0, y: 0, scale: 1 },
+    what: "the frame art - everything else shows through its holes",
+  });
+  if (finds) {
+    const source = pick("egg");
+    parts.push({
+      name: source.obsName,
+      entry: browser(source),
+      at: {
+        x: Math.round(game.x + (game.w - source.width) / 2),
+        y: Math.round(game.y + (game.h - source.height) / 2),
+        scale: 1,
+      },
+      what: "empty until you find something, then the find card over your gameplay",
+    });
+  }
+  return parts;
+}
+
+/**
+ * Game Capture, aimed at Elden Ring already.
+ *
+ * "window" mode with OBS's default match priority, which is by program (plugins/win-capture and
+ * libobs/util/windows/window-helpers.c): any window belonging to eldenring.exe is taken, whatever its
+ * title says, so it works fullscreen, borderless or windowed, through the Seamless Co-op launcher
+ * (which runs the same exe), and never grabs some other fullscreen program by mistake. The string is
+ * OBS's "title:class:exe"; title and class only break ties.
+ *
+ * A webcam has no device the file could name, so that one is left for the player to pick.
+ */
+const ELDEN_RING_CAPTURE = {
+  capture_mode: "window",
+  window: "ELDEN RING™:ELDEN RING™:eldenring.exe",
+};
+
+/** OBS's own capture sources, set up as far as a file can take them. */
+function captureSource(part: PlayerPart, uuid: string) {
+  const id = part.capture === "game" ? "game_capture" : "dshow_input";
+  return {
+    prev_ver: PREV_VER,
+    name: part.name,
+    uuid,
+    id,
+    versioned_id: id,
+    settings: part.capture === "game" ? ELDEN_RING_CAPTURE : {},
+    mixers: 255,
+    sync: 0,
+    flags: 0,
+    volume: 1.0,
+    balance: 0.5,
+    enabled: true,
+    muted: false,
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    hotkeys: {},
+    deinterlace_mode: 0,
+    deinterlace_field_order: 0,
+    monitoring_type: 0,
+    private_settings: {},
+  };
+}
+
+/** The one-scene player collection, built from playerSceneParts. Already bottom-up, so not reversed. */
+export function buildPlayerCollection({ newId, ...options }: PlayerSceneOptions & { newId?: () => string }) {
+  const uuid = newId ?? (() => crypto.randomUUID());
+  const withIds = playerSceneParts(options).map((part) => ({ part, uuid: uuid() }));
+  const items = withIds.map(({ part, uuid: id }, i) => sceneItem(part.name, id, part.at, i + 1, part.fit));
+  const sources = withIds.map(({ part, uuid: id }) =>
+    part.entry ? browserSource(part.entry, id) : captureSource(part, id)
+  );
+
+  const scene = {
+    prev_ver: PREV_VER,
+    name: PLAYER_SCENE,
+    uuid: uuid(),
+    id: "scene",
+    versioned_id: "scene",
+    settings: { id_counter: items.length + 1, custom_size: false, items },
+    mixers: 0,
+    sync: 0,
+    flags: 0,
+    volume: 1.0,
+    balance: 0.5,
+    enabled: true,
+    muted: false,
+    "push-to-mute": false,
+    "push-to-mute-delay": 0,
+    "push-to-talk": false,
+    "push-to-talk-delay": 0,
+    hotkeys: {},
+    deinterlace_mode: 0,
+    deinterlace_field_order: 0,
+    monitoring_type: 0,
+    private_settings: { eb_scene_version: SCENE_VERSION, eb_scene_kind: "player-frame" },
+  };
+
+  return {
+    name: PLAYER_SCENE,
+    current_scene: PLAYER_SCENE,
+    current_program_scene: PLAYER_SCENE,
+    scene_order: [{ name: PLAYER_SCENE }],
+    sources: [...sources, scene],
+    groups: [],
+    transitions: [],
+    current_transition: "Fade",
+    transition_duration: 300,
+    preview_locked: false,
+    scaling_enabled: false,
+    scaling_level: 0,
+    scaling_off_x: 0.0,
+    scaling_off_y: 0.0,
+    virtual_camera: { type2: 3 },
+    modules: {},
+    version: 2,
+  };
+}
+
+export function playerSceneFilename(): string {
+  return "elden-battleship-player-scene.json";
 }

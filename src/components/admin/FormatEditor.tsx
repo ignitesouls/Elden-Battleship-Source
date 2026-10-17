@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { TournamentFormat } from "../../lib/tournament/format";
+import { groupPools, type TournamentFormat } from "../../lib/tournament/format";
 import { defaultKnockout, defaultQualifier, type QualifierKind } from "../../lib/tournament/formatDefaults";
 import { useT } from "../../lib/language";
 
@@ -50,6 +50,9 @@ export function FormatEditor({ format, n, onChange }: Props) {
   const t = useT();
   const q = format.qualifier;
   const k = format.knockout;
+  const pools = q.format === "groups" ? groupPools(q) : [];
+  // The one number every group sends, or undefined when the groups differ.
+  const sameAdvance = q.format === "groups" ? (pools.every((p) => p.advance === pools[0]?.advance) ? (pools[0]?.advance ?? q.advancePerGroup) : undefined) : undefined;
 
   const setQualifier = (kind: QualifierKind) =>
     onChange({
@@ -86,7 +89,19 @@ export function FormatEditor({ format, n, onChange }: Props) {
               <input type="number" min={1} value={q.groupCount} onChange={(e) => onChange({ ...format, qualifier: { ...q, groupCount: Number(e.target.value) } })} style={{ width: "5rem" }} />
             </Field>
             <Field label={t("Advance from each", "Qualifiés par poule")}>
-              <input type="number" min={1} value={q.advancePerGroup ?? 1} onChange={(e) => onChange({ ...format, qualifier: { ...q, advancePerGroup: Number(e.target.value) } })} style={{ width: "5rem" }} />
+              {/* Sets every group at once; a single group's own number is set beside it under Groups. */}
+              <input
+                type="number"
+                min={1}
+                value={sameAdvance ?? ""}
+                placeholder={t("varies", "variable")}
+                title={t("Each group can send its own number - set it beside the group under Groups.", "Chaque poule peut avoir son propre nombre - réglez-le à côté de la poule, sous Poules.")}
+                onChange={(e) => {
+                  const advance = Number(e.target.value);
+                  onChange({ ...format, qualifier: { ...q, advancePerGroup: advance, pools: groupPools(q).map((p) => ({ ...p, advance })) } });
+                }}
+                style={{ width: "5rem" }}
+              />
             </Field>
             <Field label={t("Meetings", "Rencontres")}>
               <select value={q.legs} onChange={(e) => onChange({ ...format, qualifier: { ...q, legs: Number(e.target.value) as 1 | 2 } })}>

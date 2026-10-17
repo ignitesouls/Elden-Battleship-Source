@@ -1,6 +1,6 @@
 import type { MatchRow } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
-import { TeamLabel } from "./TeamLogo";
+import { EntrantLabel, TeamLabel } from "./TeamLogo";
 import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
 import { MatchOdds } from "./PowerLine";
 
@@ -10,8 +10,12 @@ interface Props {
   names: Map<string, string>;
   /** Logo addresses by team id, for the teams that have their own; the rest show the default. */
   logos?: Map<string, string>;
+  /** Twitch logins by team id, in an individual event: each name then opens that player's channel. */
+  twitch?: Map<string, string>;
   /** Team power by team id: a match still to be played shows its line under the two teams. */
   powers?: Map<string, TeamPowerInfo> | null;
+  /** Given, each team's name opens its tale of the tape. */
+  eventId?: string;
 }
 
 /**
@@ -25,7 +29,7 @@ interface Props {
 
 const ORDER = ["W", "L", "GF", "TP"] as const;
 
-export function BracketView({ matches, names, logos, powers }: Props) {
+export function BracketView({ matches, names, logos, twitch, powers, eventId }: Props) {
   const t = useT();
   const label: Record<string, string> = {
     W: t("Winners bracket", "Tableau des vainqueurs"),
@@ -51,7 +55,7 @@ export function BracketView({ matches, names, logos, powers }: Props) {
                     .filter((m) => m.round === round)
                     .sort((a, b) => a.idx - b.idx)
                     .map((m) => (
-                      <Card key={m.id} match={m} names={names} logos={logos} powers={powers} />
+                      <Card key={m.id} match={m} names={names} logos={logos} twitch={twitch} powers={powers} eventId={eventId} />
                     ))}
                 </div>
               ))}
@@ -63,7 +67,7 @@ export function BracketView({ matches, names, logos, powers }: Props) {
   );
 }
 
-function Card({ match, names, logos, powers }: { match: MatchRow; names: Map<string, string>; logos?: Map<string, string>; powers?: Map<string, TeamPowerInfo> | null }) {
+function Card({ match, names, logos, twitch, powers, eventId }: { match: MatchRow; names: Map<string, string>; logos?: Map<string, string>; twitch?: Map<string, string>; powers?: Map<string, TeamPowerInfo> | null; eventId?: string }) {
   const t = useT();
   const done = match.status === "done";
   const skipped = match.status === "skipped";
@@ -72,7 +76,7 @@ function Card({ match, names, logos, powers }: { match: MatchRow; names: Map<str
     return (
       <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem", flexWrap: "nowrap", padding: "0.18rem 0.5rem", background: won ? "rgba(217, 164, 65, 0.16)" : undefined }}>
         {id ? (
-          <TeamLabel name={names.get(id) ?? "?"} logo={logos?.get(id)} className={won ? "t-winner" : undefined} />
+          <EntrantLabel eventId={eventId} teamId={id} name={names.get(id) ?? "?"} logo={logos?.get(id)} twitch={twitch?.get(id)} className={won ? "t-winner" : undefined} />
         ) : (
           // No team yet: a blank where the logo goes, not the default - the default means "a team with no logo".
           <TeamLabel name={<span className="muted">{t("TBD", "À déterminer")}</span>} logo={null} empty />

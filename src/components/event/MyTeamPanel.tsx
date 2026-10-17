@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   cancelInvite,
   clearTeamLogo,
@@ -16,7 +16,8 @@ import {
   type TeamRow,
 } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
-import { LogoField, TeamLabel } from "./TeamLogo";
+import { useProfileBits } from "../../hooks/useProfileBits";
+import { LogoField, PlayerName, TeamLabel } from "./TeamLogo";
 
 interface Props {
   event: EventDetail;
@@ -42,6 +43,9 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
   const [more, setMore] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Twitch logins, so each name on the roster opens that player's channel.
+  const rosterIds = useMemo(() => team.roster.map((m) => m.user_id), [team.roster]);
+  const profiles = useProfileBits(rosterIds);
 
   // Invitations and the entry code are the captain's to read; a teammate would only be refused.
   useEffect(() => {
@@ -150,7 +154,7 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
           {team.roster.map((m) => (
             <div className="t-item" key={m.user_id}>
               <span>
-                {m.display_name}
+                <PlayerName name={m.display_name} login={profiles.get(m.user_id)?.twitch_login} />
                 {m.is_captain && <span className="badge" style={{ marginLeft: "0.4rem" }}>{t("captain", "capitaine")}</span>}
                 {m.user_id === userId && !m.is_captain && <span className="muted"> ({t("you", "vous")})</span>}
               </span>
@@ -175,7 +179,7 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
             {invites.filter((i) => i.status !== "accepted").map((i) => (
               <div className="t-item" key={i.id}>
                 <span>
-                  @{i.twitch_login}{" "}
+                  <PlayerName name={`@${i.twitch_login}`} login={i.twitch_login} />{" "}
                   <span className={`badge ${i.status === "declined" ? "badge--bad" : ""}`}>
                     {i.status === "pending" ? t("waiting", "en attente") : t("declined", "refusée")}
                   </span>

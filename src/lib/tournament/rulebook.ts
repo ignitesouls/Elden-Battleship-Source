@@ -1,5 +1,6 @@
 import type { Language } from "../language";
-import type { TournamentFormat } from "./format";
+import { groupPools, type GroupPool, type TournamentFormat } from "./format";
+import { groupLabel } from "./groupNames";
 import type { MatchRules } from "./matchRules";
 
 /**
@@ -61,6 +62,31 @@ function duration(seconds: number, tr: Tr): string {
   return tr(clock, clock);
 }
 
+/**
+ * Who goes through, as the start of a sentence: "The top 2 of each group", or with groups that differ,
+ * "The top 3 of each main group and the top 2 of the challenger group". Groups of one kind that send
+ * different numbers are listed by letter.
+ */
+function advancingFrom(pools: GroupPool[], challengers: number, tr: Tr): string {
+  const phrase = (band: boolean) => {
+    const members = pools.map((p, g) => ({ ...p, g })).filter((p) => p.challenger === band);
+    const kindEn = challengers === 0 || challengers === pools.length ? "" : band ? "challenger " : "main ";
+    const kindFr = challengers === 0 || challengers === pools.length ? "" : band ? " challenger" : " principale";
+    if (members.every((p) => p.advance === members[0].advance)) {
+      const a = members[0].advance;
+      return members.length === 1
+        ? tr(`the top ${a} of the ${kindEn}group`, `les ${a} premiers de la poule${kindFr}`)
+        : tr(`the top ${a} of each ${kindEn}group`, `les ${a} premiers de chaque poule${kindFr}`);
+    }
+    return members
+      .map((p) => tr(`the top ${p.advance} of ${groupLabel([], p.g, "en")}`, `les ${p.advance} premiers de la ${groupLabel([], p.g, "fr").replace(/^Poule/, "poule")}`))
+      .join(tr(", ", ", "));
+  };
+  const parts = [false, true].filter((band) => pools.some((p) => p.challenger === band)).map(phrase);
+  const joined = parts.join(tr(" and ", " et "));
+  return joined.charAt(0).toUpperCase() + joined.slice(1);
+}
+
 function formatRule(format: TournamentFormat | null, tr: Tr): string[] {
   if (!format) {
     return [
@@ -96,19 +122,36 @@ function formatRule(format: TournamentFormat | null, tr: Tr): string[] {
       ),
     );
   } else if (q.format === "groups") {
-    const groups = tr(
-      `${q.groupCount} round-robin ${q.groupCount === 1 ? "group" : "groups"}`,
-      `${q.groupCount} ${q.groupCount === 1 ? "poule" : "poules"} en toutes rondes`,
-    );
+    const pools = groupPools(q);
+    const challengers = pools.filter((p) => p.challenger).length;
+    const groups =
+      tr(
+        `${q.groupCount} round-robin ${q.groupCount === 1 ? "group" : "groups"}`,
+        `${q.groupCount} ${q.groupCount === 1 ? "poule" : "poules"} en toutes rondes`,
+      ) +
+      (challengers > 0 && challengers < pools.length
+        ? tr(
+            ` (${pools.length - challengers} main, ${challengers} challenger)`,
+            ` (${pools.length - challengers} ${pools.length - challengers === 1 ? "principale" : "principales"}, ${challengers} challenger)`,
+          )
+        : "");
     out.push(
       tr(
         `The event opens with ${groups}, everyone in a group meeting ${q.legs === 2 ? "twice" : "once"}, each ${bo(q.bestOf, tr)}`,
         `L'événement commence par ${groups}, chacun affrontant ${q.legs === 2 ? "deux fois" : "une fois"} tous les membres de sa poule, ${bo(q.bestOf, tr)}`,
       ) +
-        (k && q.advancePerGroup
-          ? tr(`. The top ${q.advancePerGroup} of each group advance to a ${knockoutKind}.`, `. Les ${q.advancePerGroup} premiers de chaque poule accèdent à une ${knockoutKind}.`)
+        (k && pools.length > 0 && pools.every((p) => p.advance > 0)
+          ? tr(`. ${advancingFrom(pools, challengers, tr)} advance to a ${knockoutKind}.`, `. ${advancingFrom(pools, challengers, tr)} accèdent à une ${knockoutKind}.`)
           : tr(". The group tables decide the winner.", ". Les classements des poules désignent le vainqueur.")),
     );
+    if (k && challengers > 0 && challengers < pools.length) {
+      out.push(
+        tr(
+          "Challenger groups are for newer teams, so they play each other. Challenger qualifiers are seeded in the knockout below every main-group qualifier.",
+          "Les poules challenger réunissent les équipes plus récentes, qui s'affrontent entre elles. Leurs qualifiés sont classés en phase finale derrière tous les qualifiés des poules principales.",
+        ),
+      );
+    }
   } else if (k) {
     out.push(tr(`The event is a ${knockoutKind} with everybody in it from the first round.`, `L'événement est une ${knockoutKind}, avec tout le monde dès le premier tour.`));
   }

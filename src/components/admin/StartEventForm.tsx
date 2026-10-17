@@ -14,10 +14,20 @@ import {
   type EventDetail,
   type MatchRow,
 } from "../../lib/tournament/api";
-import { effectiveCut, estimateMatches, suggestFormat, validateFormat, type TournamentFormat } from "../../lib/tournament/format";
+import {
+  effectiveCut,
+  estimateMatches,
+  groupPools,
+  groupsFor,
+  prunePlacement,
+  suggestFormat,
+  validateFormat,
+  type GroupPool,
+  type GroupsQualifier,
+  type TournamentFormat,
+} from "../../lib/tournament/format";
 import { scheduleShape, suggestSchedule, type Schedule } from "../../lib/tournament/schedule";
 import { planStart } from "../../lib/tournament/start";
-import { assignGroups } from "../../lib/tournament/groups";
 import { groupNamesProblem, tidyGroupNames } from "../../lib/tournament/groupNames";
 import type { TMatch } from "../../lib/tournament/types";
 import { useLanguage, useT } from "../../lib/language";
@@ -46,7 +56,7 @@ function previewRow(m: TMatch): MatchRow {
   return {
     id: m.key, key: m.key, stage: m.stage, bracket: m.bracket, grp: m.group, round: m.round, phase: m.phase, idx: m.index,
     entrant_a: m.a, entrant_b: m.b, best_of: m.bestOf, score_a: m.scoreA, score_b: m.scoreB, status: m.status,
-    winner: m.winner, result_kind: m.resultKind, opens_at: m.opensAt, due_at: m.dueAt, agreed_at: null,
+    winner: m.winner, result_kind: m.resultKind, opens_at: m.opensAt, due_at: m.dueAt, agreed_at: null, agreed_by: null,
   };
 }
 
@@ -128,7 +138,8 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
           const kept = plan.seed_order.map((id) => byId.get(id)).filter((x): x is AdminTeamRow => !!x);
           const keptIds = new Set(kept.map((team) => team.id));
           nextOrder = [...kept, ...entered.filter((team) => !keptIds.has(team.id))];
-          nextFormat = plan.format;
+          // Hand placements of teams no longer in go too, or they would hold a place in a group's count.
+          nextFormat = prunePlacement(plan.format, entered.map((team) => team.id));
           nextSchedule = plan.schedule;
           nextFit = plan.fit_days ?? 28;
           setSavedAt(plan.updated_at);
@@ -193,7 +204,21 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
   const names = new Map(order.map((team) => [team.id, team.name]));
   const currentKey = planKey(format, schedule, order, fitDays, groupNames, rules);
   const unsaved = savedKey !== currentKey;
-  const groups = groupCount > 0 && n >= groupCount ? assignGroups(order.map((team) => team.id), groupCount) : null;
+  const gq = format.qualifier.format === "groups" ? format.qualifier : null;
+  const groups = gq && groupCount > 0 && n >= groupCount ? groupsFor(gq, order.map((team) => team.id)) : null;
+  const pools = gq ? groupPools(gq) : [];
+  const placement = gq?.placement ?? {};
+  const editGroups = (change: (q: GroupsQualifier) => GroupsQualifier) => gq && setFormat({ ...format, qualifier: change(gq) });
+  const setPool = (g: number, patch: Partial<GroupPool>) =>
+    editGroups((q) => ({ ...q, pools: groupPools(q).map((p, i) => (i === g ? { ...p, ...patch } : p)) }));
+  /** Puts a team in group `g` by hand, or (null) hands it back to the seeded deal. */
+  const place = (id: string, g: number | null) =>
+    editGroups((q) => {
+      const next = { ...(q.placement ?? {}) };
+      if (g === null) delete next[id];
+      else next[id] = g;
+      return { ...q, placement: next };
+    });
 
   /** Writes the plan, the group names and the match rules - everything this page decides. */
   async function persist() {
@@ -345,29 +370,82 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
           <h3>{t("3. Groups", "3. Poules")}</h3>
           <p className="muted" style={{ margin: 0 }}>
             {t(
-              "Name each group - type anything, or fill them from a list - and see who is in it. Teams are dealt into groups from the seeding, so reorder the seeds to change a group. The groups follow the teams as more sign up; leave a name empty to keep its letter.",
-              "Nommez chaque poule - tapez ce que vous voulez, ou remplissez depuis une liste - et voyez qui la compose. Les équipes sont réparties d'après les têtes de série : changez l'ordre pour changer une poule. Les poules suivent les inscriptions ; laissez un nom vide pour garder la lettre.",
+              "Name each group - type anything, or fill them from a list - and see who is in it. Teams are dealt into the main groups from the seeding, so reorder the seeds to change a group, or put a team in a group by hand (it then stays there, in bold). A challenger group is for newer teams: nobody is dealt into it, so put its teams in by hand, and its qualifiers are seeded below every main-group qualifier. Each group can send its own number to the knockout. Leave a name empty to keep its letter.",
+              "Nommez chaque poule - tapez ce que vous voulez, ou remplissez depuis une liste - et voyez qui la compose. Les équipes sont réparties dans les poules principales d'après les têtes de série : changez l'ordre pour changer une poule, ou placez une équipe à la main (elle y reste, en gras). Une poule challenger réunit les équipes plus récentes : personne n'y est réparti, placez-y ses équipes à la main, et ses qualifiés sont classés derrière tous ceux des poules principales. Chaque poule peut envoyer son propre nombre en phase finale. Laissez un nom vide pour garder la lettre.",
             )}
           </p>
           <GroupNamesEditor
             names={groupNames}
             onChange={setGroupNames}
             disabled={busy}
-            extra={(g) =>
-              groups ? (
-                <div className="row" style={{ gap: "0.3rem 0.8rem", paddingLeft: "5.1rem", fontSize: "0.82rem" }}>
-                  {groups[g].map((id) => (
-                    <span key={id}>
-                      {names.get(id)} <PowerTag info={powers?.get(id)} />
-                    </span>
-                  ))}
+            extra={(g) => (
+              <div className="stack" style={{ gap: "0.35rem", paddingLeft: "5.1rem", fontSize: "0.82rem" }}>
+                <div className="row" style={{ gap: "0.4rem 1.2rem" }}>
+                  {format.knockout && (
+                    <label className="row" style={{ gap: "0.35rem" }}>
+                      <span className="muted">{t("Top", "Les")}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={pools[g]?.advance ?? ""}
+                        disabled={busy}
+                        onChange={(e) => setPool(g, { advance: Number(e.target.value) })}
+                        style={{ width: "4rem" }}
+                      />
+                      <span className="muted">{t("go through", "premiers passent")}</span>
+                    </label>
+                  )}
+                  <label className="row" style={{ gap: "0.35rem" }}>
+                    <input type="checkbox" checked={pools[g]?.challenger ?? false} disabled={busy} onChange={(e) => setPool(g, { challenger: e.target.checked })} />
+                    <span>{t("Challenger group", "Poule challenger")}</span>
+                  </label>
                 </div>
-              ) : (
-                <span className="muted" style={{ paddingLeft: "5.1rem", fontSize: "0.78rem" }}>
-                  {t("Not enough teams yet to fill every group.", "Pas encore assez d'équipes pour remplir chaque poule.")}
-                </span>
-              )
-            }
+                {groups ? (
+                  <div className="row" style={{ gap: "0.3rem 0.8rem" }}>
+                    {groups[g].length === 0 && (
+                      <span className="muted">{t("Nobody yet - put teams in below.", "Personne pour l'instant - placez des équipes ci-dessous.")}</span>
+                    )}
+                    {groups[g].map((id) =>
+                      placement[id] === g ? (
+                        <span key={id}>
+                          <strong>{names.get(id)}</strong> <PowerTag info={powers?.get(id)} />{" "}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            style={{ padding: "0 0.4rem", fontSize: "0.75rem" }}
+                            title={t("Take out - back to the seeded deal", "Retirer - retour à la répartition par têtes de série")}
+                            aria-label={t(`Take ${names.get(id)} out of this group`, `Retirer ${names.get(id)} de cette poule`)}
+                            onClick={() => place(id, null)}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ) : (
+                        <span key={id}>
+                          {names.get(id)} <PowerTag info={powers?.get(id)} />
+                        </span>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <span className="muted" style={{ fontSize: "0.78rem" }}>
+                    {t("Not enough teams yet to fill every group.", "Pas encore assez d'équipes pour remplir chaque poule.")}
+                  </span>
+                )}
+                <div>
+                  <select value="" disabled={busy} onChange={(e) => e.target.value && place(e.target.value, g)} style={{ fontSize: "0.8rem" }}>
+                    <option value="">{t("Put a team in this group...", "Placer une équipe dans cette poule...")}</option>
+                    {order
+                      .filter((team) => placement[team.id] !== g)
+                      .map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            )}
           />
         </div>
       )}

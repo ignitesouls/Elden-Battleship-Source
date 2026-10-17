@@ -8,6 +8,8 @@ export interface TeamPowerInfo {
   /** How many of its players the archive knows anything about. */
   rated: number;
   size: number;
+  /** Each player's own reading, in roster order - undefined for one the archive has never seen. */
+  players: Array<PlayerPower | undefined>;
 }
 
 /**
@@ -47,7 +49,7 @@ export function useTeamPowers(rosters: ReadonlyMap<string, readonly string[]>, r
     for (const [team, roster] of rosters) {
       const list = roster.map((id) => players.get(id));
       const power = teamPower(list);
-      if (power !== null) out.set(team, { power, rated: ratedCount(list), size: roster.length });
+      if (power !== null) out.set(team, { power, rated: ratedCount(list), size: roster.length, players: list });
     }
     return out;
   }, [players, rosters]);

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { forfeitMatchById, setRoundWindow } from "../../../lib/tournament/api";
+import { forfeitMatchById } from "../../../lib/tournament/api";
 import { useLanguage, useT } from "../../../lib/language";
+import { ExtendButtons, ExtendDays } from "./ExtendButtons";
 import type { DeskData } from "./useDeskData";
 
 export type DeskAct = (action: () => Promise<unknown>) => Promise<void>;
@@ -9,36 +10,22 @@ export type DeskAct = (action: () => Promise<unknown>) => Promise<void>;
  * The matches that are past their deadline, and what to do about each.
  *
  * Deadlines are advisory: nothing here (or in the database) forfeits anyone by itself. An overdue match
- * is a line on this list, and the administrator decides - forfeit whoever didn't turn up, give the round
- * more time, or leave it be. Chasing the teams is done by hand, in Discord.
+ * is a line on this list, and the administrator decides - forfeit whoever didn't turn up, give the match
+ * (or its whole round) more time, or leave it be. Time can also be given before a deadline, from Results. Chasing the teams is done by hand, in Discord.
  */
 export function OverduePanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
   const t = useT();
   const lang = useLanguage();
   const [extra, setExtra] = useState(3);
-  const stored = data.stored;
-  if (!stored || data.overdue.length === 0) return null;
+  if (!data.stored || data.overdue.length === 0) return null;
 
-  const byKey = new Map(stored.matches.map((m) => [m.key, m]));
   const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric" });
   const daysLate = (iso: string) => Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 86_400_000));
-
-  /** Moves the deadline of the match's whole round, which is what "give them more time" means. */
-  async function extend(key: string) {
-    const m = byKey.get(key);
-    if (!m || !m.opensAt || !m.dueAt) return;
-    const due = new Date(Date.parse(m.dueAt) + extra * 86_400_000).toISOString();
-    await setRoundWindow(data.event!.id, m.stage, m.phase, m.opensAt, due);
-  }
 
   return (
     <div className="panel stack" style={{ borderColor: "rgba(212, 80, 63, 0.7)" }}>
       <h3>{t(`Overdue (${data.overdue.length})`, `En retard (${data.overdue.length})`)}</h3>
-      <div className="row">
-        <span className="muted">{t("Giving a round more time adds", "Accorder plus de temps à un tour ajoute")}</span>
-        <input type="number" min={1} value={extra} onChange={(e) => setExtra(Number(e.target.value))} style={{ width: "4.5rem" }} />
-        <span className="muted">{t("days.", "jours.")}</span>
-      </div>
+      <ExtendDays days={extra} onChange={setExtra} />
       <div className="t-list">
         {data.overdue.map((o) => {
           const a = o.entrant_a ? data.names.get(o.entrant_a) ?? "?" : "?";
@@ -61,9 +48,7 @@ export function OverduePanel({ data, act, busy }: { data: DeskData; act: DeskAct
                 <button className="danger" disabled={busy} onClick={() => void act(() => forfeitMatchById(o.match_id, "b"))}>
                   {t(`${b} forfeits`, `${b} déclare forfait`)}
                 </button>
-                <button disabled={busy} onClick={() => void act(() => extend(o.match_key))}>
-                  {t("Give the round more time", "Donner plus de temps")}
-                </button>
+                <ExtendButtons matchId={o.match_id} days={extra} act={act} busy={busy} />
               </div>
             </div>
           );

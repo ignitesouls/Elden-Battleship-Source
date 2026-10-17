@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { LOGO_SIZE, LogoImageError, makeLogo } from "../../lib/tournament/logoImage";
-import { clearTeamLogo, setTeamLogo } from "../../lib/tournament/api";
+import { clearTeamLogo, setTeamLogo, twitchUrl } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 
 /**
@@ -14,13 +15,14 @@ export const DEFAULT_TEAM_LOGO = `${import.meta.env.BASE_URL}ignite_logo.png`;
 /**
  * A team's logo, sized in rem so it scales with the text beside it: its own if it has one, the default if
  * not (or if its own fails to load). `empty` is for a slot with no team in it yet - a "TBD" in the bracket -
- * which keeps the logo's space, blank, so the names in a column still line up.
+ * which keeps the logo's space, blank, so the names in a column still line up. `size="fill"` fills its
+ * container instead, for a frame whose size is set in CSS (the tale of the tape's portholes).
  */
-export function TeamLogo({ url, size = 1.3, empty = false }: { url: string | null | undefined; size?: number; empty?: boolean }) {
+export function TeamLogo({ url, size = 1.3, empty = false }: { url: string | null | undefined; size?: number | "fill"; empty?: boolean }) {
   // Every address that has failed to load, so a broken logo falls back to the default and a broken default
   // to a blank - never back and forth between the two.
   const [failed, setFailed] = useState<string[]>([]);
-  const style = { width: `${size}rem`, height: `${size}rem` };
+  const style = size === "fill" ? { width: "100%", height: "100%" } : { width: `${size}rem`, height: `${size}rem` };
   const src = [url, DEFAULT_TEAM_LOGO].find((s): s is string => !!s && !failed.includes(s));
   if (empty || !src) return <span className="team-logo team-logo--empty" style={style} aria-hidden />;
   // Decorative: the team's name always sits right beside it.
@@ -33,6 +35,107 @@ export function TeamLabel({ name, logo, size, empty, className }: { name: ReactN
     <span className="team-label">
       <TeamLogo url={logo} size={size} empty={empty} />
       <span className={`team-label__name${className ? ` ${className}` : ""}`}>{name}</span>
+    </span>
+  );
+}
+
+/**
+ * A team's name (or label) as the way into its tale of the tape. Without an event id it is just what it
+ * wraps - the same tables show on pages that link and ones that don't.
+ */
+export function TeamLink({ eventId, teamId, children }: { eventId?: string; teamId: string; children: ReactNode }) {
+  if (!eventId) return <>{children}</>;
+  return (
+    <Link to={`/event/${eventId}/team/${teamId}`} className="team-link">
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * A player's name as a link to their Twitch channel, in a new tab. Plain text for an account with no
+ * Twitch login on file (one that never signed in through Twitch).
+ */
+export function PlayerName({ name, login, className }: { name: ReactNode; login: string | null | undefined; className?: string }) {
+  const t = useT();
+  const url = twitchUrl(login);
+  if (!url) return className ? <span className={className}>{name}</span> : <>{name}</>;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className={`player-name${className ? ` ${className}` : ""}`}
+      title={t(`${login} on Twitch`, `${login} sur Twitch`)}
+    >
+      {name}
+    </a>
+  );
+}
+
+/**
+ * A crew's players, comma-separated, each name opening their Twitch. `logins` maps account ids to Twitch
+ * logins (useProfileBits); a player missing from it is plain text. `captain` marks the captain " (c)".
+ */
+export function RosterNames({
+  roster,
+  logins,
+  captain = false,
+}: {
+  roster: ReadonlyArray<{ user_id: string; display_name: string; is_captain?: boolean }>;
+  logins: ReadonlyMap<string, { twitch_login: string | null }> | undefined;
+  captain?: boolean;
+}) {
+  return (
+    <>
+      {roster.map((m, i) => (
+        <span key={m.user_id}>
+          {i > 0 && ", "}
+          <PlayerName name={m.display_name} login={logins?.get(m.user_id)?.twitch_login} />
+          {captain && m.is_captain && " (c)"}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
+ * An entrant's logo and name in a table, bracket or list, opening its tale of the tape (see TeamLink).
+ * In an individual event, where the entrant is one player, `twitch` is their login: the NAME then goes to
+ * their Twitch channel and the logo (their avatar) keeps the way to the tale of the tape.
+ */
+export function EntrantLabel({
+  eventId,
+  teamId,
+  name,
+  logo,
+  twitch,
+  size,
+  className,
+}: {
+  eventId?: string;
+  teamId: string;
+  name: ReactNode;
+  logo: string | null | undefined;
+  twitch?: string | null;
+  size?: number;
+  className?: string;
+}) {
+  if (!twitchUrl(twitch)) {
+    return (
+      <TeamLink eventId={eventId} teamId={teamId}>
+        <TeamLabel name={name} logo={logo} size={size} className={className} />
+      </TeamLink>
+    );
+  }
+  return (
+    <span className="team-label">
+      <TeamLink eventId={eventId} teamId={teamId}>
+        <TeamLogo url={logo} size={size} />
+      </TeamLink>
+      <span className={`team-label__name${className ? ` ${className}` : ""}`}>
+        <PlayerName name={name} login={twitch} />
+      </span>
     </span>
   );
 }

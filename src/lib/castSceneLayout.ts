@@ -89,6 +89,45 @@ export function casterCamRects(): Rect[] {
   ];
 }
 
+/* ======================================================================================
+ *  The player frame - one crew member's own stream, not a broadcast.
+ *
+ *  Same rule as above: public/frames/player-overlay.png is the source of truth and every rect is
+ *  one of its transparent holes measured to the pixel. The game hole is 1319 x 742, 16:9 to the
+ *  pixel, so a game capture fills it with no bars.
+ * ==================================================================================== */
+
+/** The player frame art, and the same art with each hole named after the source that goes in it. */
+export const PLAYER_ART = {
+  frame: "frames/player-overlay.png",
+  guide: "frames/player-overlay-guide.png",
+};
+
+/** The fire board: the square hole in the top-left corner. */
+export function playerFireRect(): Rect {
+  return { x: 0, y: 0, w: 594, h: 594 };
+}
+
+/** The gameplay: the big 16:9 hole across the top right. */
+export function playerGameRect(): Rect {
+  return { x: 600, y: 0, w: 1319, h: 742 };
+}
+
+/** The player's own fleet: the square hole under the fire board. */
+export function playerFleetRect(): Rect {
+  return { x: 100, y: 640, w: 400, h: 400 };
+}
+
+/** The webcam: the small hole under the gameplay. */
+export function playerCamRect(): Rect {
+  return { x: 600, y: 778, w: 372, h: 276 };
+}
+
+/** Every hole in the player frame, for the preview and for the "nothing off canvas" check. */
+export function playerSceneRects(): Rect[] {
+  return [playerFireRect(), playerGameRect(), playerFleetRect(), playerCamRect()];
+}
+
 /** A rect as fractions of the canvas, for a CSS-positioned preview. */
 export function frac(r: Rect): { left: number; top: number; width: number; height: number } {
   return {

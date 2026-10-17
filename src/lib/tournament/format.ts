@@ -1,5 +1,6 @@
 import type { KnockoutOptions } from "./bracket";
-import { assignGroups } from "./groups";
+import { groupLabel } from "./groupNames";
+import { dealGroups } from "./groups";
 import { recommendedSwissRounds } from "./swiss";
 
 /**
@@ -14,18 +15,38 @@ import { recommendedSwissRounds } from "./swiss";
  * A group stage exists to seed the knockout, so a group format never says how many teams to cut to -
  * it says how many to take from each group, and the total follows from that. Making the organizer
  * type the total as well would just be a second number that has to agree with the first.
+ *
+ * Groups need not be alike. A CHALLENGER group holds newer teams, put there by hand so they play each
+ * other rather than being fed to the strongest, and it usually sends fewer to the knockout - two from
+ * the challenger group and three from each main group, say. Challenger qualifiers are seeded below
+ * every main-group qualifier (see seedFromGroups).
  */
+export interface GroupPool {
+  /** Teams this group sends to the knockout. */
+  advance: number;
+  challenger: boolean;
+}
+
+export type GroupsQualifier = {
+  format: "groups";
+  groupCount: number;
+  /** Teams taken from each group. Required once there is a knockout to take them to. */
+  advancePerGroup?: number;
+  /**
+   * Per group, by group number, overriding advancePerGroup. Absent on events made before groups could
+   * differ, which read as every group sending advancePerGroup and none being a challenger.
+   */
+  pools?: GroupPool[];
+  /** Team id -> group number, for teams the organizer put in a group by hand. See dealGroups. */
+  placement?: Record<string, number>;
+  legs: 1 | 2;
+  bestOf: number;
+};
+
 export type QualifierConfig =
   | { format: "none" }
   | { format: "swiss"; rounds: number; bestOf: number }
-  | {
-      format: "groups";
-      groupCount: number;
-      /** Teams taken from each group. Required once there is a knockout to take them to. */
-      advancePerGroup?: number;
-      legs: 1 | 2;
-      bestOf: number;
-    };
+  | GroupsQualifier;
 
 export interface KnockoutConfig extends KnockoutOptions {
   /**
@@ -40,12 +61,61 @@ export interface TournamentFormat {
   knockout: KnockoutConfig | null;
 }
 
+/** The group count, or 0 while the box holds something that is not one. */
+const groupCountOf = (q: GroupsQualifier) => (Number.isInteger(q.groupCount) && q.groupCount > 0 ? Math.min(q.groupCount, 512) : 0);
+
+/** Every group's settings, one per group, whichever way the format was saved. */
+export function groupPools(q: GroupsQualifier): GroupPool[] {
+  return Array.from({ length: groupCountOf(q) }, (_, g) => ({
+    advance: q.pools?.[g]?.advance ?? q.advancePerGroup ?? 0,
+    challenger: q.pools?.[g]?.challenger ?? false,
+  }));
+}
+
+/** The groups for these entrants (best seed first): hand placements honoured, the rest dealt by seed. */
+export function groupsFor(q: GroupsQualifier, seeded: string[]): string[][] {
+  return dealGroups(seeded, groupCountOf(q), { placement: q.placement, challenger: groupPools(q).map((p) => p.challenger) });
+}
+
+/**
+ * How many teams each group will hold for a field of `n`. Only the NUMBER placed in each group matters
+ * to the sizes, so this works from the placement alone - which assumes it names only teams still in the
+ * event (see prunePlacement).
+ */
+export function groupSizes(q: GroupsQualifier, n: number): number[] {
+  const count = groupCountOf(q);
+  const placed = Object.values(q.placement ?? {}).filter((g) => Number.isInteger(g) && g >= 0 && g < count).slice(0, n);
+  const dummy = Array.from({ length: n }, (_, i) => String(i));
+  const placement = Object.fromEntries(placed.map((g, i) => [String(i), g]));
+  return dealGroups(dummy, count, { placement, challenger: groupPools(q).map((p) => p.challenger) }).map((g) => g.length);
+}
+
+/** The format with any hand placement of a team that is not among `ids` dropped. */
+export function prunePlacement(format: TournamentFormat, ids: readonly string[]): TournamentFormat {
+  const q = format.qualifier;
+  if (q.format !== "groups" || !q.placement) return format;
+  const keep = new Set(ids);
+  const placement = Object.fromEntries(Object.entries(q.placement).filter(([id]) => keep.has(id)));
+  return { ...format, qualifier: { ...q, placement } };
+}
+
+/**
+ * Where the knockout line falls in each standings table - one per group, or the one Swiss table - or
+ * undefined when nothing is cut (no knockout, or no qualifier to cut from).
+ */
+export function tableCuts(format: TournamentFormat): number[] | undefined {
+  const q = format.qualifier;
+  if (!format.knockout || q.format === "none") return undefined;
+  if (q.format === "groups") return groupPools(q).map((p) => p.advance);
+  return format.knockout.cutTo === undefined ? undefined : [format.knockout.cutTo];
+}
+
 /** How many entrants actually reach the knockout for a field of `n`. */
 export function effectiveCut(format: TournamentFormat, n: number): number {
   if (!format.knockout) return 0;
   const q = format.qualifier;
   if (q.format === "none") return n;
-  if (q.format === "groups") return (q.advancePerGroup ?? 0) * q.groupCount;
+  if (q.format === "groups") return groupPools(q).reduce((sum, p) => sum + p.advance, 0);
   return format.knockout.cutTo ?? 0;
 }
 
@@ -75,6 +145,13 @@ export function validateFormat(format: TournamentFormat, n: number): string[] {
     if (!Number.isInteger(qualifier.groupCount) || qualifier.groupCount < 1) errors.push("Choose at least one group.");
     else if (qualifier.groupCount > Math.floor(n / 2)) {
       errors.push(`${n} entrants can fill at most ${Math.floor(n / 2)} groups of two or more.`);
+    } else {
+      // Only once the count itself is sensible, or every group would repeat the same complaint. Hand
+      // placement can leave a group short even when the count is fine - a challenger group nobody has
+      // been put in yet, most often.
+      groupSizes(qualifier, n).forEach((size, g) => {
+        if (size < 2) errors.push(`${groupLabel([], g, "en")} has ${size === 0 ? "no teams" : "only one team"}; every group needs at least two.`);
+      });
     }
     if (!isBestOf(qualifier.bestOf)) errors.push("Group series length must be an odd number.");
   }
@@ -93,15 +170,18 @@ export function validateFormat(format: TournamentFormat, n: number): string[] {
     }
 
     if (qualifier.format === "groups" && Number.isInteger(qualifier.groupCount) && qualifier.groupCount >= 1) {
-      const per = qualifier.advancePerGroup;
-      // The smallest group is what limits it: a deal of 10 into 3 groups gives 4, 3 and 3.
-      const smallest = Math.floor(n / qualifier.groupCount);
-      if (per === undefined || !Number.isInteger(per) || per < 1) {
+      const pools = groupPools(qualifier);
+      // Each group's own size is what limits it: a deal of 10 into 3 groups gives 4, 3 and 3.
+      const sizes = groupSizes(qualifier, n);
+      if (pools.some((p) => !Number.isInteger(p.advance) || p.advance < 1)) {
         errors.push("Choose how many teams advance from each group.");
-      } else if (per > smallest) {
-        errors.push(`Taking ${per} from each group needs groups of at least ${per}; the smallest has ${smallest}.`);
-      } else if (per * qualifier.groupCount < 2) {
-        errors.push("The knockout needs at least 2 entrants.");
+      } else {
+        pools.forEach((p, g) => {
+          if (p.advance > sizes[g] && sizes[g] >= 2) {
+            errors.push(`Taking ${p.advance} from ${groupLabel([], g, "en")} needs at least ${p.advance} teams in it; it has ${sizes[g]}.`);
+          }
+        });
+        if (effectiveCut(format, n) < 2) errors.push("The knockout needs at least 2 entrants.");
       }
     }
   }
@@ -122,8 +202,7 @@ export function estimateMatches(format: TournamentFormat, n: number): GameEstima
   if (q.format === "swiss") {
     qualifier = q.rounds * Math.floor(n / 2);
   } else if (q.format === "groups") {
-    const sizes = assignGroups(Array.from({ length: n }, (_, i) => String(i)), q.groupCount).map((g) => g.length);
-    qualifier = sizes.reduce((sum, s) => sum + ((s * (s - 1)) / 2) * q.legs, 0);
+    qualifier = groupSizes(q, n).reduce((sum, s) => sum + ((s * (s - 1)) / 2) * q.legs, 0);
   }
 
   let knockoutMin = 0;

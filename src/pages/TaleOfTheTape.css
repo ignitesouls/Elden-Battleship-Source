@@ -1,0 +1,338 @@
+/**
+ * The tale of the tape, in the harbour's colours: each crew's logo behind a brass porthole, a rope run
+ * either side of the heading, a compass ring for the VS, and the numbers down a ship's-manifest centre
+ * line with the better side's figure picked out in brass.
+ *
+ * Portholes are sized with clamp() so two of them and the VS still sit side by side on a phone. Logos
+ * are stored at 256 px, so a porthole never grows past that - any bigger and they would go soft.
+ */
+
+.tape {
+  --tape-brass: linear-gradient(145deg, #f4d58a 0%, #b9832a 38%, #6e4a13 62%, #d9a441 100%);
+}
+
+.tape-event {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* -- The heading, between two lengths of rope ----------------------------------------------------- */
+
+.tape-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.tape-kicker h1 {
+  margin: 0;
+  flex: none;
+  font-family: var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: clamp(1.15rem, 4.5vw, 1.9rem);
+  color: var(--accent-bright);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Twisted rope: diagonal strands, light and dark, with a dark edge above and below. */
+.tape-kicker__rope {
+  flex: 1;
+  height: 9px;
+  min-width: 1.5rem;
+  border-radius: 5px;
+  background: repeating-linear-gradient(-55deg, #c79b55 0 4px, #8a6326 4px 7px, #e3c07c 7px 9px);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.35), inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+  opacity: 0.85;
+}
+
+/* -- Face to face -------------------------------------------------------------------------------------- */
+
+.tape-faceoff {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: clamp(0.4rem, 2vw, 1.4rem);
+  padding: 0.6rem 0 0.2rem;
+}
+
+.tape-faceoff--single {
+  grid-template-columns: 1fr;
+}
+
+.tape-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+  min-width: 0;
+}
+
+.tape-side a {
+  text-decoration: none;
+  max-width: 100%;
+}
+
+.tape-side__name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 3.6vw, 1.55rem);
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.tape-side a:hover .tape-side__name {
+  color: var(--accent-bright);
+}
+
+.tape-side__sub {
+  font-size: 0.8rem;
+}
+
+/* The porthole: sea-dark glass inside a brass ring with a bolted rim. */
+.tape-porthole {
+  position: relative;
+  width: clamp(7.5rem, 30vw, 16rem);
+  max-width: 256px;
+  aspect-ratio: 1;
+  padding: clamp(0.55rem, 2vw, 0.95rem);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #0c2738 0 58%, #061019 72%) content-box,
+    var(--tape-brass);
+  box-shadow:
+    0 0 0 2px #3b2708,
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 2px rgba(255, 238, 190, 0.35);
+}
+
+.tape-faceoff--single .tape-porthole {
+  width: clamp(10rem, 48vw, 16rem);
+}
+
+/* Rivets around the rim. */
+.tape-porthole::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, #3b2708 0 1.2deg, transparent 1.2deg 30deg);
+  -webkit-mask: radial-gradient(circle, transparent calc(50% - 6px), #000 calc(50% - 5px), #000 calc(50% - 2px), transparent calc(50% - 1px));
+  mask: radial-gradient(circle, transparent calc(50% - 6px), #000 calc(50% - 5px), #000 calc(50% - 2px), transparent calc(50% - 1px));
+  pointer-events: none;
+}
+
+.tape-porthole .team-logo {
+  border-radius: 50%;
+  padding: 9%;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 35% 30%, rgba(159, 216, 255, 0.12), transparent 60%);
+}
+
+/* The VS: a compass ring with its four points. */
+.tape-vs {
+  align-self: center;
+  margin-top: -1.6rem;
+  display: grid;
+  place-items: center;
+  width: clamp(2.8rem, 9vw, 4.4rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background:
+    conic-gradient(from -45deg, transparent 0 22.5deg, rgba(217, 164, 65, 0.25) 22.5deg 67.5deg, transparent 67.5deg 112.5deg, rgba(217, 164, 65, 0.25) 112.5deg 157.5deg, transparent 157.5deg 202.5deg, rgba(217, 164, 65, 0.25) 202.5deg 247.5deg, transparent 247.5deg 292.5deg, rgba(217, 164, 65, 0.25) 292.5deg 337.5deg, transparent 337.5deg),
+    var(--panel);
+  box-shadow: 0 0 0 4px var(--bg), 0 0 18px rgba(217, 164, 65, 0.35);
+}
+
+.tape-vs span {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(0.9rem, 3vw, 1.35rem);
+  color: var(--accent-bright);
+  letter-spacing: 0.05em;
+}
+
+.tape-next {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.tape-next strong {
+  color: var(--text);
+}
+
+/* -- The tape ------------------------------------------------------------------------------------------- */
+
+.tape-panel {
+  padding: 0.4rem 0.9rem;
+  border-color: rgba(217, 164, 65, 0.45);
+}
+
+.tape-rows__row {
+  display: grid;
+  grid-template-columns: 1fr minmax(6.5rem, auto) 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tape-rows__row + .tape-rows__row {
+  border-top: 1px dashed rgba(139, 167, 184, 0.25);
+}
+
+.tape-rows--single .tape-rows__row {
+  grid-template-columns: minmax(7rem, 1fr) 1fr;
+}
+
+.tape-rows__label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: center;
+  cursor: default;
+}
+
+.tape-rows--single .tape-rows__label {
+  text-align: left;
+}
+
+.tape-rows__value {
+  font-size: clamp(0.95rem, 3vw, 1.2rem);
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tape-rows__value small {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.tape-rows__value--a {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.tape-rows__value--b {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.tape-rows--single .tape-rows__value {
+  text-align: right;
+  align-items: flex-end;
+}
+
+/* The better side: brass, glowing faintly. */
+.tape-rows__value.is-edge {
+  color: var(--accent-bright);
+  text-shadow: 0 0 12px rgba(240, 189, 92, 0.45);
+}
+
+/* -- Comparing, voyages, crews --------------------------------------------------------------------------- */
+
+.tape-measure {
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.tape-crews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0.8rem;
+}
+
+.tape-crew {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tape-mate {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(6, 16, 24, 0.35);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.tape-mate .team-logo {
+  border-radius: 50%;
+}
+
+/* The avatar is the way to the player's career (their name goes to Twitch), so it lights up on its own. */
+.tape-mate__career {
+  display: flex;
+  border-radius: 50%;
+}
+
+.tape-mate__career:hover .team-logo,
+.tape-mate__career:focus-visible .team-logo {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.tape-mate__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tape-mate__who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tape-mate__captain {
+  font-size: 0.68rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tape-mate__numbers {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 0.6rem;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.tape-mate__numbers small {
+  grid-column: 1 / -1;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+@media (max-width: 480px) {
+  .tape-panel {
+    padding: 0.3rem 0.55rem;
+  }
+  .tape-rows__row {
+    grid-template-columns: 1fr minmax(5rem, auto) 1fr;
+    gap: 0.35rem;
+  }
+  .tape-rows__label {
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+  }
+}

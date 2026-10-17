@@ -26,12 +26,14 @@ import {
   type AdminTeamRow,
   type FreeAgentRow,
   type NewEvent,
+  type PlayerProfileBits,
 } from "../lib/tournament/api";
 import { EVENT_LOGO_SIZE } from "../lib/tournament/logoImage";
 import { useT } from "../lib/language";
-import { AdminLogoButtons, LogoField, TeamLabel } from "./event/TeamLogo";
+import { AdminLogoButtons, LogoField, PlayerName, RosterNames, TeamLabel } from "./event/TeamLogo";
 import { EventLogo } from "./event/EventLogo";
 import { PowerTag } from "./event/PowerLine";
+import { useProfileBits } from "../hooks/useProfileBits";
 import { useTeamPowers } from "../hooks/useTeamPowers";
 import "./Tournament.css";
 
@@ -514,6 +516,12 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
     [teams],
   );
   const powers = useTeamPowers(rosters);
+  // Twitch logins, so every player's name opens their channel - rostered players and the solo pool alike.
+  const playerIds = useMemo(
+    () => [...(teams ?? []).flatMap((team) => team.roster.map((m) => m.user_id)), ...agents.map((a) => a.user_id)],
+    [teams, agents],
+  );
+  const profiles = useProfileBits(playerIds);
 
   if (teams === null) return <p className="muted" style={{ margin: 0 }}>{t("Loading...", "Chargement...")}</p>;
 
@@ -558,10 +566,10 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                 {/* Before the start, a team's roster can be edited here - for players who never found the
                     invitation's Join button. After that, roster changes are the desk's substitutions. */}
                 {canDelete && event.team_size > 1 && (team.status === "pending" || team.status === "approved") ? (
-                  <RosterEditor team={team} teamSize={event.team_size} busy={busy} onTeam={onTeam} />
+                  <RosterEditor team={team} teamSize={event.team_size} busy={busy} onTeam={onTeam} profiles={profiles} />
                 ) : (
                   <span className="muted" style={{ fontSize: "0.8rem" }}>
-                    {team.roster.map((m) => m.display_name + (m.is_captain ? " (c)" : "")).join(", ")}
+                    <RosterNames roster={team.roster} logins={profiles} captain />
                   </span>
                 )}
                 {team.entry_code && (
@@ -609,7 +617,7 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
           <div className="t-list">
             {agents.map((a) => (
               <div className="t-item" key={a.id}>
-                <strong>{a.display_name}</strong>
+                <strong><PlayerName name={a.display_name} login={profiles.get(a.user_id)?.twitch_login} /></strong>
                 {a.note && <span className="muted" style={{ fontSize: "0.8rem" }}>{a.note}</span>}
                 {canDelete && (
                   <button
@@ -642,8 +650,8 @@ const SMALL_BUTTON = { fontSize: "0.72rem", padding: "0.15rem 0.45rem" } as cons
  * database checks each one (roster full, on another team, never signed in) and says why in its own words.
  */
 function RosterEditor({
-  team, teamSize, busy, onTeam,
-}: { team: AdminTeamRow; teamSize: number; busy: boolean; onTeam: (action: () => Promise<unknown>) => Promise<void> }) {
+  team, teamSize, busy, onTeam, profiles,
+}: { team: AdminTeamRow; teamSize: number; busy: boolean; onTeam: (action: () => Promise<unknown>) => Promise<void>; profiles: Map<string, PlayerProfileBits> }) {
   const t = useT();
   const [login, setLogin] = useState("");
   const full = team.roster.length >= teamSize;
@@ -653,7 +661,7 @@ function RosterEditor({
       {team.roster.map((m) => (
         <div key={m.user_id} className="row" style={{ gap: "0.4rem" }}>
           <span className="muted">
-            {m.display_name}
+            <PlayerName name={m.display_name} login={profiles.get(m.user_id)?.twitch_login} />
             {m.is_captain && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("captain", "capitaine")}</span>}
           </span>
           {!m.is_captain && (
@@ -681,7 +689,8 @@ function RosterEditor({
       {team.pending_invite_list.map((invite) => (
         <div key={invite.id} className="row" style={{ gap: "0.4rem" }}>
           <span className="muted" style={{ fontStyle: "italic" }}>
-            {t(`${invite.twitch_login} - invited, hasn't joined`, `${invite.twitch_login} - invité, n'a pas rejoint`)}
+            <PlayerName name={invite.twitch_login} login={invite.twitch_login} />
+            {t(" - invited, hasn't joined", " - invité, n'a pas rejoint")}
           </span>
           {!full && (
             <button style={SMALL_BUTTON} disabled={busy} onClick={() => void onTeam(() => adminAddToRoster(team.id, invite.twitch_login))}>

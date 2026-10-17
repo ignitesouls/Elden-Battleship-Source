@@ -198,6 +198,32 @@ textarea:focus {
   white-space: nowrap;
 }
 
+/* A team's name that opens its tale of the tape: reads as the name, not as a link, until hovered. */
+a.team-link {
+  color: inherit;
+  text-decoration: none;
+  max-width: 100%;
+}
+
+a.team-link:hover .team-label__name {
+  color: var(--accent-bright);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A player's name that opens their Twitch: the name's own colour, with a faint dotted underline so it
+   can be found, turning solid and bright on hover. */
+a.player-name {
+  color: inherit;
+  text-decoration: underline dotted rgba(217, 164, 65, 0.55);
+  text-underline-offset: 2px;
+}
+
+a.player-name:hover {
+  color: var(--accent-bright);
+  text-decoration: underline solid;
+}
+
 /* The signed-in player's next match, at the top of the event page. */
 .next-match {
   border-color: rgba(217, 164, 65, 0.6);

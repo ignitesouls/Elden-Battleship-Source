@@ -121,6 +121,8 @@ export interface MatchRow {
   opens_at: string | null;
   due_at: string | null;
   agreed_at: string | null;
+  /** The account that last set (or cleared) agreed_at - a captain, or an administrator. */
+  agreed_by: string | null;
 }
 
 // ===========================================================================
@@ -227,7 +229,7 @@ export async function fetchMatches(eventId: string): Promise<MatchRow[]> {
   const { data, error } = await supabase
     .from("tournament_matches")
     .select(
-      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at",
+      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at, agreed_by",
     )
     .eq("tournament_id", eventId)
     .order("phase", { ascending: true })
@@ -321,6 +323,38 @@ export async function renameTeam(entrantId: string, name: string): Promise<void>
   if (error) fail(error);
 }
 
+// -- The top bar's way into a crew's quarters --------------------------------------------------------
+
+export interface MyCrew {
+  event_id: string;
+  event_name: string;
+  event_status: "signup" | "live";
+  team_name: string;
+}
+
+/**
+ * The approved teams `userId` is rostered on in events open for signup or running - the crews whose
+ * quarters the top bar links to. One request; live events first. Approved rosters and visible events
+ * are public, so this needs no function of its own.
+ */
+export async function fetchMyCrews(userId: string): Promise<MyCrew[]> {
+  const { data, error } = await supabase
+    .from("tournament_entrants")
+    .select("name, tournament:tournaments!tournament_entrants_tournament_id_fkey!inner(id, name, status), tournament_roster!inner(user_id)")
+    .eq("status", "approved")
+    .is("forfeited_at", null)
+    .eq("tournament_roster.user_id", userId)
+    .in("tournament.status", ["signup", "live"]);
+  if (error) fail(error);
+  type Row = { name: string; tournament: { id: string; name: string; status: MyCrew["event_status"] } | Array<{ id: string; name: string; status: MyCrew["event_status"] }> };
+  return ((data ?? []) as unknown as Row[])
+    .map((row) => {
+      const ev = Array.isArray(row.tournament) ? row.tournament[0] : row.tournament;
+      return { event_id: ev.id, event_name: ev.name, event_status: ev.status, team_name: row.name };
+    })
+    .sort((a, b) => (a.event_status === b.event_status ? 0 : a.event_status === "live" ? -1 : 1));
+}
+
 // -- Players' public profile bits ---------------------------------------------------------------------
 
 export interface PlayerProfileBits {
@@ -349,6 +383,30 @@ export async function fetchProfileBits(userIds: string[]): Promise<Map<string, P
 export function multitwitchUrl(logins: Array<string | null | undefined>): string | null {
   const clean = [...new Set(logins.filter((l): l is string => !!l && /^[a-zA-Z0-9_]{2,25}$/.test(l)).map((l) => l.toLowerCase()))];
   return clean.length > 0 ? `https://www.multitwitch.tv/${clean.join("/")}` : null;
+}
+
+/** One player's Twitch channel, or null for anything that isn't a Twitch login - same rule as multitwitchUrl. */
+export function twitchUrl(login: string | null | undefined): string | null {
+  return login && /^[a-zA-Z0-9_]{2,25}$/.test(login) ? `https://www.twitch.tv/${login.toLowerCase()}` : null;
+}
+
+/**
+ * Each entrant's Twitch login by team id, in an individual event - where a "team" is one player, so its
+ * name in the standings, bracket and match list is that player's name and links to their channel. Empty
+ * for a team event (`profiles` not given): a crew's name is not anybody's channel. Keyed from the captain,
+ * who in an individual event is the only player; see teamLogos.
+ */
+export function entrantTwitch(
+  teams: Pick<TeamRow, "id" | "captain_user_id">[],
+  profiles?: Map<string, PlayerProfileBits>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!profiles) return out;
+  for (const team of teams) {
+    const login = profiles.get(team.captain_user_id)?.twitch_login;
+    if (login) out.set(team.id, login);
+  }
+  return out;
 }
 
 // -- The front page's official matches -----------------------------------------------------------------
@@ -1040,6 +1098,17 @@ export interface OverdueRow {
   entrant_a: string | null;
   entrant_b: string | null;
   agreed_at: string | null;
+}
+
+/**
+ * Gives a match more time - or, with `wholeRound`, every match in its round still to be decided. Adds
+ * `days` to each match's own deadline, so one already extended keeps its lead. Any time, not only once
+ * overdue. Returns how many matches moved.
+ */
+export async function extendDeadline(matchId: string, days: number, wholeRound: boolean): Promise<number> {
+  const { data, error } = await supabase.rpc("extend_tournament_deadline", { p_match: matchId, p_days: days, p_whole_round: wholeRound });
+  if (error) fail(error);
+  return data as number;
 }
 
 /** Open matches past their deadline, oldest first, by the database's clock. */

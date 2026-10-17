@@ -18,6 +18,52 @@ export function assignGroups(seeded: string[], groupCount: number): string[][] {
 }
 
 /**
+ * Deals entrants into groups when the organizer has put some of them in a group by hand - which is how a
+ * challenger group of newer teams is filled.
+ *
+ * A hand-placed team goes where it was put. Everyone else is dealt from the seeding into the MAIN groups
+ * only (every group, if all of them are challengers), always to a group that is currently smallest,
+ * walking the same snake as assignGroups to choose among those. With nobody placed and no challengers
+ * that is exactly assignGroups; with a few placed it tops the other groups up evenly around them.
+ *
+ * Each group lists its teams best seed first, as assignGroups does.
+ */
+export function dealGroups(
+  seeded: string[],
+  groupCount: number,
+  { placement = {}, challenger = [] }: { placement?: Readonly<Record<string, number>>; challenger?: readonly boolean[] } = {},
+): string[][] {
+  if (!Number.isInteger(groupCount) || groupCount < 1) return [];
+  const groups: string[][] = Array.from({ length: groupCount }, () => []);
+  const free: string[] = [];
+  for (const id of seeded) {
+    const g = placement[id];
+    if (Number.isInteger(g) && g >= 0 && g < groupCount) groups[g].push(id);
+    else free.push(id);
+  }
+
+  const all = groups.map((_, g) => g);
+  const main = all.filter((g) => !challenger[g]);
+  const targets = main.length > 0 ? main : all;
+  const snake = (turn: number) => {
+    const row = Math.floor(turn / targets.length);
+    const col = turn % targets.length;
+    return targets[row % 2 === 0 ? col : targets.length - 1 - col];
+  };
+  let turn = 0;
+  for (const id of free) {
+    const smallest = Math.min(...targets.map((g) => groups[g].length));
+    // Every target is visited once per row of the snake, so a smallest one turns up within a row.
+    let g = snake(turn++);
+    while (groups[g].length !== smallest) g = snake(turn++);
+    groups[g].push(id);
+  }
+
+  const rank = new Map(seeded.map((id, i) => [id, i]));
+  return groups.map((group) => group.sort((x, y) => rank.get(x)! - rank.get(y)!));
+}
+
+/**
  * A single round-robin as a list of rounds, each a list of pairings, by the circle method: one
  * entrant stays put and the rest rotate around them. Every entrant meets every other exactly once,
  * and nobody plays twice in a round. An odd field gets a phantom entrant, and whoever draws it

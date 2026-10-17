@@ -3,6 +3,8 @@ import { formTeamFromPool, placeFromPool, type FreeAgentRow } from "../../../lib
 import { ratingSpread, suggestPairings, type PairingMode } from "../../../lib/tournament/pairing";
 import { fetchCareerRatings } from "../../../lib/tournament/ratings";
 import { useT } from "../../../lib/language";
+import { useProfileBits } from "../../../hooks/useProfileBits";
+import { PlayerName, RosterNames } from "../../event/TeamLogo";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
@@ -40,6 +42,9 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitingKey]);
+  // Twitch logins, so each player's name opens their channel.
+  const waitingIds = useMemo(() => waiting.map((w) => w.user_id), [waiting]);
+  const profiles = useProfileBits(waitingIds);
 
   if (!event || (event.status !== "signup" && event.status !== "live") || event.team_size === 1) return null;
   if (waiting.length === 0) return null;
@@ -47,6 +52,8 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
   const canForm = event.status === "signup";
   const byUser = new Map(waiting.map((w) => [w.user_id, w]));
   const nameOf = (id: string) => byUser.get(id)?.display_name ?? "?";
+  /** Players by id as a comma-separated list of names, each opening their Twitch. */
+  const playersOf = (ids: string[]) => <RosterNames roster={ids.map((id) => ({ user_id: id, display_name: nameOf(id) }))} logins={profiles} />;
 
   // Teams that can take more players: still short of a full team, and in the event. A place somebody
   // has been invited to is spoken for - a pair whose partner hasn't accepted yet needs one solo, not two.
@@ -94,7 +101,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
                   }}
                 />
               )}
-              <strong>{w.display_name}</strong>
+              <strong><PlayerName name={w.display_name} login={profiles.get(w.user_id)?.twitch_login} /></strong>
               {ratings.has(w.user_id) ? (
                 <span className="badge" title={t("Smoothed career win rate", "Taux de victoire de carrière lissé")}>{Math.round(ratings.get(w.user_id)! * 100)}</span>
               ) : (
@@ -124,7 +131,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
             <div key={fill.teamId} className="row" style={{ justifyContent: "space-between" }}>
               <span>
                 <strong>{openName(fill.teamId)}</strong>
-                {isPair(fill.teamId) && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("pair", "duo")}</span>} ← {fill.playerIds.map(nameOf).join(", ")}
+                {isPair(fill.teamId) && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("pair", "duo")}</span>} ← {playersOf(fill.playerIds)}
               </span>
               <button className="primary" disabled={busy} onClick={() => void act(async () => { for (const id of fill.playerIds) await placeFromPool(fill.teamId, id); })}>
                 {t("Place them", "Les placer")}
@@ -146,7 +153,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
             <div key={team.join("|")} className="row" style={{ border: "1px solid var(--panel-border)", borderRadius: 8, padding: "0.5rem", justifyContent: "space-between" }}>
               <div className="stack" style={{ gap: "0.25rem", flex: 1, minWidth: "14rem" }}>
                 <input value={teamNameFor(index)} onChange={(e) => setNames({ ...names, [`new${index}`]: e.target.value })} maxLength={40} />
-                <span className="muted" style={{ fontSize: "0.8rem" }}>{team.map(nameOf).join(", ")}</span>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>{playersOf(team)}</span>
               </div>
               <button className="primary" disabled={busy || teamNameFor(index).trim().length < 2} onClick={() => void act(() => formTeamFromPool(event.id, teamNameFor(index).trim(), team))}>
                 {t("Create", "Créer")}
@@ -165,7 +172,7 @@ export function PairingPanel({ data, act, busy }: { data: DeskData; act: DeskAct
 
       {draft.leftover.length > 0 && (
         <span className="muted">
-          {t("Left waiting this time:", "Restent en attente pour cette fois :")} {draft.leftover.map(nameOf).join(", ")}
+          {t("Left waiting this time:", "Restent en attente pour cette fois :")} {playersOf(draft.leftover)}
         </span>
       )}
 

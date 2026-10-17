@@ -40,6 +40,9 @@ const Support = lazy(() => import("./pages/Support").then((m) => ({ default: m.S
 // the game path loads, same as the other browsing pages.
 const Event = lazy(() => import("./pages/Event").then((m) => ({ default: m.Event })));
 const EventRules = lazy(() => import("./pages/EventRules").then((m) => ({ default: m.EventRules })));
+const CrewQuarters = lazy(() => import("./pages/CrewQuarters").then((m) => ({ default: m.CrewQuarters })));
+const TeamTape = lazy(() => import("./pages/TaleOfTheTape").then((m) => ({ default: m.TeamTape })));
+const MatchupTape = lazy(() => import("./pages/TaleOfTheTape").then((m) => ({ default: m.MatchupTape })));
 // Administrators only, used a handful of times a year - so it stays out of every bundle but its own.
 const AdminStartEvent = lazy(() => import("./pages/AdminStartEvent").then((m) => ({ default: m.AdminStartEvent })));
 const AdminEventDesk = lazy(() => import("./pages/AdminEventDesk").then((m) => ({ default: m.AdminEventDesk })));
@@ -164,6 +167,9 @@ function App() {
           <Route path="/event/:id" element={<Event />} />
           {/* The event's rulebook: its own page, so the link can be pasted and kept open beside a match. */}
           <Route path="/event/:id/rules" element={<EventRules />} />
+          <Route path="/event/:id/quarters" element={<CrewQuarters />} />
+          <Route path="/event/:id/team/:teamId" element={<TeamTape />} />
+          <Route path="/event/:id/vs/:a/:b" element={<MatchupTape />} />
           {/* The two things a streamer sets up once: the persistent OBS overlay, and auto-marking.
               Reached from the top bar beside the bug report - see components/OutreachLinks. */}
           <Route path="/streaming" element={<Streaming />} />

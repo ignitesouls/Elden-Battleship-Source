@@ -1,6 +1,6 @@
 import { buildKnockout } from "./bracket";
 import type { TournamentFormat } from "./format";
-import { effectiveCut } from "./format";
+import { effectiveCut, groupPools } from "./format";
 import { seedFromGroups, seedFromSwiss } from "./seeding";
 import { applySchedule, scheduleShape, validateSchedule, type Schedule } from "./schedule";
 import { computeStandings, cutLineTied, type StandingRow } from "./standings";
@@ -89,12 +89,13 @@ export function qualifierStatus(
   const tables = groups.map((ids, g) =>
     computeStandings(ids, groupMatches.filter((m) => m.group === g)).filter((row) => !departed.has(row.id)),
   );
-  const perGroup = q.advancePerGroup ?? 0;
+  const pools = groupPools(q);
+  const takes = pools.map((p) => p.advance);
   return {
     complete: groupMatches.length > 0 && open === 0,
     waitingOn: open > 0 ? [`${open} match${open === 1 ? " is" : "es are"} still open`] : [],
-    advancing: seedFromGroups(tables, perGroup),
-    cutTied: perGroup > 0 && tables.some((table) => cutLineTied(table, perGroup)),
+    advancing: seedFromGroups(tables, takes, pools.map((p) => p.challenger)),
+    cutTied: tables.some((table, g) => (takes[g] ?? 0) > 0 && cutLineTied(table, takes[g])),
     tables,
   };
 }

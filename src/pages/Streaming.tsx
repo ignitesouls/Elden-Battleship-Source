@@ -5,21 +5,13 @@ import { OverlaySample } from "../components/OverlaySample";
 import { SourceRow } from "../components/SourceRow";
 import { SiteFooter } from "../components/SiteFooter";
 import { WatchLinkBox } from "../components/WatchLinkBox";
-import { useAuthProfile } from "../hooks/useAuthProfile";
+import { OverlayTokenBox, OverlayTokenError, OverlayTokenStart, useMyOverlayToken } from "../components/OverlayToken";
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
-import {
-  createOverlayToken,
-  fetchOverlayToken,
-  maskOverlayToken,
-  rotateOverlayToken,
-  sourcesFor,
-  streamSourceUrl,
-  type SceneKind,
-  type SceneSettings,
-} from "../lib/streamOverlay";
+import { sourcesFor, streamSourceUrl, type SceneKind, type SceneSettings } from "../lib/streamOverlay";
 import { SCENE_CANVAS, buildObsScene, previewBox, sceneFilename } from "../lib/obsScene";
 import { CasterSceneSetup } from "../components/CasterSceneSetup";
+import { PlayerSceneSetup } from "../components/PlayerSceneSetup";
 import type { DeepMark } from "../lib/deepWater";
 import { useT } from "../lib/language";
 import "./Streaming.css";
@@ -100,26 +92,14 @@ function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
 }
 
 export function Streaming() {
-  /**
-   * A Twitch account, or nothing.
-   *
-   * The same bar auto-marking sets, for the same reason: "permanent" is only true if the identity is.
-   * An anonymous session's user id lives in one browser's storage, so a scene built against it stops
-   * resolving the moment somebody clears their cache or moves machines - with no error anywhere, in
-   * the middle of a stream.
-   */
   const t = useT();
-  const viewer = useAuthProfile();
-  const signedIn = Boolean(viewer?.isTwitch);
-
-  /** `undefined` while loading, `null` when they have never made one. Mirrors AutoFireSetup. */
-  const [token, setToken] = useState<string | null | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(false);
-  const [confirmingRotate, setConfirmingRotate] = useState(false);
+  /** A Twitch account and its token, or nothing - see components/OverlayToken. */
+  const mine = useMyOverlayToken();
+  const { token } = mine;
 
   const [kind, setKind] = useState<SceneKind>("player");
+  /** A player's two ways in: the finished frame scene, or every element loose to arrange themselves. */
+  const [playerWay, setPlayerWay] = useState<"frame" | "loose">("frame");
   /** Which sources are ticked. Seeded from each list's own defaults the first time it is shown. */
   const [chosen, setChosen] = useState<Record<SceneKind, Set<string>>>(() => ({
     player: new Set(sourcesFor("player").filter((s) => s.on).map((s) => s.id)),
@@ -137,34 +117,6 @@ export function Streaming() {
     const t = setTimeout(() => setPlaying(null), alertSecs * 1000);
     return () => clearTimeout(t);
   }, [playing, alertSecs]);
-
-  useEffect(() => {
-    if (!signedIn) {
-      setToken(null);
-      return;
-    }
-    void (async () => {
-      try {
-        setToken(await fetchOverlayToken());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setToken(null);
-      }
-    })();
-  }, [signedIn]);
-
-  async function run(action: () => Promise<string>) {
-    setBusy(true);
-    setError(null);
-    try {
-      setToken(await action());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-      setConfirmingRotate(false);
-    }
-  }
 
   const scene: SceneSettings = { opacity, textSize, emptyFade, alertSecs };
   const isCaster = kind === "caster";
@@ -248,25 +200,8 @@ export function Streaming() {
           )}
         </span>
 
-        {!signedIn ? (
-          <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
-            {t(
-              "Sign in with Twitch first. Without an account you exist only in this browser, so clearing your cache would leave your whole scene pointing at nobody.",
-              "Connectez-vous d'abord avec Twitch. Sans compte, vous n'existez que dans ce navigateur, donc vider votre cache laisserait toute votre scène pointer vers personne."
-            )}
-          </span>
-        ) : token === undefined ? null : token === null ? (
-          <>
-            <button onClick={() => void run(createOverlayToken)} disabled={busy} style={{ fontSize: "0.8rem" }}>
-              {busy ? t("Setting up...", "Configuration...") : t("Set up overlay", "Configurer l'overlay")}
-            </button>
-            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-              {t(
-                "Makes a read-only token. It can't fire shots, take your seat, or read your account.",
-                "Crée un jeton en lecture seule. Il ne peut pas tirer, prendre votre place, ni lire votre compte."
-              )}
-            </span>
-          </>
+        {!mine.signedIn || !token ? (
+          <OverlayTokenStart mine={mine} />
         ) : (
           <>
             {/* -- who it is for ------------------------------------------------------------- */}
@@ -297,8 +232,41 @@ export function Streaming() {
             </div>
 
             {/* A caster gets the whole broadcast layout - see components/CasterSceneSetup. */}
+            {!isCaster && (
+              <div className="stack" style={{ gap: "0.25rem" }}>
+                <span style={{ fontSize: "0.78rem" }}>{t("Which scene?", "Quelle scène ?")}</span>
+                <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setPlayerWay("frame")}
+                    style={{ fontSize: "0.74rem", borderColor: playerWay === "frame" ? "var(--accent)" : undefined }}
+                  >
+                    {t("The full frame", "Le cadre complet")}
+                  </button>
+                  <button
+                    onClick={() => setPlayerWay("loose")}
+                    style={{ fontSize: "0.74rem", borderColor: playerWay === "loose" ? "var(--accent)" : undefined }}
+                  >
+                    {t("Just the pieces", "Juste les éléments")}
+                  </button>
+                </div>
+                <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
+                  {playerWay === "frame"
+                    ? t(
+                        "A finished layout: your game, webcam, fire board and fleet inside the Elden Battleship frame.",
+                        "Une mise en page finie : votre jeu, votre webcam, votre plateau de tir et votre flotte dans le cadre Elden Battleship."
+                      )
+                    : t(
+                        "No frame. Pick the elements you want and arrange them over your own layout.",
+                        "Sans cadre. Choisissez les éléments voulus et disposez-les sur votre propre mise en page."
+                      )}
+                </span>
+              </div>
+            )}
+
             {isCaster ? (
               <CasterSceneSetup base={base} token={token} />
+            ) : playerWay === "frame" ? (
+              <PlayerSceneSetup base={base} token={token} />
             ) : (
             <>
             {/* -- the look ------------------------------------------------------------------- */}
@@ -463,52 +431,11 @@ export function Streaming() {
             )}
 
             {/* -- the token ------------------------------------------------------------------ */}
-            <div className="stack" style={{ gap: "0.3rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>{t("Your overlay token", "Votre jeton d'overlay")}</span>
-              <code className="obs-token">{revealed ? token : maskOverlayToken(token)}</code>
-              <div className="row" style={{ gap: "0.3rem", flexWrap: "wrap" }}>
-                <button onClick={() => setRevealed((r) => !r)} style={{ fontSize: "0.74rem" }}>
-                  {revealed ? t("Hide", "Masquer") : t("Reveal", "Révéler")}
-                </button>
-                {confirmingRotate ? (
-                  <>
-                    <button
-                      onClick={() => void run(rotateOverlayToken)}
-                      disabled={busy}
-                      style={{ fontSize: "0.74rem", color: "var(--hit)" }}
-                    >
-                      {busy ? t("Rotating...", "Rotation...") : t("Yes, rotate it", "Oui, le régénérer")}
-                    </button>
-                    <button onClick={() => setConfirmingRotate(false)} style={{ fontSize: "0.74rem" }}>
-                      {t("Cancel", "Annuler")}
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={() => setConfirmingRotate(true)} style={{ fontSize: "0.74rem" }}>
-                    {t("Rotate token", "Régénérer le jeton")}
-                  </button>
-                )}
-              </div>
-              <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-                {confirmingRotate
-                  ? t(
-                      "Kills the old token at once: every source in your scene goes blank until you download and import again.",
-                      "Annule le jeton actuel immédiatement : toutes les sources de votre scène deviennent vides jusqu'à ce que vous retéléchargiez et réimportiez."
-                    )
-                  : t(
-                      "There's nothing to paste anywhere - it's already inside the scene file. Masked because people screenshot this page; rotate it if it leaks, then import the scene again.",
-                      "Il n'y a rien à coller nulle part - il est déjà dans le fichier de scène. Masqué parce que les gens font des captures d'écran de cette page ; régénérez-le s'il fuite, puis réimportez la scène."
-                    )}
-              </span>
-            </div>
+            <OverlayTokenBox mine={mine} token={token} />
           </>
         )}
 
-        {error && (
-          <span style={{ fontSize: "0.72rem", color: "var(--hit)" }} role="alert">
-            {error}
-          </span>
-        )}
+        <OverlayTokenError mine={mine} />
 
         <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
           {t("Want a scene for one particular room? The", "Vous voulez une scène pour une seule partie ? La boîte")}{" "}

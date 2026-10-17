@@ -1,7 +1,7 @@
 import { buildKnockout } from "./bracket";
-import { effectiveCut } from "./format";
+import { effectiveCut, groupSizes } from "./format";
 import type { TournamentFormat } from "./format";
-import { assignGroups, roundRobin } from "./groups";
+import { roundRobin } from "./groups";
 import type { MatchStage, TMatch } from "./types";
 
 /**
@@ -99,8 +99,8 @@ export function scheduleShape(format: TournamentFormat, n: number): ScheduleShap
   if (q.format === "swiss") {
     qualifierRounds = q.rounds;
   } else if (q.format === "groups") {
-    const dummy = Array.from({ length: n }, (_, i) => String(i));
-    const longest = Math.max(...assignGroups(dummy, q.groupCount).map((g) => roundRobin(g).length));
+    const dummy = (size: number) => Array.from({ length: size }, (_, i) => String(i));
+    const longest = Math.max(0, ...groupSizes(q, n).map((size) => roundRobin(dummy(size)).length));
     qualifierRounds = longest * q.legs;
   }
 

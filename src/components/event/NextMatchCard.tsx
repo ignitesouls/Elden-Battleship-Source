@@ -3,18 +3,17 @@ import { Link } from "react-router-dom";
 import {
   fetchEntryCode,
   multitwitchUrl,
-  setMatchTime,
   type EventDetail,
   type MatchRow,
   type PlayerProfileBits,
   type TeamRow,
 } from "../../lib/tournament/api";
-import { fromLocalInput, toLocalInput } from "../../lib/tournament/localTime";
 import { groupLabel } from "../../lib/tournament/groupNames";
 import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
 import { useLanguage, useT } from "../../lib/language";
-import { TeamLabel } from "./TeamLogo";
+import { PlayerName, TeamLabel } from "./TeamLogo";
 import { MatchOdds } from "./PowerLine";
+import { MatchTimeField, agreedByLabel } from "./MatchTimeField";
 
 interface Props {
   event: EventDetail;
@@ -55,9 +54,6 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
     null;
 
   const [code, setCode] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mine || !isCaptain) return;
@@ -68,13 +64,13 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
     };
   }, [mine?.id, isCaptain]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => setValue(toLocalInput(next?.agreed_at)), [next?.id, next?.agreed_at]);
-
   if (!mine || event.status !== "live") return null;
 
-  const when = (iso: string) =>
-    new Date(iso).toLocaleString(lang === "fr" ? "fr-FR" : undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "fr" ? "fr-FR" : undefined, { month: "short", day: "numeric" });
+  const quarters = (
+    <Link to={`/event/${event.id}/quarters`} className="link-button">
+      {t("Crew Quarters", "Quartiers de l'équipage")}
+    </Link>
+  );
 
   if (!next) {
     return (
@@ -83,6 +79,7 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
         <span className="muted">
           {t("Nothing waiting for you right now - the next round hasn't been drawn, or your run in this event is over.", "Rien ne vous attend pour l'instant - le tour suivant n'est pas encore tiré, ou votre parcours est terminé.")}
         </span>
+        <div>{quarters}</div>
       </div>
     );
   }
@@ -100,20 +97,8 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
         : t("Knockout", "Élimination");
   const streams = multitwitchUrl([...mine.roster, ...(them?.roster ?? [])].map((m) => profiles.get(m.user_id)?.twitch_login));
   const playable = next.status === "ready" || next.status === "in_progress";
-
-  async function saveTime(iso: string | null) {
-    if (!next) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await setMatchTime(next.id, iso);
-      reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  // In an individual event the entrant's name is the player's, so it opens their Twitch.
+  const soloLogin = (team: TeamRow) => (event.team_size === 1 ? profiles.get(team.captain_user_id)?.twitch_login : null);
 
   return (
     <div className="panel stack next-match">
@@ -126,12 +111,12 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
       </div>
 
       <div className="next-match__teams">
-        <TeamLabel name={<strong>{mine.name}</strong>} logo={logos.get(mine.id)} size={2.2} />
+        <TeamLabel name={<strong><PlayerName name={mine.name} login={soloLogin(mine)} /></strong>} logo={logos.get(mine.id)} size={2.2} />
         <span className="muted">
           {next.status === "in_progress" ? `${weAreA ? next.score_a : next.score_b} - ${weAreA ? next.score_b : next.score_a}` : t("vs", "contre")}
         </span>
         {them ? (
-          <TeamLabel name={<strong>{them.name}</strong>} logo={logos.get(them.id)} size={2.2} />
+          <TeamLabel name={<strong><PlayerName name={them.name} login={soloLogin(them)} /></strong>} logo={logos.get(them.id)} size={2.2} />
         ) : (
           <span className="muted">{t("opponent not decided yet", "adversaire pas encore connu")}</span>
         )}
@@ -142,45 +127,14 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
           <MatchOdds a={powers.get(mine.id)} b={powers.get(them.id)} nameA={mine.name} nameB={them.name} bestOf={next.best_of} />
         </div>
       )}
+      {them && (
+        <div style={{ textAlign: "center", fontSize: "0.85rem" }}>
+          <Link to={`/event/${event.id}/vs/${mine.id}/${them.id}`}>{t("Tale of the tape", "Fiche du combat")} ›</Link>
+        </div>
+      )}
 
       {playable && (
-        <div className="stack" style={{ gap: "0.35rem" }}>
-          <span>
-            {next.agreed_at ? (
-              <>
-                {t("Playing", "Match prévu")} <strong>{when(next.agreed_at)}</strong>
-              </>
-            ) : (
-              <span className="muted">{t("No time agreed yet.", "Pas encore d'heure convenue.")}</span>
-            )}
-            {next.due_at && <span className="muted"> · {t("due by", "à jouer avant le")} {day(next.due_at)}</span>}
-          </span>
-
-          {isCaptain ? (
-            <div className="stack" style={{ gap: "0.3rem" }}>
-              <div className="row" style={{ gap: "0.4rem" }}>
-                <input type="datetime-local" value={value} onChange={(e) => setValue(e.target.value)} aria-label={t("Agreed match time", "Heure convenue")} />
-                <button className="primary" disabled={busy || !value || value === toLocalInput(next.agreed_at)} onClick={() => void saveTime(fromLocalInput(value))}>
-                  {next.agreed_at ? t("Change time", "Changer l'heure") : t("Set the time", "Fixer l'heure")}
-                </button>
-                {next.agreed_at && (
-                  <button disabled={busy} onClick={() => void saveTime(null)}>
-                    {t("Clear", "Effacer")}
-                  </button>
-                )}
-              </div>
-              <span className="muted" style={{ fontSize: "0.75rem" }}>
-                {t(
-                  "Agree the time with the other captain first. Once set, it shows on the front page so anyone can come and watch.",
-                  "Convenez d'abord de l'heure avec l'autre capitaine. Une fois fixée, elle s'affiche en page d'accueil pour que chacun puisse venir regarder.",
-                )}
-              </span>
-              {error && <span className="error-text">{error}</span>}
-            </div>
-          ) : (
-            <span className="muted" style={{ fontSize: "0.8rem" }}>{t("Your captain sets the match time.", "Votre capitaine fixe l'heure du match.")}</span>
-          )}
-        </div>
+        <MatchTimeField match={next} isCaptain={isCaptain} setBy={agreedByLabel(next, userId, mine, them, t)} reload={reload} />
       )}
 
       {playable && (
@@ -210,6 +164,14 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
           )}
         </div>
       )}
+
+      <span className="muted" style={{ fontSize: "0.8rem" }}>
+        {quarters}{" "}
+        {t(
+          "- every match of yours, your group, your team's record, your stream setup and the rules.",
+          "- tous vos matchs, votre poule, le bilan de votre équipe, votre configuration de stream et le règlement.",
+        )}
+      </span>
     </div>
   );
 }

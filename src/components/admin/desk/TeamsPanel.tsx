@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow } from "../../../lib/tournament/api";
+import { handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow, type PlayerProfileBits } from "../../../lib/tournament/api";
 import { useT } from "../../../lib/language";
-import { AdminLogoButtons, TeamLabel } from "../../event/TeamLogo";
+import { useProfileBits } from "../../../hooks/useProfileBits";
+import { AdminLogoButtons, PlayerName, TeamLabel } from "../../event/TeamLogo";
 import { PowerTag } from "../../event/PowerLine";
 import { useTeamPowers, type TeamPowerInfo } from "../../../hooks/useTeamPowers";
 import type { DeskAct } from "./OverduePanel";
@@ -20,6 +21,9 @@ export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
   const { event } = data;
   const rosters = useMemo(() => new Map(data.seeded.map((team) => [team.id, team.roster.map((m) => m.user_id)])), [data.seeded]);
   const powers = useTeamPowers(rosters, data.stored);
+  // Twitch logins, so each player's name opens their channel.
+  const playerIds = useMemo(() => [...rosters.values()].flat(), [rosters]);
+  const profiles = useProfileBits(playerIds);
   if (!event) return null;
   const editable = event.status === "signup" || event.status === "live";
   const canRemove = event.status === "live";
@@ -32,7 +36,7 @@ export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
       ) : (
         <div className="t-list">
           {data.seeded.map((team) => (
-            <TeamRow key={team.id} team={team} gone={data.departed.has(team.id)} editable={editable} canRemove={canRemove} teamSize={event.team_size} act={act} busy={busy} power={powers?.get(team.id)} />
+            <TeamRow key={team.id} team={team} gone={data.departed.has(team.id)} editable={editable} canRemove={canRemove} teamSize={event.team_size} act={act} busy={busy} power={powers?.get(team.id)} profiles={profiles} />
           ))}
         </div>
       )}
@@ -41,8 +45,8 @@ export function TeamsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
 }
 
 function TeamRow({
-  team, gone, editable, canRemove, teamSize, act, busy, power,
-}: { team: AdminTeamRow; gone: boolean; editable: boolean; canRemove: boolean; teamSize: number; act: DeskAct; busy: boolean; power: TeamPowerInfo | undefined }) {
+  team, gone, editable, canRemove, teamSize, act, busy, power, profiles,
+}: { team: AdminTeamRow; gone: boolean; editable: boolean; canRemove: boolean; teamSize: number; act: DeskAct; busy: boolean; power: TeamPowerInfo | undefined; profiles: Map<string, PlayerProfileBits> }) {
   const t = useT();
   const [swapping, setSwapping] = useState<string | null>(null); // user id being swapped out
   const [login, setLogin] = useState("");
@@ -52,7 +56,8 @@ function TeamRow({
       <div className="stack" style={{ gap: "0.3rem", flex: 1, minWidth: "14rem" }}>
         <span>
           {team.seed !== null && <span style={{ color: "var(--accent-bright)", fontWeight: 600 }}>#{team.seed} </span>}
-          <strong><TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} /></strong>
+          {/* In an individual event the "team" is one player, so its name is theirs and opens their Twitch. */}
+          <strong><TeamLabel name={teamSize === 1 ? <PlayerName name={team.name} login={profiles.get(team.captain_user_id)?.twitch_login} /> : team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} /></strong>
           {gone && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("removed from the event", "retirée de l'événement")}</span>}
           <PowerTag info={power} style={{ marginLeft: "0.5rem" }} />
           {/* Captains can't change their logo once signup has closed, so a change after that - or taking
@@ -68,7 +73,7 @@ function TeamRow({
           team.roster.map((m) => (
             <div key={m.user_id} className="row" style={{ gap: "0.4rem" }}>
               <span className="muted">
-                {m.display_name}
+                <PlayerName name={m.display_name} login={profiles.get(m.user_id)?.twitch_login} />
                 {m.is_captain && <span className="badge" style={{ marginLeft: "0.3rem" }}>{t("captain", "capitaine")}</span>}
               </span>
               {editable && !gone && (

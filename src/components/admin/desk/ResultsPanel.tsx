@@ -3,6 +3,7 @@ import { enterScore, forfeitMatchById, setMatchTime } from "../../../lib/tournam
 import { fromLocalInput, toLocalInput } from "../../../lib/tournament/localTime";
 import { winsNeeded, type TMatch } from "../../../lib/tournament/types";
 import { useLanguage, useT } from "../../../lib/language";
+import { ExtendButtons, ExtendDays } from "./ExtendButtons";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
@@ -27,7 +28,8 @@ function AgreedTime({ initial, busy, onSet }: { initial: string | null; busy: bo
 }
 
 /**
- * Enter, correct and revert results, forfeit a match, and record when two teams have agreed to play.
+ * Enter, correct and revert results, forfeit a match, record when two teams have agreed to play, and
+ * give a match (or its round) more time.
  *
  * Every write goes to the database function that owns the rule - a score that no series can produce, or
  * a correction that would contradict a match already played downstream, is refused there, with its
@@ -38,6 +40,7 @@ export function ResultsPanel({ data, act, busy }: { data: DeskData; act: DeskAct
   const lang = useLanguage();
   const [showDone, setShowDone] = useState(false);
   const [scores, setScores] = useState<Record<string, { a: number; b: number }>>({});
+  const [extra, setExtra] = useState(3);
   const stored = data.stored;
   if (!stored) return null;
 
@@ -61,6 +64,8 @@ export function ResultsPanel({ data, act, busy }: { data: DeskData; act: DeskAct
           <span className="muted">{t(`Show played matches (${doneCount})`, `Afficher les matchs joués (${doneCount})`)}</span>
         </label>
       </div>
+
+      {rows.some((m) => m.status !== "done" && m.dueAt) && <ExtendDays days={extra} onChange={setExtra} />}
 
       {rows.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>{t("Nothing waiting to be played.", "Rien en attente d'être joué.")}</p>
@@ -88,6 +93,8 @@ export function ResultsPanel({ data, act, busy }: { data: DeskData; act: DeskAct
                     {t(`${m.stage} round ${m.phase}`, `${m.stage} tour ${m.phase}`)} · {t(`first to ${need}`, `premier à ${need}`)}
                     {m.dueAt && ` · ${t("due", "avant le")} ${day(m.dueAt)}`}
                   </span>
+                  {/* More time, before the deadline as well as after it - an overdue match is also on the Overdue list. */}
+                  {!decided && m.dueAt && <ExtendButtons matchId={id} days={extra} act={act} busy={busy} />}
                   {!decided && (
                     <AgreedTime
                       initial={stored.agreed.get(m.key) ?? null}

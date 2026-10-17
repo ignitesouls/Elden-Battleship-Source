@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
-import { CAST_ART } from "../lib/castSceneLayout";
+import { CAST_ART, PLAYER_ART } from "../lib/castSceneLayout";
 import "./OverlayFrame.css";
 
 /**
@@ -14,6 +14,9 @@ import "./OverlayFrame.css";
  * `?layout=casters` the break frame (battleship-casters.png): two big camera holes over the sea, with
  *                   the wordmark, for the parts of a broadcast that are not a match.
  *
+ * `?layout=player`  a crew member's own frame (player-overlay.png): holes for their fire board,
+ *                   gameplay, fleet and webcam. See playerSceneParts in lib/obsScene.
+ *
  * -- The holes ------------------------------------------------------------------------------------
  *
  * The art's holes are transparent. The streams, the board and the webcams go BEHIND this in the scene
@@ -24,7 +27,7 @@ import "./OverlayFrame.css";
 
 export function OverlayFrame(props: OverlaySourceProps = {}) {
   const { params } = useOverlaySource(props);
-  const isBreak = (params.get("layout") ?? "casters") !== "cast";
+  const layout = params.get("layout") ?? "casters";
 
   useEffect(() => {
     const root = document.documentElement;
@@ -36,7 +39,8 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
     };
   }, []);
 
-  const art = `${import.meta.env.BASE_URL}${isBreak ? CAST_ART.break : CAST_ART.match}`;
+  const file = layout === "player" ? PLAYER_ART.frame : layout === "cast" ? CAST_ART.match : CAST_ART.break;
+  const art = `${import.meta.env.BASE_URL}${file}`;
 
   return (
     <div className="ovf">

@@ -1,7 +1,10 @@
 import type { AdminTeamRow } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
+import { useMemo } from "react";
+import { useProfileBits } from "../../hooks/useProfileBits";
 import { PowerTag } from "../event/PowerLine";
+import { RosterNames } from "../event/TeamLogo";
 
 interface Props {
   /** The teams in seed order, best first. */
@@ -24,6 +27,9 @@ interface Props {
  */
 export function SeedList({ teams, onChange, signupOrder, powers }: Props) {
   const t = useT();
+  // Twitch logins for the names. Keyed on the players, not the order, so moving a team doesn't refetch.
+  const playerIds = useMemo(() => teams.flatMap((team) => team.roster.map((m) => m.user_id)), [teams]);
+  const profiles = useProfileBits(playerIds);
 
   /** Strongest first. Ties - two unknown teams, say - keep the order they were already in. */
   function byPower() {
@@ -75,7 +81,7 @@ export function SeedList({ teams, onChange, signupOrder, powers }: Props) {
             <span>
               <strong style={{ display: "inline-block", minWidth: "2.2ch", color: "var(--accent-bright)" }}>{index + 1}</strong>{" "}
               {team.name}{" "}
-              <span className="muted" style={{ fontSize: "0.78rem" }}>{team.roster.map((m) => m.display_name).join(", ")}</span>{" "}
+              <span className="muted" style={{ fontSize: "0.78rem" }}><RosterNames roster={team.roster} logins={profiles} /></span>{" "}
               <PowerTag info={powers?.get(team.id)} />
             </span>
             <span className="row" style={{ gap: "0.25rem" }}>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { drawStage, saveSchedule, teamLogos, type AdminTeamRow, type MatchRow } from "../../../lib/tournament/api";
+import { tableCuts } from "../../../lib/tournament/format";
 import { scheduleShape } from "../../../lib/tournament/schedule";
 import type { Schedule } from "../../../lib/tournament/schedule";
 import { planKnockout, planNextSwissRound, qualifierStatus } from "../../../lib/tournament/stages";
@@ -20,7 +21,7 @@ function previewRow(m: TMatch): MatchRow {
   return {
     id: m.key, key: m.key, stage: m.stage, bracket: m.bracket, grp: m.group, round: m.round, phase: m.phase, idx: m.index,
     entrant_a: m.a, entrant_b: m.b, best_of: m.bestOf, score_a: m.scoreA, score_b: m.scoreB, status: m.status,
-    winner: m.winner, result_kind: m.resultKind, opens_at: m.opensAt, due_at: m.dueAt, agreed_at: null,
+    winner: m.winner, result_kind: m.resultKind, opens_at: m.opensAt, due_at: m.dueAt, agreed_at: null, agreed_by: null,
   };
 }
 
@@ -114,7 +115,7 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
               names={data.names}
               logos={teamLogos(data.teams)}
               departed={departed}
-              cut={format.knockout ? (format.qualifier.format === "groups" ? format.qualifier.advancePerGroup : format.knockout.cutTo) : undefined}
+              cut={tableCuts(format)?.[g]}
               title={format.qualifier.format === "groups" ? groupLabel(event.group_names, g, lang) : t("Standings", "Classement")}
             />
           ))}
@@ -174,7 +175,7 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
               {t("Save the schedule", "Enregistrer le calendrier")}
             </button>
             <span className="muted" style={{ marginLeft: "0.6rem", fontSize: "0.75rem" }}>
-              {t("Applies to rounds drawn from now on. To move a round that is already drawn, extend it from the overdue list.", "S'applique aux tours tirés à partir de maintenant. Pour déplacer un tour déjà tiré, prolongez-le depuis la liste des retards.")}
+              {t("Applies to rounds drawn from now on. To give a round already drawn more time, use the extension buttons under Results.", "S'applique aux tours tirés à partir de maintenant. Pour donner plus de temps à un tour déjà tiré, utilisez les boutons de prolongation sous Résultats.")}
             </span>
           </div>
         </div>

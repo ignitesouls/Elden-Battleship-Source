@@ -62,7 +62,7 @@
 /* :not() rather than plain .tb-item:hover so this doesn't out-specify the accented items below.
    `a.tb-item:hover` would beat `.tb-brand:hover` on specificity and flatten the wordmark, the
    return-to-room link and the active colorblind toggle all back to the same gray on hover. */
-.tb-item:not(.tb-brand, .tb-return, .tb-admin, .tb-colorblind-on):hover {
+.tb-item:not(.tb-brand, .tb-return, .tb-crew, .tb-admin, .tb-colorblind-on):hover {
   color: var(--text);
 }
 
@@ -101,6 +101,26 @@ button.tb-item {
 }
 
 .tb-return:hover {
+  color: var(--accent-bright);
+}
+
+/* A player's crew quarters during an event: gold like the way back to a room, since it is the other
+   place a player in the middle of something keeps going back to. */
+.tb-crew {
+  color: var(--accent);
+  font-weight: 600;
+  max-width: 12rem;
+  overflow: hidden;
+  /* Never squeezed out: the compass is what is left of it on a narrow screen. */
+  flex: none;
+}
+
+.tb-crew .tb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tb-crew:hover {
   color: var(--accent-bright);
 }
 
@@ -188,6 +208,14 @@ button.tb-item {
 .tb-colorblind-on:hover {
   border-color: var(--accent-bright);
   color: var(--accent-bright);
+}
+
+/* The bar is already full at about 1440px without the crew link, so its words are the first to go -
+   well before everyone else's. The compass and the tooltip stay. */
+@media (max-width: 1600px) {
+  .tb-crew .tb-label {
+    display: none;
+  }
 }
 
 /* --- narrow screens ------------------------------------------------------

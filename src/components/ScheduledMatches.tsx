@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchScheduledMatches, multitwitchUrl, teamLogoUrl, type ScheduledMatch } from "../lib/tournament/api";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useLanguage, useT } from "../lib/language";
-import { TeamLabel } from "./event/TeamLogo";
+import { PlayerName, TeamLabel } from "./event/TeamLogo";
 import "./Tournament.css";
 
 /** Polled gently: a time agreed a minute ago can wait two to appear, and the front page is busy. */
@@ -51,6 +51,8 @@ export function ScheduledMatches() {
     m.stage === "group" ? t("Groups", "Poules") : m.stage === "swiss" ? t("Swiss", "Suisse") : t("Knockout", "Élimination");
   const logo = (m: ScheduledMatch, side: "a" | "b") =>
     m.team_size === 1 ? (side === "a" ? m.team_a_avatar : m.team_b_avatar) : teamLogoUrl(side === "a" ? m.team_a_logo : m.team_b_logo);
+  // In an individual event the side's name is its one player's, so it opens their Twitch.
+  const solo = (m: ScheduledMatch, side: "a" | "b") => (m.team_size === 1 ? (side === "a" ? m.streams_a : m.streams_b)[0] : null);
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem" }}>
@@ -65,9 +67,9 @@ export function ScheduledMatches() {
           return (
             <div key={m.match_id} className="stack scheduled-match" style={{ gap: "0.3rem", padding: "0.5rem 0" }}>
               <div className="row" style={{ justifyContent: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                <TeamLabel name={<strong>{m.team_a_name}</strong>} logo={logo(m, "a")} size={1.5} />
+                <TeamLabel name={<strong><PlayerName name={m.team_a_name} login={solo(m, "a")} /></strong>} logo={logo(m, "a")} size={1.5} />
                 <span className="muted">{live && m.best_of > 1 ? `${m.score_a} - ${m.score_b}` : t("vs", "contre")}</span>
-                <TeamLabel name={<strong>{m.team_b_name}</strong>} logo={logo(m, "b")} size={1.5} />
+                <TeamLabel name={<strong><PlayerName name={m.team_b_name} login={solo(m, "b")} /></strong>} logo={logo(m, "b")} size={1.5} />
               </div>
               <div className="row" style={{ justifyContent: "center", gap: "0.5rem", fontSize: "0.8rem" }}>
                 {live ? (

@@ -16,11 +16,23 @@ import {
   castCamRects,
   casterCamRects,
   castSceneRects,
+  playerSceneRects,
+  playerGameRect,
+  playerFireRect,
+  playerFleetRect,
   CAST_CANVAS,
   CAST_SEATS,
   type Rect,
 } from "../src/lib/castSceneLayout.ts";
-import { buildCastCollection, castSceneParts, CAST_SCENE_MAIN, CAST_SCENE_BREAK } from "../src/lib/obsScene.ts";
+import {
+  buildCastCollection,
+  buildPlayerCollection,
+  castSceneParts,
+  playerSceneParts,
+  CAST_SCENE_MAIN,
+  CAST_SCENE_BREAK,
+  PLAYER_SCENE,
+} from "../src/lib/obsScene.ts";
 
 let fails = 0;
 function ok(name: string, cond: boolean) {
@@ -216,6 +228,120 @@ console.log("\ncollection - deterministic");
   const opts = { base: BASE, token: TOKEN, delayMs: 3000 };
   const a = JSON.stringify(buildCastCollection({ ...opts, newId: counter() }));
   const b = JSON.stringify(buildCastCollection({ ...opts, newId: counter() }));
+  ok("the same inputs build the same file", a === b);
+}
+
+console.log("\nplayer frame - layout");
+{
+  const holes = playerSceneRects();
+  ok("every hole in the player frame is on the canvas", holes.every(onCanvas));
+  ok("no two player holes overlap", holes.every((a, i) => holes.every((b, j) => i === j || !overlaps(a, b))));
+  const game = playerGameRect();
+  ok("the gameplay hole is 16:9 to within a pixel", Math.abs(game.w - (game.h * 16) / 9) <= 1);
+}
+
+console.log("\nplayer frame - collection");
+{
+  const file = buildPlayerCollection({ base: BASE, token: TOKEN, newId: counter() });
+  const scenes = file.sources.filter((s) => s.id === "scene");
+  const inputs = file.sources.filter((s) => s.id !== "scene");
+  const browsers = inputs.filter((s) => s.id === "browser_source");
+  ok("exactly one scene, the player scene", scenes.length === 1 && scenes[0].name === PLAYER_SCENE);
+  ok("the collection opens on it", file.current_scene === PLAYER_SCENE);
+  ok("one game capture and one webcam", inputs.filter((s) => s.id === "game_capture").length === 1 && inputs.filter((s) => s.id === "dshow_input").length === 1);
+  const names = inputs.map((s) => s.name);
+  ok("finds are OFF unless asked for", !names.includes("EB Finds"));
+  ok("fleet and sound are on by default", names.includes("EB Your Fleet") && names.includes("EB Audio"));
+  ok("every source name is unique", new Set(names).size === names.length);
+
+  const settings = scenes[0].settings as { items: { name: string; source_uuid: string; id: number; bounds_type: number }[]; id_counter: number };
+  const uuids = new Set(inputs.map((s) => s.uuid));
+  ok("every item points at a source that exists", settings.items.every((i) => uuids.has(i.source_uuid)));
+  ok("id_counter is past every item id", settings.id_counter > Math.max(...settings.items.map((i) => i.id)));
+  const order = settings.items.map((i) => i.name);
+  ok(
+    "the frame art is stacked above the game, camera, board and fleet",
+    ["ER Gameplay", "Your Webcam", "EB Fire Board", "EB Your Fleet"].every((n) => order.indexOf(n) < order.indexOf("EB Player Frame"))
+  );
+  ok(
+    "the captures get a bounding box and the browser sources don't",
+    settings.items.every((i) => (i.name === "ER Gameplay" || i.name === "Your Webcam") === i.bounds_type > 0)
+  );
+
+  const game = inputs.find((s) => s.id === "game_capture")!.settings as { capture_mode: string; window: string };
+  ok(
+    "the game capture is aimed at eldenring.exe in window mode",
+    game.capture_mode === "window" && game.window.split(":").length === 3 && game.window.endsWith(":eldenring.exe")
+  );
+
+  // The canvas-relative copy must land on the same pixels as the plain one on a 1080p canvas, and
+  // scale with the canvas on any other - read back with OBS's own pos_to_absolute (libobs/obs-scene.c).
+  type Item = {
+    name: string;
+    pos: { x: number; y: number };
+    pos_rel: { x: number; y: number };
+    bounds: { x: number; y: number };
+    bounds_rel: { x: number; y: number };
+    scale_ref: { x: number; y: number };
+  };
+  const items = settings.items as unknown as Item[];
+  const absolute = (i: Item, w: number, h: number) => ({
+    x: (i.pos_rel.x * h + w) / 2,
+    y: (i.pos_rel.y * h + h) / 2,
+    bw: (i.bounds_rel.x * h) / 2,
+    bh: (i.bounds_rel.y * h) / 2,
+  });
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  ok(
+    "relative placement reads back to the exact pixels on a 1920x1080 canvas",
+    items.every((i) => {
+      const a = absolute(i, 1920, 1080);
+      return near(a.x, i.pos.x) && near(a.y, i.pos.y) && near(a.bw, i.bounds.x) && near(a.bh, i.bounds.y);
+    })
+  );
+  ok(
+    "and to the same spot, scaled, on a 2560x1440 canvas",
+    items.every((i) => {
+      const a = absolute(i, 2560, 1440);
+      return near(a.x, (i.pos.x * 2560) / 1920) && near(a.y, (i.pos.y * 1440) / 1080);
+    })
+  );
+  ok("every item names its 1920x1080 reference", items.every((i) => i.scale_ref.x === 1920 && i.scale_ref.y === 1080));
+
+  const urls = browsers.map((s) => (s.settings as { url: string }).url);
+  ok("every URL carries the overlay token", urls.every((u) => u.includes(`token=${TOKEN}`)));
+  ok("no rejoin code in any URL", urls.every((u) => !/[?&]key=/.test(u)));
+  ok("the frame asks for the player layout", urls.some((u) => /#\/stream\/frame\?.*layout=player(&|$)/.test(u)));
+  ok("the fire board follows its owner's fleet", urls.some((u) => /#\/stream\/board\?.*me=1/.test(u) && /fire=1/.test(u)));
+}
+{
+  const on = buildPlayerCollection({ base: BASE, token: TOKEN, finds: true, fleet: false, sound: false, newId: counter() });
+  const names = on.sources.filter((s) => s.id !== "scene").map((s) => s.name);
+  ok("ticking finds adds them; unticking fleet and sound drops them", names.includes("EB Finds") && !names.includes("EB Your Fleet") && !names.includes("EB Audio"));
+  const order = (on.sources.find((s) => s.id === "scene")!.settings as { items: { name: string }[] }).items.map((i) => i.name);
+  ok("the find alert is stacked above the frame art", order.indexOf("EB Finds") > order.indexOf("EB Player Frame"));
+
+  const egg = playerSceneParts({ base: BASE, token: TOKEN, finds: true }).find((p) => p.name === "EB Finds")!;
+  const g = playerGameRect();
+  ok(
+    "the find alert is centred on the gameplay",
+    Math.abs(egg.at.x + 300 - (g.x + g.w / 2)) <= 1 && Math.abs(egg.at.y + 300 - (g.y + g.h / 2)) <= 1
+  );
+  ok(
+    "default settings write nothing extra",
+    playerSceneParts({ base: BASE, token: TOKEN }).every((p) => !p.entry || !/[?&](opacity|text|secs|empty)=/.test(p.entry.url))
+  );
+  // A player building it by hand types the size and the position and nothing else - no rescaling.
+  const parts = playerSceneParts({ base: BASE, token: TOKEN });
+  const holeSized = (name: string, r: Rect) => {
+    const p = parts.find((q) => q.name === name)!;
+    return p.at.scale === 1 && p.at.x === r.x && p.at.y === r.y && p.entry!.source.width === r.w && p.entry!.source.height === r.h;
+  };
+  ok("the fire board's browser source is its hole's size, unscaled", holeSized("EB Fire Board", playerFireRect()));
+  ok("the fleet's browser source is its hole's size, unscaled", holeSized("EB Your Fleet", playerFleetRect()));
+  ok("no browser source in the player scene is rescaled", parts.every((p) => !p.entry || p.at.scale === 1));
+  const a = JSON.stringify(buildPlayerCollection({ base: BASE, token: TOKEN, newId: counter() }));
+  const b = JSON.stringify(buildPlayerCollection({ base: BASE, token: TOKEN, newId: counter() }));
   ok("the same inputs build the same file", a === b);
 }
 

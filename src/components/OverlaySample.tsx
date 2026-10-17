@@ -170,6 +170,49 @@ export function SampleBoard({
   );
 }
 
+/**
+ * The sample fleet panel on its own - the real BoardGrid wearing the fleet source's classes. Shared
+ * with the player frame preview (components/PlayerScenePreview), which sets it in the fleet hole.
+ */
+export function SampleFleet({
+  opacity,
+  emptyFade,
+  size,
+  className,
+}: {
+  opacity: number;
+  emptyFade: number;
+  /** The panel's edge, as a CSS length - a container unit, like SampleBoard's. */
+  size: string;
+  className?: string;
+}) {
+  return (
+    <div className={`ovf-board ovl-fade${className ? ` ${className}` : ""}`}>
+      <div
+        className="ovl-fade-stage"
+        style={{
+          ["--ovl-a-bg" as string]: opacity,
+          ["--ovl-a-empty" as string]: emptyFade,
+        }}
+      >
+        <BoardGrid
+          boardSize={SIZE}
+          cellVisual={(i) => FLEET_VISUALS[i] ?? "empty"}
+          maxVh={size}
+          maxVw={size}
+          // No names at this size - it wears the square's COLOUR instead, which is the whole
+          // reason that source exists. See pages/OverlayFleet.
+          ships={FLEET_HULLS}
+          cellTint={(i) => {
+            const sq = SQUARES[i];
+            return sq ? { region: sq.region } : null;
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /** The sample scorebug on its own. Fills whatever box it is put in - see components/ClockBar. */
 export function SampleClock({ isCaster, opacity, textSize }: { isCaster: boolean; opacity: number; textSize: number }) {
   return (
@@ -264,31 +307,7 @@ export function OverlaySample({
 
       {/* The crew's own fleet panel. Not on a caster's scene, because a caster has no fleet - the
           source needs a rejoin code and only its owner has one. See OverlayFleet. */}
-      {!isCaster && (
-        <div className="ovp-fleet ovf-board ovl-fade">
-          <div
-            className="ovl-fade-stage"
-            style={{
-              ["--ovl-a-bg" as string]: opacity,
-              ["--ovl-a-empty" as string]: emptyFade,
-            }}
-          >
-            <BoardGrid
-              boardSize={SIZE}
-              cellVisual={(i) => FLEET_VISUALS[i] ?? "empty"}
-              maxVh={FLEET}
-              maxVw={FLEET}
-              // No names at this size - it wears the square's COLOUR instead, which is the whole
-              // reason that source exists. See pages/OverlayFleet.
-              ships={FLEET_HULLS}
-              cellTint={(i) => {
-                const sq = SQUARES[i];
-                return sq ? { region: sq.region } : null;
-              }}
-            />
-          </div>
-        </div>
-      )}
+      {!isCaster && <SampleFleet className="ovp-fleet" opacity={opacity} emptyFade={emptyFade} size={FLEET} />}
 
       {/* The colour key, along the bottom edge where it goes. */}
       <div className="ovp-key">

@@ -37,27 +37,38 @@ export function seedFromSwiss(standings: StandingRow[], cut: number): string[] {
  * one, which is a rematch of a match they played a week ago and a bad look for a format whose
  * selling point is that everyone has met once. `avoidSameGroupOpeners` untangles that by swapping
  * teams inside a tier, which never costs anyone a better tier.
+ *
+ * `take` is how many each group sends - one number for all of them, or one per group. Challenger groups
+ * (see GroupPool) are their own band BELOW the main groups: the winner of a challenger group, having
+ * beaten only newer teams, is seeded after the last main-group qualifier, and so meets a main group
+ * winner first. Within the challenger band the tiers work the same way.
  */
-export function seedFromGroups(groupTables: StandingRow[][], perGroup: number): string[] {
+export function seedFromGroups(groupTables: StandingRow[][], take: number | readonly number[], challenger: readonly boolean[] = []): string[] {
   const groupOf = new Map<string, number>();
   const tierOf = new Map<string, number>();
   const ordered: string[] = [];
+  const takes = groupTables.map((_, g) => (typeof take === "number" ? take : (take[g] ?? 0)));
+  const depth = (band: boolean) => Math.max(0, ...takes.filter((_, g) => !!challenger[g] === band));
+  const mainDepth = depth(false);
 
-  for (let tier = 0; tier < perGroup; tier++) {
-    const rows = groupTables
-      .map((table, group) => ({ row: table[tier], group }))
-      .filter((entry): entry is { row: StandingRow; group: number } => entry.row !== undefined)
-      .sort(
-        (x, y) =>
-          y.row.wins - x.row.wins ||
-          y.row.gameDiff - x.row.gameDiff ||
-          y.row.buchholz - x.row.buchholz ||
-          x.group - y.group,
-      );
-    for (const { row, group } of rows) {
-      groupOf.set(row.id, group);
-      tierOf.set(row.id, tier);
-      ordered.push(row.id);
+  for (const band of [false, true]) {
+    for (let tier = 0; tier < depth(band); tier++) {
+      const rows = groupTables
+        .map((table, group) => ({ row: tier < takes[group] && !!challenger[group] === band ? table[tier] : undefined, group }))
+        .filter((entry): entry is { row: StandingRow; group: number } => entry.row !== undefined)
+        .sort(
+          (x, y) =>
+            y.row.wins - x.row.wins ||
+            y.row.gameDiff - x.row.gameDiff ||
+            y.row.buchholz - x.row.buchholz ||
+            x.group - y.group,
+        );
+      for (const { row, group } of rows) {
+        groupOf.set(row.id, group);
+        // Offset so that no swap in avoidSameGroupOpeners can trade a challenger for a main-group team.
+        tierOf.set(row.id, band ? mainDepth + tier : tier);
+        ordered.push(row.id);
+      }
     }
   }
   return avoidSameGroupOpeners(ordered, groupOf, tierOf);

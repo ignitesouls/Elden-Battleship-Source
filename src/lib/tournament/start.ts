@@ -1,6 +1,6 @@
 import { buildKnockout } from "./bracket";
-import { validateFormat, type TournamentFormat } from "./format";
-import { assignGroups, buildGroupStage } from "./groups";
+import { groupsFor, prunePlacement, validateFormat, type TournamentFormat } from "./format";
+import { buildGroupStage } from "./groups";
 import { applySchedule, scheduleShape, validateSchedule, type Schedule } from "./schedule";
 import { pairSwissRound } from "./swiss";
 import type { MatchStage, Pointer, TMatch } from "./types";
@@ -29,7 +29,9 @@ export interface StartPlan {
 
 export type PlanResult = { ok: true; plan: StartPlan } | { ok: false; problems: string[] };
 
-export function planStart(format: TournamentFormat, seeded: string[], schedule: Schedule): PlanResult {
+export function planStart(given: TournamentFormat, seeded: string[], schedule: Schedule): PlanResult {
+  // A team placed in a group and then withdrawn must not hold a place in that group's count.
+  const format = prunePlacement(given, seeded);
   const problems = [...validateFormat(format, seeded.length), ...validateSchedule(schedule)];
   if (new Set(seeded).size !== seeded.length) problems.push("A team is listed twice.");
   if (problems.length > 0) return { ok: false, problems };
@@ -44,7 +46,7 @@ export function planStart(format: TournamentFormat, seeded: string[], schedule: 
     drawn = pairSwissRound(seeded, [], 1, q.bestOf);
   } else if (q.format === "groups") {
     stage = "group";
-    drawn = buildGroupStage(assignGroups(seeded, q.groupCount), q.legs, q.bestOf);
+    drawn = buildGroupStage(groupsFor(q, seeded), q.legs, q.bestOf);
   } else {
     stage = "knockout";
     drawn = buildKnockout(seeded, format.knockout!);

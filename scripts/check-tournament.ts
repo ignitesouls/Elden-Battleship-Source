@@ -41,8 +41,9 @@ const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleSha
   await import('../src/lib/tournament/schedule.ts')
 const { computeStandings, cutLineTied } = await import('../src/lib/tournament/standings.ts')
 const { pairSwissRound, recommendedSwissRounds, swissRoundComplete } = await import('../src/lib/tournament/swiss.ts')
-const { assignGroups, roundRobin, buildGroupStage } = await import('../src/lib/tournament/groups.ts')
-const { validateFormat, suggestFormat, estimateMatches, effectiveCut } = await import('../src/lib/tournament/format.ts')
+const { assignGroups, dealGroups, roundRobin, buildGroupStage } = await import('../src/lib/tournament/groups.ts')
+const { validateFormat, suggestFormat, estimateMatches, effectiveCut, groupPools, groupSizes, groupsFor, prunePlacement, tableCuts } =
+  await import('../src/lib/tournament/format.ts')
 const { winsNeeded } = await import('../src/lib/tournament/types.ts')
 const { suggestPairings, ratingSpread } = await import('../src/lib/tournament/pairing.ts')
 
@@ -564,6 +565,75 @@ console.log('\nGroups')
   const t3 = new Map(six.map((id) => [id, Number(id[1]) - 1]))
   const fixed3 = avoidSameGroupOpeners(six, g3, t3)
   check('repair: an unavoidable clash still returns every team exactly once', new Set(fixed3).size === 6 && fixed3.length === 6, fixed3.join())
+}
+
+// ---------------------------------------------------------------------------------------------
+console.log('\nChallenger groups and groups that send different numbers')
+{
+  // With nobody placed by hand and no challenger, the new deal is the old snake exactly - so every
+  // event planned before this keeps the groups it was shown.
+  let same = true
+  for (let n = 2; n <= 40; n++) {
+    for (let c = 1; c <= Math.min(8, Math.floor(n / 2)); c++) {
+      if (JSON.stringify(dealGroups(ids(n), c)) !== JSON.stringify(assignGroups(ids(n), c))) same = false
+    }
+  }
+  check('dealGroups with no placement is assignGroups, n=2..40', same)
+
+  // The organizer's example: 15 teams, two main groups and one challenger group of the five newest.
+  const field = ids(15)
+  const newest = field.slice(10)
+  const q = {
+    format: 'groups' as const, groupCount: 3, legs: 1 as const, bestOf: 1,
+    pools: [{ advance: 3, challenger: false }, { advance: 3, challenger: false }, { advance: 2, challenger: true }],
+    placement: Object.fromEntries(newest.map((id) => [id, 2])),
+  }
+  const ko = { format: 'single' as const, bestOf: 1, thirdPlace: false, grandFinalReset: false }
+  const format = { qualifier: q, knockout: ko }
+  const dealt = groupsFor(q, field)
+  check('the challenger group holds exactly the five placed there', dealt[2].join() === newest.join(), dealt[2].join())
+  check('the other ten snake across the two main groups', dealt[0].join() === 'e1,e4,e5,e8,e9' && dealt[1].join() === 'e2,e3,e6,e7,e10', `${dealt[0]} | ${dealt[1]}`)
+  check('groupSizes agrees with the deal', groupSizes(q, 15).join() === dealt.map((g) => g.length).join())
+  check('3 + 3 + 2 is a top 8', effectiveCut(format, 15) === 8)
+  check('the format is valid', validateFormat(format, 15).length === 0, validateFormat(format, 15).join(' / '))
+  check('the cut line is drawn per group', tableCuts(format)?.join() === '3,3,2')
+  check('a challenger group nobody has been put in is refused',
+    validateFormat({ ...format, qualifier: { ...q, placement: {} } }, 15).some((e) => e.includes('Group C')))
+  check('taking more from a group than it holds is refused, group by group',
+    validateFormat({ ...format, qualifier: { ...q, pools: [q.pools[0], q.pools[1], { advance: 6, challenger: true }] } }, 15).length > 0)
+  check('a hand placement of a team that has left does not count',
+    groupSizes(prunePlacement({ ...format, qualifier: { ...q, placement: { ...q.placement, gone: 2 } } }, field).qualifier as typeof q, 15).join() === '5,5,5')
+  const plain = { format: 'groups' as const, groupCount: 3, advancePerGroup: 2, legs: 1 as const, bestOf: 1 }
+  check('an event saved before groups could differ reads as every group alike',
+    groupPools(plain).every((p) => p.advance === 2 && !p.challenger) && effectiveCut({ qualifier: plain, knockout: ko }, 12) === 6)
+
+  // Play the groups, then check the knockout's seeding.
+  const schedule = suggestSchedule(format, 15, '2026-11-01T00:00:00.000Z').schedule
+  const plan = planStart(format, field, schedule)
+  check('it starts', plan.ok, plan.ok ? '' : plan.problems.join(' / '))
+  if (plan.ok) {
+    const rand = rng(15)
+    const played = plan.plan.matches.map((m) => {
+      const aWins = rand() < 0.5
+      return { ...m, scoreA: aWins ? 1 : 0, scoreB: aWins ? 0 : 1, winner: aWins ? m.a : m.b, status: 'done' as const }
+    })
+    const status = qualifierStatus(format, field, played)
+    const challengerTable = status.tables[2]
+    check('eight go through', status.advancing.length === 8)
+    check('the challenger group\'s top two are seeds 7 and 8, in finishing order',
+      status.advancing.slice(6).join() === challengerTable.slice(0, 2).map((r) => r.id).join(), status.advancing.join())
+    check('seeds 1-6 are the main groups\' top three',
+      status.advancing.slice(0, 6).every((id) => [0, 1].some((g) => status.tables[g].slice(0, 3).some((r) => r.id === id))))
+    const tiers = status.advancing.slice(0, 6).map((id) => [0, 1].map((g) => status.tables[g].findIndex((r) => r.id === id)).find((i) => i >= 0))
+    check('...in tiers: both winners, both runners-up, both thirds', tiers.join() === '0,0,1,1,2,2', tiers.join())
+    const ko8 = planKnockout(format, field, played, new Set(), status.advancing, schedule)
+    check('the knockout builds', ko8.ok, ko8.ok ? '' : ko8.problems.join(' / '))
+    if (ko8.ok) {
+      const opener = ko8.matches.find((m) => m.round === 1 && (m.a === status.advancing[0] || m.b === status.advancing[0]))!
+      const rival = opener.a === status.advancing[0] ? opener.b : opener.a
+      check('the top seed opens against the challenger runner-up', rival === status.advancing[7], `${opener.a} v ${opener.b}`)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
