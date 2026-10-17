@@ -30,7 +30,7 @@ import {
 } from "../lib/tournament/api";
 import { EVENT_LOGO_SIZE } from "../lib/tournament/logoImage";
 import { useT } from "../lib/language";
-import { AdminLogoButtons, LogoField, PlayerName, RosterNames, TeamLabel } from "./event/TeamLogo";
+import { AdminLogoButtons, AdminRenameButton, LogoField, PlayerName, RosterNames, TeamLabel } from "./event/TeamLogo";
 import { EventLogo } from "./event/EventLogo";
 import { PowerTag } from "./event/PowerLine";
 import { useProfileBits } from "../hooks/useProfileBits";
@@ -598,7 +598,10 @@ function TeamManager({ event, busy, act }: { event: AdminEventRow; busy: boolean
                   <button disabled={busy} onClick={() => void onTeam(() => setTeamStatus(team.id, "pending"))}>{t("Reconsider", "Réexaminer")}</button>
                 )}
                 {event.team_size > 1 && (
-                  <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={onTeam} />
+                  <>
+                    <AdminRenameButton teamId={team.id} teamName={team.name} busy={busy} run={onTeam} />
+                    <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={onTeam} />
+                  </>
                 )}
                 {canDelete && (
                   <button className="danger" disabled={busy} onClick={() => deleteTeamClicked(team)}>{t("Delete", "Supprimer")}</button>

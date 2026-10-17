@@ -390,8 +390,22 @@ async function rules() {
   await svc.from('tournaments').update({ status: 'live' }).eq('id', T2.id)
   refused('signup is refused once the event is live',
     (await c3.client.rpc('register_team', { p_tournament: T2.id, p_name: 'Late' })).error, /not open/)
-  refused('a captain cannot rename once signup has closed',
-    (await c1.client.from('tournament_entrants').update({ name: 'Renamed' }).eq('id', c1Team)).error, /closed/)
+  // The name stays the captain's until the team's first match (team_identity_open), so a crew completed
+  // after signup can still choose it.
+  allowed('a captain can still rename after signup closes, before their first match',
+    (await c1.client.from('tournament_entrants').update({ name: 'Renamed' }).eq('id', c1Team)).error)
+  const c2Team = (await c2.client.from('tournament_entrants').select('id').eq('tournament_id', T2.id)).data?.[0]?.id as string
+  // In progress rather than done, so the event is not auto-finished under the checks below.
+  const first = await svc.from('tournament_matches').insert({
+    tournament_id: T2.id, key: 'R1-0', stage: 'swiss', round: 1, idx: 0, entrant_a: c1Team, entrant_b: c2Team, best_of: 3, score_a: 1, status: 'in_progress',
+  }).select('id').single()
+  refused('...but not once a game of their first match is on the record',
+    (await c1.client.from('tournament_entrants').update({ name: 'Renamed Again' }).eq('id', c1Team)).error, /first match/)
+  refused('...and neither can the other team in it',
+    (await c2.client.from('tournament_entrants').update({ name: 'Two Renamed' }).eq('id', c2Team)).error, /first match/)
+  allowed('an administrator still can',
+    (await admin.client.from('tournament_entrants').update({ name: 'One' }).eq('id', c1Team)).error)
+  await svc.from('tournament_matches').delete().eq('id', first.data?.id as string)
   refused('...or withdraw from a running event',
     (await c1.client.from('tournament_entrants').update({ status: 'withdrawn' }).eq('id', c1Team)).error, /closed|administrator/)
   refused('an event\'s format is locked once it is live',
@@ -1495,10 +1509,16 @@ async function teamLogos(admin: Person) {
   check('anyone can load the logo by its address, signed in or not', fetched.ok, `HTTP ${fetched.status}`)
   check('...and it is served as a picture', (fetched.headers.get('content-type') ?? '').startsWith('image/webp'), String(fetched.headers.get('content-type')))
 
-  console.log('\nTeam logos once signup closes')
+  console.log('\nTeam logos once signup closes, and once the first match is played')
   await svc.from('tournaments').update({ status: 'live' }).eq('id', ev.id)
-  refused('a captain cannot upload once signup has closed',
+  allowed('a captain can still upload after signup closes, before their first match',
     (await bucket(cap).upload(path(team, `${run}eeee`), image(), { contentType: 'image/webp' })).error)
+  // In progress rather than done, so the event is not auto-finished.
+  await svc.from('tournament_matches').insert({
+    tournament_id: ev.id, key: 'R1-0', stage: 'swiss', round: 1, idx: 0, entrant_a: team, entrant_b: rivalTeam, best_of: 3, score_a: 1, status: 'in_progress',
+  })
+  refused('a captain cannot upload once a game of their first match is on the record',
+    (await bucket(cap).upload(path(team, `${run}ffff`), image(), { contentType: 'image/webp' })).error)
   refused('...or change the logo',
     (await cap.client.from('tournament_entrants').update({ logo_path: null }).eq('id', team)).error, /change the team logo/)
   const kept = await bucket(cap).remove([path(team)])
@@ -1506,8 +1526,8 @@ async function teamLogos(admin: Person) {
   check('...so it is still there', (await fetch(url)).ok)
   allowed('an administrator can take a logo down',
     (await admin.client.from('tournament_entrants').update({ logo_path: null }).eq('id', team)).error)
-  const removed = await bucket(admin).remove([path(team)])
-  check('...and delete the file', (removed.data ?? []).length === 1, JSON.stringify(removed))
+  const removed = await bucket(admin).remove([path(team), path(team, `${run}eeee`)])
+  check('...and delete the files', (removed.data ?? []).length === 2, JSON.stringify(removed))
 }
 
 async function startRules(admin: Person) {

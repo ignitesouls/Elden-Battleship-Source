@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { handOverCaptain, reinstateTeam, removeTeam, substitutePlayer, teamLogoUrl, type AdminTeamRow, type PlayerProfileBits } from "../../../lib/tournament/api";
 import { useT } from "../../../lib/language";
 import { useProfileBits } from "../../../hooks/useProfileBits";
-import { AdminLogoButtons, PlayerName, TeamLabel } from "../../event/TeamLogo";
+import { AdminLogoButtons, AdminRenameButton, PlayerName, TeamLabel } from "../../event/TeamLogo";
 import { PowerTag } from "../../event/PowerLine";
 import { useTeamPowers, type TeamPowerInfo } from "../../../hooks/useTeamPowers";
 import type { DeskAct } from "./OverduePanel";
@@ -60,10 +60,12 @@ function TeamRow({
           <strong><TeamLabel name={teamSize === 1 ? <PlayerName name={team.name} login={profiles.get(team.captain_user_id)?.twitch_login} /> : team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} /></strong>
           {gone && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("removed from the event", "retirée de l'événement")}</span>}
           <PowerTag info={power} style={{ marginLeft: "0.5rem" }} />
-          {/* Captains can't change their logo once signup has closed, so a change after that - or taking
-              down a bad one - is the desk's job. Individual events show avatars, so there's nothing to set. */}
+          {/* Captains can't change their name or logo once their first match has started, so a change after
+              that - or taking down a bad one - is the desk's job. Individual events show avatars, and the
+              name is the player's, so there's nothing to set. */}
           {teamSize > 1 && (
-            <span style={{ marginLeft: "0.5rem" }}>
+            <span className="row" style={{ marginLeft: "0.5rem", gap: "0.3rem", display: "inline-flex" }}>
+              <AdminRenameButton teamId={team.id} teamName={team.name} busy={busy} run={act} />
               <AdminLogoButtons teamId={team.id} teamName={team.name} logoPath={team.logo_path} busy={busy} run={act} />
             </span>
           )}

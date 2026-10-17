@@ -355,6 +355,11 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
                       `A crew is exactly ${ctx.teamSize} players; there are no substitutes. Sign up as a full crew, or alone and the organizers will place you in one.`,
                       `Un équipage compte exactement ${ctx.teamSize} joueurs ; il n'y a pas de remplaçants. Inscrivez-vous en équipage complet, ou seul et les organisateurs vous placeront dans un équipage.`,
                     ),
+                // The window team_identity_open enforces - see 20261017010000_team_identity_until_first_match.
+                tr(
+                  "Your captain can change the crew's name and logo from Crew Quarters until your first match starts, so a crew completed after sign-up can choose them together. After that, only the organizers can change them.",
+                  "Votre capitaine peut changer le nom et le logo de l'équipage depuis les Quartiers de l'équipage jusqu'au début de votre premier match, pour qu'un équipage complété après l'inscription les choisisse ensemble. Ensuite, seuls les organisateurs peuvent les changer.",
+                ),
               ],
         },
         {

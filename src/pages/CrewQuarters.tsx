@@ -4,6 +4,7 @@ import {
   fetchEntryCode,
   fetchOfficialLeaderboard,
   multitwitchUrl,
+  teamIdentityOpen,
   type EventDetail,
   type MatchRow,
   type PlayerProfileBits,
@@ -20,6 +21,7 @@ import { useLanguage, useT } from "../lib/language";
 import { LoadingScreen } from "../components/BrandMark";
 import { EventLogo } from "../components/event/EventLogo";
 import { PlayerName, TeamLabel } from "../components/event/TeamLogo";
+import { TeamIdentityEditor } from "../components/event/TeamIdentityEditor";
 import { JustForFun, MatchOdds, PowerTag } from "../components/event/PowerLine";
 import { StandingsTable } from "../components/event/StandingsTable";
 import { BracketView } from "../components/event/BracketView";
@@ -236,8 +238,12 @@ function SailingOrders({ event, mine, userId, isCaptain, data }: { event: EventD
     };
   }, [mine.id, isCaptain]);
 
+  const identity = isCaptain && teamIdentityOpen(event, mine, data.matches) && <CrewIdentity event={event} mine={mine} reload={data.reload} />;
+
   if (event.status === "signup") {
     return (
+      <div className="stack">
+      {identity}
       <div className="panel stack">
         <h3 style={{ margin: 0 }}>{t("Your matches", "Vos matchs")}</h3>
         <span className="muted">
@@ -252,6 +258,7 @@ function SailingOrders({ event, mine, userId, isCaptain, data }: { event: EventD
           {t("Meanwhile: set up your stream under Signal Flags and read the rules under Ship's Articles.", "En attendant : configurez votre stream dans Pavillons et lisez le règlement dans Charte du bord.")}
         </span>
       </div>
+      </div>
     );
   }
 
@@ -262,6 +269,7 @@ function SailingOrders({ event, mine, userId, isCaptain, data }: { event: EventD
 
   return (
     <div className="stack">
+      {identity}
       {live && isCaptain && code && (
         <div className="panel stack" style={{ gap: "0.3rem" }}>
           <span>
@@ -304,6 +312,43 @@ function SailingOrders({ event, mine, userId, isCaptain, data }: { event: EventD
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The captain's name and logo controls, until the team's first match - so a crew that only came
+ * together after signup closed (a pair given its solo player) can still choose them together.
+ */
+function CrewIdentity({ event, mine, reload }: { event: EventDetail; mine: TeamRow; reload: () => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function act(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      reload();
+    }
+  }
+
+  return (
+    <div className="panel stack">
+      <h3 style={{ margin: 0 }}>{event.team_size > 1 ? t("Your team's name and logo", "Le nom et le logo de votre équipe") : t("Your name in this event", "Votre nom dans cet événement")}</h3>
+      {error && <div className="error-text">{error}</div>}
+      <TeamIdentityEditor team={mine} teamSize={event.team_size} busy={busy} act={act} />
+      <span className="muted" style={{ fontSize: "0.75rem" }}>
+        {t(
+          "You can change these until your first match starts. After that, ask an administrator.",
+          "Vous pouvez les modifier jusqu'au début de votre premier match. Ensuite, demandez à un administrateur.",
+        )}
+      </span>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { LOGO_SIZE, LogoImageError, makeLogo } from "../../lib/tournament/logoImage";
-import { clearTeamLogo, setTeamLogo, twitchUrl } from "../../lib/tournament/api";
+import { clearTeamLogo, renameTeam, setTeamLogo, twitchUrl } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 
 /**
@@ -142,7 +142,7 @@ export function EntrantLabel({
 
 /**
  * An administrator's logo controls for one team: change it (any time - captains are locked out once
- * signup closes, administrators are not) or take it down. Small buttons for a row in a team list; the
+ * their first match starts, administrators are not) or take it down. Small buttons for a row in a team list; the
  * picture is shrunk exactly as a captain's would be. `run` is the page's action wrapper, which shows
  * errors and reloads.
  */
@@ -190,6 +190,42 @@ export function AdminLogoButtons({
         }}
       />
     </span>
+  );
+}
+
+/**
+ * An administrator's rename for one team, any time - captains are locked out once their first match
+ * starts, administrators are not. A prompt rather than a field, so a team row stays one line. `run` is
+ * the page's action wrapper, which shows errors and reloads.
+ */
+export function AdminRenameButton({
+  teamId,
+  teamName,
+  busy,
+  run,
+}: {
+  teamId: string;
+  teamName: string;
+  busy: boolean;
+  run: (action: () => Promise<unknown>) => unknown;
+}) {
+  const t = useT();
+  return (
+    <button
+      style={{ fontSize: "0.72rem", padding: "0.15rem 0.45rem" }}
+      disabled={busy}
+      onClick={() => {
+        const next = window.prompt(t(`New name for ${teamName}:`, `Nouveau nom pour ${teamName} :`), teamName)?.trim();
+        if (!next || next === teamName) return;
+        if (next.length < 2 || next.length > 40) {
+          window.alert(t("A team name is 2 to 40 characters.", "Un nom d'équipe fait de 2 à 40 caractères."));
+          return;
+        }
+        void run(() => renameTeam(teamId, next));
+      }}
+    >
+      {t("Rename", "Renommer")}
+    </button>
   );
 }
 

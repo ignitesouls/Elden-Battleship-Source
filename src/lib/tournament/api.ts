@@ -323,6 +323,21 @@ export async function renameTeam(entrantId: string, name: string): Promise<void>
   if (error) fail(error);
 }
 
+/**
+ * Whether a captain can still rename their team and change its logo: from signup until the team's own
+ * first match - a pair given its solo player after signup closes still gets to choose. The database
+ * decides (team_identity_open, which also locks once an official room of theirs leaves the lobby); this
+ * reads the same thing from the matches the page already has, so it costs no request. Pure.
+ */
+export function teamIdentityOpen(event: Pick<EventDetail, "status">, team: Pick<TeamRow, "id" | "status" | "forfeited_at">, matches: MatchRow[]): boolean {
+  if (team.status !== "pending" && team.status !== "approved") return false;
+  if (team.forfeited_at) return false;
+  if (event.status !== "signup" && event.status !== "live") return false;
+  return !matches.some(
+    (m) => m.entrant_a !== null && m.entrant_b !== null && (m.entrant_a === team.id || m.entrant_b === team.id) && (m.status === "in_progress" || m.status === "done"),
+  );
+}
+
 // -- The top bar's way into a crew's quarters --------------------------------------------------------
 
 export interface MyCrew {

@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   cancelInvite,
-  clearTeamLogo,
   fetchEntryCode,
   fetchTeamInvites,
   inviteToTeam,
   leaveTeam,
   parseLogins,
-  renameTeam,
-  setTeamLogo,
   teamLogoUrl,
   withdrawTeam,
   type EventDetail,
@@ -17,7 +14,8 @@ import {
 } from "../../lib/tournament/api";
 import { useT } from "../../lib/language";
 import { useProfileBits } from "../../hooks/useProfileBits";
-import { LogoField, PlayerName, TeamLabel } from "./TeamLogo";
+import { PlayerName, TeamLabel } from "./TeamLogo";
+import { TeamIdentityEditor } from "./TeamIdentityEditor";
 
 interface Props {
   event: EventDetail;
@@ -39,7 +37,6 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
   const isCaptain = team.captain_user_id === userId;
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [code, setCode] = useState<string | null>(null);
-  const [name, setName] = useState(team.name);
   const [more, setMore] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,9 +62,6 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
       cancelled = true;
     };
   }, [isCaptain, team.id, team.status, team.roster.length]);
-
-  // A rename typed and saved elsewhere should not be clobbered by a stale field.
-  useEffect(() => setName(team.name), [team.name]);
 
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
@@ -104,23 +98,7 @@ export function MyTeamPanel({ event, team, userId, reload }: Props) {
       {error && <div className="error-text">{error}</div>}
 
       {isCaptain ? (
-        <>
-          <div className="row">
-            <input style={{ flex: 1, minWidth: "10rem" }} value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
-            <button disabled={busy || name.trim() === team.name || name.trim().length < 2} onClick={() => void act(() => renameTeam(team.id, name.trim()))}>
-              {t("Rename", "Renommer")}
-            </button>
-          </div>
-          {/* An individual event shows each player's Twitch avatar instead - there's no logo to choose. */}
-          {event.team_size > 1 && (
-            <LogoField
-              current={teamLogoUrl(team.logo_path)}
-              disabled={busy}
-              onPick={(image) => void act(() => setTeamLogo(team.id, image, team.logo_path))}
-              onClear={team.logo_path ? () => void act(() => clearTeamLogo(team.id, team.logo_path!)) : undefined}
-            />
-          )}
-        </>
+        <TeamIdentityEditor team={team} teamSize={event.team_size} busy={busy} act={act} />
       ) : (
         <strong style={{ fontSize: "1.1rem" }}>
           <TeamLabel name={team.name} logo={teamLogoUrl(team.logo_path)} size={1.6} />
