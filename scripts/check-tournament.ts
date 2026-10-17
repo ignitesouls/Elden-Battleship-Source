@@ -37,7 +37,7 @@ const { qualifierStatus, planNextSwissRound, planKnockout, groupsFromMatches } =
 const { defaultQualifier, defaultKnockout } = await import('../src/lib/tournament/formatDefaults.ts')
 const { frontPageBanners, signupIsOpen, withinChampionWindow, CHAMPION_BANNER_DAYS, signupHeadline, displayName } =
   await import('../src/lib/tournament/frontPage.ts')
-const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, overdueMatches, isOverdue } =
+const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, assignGroupWeeks, pairingKey, overdueMatches, isOverdue } =
   await import('../src/lib/tournament/schedule.ts')
 const { computeStandings, cutLineTied } = await import('../src/lib/tournament/standings.ts')
 const { pairSwissRound, recommendedSwissRounds, swissRoundComplete } = await import('../src/lib/tournament/swiss.ts')
@@ -886,35 +886,80 @@ console.log('\nSchedule')
   const gActual = buildGroupStage(assignGroups(ids(13), 4), 1, 1)
   check('the shape counts the longest group\'s matchdays', gShape.ctx.qualifierRounds === Math.max(...gActual.map((m) => m.round)), `${gShape.ctx.qualifierRounds}`)
 
-  // A group stage laid out by week.
+  // A group stage laid out by week: the weeks have dates, and every match is dealt into one.
   const gCtx = { qualifierStage: 'group' as const, qualifierRounds: 5 }
-  const spread = spreadGroupWeeks(schedule.startsAt, 5, 3)
-  check('five matchdays over three weeks is 1-2, 3-4, 5', spread.map((w) => w.matchdays.join('')).join(',') === '12,34,5', JSON.stringify(spread.map((w) => w.matchdays)))
-  check('...in back-to-back weeks from the start date',
-    spread[0].opensAt === schedule.startsAt && spread[1].opensAt === spread[0].dueAt && spread[2].dueAt === '2026-10-22T00:00:00.000Z')
-  check('never more weeks than matchdays', spreadGroupWeeks(schedule.startsAt, 2, 6).length === 2)
-  check('one week holds every matchday', spreadGroupWeeks(schedule.startsAt, 4, 1)[0].matchdays.join('') === '1234')
+  const spread = spreadGroupWeeks(schedule.startsAt, 3)
+  check('three back-to-back weeks from the start date',
+    spread.length === 3 && spread[0].opensAt === schedule.startsAt && spread[1].opensAt === spread[0].dueAt && spread[2].dueAt === '2026-10-22T00:00:00.000Z')
   const weekly = { ...schedule, groupWeeks: spread }
-  check('matchdays in the same week share its window',
-    windowFor(weekly, gCtx, 'group', 3).opensAt === spread[1].opensAt && windowFor(weekly, gCtx, 'group', 4).dueAt === spread[1].dueAt)
   check('the knockout follows the last week plus the gap', windowFor(weekly, gCtx, 'knockout', 1).opensAt === '2026-10-24T00:00:00.000Z', windowFor(weekly, gCtx, 'knockout', 1).opensAt)
   check('...and the event ends after the knockout', scheduleEnd(weekly, gCtx, 2) === '2026-11-07T00:00:00.000Z', scheduleEnd(weekly, gCtx, 2))
-  check('a groups-only event ends when its last week closes, whichever week holds the last matchday',
-    scheduleEnd({ ...schedule, groupWeeks: [spread[2], { ...spread[0], matchdays: [1, 2, 3, 4] }] }, gCtx, 0) === spread[2].dueAt)
+  check('a groups-only event ends when its latest week closes, in whatever order the weeks are listed',
+    scheduleEnd({ ...schedule, groupWeeks: [spread[2], spread[0]] }, gCtx, 0) === spread[2].dueAt)
   check('weeks are ignored by a Swiss event', windowFor(weekly, ctx, 'swiss', 2).opensAt === w('swiss', 2).opensAt)
   check('a good week layout has no errors', validateSchedule(weekly, gCtx).length === 0, validateSchedule(weekly, gCtx).join('/'))
   check('starting from scratch with no weeks is an error', validateSchedule({ ...schedule, groupWeeks: [] }, gCtx).length > 0)
-  check('a matchday in no week is an error', validateSchedule({ ...schedule, groupWeeks: spread.slice(0, 2) }, gCtx).some((e) => e.includes('5')))
-  check('a matchday in two weeks is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [1] }] }, gCtx).length > 0)
-  check('a week with no matchdays is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [] }] }, gCtx).length > 0)
-  check('a matchday the groups don\'t have is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [6] }] }, gCtx).length > 0)
   check('a week that closes before it opens is an error',
     validateSchedule({ ...schedule, groupWeeks: [spread[0], spread[1], { ...spread[2], dueAt: spread[2].opensAt }] }, gCtx).length > 0)
-  const gWeeks = spreadGroupWeeks(schedule.startsAt, gShape.ctx.qualifierRounds, 2)
+
+  // Dealing matches into weeks. Games per team per week, for one group.
+  const loads = (slots: ReturnType<typeof assignGroupWeeks>, g: number, weeks: number) => {
+    const mine = slots.filter((s) => s.match.group === g)
+    const teams = [...new Set(mine.flatMap((s) => [s.match.a!, s.match.b!]))]
+    return teams.map((t) => Array.from({ length: weeks }, (_, wk) => mine.filter((s) => s.week === wk && (s.match.a === t || s.match.b === t)).length))
+  }
+  const sizes = (slots: ReturnType<typeof assignGroupWeeks>, g: number, weeks: number) =>
+    Array.from({ length: weeks }, (_, wk) => slots.filter((s) => s.match.group === g && s.week === wk).length).join(',')
+  const groups556 = [ids(5), ids(10).slice(5), ids(16).slice(10)]
+  const stage556 = buildGroupStage(groups556, 1, 3)
+  const dealt = assignGroupWeeks(stage556, 4)
+  check('every group match is dealt into exactly one week', dealt.length === stage556.length && new Set(dealt.map((s) => s.match.key)).size === stage556.length)
+  check('a group of six over four weeks: 4, 4, 4, 3 matches', sizes(dealt, 2, 4) === '4,4,4,3', sizes(dealt, 2, 4))
+  const six = loads(dealt, 2, 4)
+  check('...nobody plays more than twice in a week', six.every((row) => row.every((c) => c <= 2)), JSON.stringify(six))
+  check('...and every team plays twice in exactly one week', six.every((row) => row.filter((c) => c === 2).length === 1), JSON.stringify(six))
+  check('...and no week holds every double', [0, 1, 2, 3].every((wk) => six.filter((row) => row[wk] === 2).length <= 2), JSON.stringify(six))
+  check('a group of five over four weeks: 3, 3, 2, 2 matches', sizes(dealt, 0, 4) === '3,3,2,2', sizes(dealt, 0, 4))
+  const five = loads(dealt, 0, 4)
+  check('...and only two of its teams ever play twice in a week, once each',
+    five.filter((row) => row.some((c) => c === 2)).length === 2 && five.every((row) => row.filter((c) => c === 2).length <= 1 && row.every((c) => c <= 2)), JSON.stringify(five))
+  check('dealing is deterministic', JSON.stringify(assignGroupWeeks(stage556, 4).map((s) => [s.match.key, s.week])) === JSON.stringify(dealt.map((s) => [s.match.key, s.week])))
+  const fiveWeeks = loads(assignGroupWeeks(stage556, 5), 2, 5)
+  check('as many weeks as matchdays: everyone plays once a week', fiveWeeks.every((row) => row.every((c) => c === 1)), JSON.stringify(fiveWeeks))
+  const twoLegs = assignGroupWeeks(buildGroupStage([ids(4)], 2, 1), 2)
+  check('a two-legged group tells its two meetings apart', new Set(twoLegs.map((s) => s.pairing)).size === twoLegs.length)
+
+  // Moves by hand.
+  const target = dealt.find((s) => s.match.group === 2 && s.week === 0)!
+  const moved = assignGroupWeeks(stage556, 4, { [target.pairing]: 3 })
+  const after = moved.find((s) => s.pairing === target.pairing)!
+  check('a match moved by hand lands in its week', after.week === 3 && after.moved)
+  check('...and the rest are dealt around it, still with nobody past twice a week', loads(moved, 2, 4).every((row) => row.every((c) => c <= 2)), JSON.stringify(loads(moved, 2, 4)))
+  check('...without touching the other groups', JSON.stringify(moved.filter((s) => s.match.group !== 2).map((s) => s.week)) === JSON.stringify(dealt.filter((s) => s.match.group !== 2).map((s) => s.week)))
+  check('a move to a week that does not exist is ignored', JSON.stringify(assignGroupWeeks(stage556, 4, { [target.pairing]: 9 }).map((s) => s.week)) === JSON.stringify(dealt.map((s) => s.week)))
+  check('a move follows the matchup, not the slot: the same pairing listed the other way round is the same move',
+    pairingKey(2, 'x', 'y', 1) === pairingKey(2, 'y', 'x', 1))
+
+  // Starting by week.
+  const gWeeks = spreadGroupWeeks(schedule.startsAt, 4)
   const gStart = planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: gWeeks })
-  check('a group stage started by week dates every match from its week',
-    gStart.ok && gStart.plan.matches.every((m) => gWeeks.some((wk) => wk.matchdays.includes(m.phase) && wk.opensAt === m.opensAt && wk.dueAt === m.dueAt)))
-  check('...and a start with a matchday left out is refused', !planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: gWeeks.slice(0, 1) }).ok)
+  const gDealt = gStart.ok ? new Map(assignGroupWeeks(gStart.plan.matches, 4).map((s) => [s.match.key, s.week])) : new Map()
+  check('a group stage started by week dates every match from the week it was dealt into',
+    gStart.ok && gStart.plan.matches.every((m) => gWeeks[gDealt.get(m.key)!].opensAt === m.opensAt && gWeeks[gDealt.get(m.key)!].dueAt === m.dueAt))
+  check('...and a start with no weeks is refused', !planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: [] }).ok)
+
+  // The playoffs planned on their own.
+  const ownKo = { ...weekly, knockoutStartsAt: '2026-11-01T18:00:00.000Z', knockoutRoundDays: 3 }
+  check('the playoffs can open on their own date', windowFor(ownKo, gCtx, 'knockout', 1).opensAt === '2026-11-01T18:00:00.000Z')
+  check('...with their own days per round', windowFor(ownKo, gCtx, 'knockout', 2).opensAt === '2026-11-04T18:00:00.000Z', windowFor(ownKo, gCtx, 'knockout', 2).opensAt)
+  check('...which leave the group stage alone', windowFor(ownKo, gCtx, 'group', 1).opensAt === windowFor(weekly, gCtx, 'group', 1).opensAt)
+  check('...and a per-round override still wins', windowFor({ ...ownKo, overrides: { 'knockout:1': 5 } }, gCtx, 'knockout', 2).opensAt === '2026-11-06T18:00:00.000Z')
+  check('playoffs that open before the qualifier ends are an error',
+    validateSchedule({ ...weekly, knockoutStartsAt: '2026-10-20T00:00:00.000Z' }, gCtx).some((e) => e.includes('playoffs')))
+  check('a zero-day playoff round is an error', validateSchedule({ ...weekly, knockoutRoundDays: 0 }, gCtx).length > 0)
+  check('a good playoff plan has no errors', validateSchedule(ownKo, gCtx).length === 0, validateSchedule(ownKo, gCtx).join('/'))
+  check('with no qualifier the knockout ignores a playoff date and uses the start date',
+    windowFor({ ...schedule, knockoutStartsAt: '2026-11-01T18:00:00.000Z' }, { qualifierStage: null, qualifierRounds: 0 }, 'knockout', 1).opensAt === schedule.startsAt)
 
   // Overdue.
   const four = applySchedule(buildKnockout(ids(4), opts()), { ...schedule, startsAt: '2026-10-01T00:00:00.000Z' }, { qualifierStage: null, qualifierRounds: 0 })

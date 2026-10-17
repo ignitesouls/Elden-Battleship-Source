@@ -26,6 +26,7 @@ import {
   type GroupsQualifier,
   type TournamentFormat,
 } from "../../lib/tournament/format";
+import { buildGroupStage } from "../../lib/tournament/groups";
 import { scheduleShape, suggestSchedule, type Schedule } from "../../lib/tournament/schedule";
 import { planStart } from "../../lib/tournament/start";
 import { groupNamesProblem, tidyGroupNames } from "../../lib/tournament/groupNames";
@@ -460,7 +461,14 @@ export function StartEventForm({ eventId, mode = "start" }: { eventId: string; m
             {t("Fit", "Ajuster")}
           </button>
         </div>
-        <ScheduleEditor schedule={schedule} shape={shape} onChange={setSchedule} />
+        <ScheduleEditor
+          schedule={schedule}
+          shape={shape}
+          onChange={setSchedule}
+          groupMatches={gq && groups && formatErrors.length === 0 ? buildGroupStage(groups, gq.legs, gq.bestOf) : undefined}
+          names={names}
+          groupNames={groupNames}
+        />
       </div>
 
       <div className="panel stack">
