@@ -1,7 +1,8 @@
 /**
  * One archived match's battle ratings, from a stored snapshot that follows the archive - and, from the
  * same snapshot, team power for a list of players (body `{ players: [...] }`; see storePowers and
- * src/lib/tournament/teamPower.ts), which the tournament pages put lines on matches with.
+ * src/lib/tournament/teamPower.ts), which the tournament pages put lines on matches with - and every
+ * player's Elo and battle rating at once (body `{ board: true }`) for the home page's ratings board.
  *
  * -- Why this exists -------------------------------------------------------------------------------
  *
@@ -227,7 +228,39 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const body = (await req.json().catch(() => ({}))) as { matchKey?: unknown; set?: unknown; players?: unknown }
+    const body = (await req.json().catch(() => ({}))) as { matchKey?: unknown; set?: unknown; players?: unknown; board?: unknown }
+
+    // Every rated player, for the home page's ratings board: { board: true } -> { players: [...] }. The
+    // name and avatar are joined in here so the page needs no second request: a profile's chosen name,
+    // then its Twitch name, then (for a game played signed out) the nickname they last played under.
+    if (body.board === true) {
+      await ensureFresh()
+      const rows = await sql`
+        with latest as (
+          select distinct on (k) k, nickname from (
+            select coalesce(user_id::text, 'name:' || lower(trim(nickname))) as k, nickname, finished_at
+              from public.match_participants
+          ) p
+          order by k, finished_at desc
+        )
+        select s.player_key, s.elo, s.games, s.battle,
+               coalesce(pr.nickname, pr.display_name, l.nickname) as name,
+               pr.avatar_url
+          from public.player_power_snapshots s
+          left join latest l on l.k = s.player_key
+          left join public.profiles pr on pr.id::text = s.player_key`
+      return jsonResponse({
+        players: rows.map((r) => ({
+          key: r.player_key,
+          name: r.name ?? String(r.player_key).replace(/^name:/, ''),
+          avatar: r.avatar_url,
+          verified: !String(r.player_key).startsWith('name:'),
+          elo: r.elo,
+          games: r.games,
+          battle: r.battle,
+        })),
+      })
+    }
 
     // Team power for a list of players: { players: [key, ...] } -> { powers: { key: {...} } }. A player
     // missing from the answer has never played a counted game, and the page counts them as average.
