@@ -118,7 +118,7 @@ export function planNextSwissRound(
 
   const swiss = matches.filter((m) => m.stage === "swiss");
   const drawn = swiss.reduce((most, m) => Math.max(most, m.round), 0);
-  const problems = [...validateSchedule(schedule)];
+  const problems = [...validateSchedule(schedule, scheduleShape(format, seeded.length).ctx)];
   if (drawn >= q.rounds) problems.push(`All ${q.rounds} rounds have been drawn.`);
   const open = swiss.filter(isOpen).length;
   if (open > 0) problems.push(`Round ${drawn} is not finished: ${open} match${open === 1 ? " is" : "es are"} still open.`);
@@ -141,7 +141,7 @@ export function planKnockout(
   advancing: string[],
   schedule: Schedule,
 ): StagePlan {
-  const problems = [...validateSchedule(schedule)];
+  const problems = [...validateSchedule(schedule, scheduleShape(format, seeded.length).ctx)];
   if (!format.knockout) problems.push("This event has no knockout.");
   if (matches.some((m) => m.stage === "knockout")) problems.push("The knockout has already been built.");
 

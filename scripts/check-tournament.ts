@@ -37,7 +37,7 @@ const { qualifierStatus, planNextSwissRound, planKnockout, groupsFromMatches } =
 const { defaultQualifier, defaultKnockout } = await import('../src/lib/tournament/formatDefaults.ts')
 const { frontPageBanners, signupIsOpen, withinChampionWindow, CHAMPION_BANNER_DAYS, signupHeadline, displayName } =
   await import('../src/lib/tournament/frontPage.ts')
-const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, overdueMatches, isOverdue } =
+const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, overdueMatches, isOverdue } =
   await import('../src/lib/tournament/schedule.ts')
 const { computeStandings, cutLineTied } = await import('../src/lib/tournament/standings.ts')
 const { pairSwissRound, recommendedSwissRounds, swissRoundComplete } = await import('../src/lib/tournament/swiss.ts')
@@ -885,6 +885,36 @@ console.log('\nSchedule')
   const gShape = scheduleShape(groupsFormat, 13)
   const gActual = buildGroupStage(assignGroups(ids(13), 4), 1, 1)
   check('the shape counts the longest group\'s matchdays', gShape.ctx.qualifierRounds === Math.max(...gActual.map((m) => m.round)), `${gShape.ctx.qualifierRounds}`)
+
+  // A group stage laid out by week.
+  const gCtx = { qualifierStage: 'group' as const, qualifierRounds: 5 }
+  const spread = spreadGroupWeeks(schedule.startsAt, 5, 3)
+  check('five matchdays over three weeks is 1-2, 3-4, 5', spread.map((w) => w.matchdays.join('')).join(',') === '12,34,5', JSON.stringify(spread.map((w) => w.matchdays)))
+  check('...in back-to-back weeks from the start date',
+    spread[0].opensAt === schedule.startsAt && spread[1].opensAt === spread[0].dueAt && spread[2].dueAt === '2026-10-22T00:00:00.000Z')
+  check('never more weeks than matchdays', spreadGroupWeeks(schedule.startsAt, 2, 6).length === 2)
+  check('one week holds every matchday', spreadGroupWeeks(schedule.startsAt, 4, 1)[0].matchdays.join('') === '1234')
+  const weekly = { ...schedule, groupWeeks: spread }
+  check('matchdays in the same week share its window',
+    windowFor(weekly, gCtx, 'group', 3).opensAt === spread[1].opensAt && windowFor(weekly, gCtx, 'group', 4).dueAt === spread[1].dueAt)
+  check('the knockout follows the last week plus the gap', windowFor(weekly, gCtx, 'knockout', 1).opensAt === '2026-10-24T00:00:00.000Z', windowFor(weekly, gCtx, 'knockout', 1).opensAt)
+  check('...and the event ends after the knockout', scheduleEnd(weekly, gCtx, 2) === '2026-11-07T00:00:00.000Z', scheduleEnd(weekly, gCtx, 2))
+  check('a groups-only event ends when its last week closes, whichever week holds the last matchday',
+    scheduleEnd({ ...schedule, groupWeeks: [spread[2], { ...spread[0], matchdays: [1, 2, 3, 4] }] }, gCtx, 0) === spread[2].dueAt)
+  check('weeks are ignored by a Swiss event', windowFor(weekly, ctx, 'swiss', 2).opensAt === w('swiss', 2).opensAt)
+  check('a good week layout has no errors', validateSchedule(weekly, gCtx).length === 0, validateSchedule(weekly, gCtx).join('/'))
+  check('starting from scratch with no weeks is an error', validateSchedule({ ...schedule, groupWeeks: [] }, gCtx).length > 0)
+  check('a matchday in no week is an error', validateSchedule({ ...schedule, groupWeeks: spread.slice(0, 2) }, gCtx).some((e) => e.includes('5')))
+  check('a matchday in two weeks is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [1] }] }, gCtx).length > 0)
+  check('a week with no matchdays is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [] }] }, gCtx).length > 0)
+  check('a matchday the groups don\'t have is an error', validateSchedule({ ...schedule, groupWeeks: [...spread, { ...spread[2], matchdays: [6] }] }, gCtx).length > 0)
+  check('a week that closes before it opens is an error',
+    validateSchedule({ ...schedule, groupWeeks: [spread[0], spread[1], { ...spread[2], dueAt: spread[2].opensAt }] }, gCtx).length > 0)
+  const gWeeks = spreadGroupWeeks(schedule.startsAt, gShape.ctx.qualifierRounds, 2)
+  const gStart = planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: gWeeks })
+  check('a group stage started by week dates every match from its week',
+    gStart.ok && gStart.plan.matches.every((m) => gWeeks.some((wk) => wk.matchdays.includes(m.phase) && wk.opensAt === m.opensAt && wk.dueAt === m.dueAt)))
+  check('...and a start with a matchday left out is refused', !planStart(groupsFormat, ids(13), { ...schedule, groupWeeks: gWeeks.slice(0, 1) }).ok)
 
   // Overdue.
   const four = applySchedule(buildKnockout(ids(4), opts()), { ...schedule, startsAt: '2026-10-01T00:00:00.000Z' }, { qualifierStage: null, qualifierRounds: 0 })

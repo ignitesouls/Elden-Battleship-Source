@@ -64,8 +64,9 @@ the thing we just stopped collecting.
 
 So the durable identity is `profiles.twitch_id`, and `reclaim()` moves the player's records onto
 whichever uuid they currently hold: `match_participants.user_id`, `match_events.user_id`, their
-`admins` row (including the owner tier, which is seeded from SQL and cannot be regranted in-app), and
-the `profiles` row itself. Writing the same `twitch_id` under a second uuid instead is not an option:
+`admins` row (including the owner tier, which is seeded from SQL and cannot be regranted in-app),
+their tournament rosters, captaincies, solo-pool entries and Dionysus/overlay tokens (the
+`move_account_records` SQL function), and the `profiles` row itself. Writing the same `twitch_id` under a second uuid instead is not an option:
 the column is `unique`, so it fails with `23505`.
 
 `players.user_id` is deliberately left alone. those rows are per-room and belong to the session

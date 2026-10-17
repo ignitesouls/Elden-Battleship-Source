@@ -21,6 +21,22 @@ export interface Schedule {
   stageGapDays: number;
   /** Days for one specific round, keyed "swiss:3", "group:2" or "knockout:4". */
   overrides: Record<string, number>;
+  /**
+   * A group stage played in weeks rather than one matchday after another: each week has its own dates
+   * and the matchdays played in it, so "five matchdays over three weeks" is two, two and one. Present
+   * (even empty) means the organizer is laying the group stage out by week; absent means the round by
+   * round layout above. Only a group stage uses it - Swiss rounds are drawn one at a time from results,
+   * so two of them can't share a window.
+   */
+  groupWeeks?: ScheduleWeek[];
+}
+
+/** One window of a group stage played in weeks. Every matchday in it shares its dates. */
+export interface ScheduleWeek {
+  opensAt: string;
+  dueAt: string;
+  /** Group matchdays (phases) played this week. */
+  matchdays: number[];
 }
 
 /** What the schedule needs to know about the event to lay knockout rounds after the qualifier. */
@@ -36,10 +52,39 @@ export function daysFor(schedule: Schedule, stage: MatchStage, phase: number): n
   return schedule.overrides[`${stage}:${phase}`] ?? schedule.roundDays;
 }
 
+/** The group stage's weeks, when this event's group stage is laid out by week; null otherwise. */
+export function groupWeeksOf(schedule: Schedule, ctx: ScheduleContext): ScheduleWeek[] | null {
+  return ctx.qualifierStage === "group" && Array.isArray(schedule.groupWeeks) ? schedule.groupWeeks : null;
+}
+
+/**
+ * `matchdays` group matchdays spread over `weeks` back-to-back weeks from `startsAt`, as evenly as they
+ * go, earlier weeks taking the extra: five over three is 1-2, 3-4, 5. Never more weeks than matchdays -
+ * a week with nothing in it would be an error.
+ */
+export function spreadGroupWeeks(startsAt: string, matchdays: number, weeks: number): ScheduleWeek[] {
+  if (matchdays <= 0) return [];
+  const count = Math.max(1, Math.min(Math.floor(weeks) || 1, matchdays));
+  const start = Date.parse(startsAt);
+  const out: ScheduleWeek[] = [];
+  let next = 1;
+  for (let i = 0; i < count; i++) {
+    const take = Math.floor(matchdays / count) + (i < matchdays % count ? 1 : 0);
+    out.push({
+      opensAt: new Date(start + 7 * i * DAY_MS).toISOString(),
+      dueAt: new Date(start + 7 * (i + 1) * DAY_MS).toISOString(),
+      matchdays: Array.from({ length: take }, (_, k) => next + k),
+    });
+    next += take;
+  }
+  return out;
+}
+
 /**
  * The window for one round. Rounds are laid end to end from the start date, so a change to one
  * round's length moves every later round with it - which is what an organizer means by "give round 2
- * another week".
+ * another week". A group stage laid out by week takes each matchday's dates from its week instead, and
+ * the knockout then follows the last week to close.
  */
 export function windowFor(
   schedule: Schedule,
@@ -47,14 +92,23 @@ export function windowFor(
   stage: MatchStage,
   phase: number,
 ): { opensAt: string; dueAt: string } {
+  const weeks = groupWeeksOf(schedule, ctx);
+  if (stage === "group" && weeks) {
+    const week = weeks.find((w) => w.matchdays.includes(phase));
+    // A matchday in no week is refused by validateSchedule; the round-by-round dates below are only a fallback.
+    if (week) return { opensAt: week.opensAt, dueAt: week.dueAt };
+  }
+
+  let base = Date.parse(schedule.startsAt);
   let offset = 0;
   if (stage === "knockout" && ctx.qualifierStage && ctx.qualifierRounds > 0) {
-    for (let p = 1; p <= ctx.qualifierRounds; p++) offset += daysFor(schedule, ctx.qualifierStage, p);
+    if (weeks && weeks.length > 0) base = Math.max(...weeks.map((w) => Date.parse(w.dueAt)));
+    else for (let p = 1; p <= ctx.qualifierRounds; p++) offset += daysFor(schedule, ctx.qualifierStage, p);
     offset += schedule.stageGapDays;
   }
   for (let p = 1; p < phase; p++) offset += daysFor(schedule, stage, p);
 
-  const opens = Date.parse(schedule.startsAt) + offset * DAY_MS;
+  const opens = base + offset * DAY_MS;
   return {
     opensAt: new Date(opens).toISOString(),
     dueAt: new Date(opens + daysFor(schedule, stage, phase) * DAY_MS).toISOString(),
@@ -66,8 +120,11 @@ export function applySchedule(matches: TMatch[], schedule: Schedule, ctx: Schedu
   return matches.map((m) => ({ ...m, ...windowFor(schedule, ctx, m.stage, m.phase) }));
 }
 
-/** Everything wrong with a schedule, in words an organizer can act on. */
-export function validateSchedule(schedule: Schedule): string[] {
+/**
+ * Everything wrong with a schedule, in words an organizer can act on. Pass the event's shape so a group
+ * stage laid out by week can be checked against the matchdays it actually has.
+ */
+export function validateSchedule(schedule: Schedule, ctx?: ScheduleContext): string[] {
   const errors: string[] = [];
   if (Number.isNaN(Date.parse(schedule.startsAt))) errors.push("Choose a start date.");
   if (!Number.isFinite(schedule.roundDays) || schedule.roundDays <= 0) errors.push("A round has to stay open for more than zero days.");
@@ -76,12 +133,36 @@ export function validateSchedule(schedule: Schedule): string[] {
     if (!/^(swiss|group|knockout):\d+$/.test(key)) errors.push(`"${key}" is not a round.`);
     else if (!Number.isFinite(days) || days <= 0) errors.push(`${key} has to stay open for more than zero days.`);
   }
+
+  const weeks = ctx ? groupWeeksOf(schedule, ctx) : null;
+  if (ctx && weeks) {
+    if (weeks.length === 0) errors.push("Add at least one week to the group stage.");
+    const seen = new Map<number, number>();
+    weeks.forEach((week, i) => {
+      const opens = Date.parse(week.opensAt);
+      const due = Date.parse(week.dueAt);
+      if (Number.isNaN(opens) || Number.isNaN(due)) errors.push(`Week ${i + 1} needs an opening and a closing date.`);
+      else if (due <= opens) errors.push(`Week ${i + 1} has to close after it opens.`);
+      if (week.matchdays.length === 0) errors.push(`Week ${i + 1} has no matchdays in it.`);
+      for (const p of week.matchdays) {
+        if (!Number.isInteger(p) || p < 1 || p > ctx.qualifierRounds) errors.push(`Week ${i + 1} has matchday ${p}, but the groups only have ${ctx.qualifierRounds}.`);
+        else if (seen.has(p)) errors.push(`Matchday ${p} is in both week ${seen.get(p)! + 1} and week ${i + 1}.`);
+        else seen.set(p, i);
+      }
+    });
+    const missing = Array.from({ length: ctx.qualifierRounds }, (_, i) => i + 1).filter((p) => !seen.has(p));
+    if (weeks.length > 0 && missing.length > 0) {
+      errors.push(`${missing.length === 1 ? "Matchday" : "Matchdays"} ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} in any week yet.`);
+    }
+  }
   return errors;
 }
 
 /** When the whole event is meant to be over: the last round's deadline. */
 export function scheduleEnd(schedule: Schedule, ctx: ScheduleContext, knockoutPhases: number): string {
   if (knockoutPhases > 0) return windowFor(schedule, ctx, "knockout", knockoutPhases).dueAt;
+  const weeks = groupWeeksOf(schedule, ctx);
+  if (weeks && weeks.length > 0) return new Date(Math.max(...weeks.map((w) => Date.parse(w.dueAt)))).toISOString();
   if (ctx.qualifierStage) return windowFor(schedule, ctx, ctx.qualifierStage, ctx.qualifierRounds).dueAt;
   return schedule.startsAt;
 }

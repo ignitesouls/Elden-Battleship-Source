@@ -82,6 +82,12 @@ async function reclaim(admin: SupabaseClient, oldId: string, newId: string): Pro
     await admin.from('admins').delete().eq('user_id', oldId)
   }
 
+  // Tournament rosters, captaincies and the solo pool, plus the Dionysus and overlay tokens. Without
+  // this the player stays on their team under an id with no profile: no Twitch link, and the site no
+  // longer knows them as a member or captain. See the reclaim_tournament_records migration.
+  const { error: recordsError } = await admin.rpc('move_account_records', { p_old: oldId, p_new: newId })
+  if (recordsError) throw new Error(`Reassigning tournament records failed: ${recordsError.message}`)
+
   const { error: profileError } = await admin.from('profiles').delete().eq('id', oldId)
   if (profileError) throw new Error(`Releasing old profile failed: ${profileError.message}`)
 

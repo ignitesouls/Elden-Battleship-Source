@@ -32,7 +32,9 @@ export type PlanResult = { ok: true; plan: StartPlan } | { ok: false; problems: 
 export function planStart(given: TournamentFormat, seeded: string[], schedule: Schedule): PlanResult {
   // A team placed in a group and then withdrawn must not hold a place in that group's count.
   const format = prunePlacement(given, seeded);
-  const problems = [...validateFormat(format, seeded.length), ...validateSchedule(schedule)];
+  const formatProblems = validateFormat(format, seeded.length);
+  // The shape (how many matchdays a week has to hold) is only known for a format that makes sense.
+  const problems = [...formatProblems, ...validateSchedule(schedule, formatProblems.length === 0 ? scheduleShape(format, seeded.length).ctx : undefined)];
   if (new Set(seeded).size !== seeded.length) problems.push("A team is listed twice.");
   if (problems.length > 0) return { ok: false, problems };
 
