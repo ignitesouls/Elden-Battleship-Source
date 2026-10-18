@@ -22,8 +22,8 @@ interface RatedPlayer {
 /**
  * Every rated player, in one request.
  *
- * Through the shared cache so a visitor bouncing between the home page and a room doesn't ask again
- * each time - the home page is the most-visited page on the site, and every request is a log line.
+ * Through the shared cache so a visitor bouncing between the leaderboard and other pages doesn't ask
+ * again each time - every request is a log line.
  */
 function fetchRatedPlayers(): Promise<RatedPlayer[]> {
   return cached("ratings-board", async () => {
@@ -41,8 +41,8 @@ function fetchRatedPlayers(): Promise<RatedPlayer[]> {
  * crew games of three fleets has a battle rating but no Elo, and one who only plays 1v1s the reverse.
  * One table would fill half of every such row with dashes.
  *
- * Unlike the leaderboard, these are NOT per board: both are worked out across every board at once,
- * the same numbers the tournament pages' team power is built from.
+ * Shown on the leaderboard page, but unlike the rest of it these are NOT per board: both are worked
+ * out across every board at once, the same numbers the tournament pages' team power is built from.
  */
 export function RatingsBoard() {
   const t = useT();
@@ -62,8 +62,7 @@ export function RatingsBoard() {
   const eloPlayers = useMemo(() => (players ?? []).filter((p) => p.games > 0), [players]);
   const battlePlayers = useMemo(() => (players ?? []).filter((p) => p.battle !== null), [players]);
 
-  // Nothing at all while loading or with nothing to show: an empty panel is a bigger thing on the
-  // front page than the fact deserves - the same rule as Current battles.
+  // Nothing at all while loading or with nothing to show: an empty panel says more than the fact deserves.
   if (eloPlayers.length === 0 && battlePlayers.length === 0) return null;
 
   return (
@@ -79,9 +78,6 @@ export function RatingsBoard() {
       </div>
       {eloPlayers.length > 0 && <EloList players={eloPlayers} />}
       {battlePlayers.length > 0 && <BattleList players={battlePlayers} />}
-      <Link to="/leaderboard" style={{ fontSize: "0.75rem", textAlign: "center" }}>
-        {t("Full leaderboard, board by board →", "Classement complet, plateau par plateau →")}
-      </Link>
     </div>
   );
 }

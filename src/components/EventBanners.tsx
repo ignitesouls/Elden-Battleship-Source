@@ -201,7 +201,7 @@ function EventBanner({ banner }: { banner: Banner }) {
         <BannerHead event={event}>
           <h3 style={{ margin: 0 }}>{t(`${event.name} is underway`, `${event.name} est en cours`)}</h3>
         </BannerHead>
-        <div>
+        <div style={{ textAlign: "center" }}>
           <Link to={to} className="link-button primary">
             {t("View the bracket", "Voir le tableau")}
           </Link>

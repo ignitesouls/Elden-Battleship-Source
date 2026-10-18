@@ -9,7 +9,6 @@ import { SiteFooter } from "../components/SiteFooter";
 import { EventBanners } from "../components/EventBanners";
 import { DionysusCard } from "../components/DionysusCard";
 import { ScheduledMatches } from "../components/ScheduledMatches";
-import { RatingsBoard } from "../components/RatingsBoard";
 import { useAuthProfile, accountName, saveNickname } from "../hooks/useAuthProfile";
 import { NICKNAME_MAX } from "../lib/profiles";
 import { formatRoomCode } from "../lib/roomCode";
@@ -294,10 +293,6 @@ export function Home() {
       {/* Official tournament matches the captains have scheduled, and any being played now - at the
           bottom, after the casual battles, with links to spectate and to the players' streams. */}
       <ScheduledMatches />
-
-      {/* Last, after everything happening now: who is best is what a visitor reads once they know
-          there is nothing on to join or watch. */}
-      <RatingsBoard />
 
       <SiteFooter />
     </div>

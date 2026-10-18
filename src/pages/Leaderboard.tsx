@@ -14,6 +14,7 @@ import type { MatchEventRow } from "../lib/almanac";
 import { SiteFooter } from "../components/SiteFooter";
 import { useT } from "../lib/language";
 import { OfficialRecord } from "../components/OfficialRecord";
+import { RatingsBoard } from "../components/RatingsBoard";
 
 type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
 
@@ -278,6 +279,10 @@ export function Leaderboard() {
         <OfficialRecord />
         <p className="muted">{t("Career records for one board at a time.", "Records de carrière, un plateau à la fois.")}</p>
       </div>
+
+      {/* Above the board tabs: these two lists are all-time across every board, so they don't
+          change when a board is picked below. */}
+      <RatingsBoard />
 
       {/* Outside the empty check, so a set with no matches yet can still be switched away from. */}
       <div className="panel stack" style={{ gap: "0.4rem" }}>
