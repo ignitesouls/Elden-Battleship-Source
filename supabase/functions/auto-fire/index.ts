@@ -26,8 +26,20 @@
 // helms") that no event flag can settle, and a stale client left running must not be able to fire
 // into one. Only rooms actually in battle. Only when the token resolves to exactly one live match -
 // two would mean guessing which board to shoot at, and a shot cannot be taken back.
+//
+// -- Why the database directly, not supabase-js ----------------------------------------------------
+//
+// The mod calls this about once a second for the whole of every match. Through supabase-js each of
+// those calls made seven or eight REST requests back out through the API gateway, and every gateway
+// request is a log line - in October 2026 that made this function the biggest thing on the project's
+// metered log ingest. Over SUPABASE_DB_URL the same reads write no gateway lines at all, so a poll now
+// costs one line (the mod's own request) instead of eight or nine.
+//
+// Every read goes through rows(), which builds its result with json_agg - what PostgREST builds its
+// responses with - so timestamps, uuids and jsonb reach the code below as the exact strings and shapes
+// supabase-js used to hand it. The board derivation, the clock and the PB cache key all read them.
 
-import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
+import postgres from 'npm:postgres@3.4.7'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
 import { buildFlatBoard, dealtPool } from '../../../src/lib/squareSetFormat.ts'
 import { applyBoardPerm } from '../../../src/lib/boardBalance.ts'
@@ -49,6 +61,18 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+// Module scope, so a warm instance reuses its connections across polls. `prepare: false` keeps it
+// working through the transaction pooler as well as on a direct connection. Two rather than one so a
+// captain's first-poll PB read (a career's worth of rows) can't hold up another player's poll queued
+// behind it on the same instance; queries sent together are pipelined either way.
+const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 2, idle_timeout: 30 })
+
+/** A query's rows exactly as PostgREST would have returned them - see the header. */
+async function rows<T>(query: postgres.PendingQuery<postgres.Row[]>): Promise<T[]> {
+  const [{ rows }] = await sql`select coalesce(json_agg(q), '[]'::json) as rows from (${query}) q`
+  return rows as T[]
 }
 
 /**
@@ -176,18 +200,13 @@ function median(values: number[]): number | null {
  * there is no reset to detect between matches, and so the number can never disagree with the
  * scoreboard.
  */
-async function liveStats(
-  admin: SupabaseClient,
-  roomId: string,
-  playerId: string,
-  pause: PauseFields
-): Promise<LiveTally> {
-  const { data } = await admin
-    .from('attacks')
-    .select('cell_index, result, created_at, auto')
-    .eq('room_id', roomId)
-    .eq('attacker_player_id', playerId)
-    .gte('cell_index', 0) // negative cells are bookkeeping markers, never real shots
+async function liveStats(roomId: string, playerId: string, pause: PauseFields): Promise<LiveTally> {
+  const data = await rows<{ cell_index: number; result: string; created_at: string; auto: boolean }>(sql`
+    select cell_index, result, created_at, auto
+    from public.attacks
+    where room_id = ${roomId}
+      and attacker_player_id = ${playerId}
+      and cell_index >= 0`) // negative cells are bookkeeping markers, never real shots
 
   const connected = new Map<number, boolean>()
   // Hulls, not shots: one `sunk` row per fleet finished, summed - the same count archive_match()
@@ -295,75 +314,45 @@ interface PersonalBests {
 const PB_TTL_MS = 30 * 60 * 1000
 const pbCache = new Map<string, { at: number; bests: PersonalBests }>()
 
-/** PostgREST caps a read at 1000 rows; a career's shot log is well past that. */
-async function allRows<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
-): Promise<T[]> {
-  const SIZE = 1000
-  const out: T[] = []
-  for (let from = 0; ; from += SIZE) {
-    const { data, error } = await page(from, from + SIZE - 1)
-    if (error) throw error
-    out.push(...(data ?? []))
-    if (!data || data.length < SIZE) return out
-  }
-}
-
 /**
  * Every stored id that folds into the boss board: null (rooms from before square sets) and both
  * cuts. They are one board for records, exactly as displaySquareSet folds them on the website.
+ * A function, not a constant, because a postgres.js fragment is a query and is built per use.
  */
-const BOSS_BOARD_FILTER = `square_set.is.null,square_set.in.(${Object.keys(BOSS_SETS).join(',')})`
+const bossBoard = () => sql`(square_set is null or square_set in ${sql(Object.keys(BOSS_SETS))})`
 
-async function personalBests(
-  admin: SupabaseClient,
-  userId: string,
-  boardSize: number,
-  shape: string
-): Promise<PersonalBests> {
+async function personalBests(userId: string, boardSize: number, shape: string): Promise<PersonalBests> {
+  // No paging: PostgREST's 1000-row cap was the only reason the REST version walked these in pages.
   const [voided, fleets, games, events] = await Promise.all([
     // The durable list, which outlives the 30-day sweep of match_reports - see 20261003000000.
-    admin.from('voided_matches').select('match_key'),
-    // Every game archived on this board size; the fleet is compared below, since PostgREST cannot
-    // sort a jsonb array's sizes. A row per fleet in the match, all carrying the room's one ship_defs.
-    allRows<{ match_key: string; ship_defs: { size: number }[] | null }>((from, to) =>
-      admin
-        .from('match_fleets')
-        .select('match_key, ship_defs')
-        .eq('board_size', boardSize)
-        .or(BOSS_BOARD_FILTER)
-        .order('match_key')
-        .order('team')
-        .range(from, to)
-    ),
-    allRows<{ match_key: string; shots: number; hits: number; sunk: number }>((from, to) =>
-      admin
-        .from('match_participants')
-        .select('match_key, shots, hits, sunk')
-        .eq('user_id', userId)
-        .or(BOSS_BOARD_FILTER)
-        .order('match_key')
-        .range(from, to)
-    ),
-    allRows<{ match_key: string; cell_index: number; match_seconds: number | null }>((from, to) =>
-      admin
-        .from('match_events')
-        .select('match_key, cell_index, match_seconds')
-        .eq('participant_key', userId)
-        .eq('auto', true)
-        .gte('cell_index', 0)
-        // Narrows the read server-side; the fleet is matched below along with the participants.
-        .eq('board_size', boardSize)
-        .or(BOSS_BOARD_FILTER)
-        // The order match_events_participant_idx is built in, so paging walks the index rather than
-        // sorting a career's worth of rows - and `id` makes it a total order, so no page skips a row.
-        .order('finished_at', { ascending: false })
-        .order('id', { ascending: false })
-        .range(from, to)
-    ),
+    rows<{ match_key: string }>(sql`select match_key from public.voided_matches`),
+    // Every game archived on this board size; the fleet is compared below in JS, with the same
+    // fleetShape the website uses. A row per fleet in the match, all carrying the room's one ship_defs.
+    rows<{ match_key: string; ship_defs: { size: number }[] | null }>(sql`
+      select match_key, ship_defs
+      from public.match_fleets
+      where board_size = ${boardSize} and ${bossBoard()}
+      order by match_key, team`),
+    rows<{ match_key: string; shots: number; hits: number; sunk: number }>(sql`
+      select match_key, shots, hits, sunk
+      from public.match_participants
+      where user_id = ${userId} and ${bossBoard()}
+      order by match_key`),
+    rows<{ match_key: string; cell_index: number; match_seconds: number | null }>(sql`
+      select match_key, cell_index, match_seconds
+      from public.match_events
+      where participant_key = ${userId}
+        and auto
+        and cell_index >= 0
+        -- Narrows the read server-side; the fleet is matched below along with the participants.
+        and board_size = ${boardSize}
+        and ${bossBoard()}
+      -- The order match_events_participant_idx is built in, so the read walks the index, and the
+      -- order the first-seen time per square below depends on.
+      order by finished_at desc, id desc`),
   ])
   // Voided games count for nothing anywhere on the site, PBs included - see lib/voidedMatches.
-  const struck = new Set((voided.data ?? []).map((r) => r.match_key))
+  const struck = new Set(voided.map((r) => r.match_key))
   // The games played on this exact board and fleet. Every archived match has its fleets (checked
   // Oct 2026: 290 of 290), so nothing is lost here that could be compared fairly.
   const sameBoard = new Set(fleets.filter((f) => fleetShape(f.ship_defs) === shape).map((f) => f.match_key))
@@ -411,7 +400,6 @@ async function personalBests(
  * reason a kill's reply comes back as an error - the shots have already landed by the time this runs.
  */
 async function loadBests(
-  admin: SupabaseClient,
   userId: string,
   room: { id: string; board_size: number; ship_defs: { size: number }[] | null },
   matchStartedAt: string | null
@@ -422,7 +410,7 @@ async function loadBests(
     const now = Date.now()
     let hit = pbCache.get(key)
     if (!hit || now - hit.at > PB_TTL_MS) {
-      hit = { at: now, bests: await personalBests(admin, userId, room.board_size, shape) }
+      hit = { at: now, bests: await personalBests(userId, room.board_size, shape) }
       pbCache.set(key, hit)
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }
@@ -531,49 +519,49 @@ Deno.serve(async (req) => {
     const kills: KillReport[] = Array.isArray(body?.kills) ? body.kills : []
     if (typeof token !== 'string' || !token) return jsonResponse({ ok: false, error: 'missing_token' }, 400)
 
-    // Service role throughout: the caller holds no session, and every table it needs to reach is
-    // closed to anon by design. Authorisation is the token lookup below, not RLS.
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
-
-    const { data: tokenRow } = await admin
-      .from('ingest_tokens')
-      .select('user_id')
-      .eq('token', token)
-      .maybeSingle()
+    // Authorisation is the token lookup below, not RLS: the caller holds no session, and every table
+    // it needs to reach is closed to anon by design. The connection is the database's own role, which
+    // the room and fleet guard triggers exempt by name exactly as they exempt service_role.
+    //
+    // Which match is this person in right now? Resolved per request rather than stored in the token,
+    // which is what lets one permanent token follow a player across rooms, teams and matches. The
+    // token, their seats and their live rooms are one query - three round trips folded into one.
+    //
+    // The five room columns past board_perm are the website's own match clock: starting_seconds and
+    // prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
+    // ship_defs is the fleet, which with board_size picks the games the PB line compares against.
+    // seed_set_at says which squares the board was dealt from - see dealtPool.
+    const [tokenRow] = await rows<{
+      user_id: string
+      seats: { id: string; team: number | null; room_id: string }[]
+      battles: ({
+        id: string
+        board_size: number
+        square_set: string | null
+        seed: string | null
+        board_perm: number[] | null
+        seed_set_at: string | null
+        ship_defs: { size: number }[] | null
+      } & { starting_seconds?: number; prep_seconds?: number } & PauseFields)[]
+    }>(sql`
+      select
+        t.user_id,
+        (select coalesce(json_agg(s), '[]'::json)
+           from (select id, team, room_id from public.players where user_id = t.user_id) s) as seats,
+        (select coalesce(json_agg(r), '[]'::json)
+           from (select id, board_size, square_set, seed, board_perm, seed_set_at, starting_seconds,
+                        prep_seconds, pause_at, resume_at, pause_log, ship_defs
+                   from public.rooms
+                  where status = 'battle'
+                    and id in (select room_id from public.players
+                                where user_id = t.user_id and team is not null)) r) as battles
+      from public.ingest_tokens t
+      where t.token = ${token}`)
     if (!tokenRow) return jsonResponse({ ok: false, error: 'unknown_token' }, 403)
 
-    // Which match is this person in right now? Resolved per request rather than stored in the token,
-    // which is what lets one permanent token follow a player across rooms, teams and matches.
-    //
-    // Two queries rather than one embedded join: square_counts holds foreign keys to both players and
-    // rooms, so PostgREST sees more than one relationship between them and refuses to guess which one
-    // to embed. Naming the constraint would work right up until the next junction table appears.
-    const { data: seats } = await admin
-      .from('players')
-      .select('id, team, room_id')
-      .eq('user_id', tokenRow.user_id)
-    const seated = (seats ?? []).filter((s) => s.team !== null && s.team !== undefined)
-
-    const { data: battles } = seated.length
-      ? await admin
-          .from('rooms')
-          // The five columns past board_perm are the website's own match clock: starting_seconds and
-          // prep_seconds size its countdown, pause_at/resume_at/pause_log stop it - see computeClock.
-          // ship_defs is the fleet, which with board_size picks the games the PB line compares against.
-          // seed_set_at says which squares the board was dealt from - see dealtPool.
-          .select('id, board_size, square_set, seed, board_perm, seed_set_at, starting_seconds, prep_seconds, pause_at, resume_at, pause_log, ship_defs')
-          .in(
-            'id',
-            seated.map((s) => s.room_id)
-          )
-          .eq('status', 'battle')
-      : { data: [] }
-
+    const seated = tokenRow.seats.filter((s) => s.team !== null && s.team !== undefined)
     const live = seated.flatMap((seat) => {
-      const room = (battles ?? []).find((r) => r.id === seat.room_id)
+      const room = tokenRow.battles.find((r) => r.id === seat.room_id)
       return room ? [{ seat, room }] : []
     })
     if (live.length === 0) return jsonResponse({ ok: false, error: 'not_in_match' })
@@ -597,25 +585,23 @@ Deno.serve(async (req) => {
     // the overlay gives up on a reply that takes too long - so a request built as a queue of
     // one-at-a-time reads is how a kill used to end up stuck in the overlay's retry loop for half
     // a minute. Same reads, same count, just not waiting on each other.
-    const [{ data: roster }, { data: mine }, { data: markerRow }] = await Promise.all([
-      admin.from('players').select('team').eq('room_id', room.id),
+    const [roster, mine, [markerRow]] = await Promise.all([
+      rows<{ team: number | null }>(sql`select team from public.players where room_id = ${room.id}`),
       // Everything this team has already put on the board, so a re-reported kill - or a square the
       // player clicked manually before the mod got to it - is skipped rather than duplicated.
-      admin.from('attacks').select('cell_index').eq('room_id', room.id).eq('attacker_team', seat.team),
+      rows<{ cell_index: number }>(sql`
+        select cell_index from public.attacks where room_id = ${room.id} and attacker_team = ${seat.team}`),
       // The start marker, room-wide rather than keyed to this player - see MATCH_START_MARKER. Every
       // room reaches 'battle' with one already written (startBattle checks the insert before
       // flipping status), so a live match missing one here is the rare room from before the marker
       // existed. Read up front because nothing below changes it.
-      admin
-        .from('attacks')
-        .select('created_at')
-        .eq('room_id', room.id)
-        .eq('cell_index', MATCH_START_MARKER)
-        .limit(1)
-        .maybeSingle(),
+      rows<{ created_at: string }>(sql`
+        select created_at from public.attacks
+        where room_id = ${room.id} and cell_index = ${MATCH_START_MARKER}
+        limit 1`),
     ])
-    const defenders = activeTeams(roster ?? []).filter((t) => t !== seat.team)
-    const alreadyFired = new Set((mine ?? []).map((a) => a.cell_index))
+    const defenders = activeTeams(roster).filter((t) => t !== seat.team)
+    const alreadyFired = new Set(mine.map((a) => a.cell_index))
     const matchStartedAt: string | null = markerRow?.created_at ?? null
 
     const now = Date.now()
@@ -662,28 +648,29 @@ Deno.serve(async (req) => {
         // next one - can read that snapshot before the earlier request's row lands. Without
         // attacks_one_shot_per_square backing this up, that race inserted a second row at a square
         // already fired at; with it, the second insert is a no-op instead of a duplicate.
-        const { data: inserted, error: insertError } = await admin
-          .from('attacks')
-          .upsert(
-            defenders.map((defender_team) => ({
-              room_id: room.id,
-              cell_index: cell,
-              attacker_team: seat.team,
-              defender_team,
-              attacker_player_id: seat.id,
-              created_at: at,
-              // Marks this shot as timed off a real kill event rather than a manual click - see
-              // the 20260920 migration. Only this path should ever set it.
-              auto: true,
-            })),
-            { onConflict: 'room_id,attacker_team,defender_team,cell_index', ignoreDuplicates: true }
-          )
-          .select('id')
-        if (insertError) {
+        const shots = defenders.map((defender_team) => ({
+          room_id: room.id,
+          cell_index: cell,
+          attacker_team: seat.team,
+          defender_team,
+          attacker_player_id: seat.id,
+          created_at: at,
+          // Marks this shot as timed off a real kill event rather than a manual click - see
+          // the 20260920 migration. Only this path should ever set it.
+          auto: true,
+        }))
+        // Not through rows(): an insert can't sit in a subquery, and a uuid comes back a string anyway.
+        let inserted: { id: string }[]
+        try {
+          inserted = (await sql`
+            insert into public.attacks ${sql(shots)}
+            on conflict (room_id, attacker_team, defender_team, cell_index) do nothing
+            returning id`) as unknown as { id: string }[]
+        } catch {
           skipped.push({ flag, reason: 'insert_failed' })
           continue
         }
-        if (!inserted || inserted.length === 0) {
+        if (inserted.length === 0) {
           // Every defender's row already existed - a race with another poll (or a manual click
           // that beat the mod to it) got here first. Nothing landed, so there is nothing to resolve.
           alreadyFired.add(cell)
@@ -692,11 +679,16 @@ Deno.serve(async (req) => {
         }
 
         // Each opposing fleet's row resolves on its own, so they go together rather than in turn.
+        // A failed resolution reads as no verdict, as a failed RPC did - the shot has landed regardless.
         const results = await Promise.all(
-          inserted.map((row) => admin.rpc('resolve_attack', { p_attack_id: row.id }))
+          inserted.map((row) =>
+            sql`select public.resolve_attack(${row.id}::uuid) as result`
+              .then(([r]) => (r?.result ?? null) as string | null)
+              .catch(() => null)
+          )
         )
         let verdict: string | null = null
-        for (const { data: result } of results) {
+        for (const result of results) {
           // One shot, one verdict: connecting with any fleet makes the shot a hit, matching how the
           // scoreboard and the archive both count it. `sunk` is the strongest verdict and wins over
           // a plain `hit`; without that a shot that sank a ship on one board and missed another
@@ -714,8 +706,8 @@ Deno.serve(async (req) => {
     // The tally has to wait for the shots above; the bests do not depend on it, so the two are
     // read together.
     const [tally, bests] = await Promise.all([
-      liveStats(admin, room.id, seat.id, room),
-      loadBests(admin, tokenRow.user_id, room, matchStartedAt),
+      liveStats(room.id, seat.id, room),
+      loadBests(tokenRow.user_id, room, matchStartedAt),
     ])
     // Spread rather than assigned, so a captain with no PBs gets no `pb` key at all - which is how
     // the overlay knows to draw no PB line, and how an older DLL never sees a field it can't read.
