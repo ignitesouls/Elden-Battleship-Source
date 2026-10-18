@@ -321,8 +321,12 @@ export async function fetchMatchEvents(limit = 50000) {
  *   the folds disagree             `btrim` is ASCII-only where JavaScript's `.trim()` is not. A
  *                                  nickname with an exotic space folds differently in the two
  *                                  places, and the visitor gets a correct page at the old price.
- *   the player really has none     a captain who has never fired. The fallback costs one read and
- *                                  finds nothing either, which is the honest answer.
+ *   the player really has none     a brand-new captain, which is exactly who the room screen sends
+ *                                  here to set up auto-marking. This one must NOT fall back: "one
+ *                                  read" is the whole event archive, dozens of 1000-row pages in a
+ *                                  row, to find nothing. So it first asks the participation rows -
+ *                                  the cached feed the career page has already requested, so no
+ *                                  extra round trip - and a key that has played no match stops here.
  *
  * -- What it does NOT fetch ---------------------------------------------------------------------
  *
@@ -347,6 +351,9 @@ export async function fetchPlayerEvents(key: string, limit = 50000) {
     })) as never[];
   });
   if (own.length > 0) return own;
+
+  const played = (await fetchParticipants()).some((r) => participantKey(r) === key);
+  if (!played) return [] as never[];
 
   const all = (await fetchMatchEvents(limit)) as unknown as { user_id: string | null; nickname: string }[];
   return all.filter((e) => participantKey(e) === key) as never[];
