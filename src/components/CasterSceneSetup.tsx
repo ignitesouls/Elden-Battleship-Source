@@ -327,6 +327,13 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
             )}
           </li>
           <li>
+            <strong>{t("Sort out your sound.", "Réglez votre son.")}</strong>{" "}
+            {t(
+              "Caster Mic and Caster Desktop Audio arrive muted in both scenes, so nobody hears you twice. If Mic/Aux and Desktop Audio aren't already on in Settings → Audio, unmute them in the Audio Mixer - one fader covers the match and the break. If they are, delete these two.",
+              "Caster Mic et Caster Desktop Audio arrivent en sourdine dans les deux scènes, pour que personne ne vous entende en double. Si Micro/Aux et Audio du bureau ne sont pas déjà activés dans Paramètres → Audio, réactivez-les dans le Mélangeur audio - un seul curseur couvre le match et la pause. S'ils le sont, supprimez ces deux sources."
+            )}
+          </li>
+          <li>
             <strong>{t("Join the match as a spectator.", "Rejoignez la partie en spectateur.")}</strong>{" "}
             {t(
               "The scene follows you in: player streams, names and stats fill themselves in. Nothing to paste per match.",

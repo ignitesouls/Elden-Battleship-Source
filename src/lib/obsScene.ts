@@ -382,7 +382,7 @@ export function sceneFilename(kind: SceneKind): string {
  *  move, but it arrives composed rather than stacked.
  *
  *  Two scenes in one collection so a caster hotkeys between "the match" and "the desk on camera"
- *  rather than swapping collections. They share no sources.
+ *  rather than swapping collections. They share no sources but the caster's own audio - see CAST_AUDIO.
  * ==================================================================================== */
 
 export const CAST_SCENE_MAIN = "EB Cast";
@@ -553,12 +553,36 @@ export function castSceneParts({
   return parts;
 }
 
+/**
+ * The caster's own sound: their mic and their desktop, as placeholders.
+ *
+ * Muted on arrival, for the reason the player's pair is (see AUDIO_CAPTURES): most casters already
+ * have Mic/Aux and Desktop Audio on in Settings -> Audio, and a live copy here would double them.
+ *
+ * The desktop is the default speakers rather than one app, unlike the player's game audio, because a
+ * caster's sound comes from several places - a co-caster on Discord, a player on a call, music.
+ * Not called "Desktop Audio": that is the name OBS gives its own global channel, and a collection
+ * carrying a second source of that name collides with it on import.
+ *
+ * SHARED between the two scenes - the one exception to "they share no sources". A voice is the same
+ * voice on the match and on the break, so one fader and one mute button has to cover both, or the
+ * caster cuts to the break and is suddenly talking through a source they muted an hour ago.
+ */
+export const CAST_AUDIO = [
+  // Written out rather than read off AUDIO_CAPTURES, which is declared further down this module and
+  // would not exist yet when this runs. Same values as the player's mic.
+  { name: "Caster Mic", id: "wasapi_input_capture", settings: { device_id: "default" } },
+  { name: "Caster Desktop Audio", id: "wasapi_output_capture", settings: { device_id: "default" } },
+] as const;
+
 /** The two-scene casting collection, built from castSceneParts. */
 export function buildCastCollection({ newId, ...options }: CastCollectionOptions) {
   const uuid = newId ?? (() => crypto.randomUUID());
   const parts = castSceneParts(options);
   const mainParts = parts.filter((p) => p.scene === "main");
   const breakParts = parts.filter((p) => p.scene === "break");
+  // Made once and placed in both scenes - see CAST_AUDIO.
+  const audio = CAST_AUDIO.map((a) => ({ ...a, uuid: uuid() }));
 
   /**
    * Builds one scene object and its browser sources from a list of parts.
@@ -569,7 +593,12 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
    */
   function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement }>) {
     const withIds = parts.map((p) => ({ ...p, uuid: uuid() }));
-    const items = withIds.map((p, i) => sceneItem(p.entry.source.obsName, p.uuid, p.at, i + 1));
+    // The shared audio at the very bottom of each scene: sound only, so its place is arbitrary, and
+    // the bottom keeps it out of the way of the stack that does matter.
+    const items = [
+      ...audio.map((a) => ({ name: a.name, uuid: a.uuid, at: { x: 0, y: 0, scale: 1 } })),
+      ...withIds.map((p) => ({ name: p.entry.source.obsName, uuid: p.uuid, at: p.at })),
+    ].map((p, i) => sceneItem(p.name, p.uuid, p.at, i + 1));
     const sceneObj = {
       prev_ver: PREV_VER,
       name,
@@ -605,7 +634,13 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
     current_scene: CAST_SCENE_MAIN,
     current_program_scene: CAST_SCENE_MAIN,
     scene_order: [{ name: CAST_SCENE_MAIN }, { name: CAST_SCENE_BREAK }],
-    sources: [...main.browsers, ...brk.browsers, main.sceneObj, brk.sceneObj],
+    sources: [
+      ...audio.map((a) => inputSource(a.name, a.uuid, a.id, a.settings, true)),
+      ...main.browsers,
+      ...brk.browsers,
+      main.sceneObj,
+      brk.sceneObj,
+    ],
     groups: [],
     transitions: [],
     current_transition: "Fade",
@@ -841,20 +876,26 @@ const AUDIO_CAPTURES = {
 function captureSource(part: PlayerPart, uuid: string) {
   const audio = part.capture === "mic" || part.capture === "game-audio" ? AUDIO_CAPTURES[part.capture] : null;
   const id = audio ? audio.id : part.capture === "game" ? "game_capture" : "dshow_input";
+  const settings = audio ? audio.settings : part.capture === "game" ? ELDEN_RING_CAPTURE : {};
+  return inputSource(part.name, uuid, id, settings, Boolean(audio));
+}
+
+/** Any non-browser input OBS supplies - captures, mics, outputs - with OBS's defaults around it. */
+function inputSource(name: string, uuid: string, id: string, settings: object, muted: boolean) {
   return {
     prev_ver: PREV_VER,
-    name: part.name,
+    name,
     uuid,
     id,
     versioned_id: id,
-    settings: audio ? audio.settings : part.capture === "game" ? ELDEN_RING_CAPTURE : {},
+    settings,
     mixers: 255,
     sync: 0,
     flags: 0,
     volume: 1.0,
     balance: 0.5,
     enabled: true,
-    muted: Boolean(audio),
+    muted,
     "push-to-mute": false,
     "push-to-mute-delay": 0,
     "push-to-talk": false,

@@ -125,13 +125,25 @@ console.log("\ncollection - shape");
   );
   ok("the clock is stacked above the frame art", order.indexOf("EB Caster Clock") > order.indexOf("EB Frame"));
   ok("the clock is the top item", order[order.length - 1] === "EB Caster Clock");
+
+  // The caster's mic and desktop: one source each, muted, standing in BOTH scenes.
+  const audioIns = file.sources.filter((s) => s.id === "wasapi_input_capture" || s.id === "wasapi_output_capture");
+  ok("one caster mic and one caster desktop audio", audioIns.length === 2 && audioIns.map((s) => s.name).sort().join() === "Caster Desktop Audio,Caster Mic");
+  ok("both arrive muted, so a global mic is never doubled", audioIns.every((s) => s.muted));
+  ok(
+    "each is in both scenes, as the same source",
+    audioIns.every((a) => scenes.every((sc) => (sc.settings as { items: { source_uuid: string }[] }).items.some((i) => i.source_uuid === a.uuid)))
+  );
+  ok("no source collides with OBS's own 'Desktop Audio' or 'Mic/Aux'", !file.sources.some((s) => s.name === "Desktop Audio" || s.name === "Mic/Aux"));
   ok(
     "the frame art is stacked above every screen and the board",
     order.filter((n) => n?.startsWith("EB Screen") || n === "EB Board").every((n) => order.indexOf(n) < order.indexOf("EB Frame"))
   );
-  ok("every source name is unique", new Set(browsers.map((s) => s.name)).size === browsers.length);
+  // Every input, not just the browser sources - the caster's audio is in the scenes too.
+  const inputs = file.sources.filter((s) => s.id !== "scene");
+  ok("every source name is unique", new Set(inputs.map((s) => s.name)).size === inputs.length);
 
-  const uuids = new Set(browsers.map((s) => s.uuid));
+  const uuids = new Set(inputs.map((s) => s.uuid));
   for (const scene of scenes) {
     const settings = scene.settings as { items: { source_uuid: string; id: number }[]; id_counter: number };
     ok(
