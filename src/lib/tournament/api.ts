@@ -440,12 +440,24 @@ export async function fetchProfileBits(userIds: string[]): Promise<Map<string, P
 }
 
 /**
- * Everyone's streams side by side, on multitwitch.tv - which takes channels as path segments. Null with
- * nobody to show. Logins are Twitch's own (lowercase letters, digits, underscores), so nothing to escape;
- * anything else is dropped rather than trusted into a URL.
+ * Both teams' streams on multitwitch.tv - which takes channels as path segments. Null with nobody to
+ * show. Logins are Twitch's own (lowercase letters, digits, underscores), so nothing to escape; anything
+ * else is dropped rather than trusted into a URL.
+ *
+ * Multitwitch fills its grid row by row, so the two teams are interleaved (A1, B1, A2, B2...): in its
+ * two-column layout that puts team A down the left and team B down the right. If one team has more
+ * streamers, its extras go at the end.
  */
-export function multitwitchUrl(logins: Array<string | null | undefined>): string | null {
-  const clean = [...new Set(logins.filter((l): l is string => !!l && /^[a-zA-Z0-9_]{2,25}$/.test(l)).map((l) => l.toLowerCase()))];
+export function multitwitchUrl(teamA: Array<string | null | undefined>, teamB: Array<string | null | undefined> = []): string | null {
+  const valid = (ls: Array<string | null | undefined>) => ls.filter((l): l is string => !!l && /^[a-zA-Z0-9_]{2,25}$/.test(l)).map((l) => l.toLowerCase());
+  const a = valid(teamA);
+  const b = valid(teamB);
+  const order: string[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) order.push(a[i]);
+    if (i < b.length) order.push(b[i]);
+  }
+  const clean = [...new Set(order)];
   return clean.length > 0 ? `https://www.multitwitch.tv/${clean.join("/")}` : null;
 }
 
@@ -482,6 +494,9 @@ export interface ScheduledMatch {
   team_size: number;
   stage: "swiss" | "group" | "knockout";
   phase: number;
+  /** A group-stage match's group (counting from 0), and the name an administrator gave it - null if unnamed. */
+  grp: number | null;
+  group_name: string | null;
   best_of: number;
   score_a: number;
   score_b: number;
@@ -492,11 +507,16 @@ export interface ScheduledMatch {
   team_a_logo: string | null;
   team_a_avatar: string | null;
   streams_a: string[];
+  /** Series won and lost in this event so far, byes left out - the same count as teamRecord. */
+  won_a: number;
+  lost_a: number;
   team_b: string;
   team_b_name: string;
   team_b_logo: string | null;
   team_b_avatar: string | null;
   streams_b: string[];
+  won_b: number;
+  lost_b: number;
   /** The official room playing it right now, if there is one - spectate at /room/<code>. */
   room_code: string | null;
 }

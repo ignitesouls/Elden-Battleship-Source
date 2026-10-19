@@ -95,7 +95,10 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
       : next.stage === "swiss"
         ? t("Swiss", "Suisse")
         : t("Knockout", "Élimination");
-  const streams = multitwitchUrl([...mine.roster, ...(them?.roster ?? [])].map((m) => profiles.get(m.user_id)?.twitch_login));
+  const streams = multitwitchUrl(
+    mine.roster.map((m) => profiles.get(m.user_id)?.twitch_login),
+    (them?.roster ?? []).map((m) => profiles.get(m.user_id)?.twitch_login),
+  );
   const playable = next.status === "ready" || next.status === "in_progress";
   // In an individual event the entrant's name is the player's, so it opens their Twitch.
   const soloLogin = (team: TeamRow) => (event.team_size === 1 ? profiles.get(team.captain_user_id)?.twitch_login : null);

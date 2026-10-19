@@ -380,7 +380,7 @@ function OrderCard({ event, match, mine, userId, isCaptain, data }: { event: Eve
   const them = opponentOf(match, mine, data.teams)!;
   const weAreA = match.entrant_a === mine.id;
   const logins = (team: TeamRow) => team.roster.map((m) => data.profiles.get(m.user_id)?.twitch_login);
-  const streams = multitwitchUrl([...logins(mine), ...logins(them)]);
+  const streams = multitwitchUrl(logins(mine), logins(them));
   const myLogin = data.profiles.get(userId)?.twitch_login;
   const base = `${window.location.origin}${window.location.pathname}`;
   const myWatch = myLogin ? watchUrl(base, myLogin) : null;

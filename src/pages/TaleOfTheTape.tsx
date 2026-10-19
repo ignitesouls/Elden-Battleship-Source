@@ -421,7 +421,29 @@ export function MatchupTape() {
   return <Shell data={data}>{(event) => <MatchupBody event={event} aId={a} bId={b} data={data} />}</Shell>;
 }
 
-function MatchupBody({ event, aId, bId, data }: { event: EventDetail; aId: string; bId: string; data: EventData }) {
+/**
+ * The same matchup, opened inside a match card on the front page. It reads the event only once someone
+ * opens it, and stops when they close it. The card already shows the two teams and the time, so this
+ * leaves out the title, the portholes and the next-match line.
+ */
+export function MatchupTapeInline({ eventId, a, b }: { eventId: string; a: string; b: string }) {
+  const t = useT();
+  const data = useTapeEvent(eventId);
+  if (!data.event) {
+    return (
+      <p className="muted" style={{ margin: 0, textAlign: "center", fontSize: "0.85rem" }}>
+        {data.event === undefined && !data.error ? t("Unrolling the tape...", "On déroule le ruban...") : data.error ?? t("This event can't be found.", "Événement introuvable.")}
+      </p>
+    );
+  }
+  return (
+    <div className="stack tape">
+      <MatchupBody event={data.event} aId={a} bId={b} data={data} embedded />
+    </div>
+  );
+}
+
+function MatchupBody({ event, aId, bId, data, embedded = false }: { event: EventDetail; aId: string; bId: string; data: EventData; embedded?: boolean }) {
   const t = useT();
   const lang = useLanguage();
   const stage = useStageLabel(event);
@@ -475,22 +497,26 @@ function MatchupBody({ event, aId, bId, data }: { event: EventDetail; aId: strin
 
   return (
     <>
-      <Kicker>{t("Tale of the Tape", "Fiche du combat")}</Kicker>
-      <div className="tape-faceoff">
-        <Porthole team={teamA} logo={data.logos.get(teamA.id)} twitch={data.twitch.get(teamA.id)} to={`/event/${event.id}/team/${teamA.id}`} />
-        <div className="tape-vs" aria-label={t("versus", "contre")}>
-          <span>{t("VS", "VS")}</span>
-        </div>
-        <Porthole team={teamB} logo={data.logos.get(teamB.id)} twitch={data.twitch.get(teamB.id)} to={`/event/${event.id}/team/${teamB.id}`} />
-      </div>
+      {!embedded && (
+        <>
+          <Kicker>{t("Tale of the Tape", "Fiche du combat")}</Kicker>
+          <div className="tape-faceoff">
+            <Porthole team={teamA} logo={data.logos.get(teamA.id)} twitch={data.twitch.get(teamA.id)} to={`/event/${event.id}/team/${teamA.id}`} />
+            <div className="tape-vs" aria-label={t("versus", "contre")}>
+              <span>{t("VS", "VS")}</span>
+            </div>
+            <Porthole team={teamB} logo={data.logos.get(teamB.id)} twitch={data.twitch.get(teamB.id)} to={`/event/${event.id}/team/${teamB.id}`} />
+          </div>
 
-      {upcoming && (
-        <div className="tape-next">
-          {stage(upcoming)}
-          {upcoming.best_of > 1 && ` · ${t(`best of ${upcoming.best_of}`, `au meilleur de ${upcoming.best_of}`)}`}
-          {upcoming.status === "in_progress" && <> · <span className="badge badge--warn">{t("under way", "en cours")} {scoreFor(upcoming, teamA.id)} - {scoreFor(upcoming, teamB.id)}</span></>}
-          {upcoming.status !== "in_progress" && upcoming.agreed_at && <> · <strong>{when(upcoming.agreed_at)}</strong></>}
-        </div>
+          {upcoming && (
+            <div className="tape-next">
+              {stage(upcoming)}
+              {upcoming.best_of > 1 && ` · ${t(`best of ${upcoming.best_of}`, `au meilleur de ${upcoming.best_of}`)}`}
+              {upcoming.status === "in_progress" && <> · <span className="badge badge--warn">{t("under way", "en cours")} {scoreFor(upcoming, teamA.id)} - {scoreFor(upcoming, teamB.id)}</span></>}
+              {upcoming.status !== "in_progress" && upcoming.agreed_at && <> · <strong>{when(upcoming.agreed_at)}</strong></>}
+            </div>
+          )}
+        </>
       )}
 
       <div className="panel tape-panel">
@@ -528,11 +554,19 @@ function MatchupBody({ event, aId, bId, data }: { event: EventDetail; aId: strin
         ))}
       </div>
 
-      <div className="row" style={{ justifyContent: "center", gap: "0.8rem", fontSize: "0.85rem" }}>
-        <Link to={`/event/${event.id}/vs/${teamB.id}/${teamA.id}`}>{t("Swap sides", "Inverser les côtés")}</Link>
-      </div>
-
-      <Footer event={event} data={data} />
+      {embedded ? (
+        <div style={{ textAlign: "center", fontSize: "0.85rem" }}>
+          <Link to={`/event/${event.id}/vs/${teamA.id}/${teamB.id}`}>{t("Open as a full page", "Ouvrir en pleine page")}</Link>
+          {data.powers && data.powers.size > 0 && <JustForFun />}
+        </div>
+      ) : (
+        <>
+          <div className="row" style={{ justifyContent: "center", gap: "0.8rem", fontSize: "0.85rem" }}>
+            <Link to={`/event/${event.id}/vs/${teamB.id}/${teamA.id}`}>{t("Swap sides", "Inverser les côtés")}</Link>
+          </div>
+          <Footer event={event} data={data} />
+        </>
+      )}
     </>
   );
 }

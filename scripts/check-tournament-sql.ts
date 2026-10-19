@@ -1423,6 +1423,8 @@ async function frontPageMatches(admin: Person, visitor: Person) {
   check('...with both teams, the time, and the players\' Twitch names for Multitwitch',
     rows[0]?.team_a_name === 'Front A' && rows[0]?.team_b_name === 'Front B' && !!rows[0]?.agreed_at &&
     (rows[0]?.streams_a as string[]).includes(capA.login) && (rows[0]?.streams_b as string[]).includes(capB.login), JSON.stringify(rows[0]))
+  check('...and each team\'s record in the event (none played yet)',
+    rows[0]?.won_a === 0 && rows[0]?.lost_a === 0 && rows[0]?.won_b === 0 && rows[0]?.lost_b === 0, JSON.stringify(rows[0]))
   check('a match with no time and no room is not listed', !rows.some((r) => r.match_id === m1))
 
   const room = await svc.from('rooms').insert({ code: `FP ${run}`, status: 'lobby', tournament_match_id: m1 }).select('id').single()
