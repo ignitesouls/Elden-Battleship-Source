@@ -1032,12 +1032,16 @@ export interface EventConfig {
 export async function fetchEventConfig(eventId: string): Promise<EventConfig> {
   const { data, error } = await supabase.from("tournaments").select("format, schedule").eq("id", eventId).single();
   if (error) fail(error);
-  const saved = data.format as Partial<TournamentFormat> | null;
+  return configFrom(data);
+}
+
+function configFrom(row: { format: unknown; schedule: unknown }): EventConfig {
+  const saved = row.format as Partial<TournamentFormat> | null;
   // `{}` is what a not-yet-started event holds. Handing that on as a format would be a lie the type system
   // cannot catch - it is truthy, and every field on it is missing - so it is turned into null here, once,
   // where callers are forced to deal with "there is no format yet".
   const format = saved && typeof saved === "object" && saved.qualifier ? (saved as TournamentFormat) : null;
-  return { format, schedule: data.schedule as Schedule };
+  return { format, schedule: row.schedule as Schedule };
 }
 
 /** An event's saved plan - what the start page opens with. Administrators only. */
@@ -1108,11 +1112,66 @@ export interface StoredMatches {
 export async function fetchStoredMatches(eventId: string): Promise<StoredMatches> {
   const { data, error } = await supabase.from("tournament_matches").select("*").eq("tournament_id", eventId);
   if (error) fail(error);
-  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  return storedFrom((data ?? []) as Array<Record<string, unknown>>);
+}
+
+function storedFrom(rows: Array<Record<string, unknown>>): StoredMatches {
   return {
     matches: rows.map(matchFromRow),
     ids: new Map(rows.map((r) => [r.key as string, r.id as string])),
     agreed: new Map(rows.map((r) => [r.key as string, (r.agreed_at as string | null) ?? null])),
+  };
+}
+
+/** Everything a page about one event reads, from one request - see fetchEventBundle. */
+export interface EventBundle {
+  event: EventDetail;
+  teams: TeamRow[];
+  /** In fetchMatches' order (phase, then idx). */
+  matches: MatchRow[];
+  config: EventConfig;
+  stored: StoredMatches;
+}
+
+/**
+ * The event, its teams and its matches in ONE request, for the event page and a crew's quarters.
+ *
+ * Those pages used to make five - fetchEvent, fetchTeams, fetchMatches, fetchEventConfig and
+ * fetchStoredMatches - and re-made all five every minute while an event was live. Two pairs of them
+ * read the very same rows (the tournament row twice, every match twice), and every request is a metered
+ * gateway log line. PostgREST nests the teams and matches under the tournament row instead, and each
+ * nested table still answers under its own row-level security: a pending team is still only visible to
+ * its own crew.
+ *
+ * Both relationships are named, because tournaments and tournament_entrants are joined two ways (an
+ * entrant's event, and the event's champion) and PostgREST refuses an ambiguous embed.
+ *
+ * Null when the event does not exist or the caller may not see it.
+ */
+export async function fetchEventBundle(id: string): Promise<EventBundle | null> {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select(
+      `${EVENT_COLUMNS}, format, schedule,` +
+        " teams:tournament_entrants!tournament_entrants_tournament_id_fkey(id, name, status, seed, forfeited_at, captain_user_id, looking_for_players, logo_path, roster:tournament_roster(user_id, display_name, is_captain))," +
+        " matches:tournament_matches!tournament_matches_tournament_id_fkey(*)",
+    )
+    .eq("id", id)
+    .order("created_at", { referencedTable: "teams", ascending: true })
+    .order("phase", { referencedTable: "matches", ascending: true })
+    .order("idx", { referencedTable: "matches", ascending: true })
+    .maybeSingle();
+  if (error) fail(error);
+  if (!data) return null;
+
+  const row = data as unknown as Record<string, unknown>;
+  const matchRows = (row.matches ?? []) as Array<Record<string, unknown>>;
+  return {
+    event: toDetail(row),
+    teams: (row.teams ?? []) as unknown as TeamRow[],
+    matches: matchRows as unknown as MatchRow[],
+    config: configFrom(row as { format: unknown; schedule: unknown }),
+    stored: storedFrom(matchRows),
   };
 }
 

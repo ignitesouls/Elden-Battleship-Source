@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   entrantTwitch,
-  fetchEvent,
-  fetchEventConfig,
-  fetchMatches,
-  fetchStoredMatches,
-  fetchTeams,
+  fetchEventBundle,
   teamLogos,
   type EventConfig,
   type EventDetail,
@@ -49,22 +45,18 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
     let cancelled = false;
     void (async () => {
       try {
-        const found = await fetchEvent(id);
+        // One request for the lot - see fetchEventBundle. The status gates below are the ones the five
+        // separate reads used to have, so what each page is handed is unchanged.
+        const bundle = await fetchEventBundle(id);
         if (cancelled) return;
-        setEvent(found);
-        if (!found) return;
-        const wantsMatches = found.status === "live" || found.status === "finished";
-        const [teamRows, matchRows, saved, stored] = await Promise.all([
-          fetchTeams(id),
-          wantsMatches ? fetchMatches(id) : Promise.resolve([]),
-          wantsMatches || alwaysConfig ? fetchEventConfig(id) : Promise.resolve(null),
-          wantsMatches ? fetchStoredMatches(id) : Promise.resolve(null),
-        ]);
-        if (cancelled) return;
-        setTeams(teamRows);
-        setMatches(matchRows);
+        setEvent(bundle?.event ?? null);
+        if (!bundle) return;
+        const wantsMatches = bundle.event.status === "live" || bundle.event.status === "finished";
+        const saved = wantsMatches || alwaysConfig ? bundle.config : null;
+        setTeams(bundle.teams);
+        setMatches(wantsMatches ? bundle.matches : []);
         setConfig(saved);
-        setEngine(saved?.format && stored ? { format: saved.format, matches: stored.matches } : null);
+        setEngine(wantsMatches && saved?.format ? { format: saved.format, matches: bundle.stored.matches } : null);
         setError(null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

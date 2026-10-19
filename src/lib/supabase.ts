@@ -85,7 +85,7 @@ export const supabase = createClient(url || "https://placeholder.supabase.co", a
      *
      * postgrest-js resolves a fetch ONCE, in its constructor - `fetch ?? globalThis.fetch` - and
      * holds it for the life of the client. This module is imported before anything else in the app
-     * runs, so anything that wraps the global later, such as lib/egressMeter's byte counter, is
+     * runs, so anything that wraps the global later (a byte counter, a test shim) is
      * relying on some layer in the stack having resolved lazily. Today supabase-js happens to hand
      * PostgREST a closure of its own, so a late wrapper is in fact still seen; that is an accident
      * of the current version rather than a promise, and it is not worth a silently unweighed site

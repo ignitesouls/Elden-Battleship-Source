@@ -63,13 +63,14 @@ function jsonResponse(body: unknown, status = 200) {
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 1 })
 
 /**
- * The browser's caps, mirrored: fetchMatchEvents reads at most 50,000 shot rows and fetchParticipants
- * 20,000, both newest first and BEFORE voided matches are dropped. Reading more here would rate against
+ * The browser's caps, mirrored: fetchMatchEvents and fetchParticipants read at most ARCHIVE_ROW_CAP
+ * rows each, newest first and BEFORE voided matches are dropped. Reading more here would rate against
  * a larger field than the Hall of Fame does once the archive passes them. Raise them together or not
- * at all - see profiles.ts.
+ * at all - see profiles.ts. (They were 50,000 and 20,000 until the archive came within ~50 matches of
+ * the first, at which point the Almanac would have started silently dropping its oldest history.)
  */
-const EVENT_LIMIT = 50000
-const PARTICIPANT_LIMIT = 20000
+const EVENT_LIMIT = 1_000_000
+const PARTICIPANT_LIMIT = 1_000_000
 
 /** Any recompute holds this, so a match's worth of players opening the recap at once costs one. */
 const LOCK_KEY = 'battle_rating_snapshots'

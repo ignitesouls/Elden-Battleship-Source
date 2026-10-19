@@ -29,30 +29,40 @@ export function profileName(profile: Profile | null | undefined): string | null 
  * and avatar for a user id. Only ever called for accounts with a Twitch identity - anonymous
  * users have nothing durable worth storing, and their stats fall back to nickname grouping.
  *
- * Errors are swallowed: a missing profile row costs you an avatar, not a game.
+ * Hands back the row as it stands after the write - the nickname included, which the write never
+ * touches - so signing in is one request rather than a write and then a read of the same row.
+ *
+ * Errors are swallowed (null): a missing profile row costs you an avatar, not a game.
  */
 export async function upsertProfile(input: {
   id: string;
   twitchId: string | null;
   displayName: string;
   avatarUrl: string | null;
-}): Promise<void> {
+}): Promise<Profile | null> {
   try {
-    await supabase.from("profiles").upsert(
-      {
-        id: input.id,
-        // Omitted rather than written as null when unknown, so it stays out of the ON CONFLICT
-        // SET list and an existing twitch_id survives. Nulling it would unpick anything resolved
-        // through it - the owner grant in the admins migration is keyed on twitch_id, not uuid.
-        ...(input.twitchId ? { twitch_id: input.twitchId } : {}),
-        display_name: input.displayName,
-        avatar_url: input.avatarUrl,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" }
-    );
+    const { data, error } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: input.id,
+          // Omitted rather than written as null when unknown, so it stays out of the ON CONFLICT
+          // SET list and an existing twitch_id survives. Nulling it would unpick anything resolved
+          // through it - the owner grant in the admins migration is keyed on twitch_id, not uuid.
+          ...(input.twitchId ? { twitch_id: input.twitchId } : {}),
+          display_name: input.displayName,
+          avatar_url: input.avatarUrl,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      )
+      .select(PROFILE_COLUMNS)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data as Profile;
   } catch {
     // Non-essential.
+    return null;
   }
 }
 
@@ -151,10 +161,22 @@ export async function fetchProfiles(ids: string[]): Promise<Map<string, Profile>
  * held them, and because the window slides as new matches land, a standing record could vanish
  * without anybody having beaten it.
  *
- * Raise this only to match a raised server setting. Setting it higher than the server's own cap
- * puts the silent truncation straight back, because a short page is this loop's stop condition.
+ * So the loop below no longer trusts a short page to mean the end. The first request asks for the
+ * table's total (`count: exact`), and paging stops when that many rows are in hand - however many the
+ * server chose to send per page. That makes the page size a REQUEST rather than an assumption: with
+ * the project's "Max rows" (Data API settings) raised to match, the whole match_events log is one
+ * response instead of ~44, and with it left at 1000 the reads are still complete, just paged.
+ *
+ * Every page is one API-gateway log line, which is the metered budget - see the log ingest notes.
  */
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 100_000;
+
+/**
+ * The most rows any of the three archive feeds will read. Mirrored by EVENT_LIMIT and
+ * PARTICIPANT_LIMIT in the battle-ratings function - raise them together, or the Hall of Fame and a
+ * recap's ratings will be ranked against different fields.
+ */
+const ARCHIVE_ROW_CAP = 1_000_000;
 
 /**
  * Reads a whole table the caller's way, a page at a time.
@@ -170,8 +192,9 @@ const PAGE_SIZE = 1000;
  * its 36 characters suggest - a uuid is random, so it is the one field in these rows gzip cannot
  * compress at all, and it was about a third of the compressed weight of every stats feed here.
  *
- * Stops on a short page, on an error (returning what it has - a partial book beats a blank one),
- * and at `limit`, which is the caller's ceiling rather than the server's.
+ * Stops once the counted total is in hand, on an empty page, on an error (returning what it has - a
+ * partial book beats a blank one), and at `limit`, which is the caller's ceiling rather than the
+ * server's.
  */
 async function fetchAllRows<T>(
   table: string,
@@ -187,15 +210,19 @@ async function fetchAllRows<T>(
   match?: { column: string; value: string }
 ): Promise<T[]> {
   const out: T[] = [];
+  // Learned from the first response. Until then the ceiling is the caller's.
+  let total = limit;
 
-  while (out.length < limit) {
-    const size = Math.min(PAGE_SIZE, limit - out.length);
+  while (out.length < total) {
+    const size = Math.min(PAGE_SIZE, total - out.length);
+    const first = out.length === 0;
     const base = supabase
       .from(table)
-      .select(columns)
+      // Counted once, on the first page - it is what tells the loop where the end is.
+      .select(columns, first ? { count: "exact" } : undefined)
       .order("finished_at", { ascending: false })
       .order("id", { ascending: false });
-    const { data, error } = await (match ? base.eq(match.column, match.value) : base).range(
+    const { data, error, count } = await (match ? base.eq(match.column, match.value) : base).range(
       out.length,
       out.length + size - 1
     );
@@ -203,8 +230,9 @@ async function fetchAllRows<T>(
     // A filter naming a column the database does not have errors here rather than throwing, which
     // is what lets fetchPlayerEvents treat an unapplied migration as an empty result and fall back.
     if (error || !data) break;
+    if (first && typeof count === "number") total = Math.min(limit, count);
     out.push(...(data as T[]));
-    if (data.length < size) break; // the last page, so there is nothing after it
+    if (data.length === 0) break; // nothing more to give, whatever the count said
   }
 
   return out;
@@ -279,14 +307,14 @@ async function fetchBoardSources(): Promise<Map<string, BoardSource>> {
  * archive's own readers (fetchArchivedMatches, fetchArchivedMatch in lib/matchArchive) deliberately
  * do NOT filter: a voided match keeps its recap page and its line in the history list.
  */
-export async function fetchMatchFleets(limit = 5000) {
+export async function fetchMatchFleets(limit = ARCHIVE_ROW_CAP) {
   return cached("fleets", async () => {
     const rows = await fetchAllRows<{ match_key: string }>("match_fleets", FLEET_COLUMNS, limit);
     return (await withoutVoided(rows)) as never[];
   });
 }
 
-export async function fetchMatchEvents(limit = 50000) {
+export async function fetchMatchEvents(limit = ARCHIVE_ROW_CAP) {
   return cached("events", async () => {
     const [rows, sources] = await Promise.all([
       fetchAllRows<{ match_key: string; challenge_name?: string | null }>("match_events", EVENT_COLUMNS, limit),
@@ -335,7 +363,7 @@ export async function fetchMatchEvents(limit = 50000) {
  * of the five career panels looks at them, so they are not fetched. A consumer that grows a need
  * for them must say so here rather than discover them by accident.
  */
-export async function fetchPlayerEvents(key: string, limit = 50000) {
+export async function fetchPlayerEvents(key: string, limit = ARCHIVE_ROW_CAP) {
   const own = await cached(`events:${key}`, async () => {
     const rows = await fetchAllRows<{ match_key: string; challenge_name?: string | null }>(
       "match_events",
@@ -386,7 +414,7 @@ export async function fetchMatchBoards(matchKeys: string[]): Promise<Map<string,
 }
 
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */
-export async function fetchParticipants(limit = 20000): Promise<ParticipantRow[]> {
+export async function fetchParticipants(limit = ARCHIVE_ROW_CAP): Promise<ParticipantRow[]> {
   return cached("participants", async () => {
     return prepareParticipants(
       await withoutVoided(await fetchAllRows<ParticipantRow>("match_participants", PARTICIPANT_COLUMNS, limit))

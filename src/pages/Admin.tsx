@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { AdminPanel } from "../components/AdminPanel";
 import { AdminTournaments } from "../components/AdminTournaments";
 import { BalanceStats } from "../components/BalanceStats";
-import { EgressPanel } from "../components/EgressPanel";
 import { LoadingScreen } from "../components/BrandMark";
 import { useAdminStatus } from "../lib/admin";
 import { fetchRecentMatchReports, countMatchReports } from "../lib/rooms";
@@ -94,7 +93,7 @@ export function Admin() {
     <div className="stack" style={{ width: "min(860px, 100%)" }}>
       <div style={{ textAlign: "center" }}>
         <h1>{t("Admin", "Admin")}</h1>
-        <p className="muted">{t("Records, live rooms, administrators, board balance and egress.", "Dossiers, parties en direct, administrateurs, équité des plateaux et bande passante.")}</p>
+        <p className="muted">{t("Records, live rooms, administrators and board balance.", "Dossiers, parties en direct, administrateurs et équité des plateaux.")}</p>
       </div>
 
       {/* Events run for weeks and need attention on their own schedule, so they sit first. Renders
@@ -117,10 +116,6 @@ export function Admin() {
         }
         onChanged={() => setReload((n) => n + 1)}
       />
-
-      {/* Takes the same match list, because a room's byte count only becomes a match's byte count
-          once something can turn its key into a start and an end. */}
-      <EgressPanel matches={matches} />
 
       <BalanceStats />
     </div>

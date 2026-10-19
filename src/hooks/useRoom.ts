@@ -100,6 +100,76 @@ function sameRows<T>(a: readonly T[], b: readonly T[]): boolean {
  * top of the match tree, so handing React a new array every time would repaint both boards, every
  * marker, the log and the rosters for nothing.
  */
+/**
+ * Everything about a room in ONE request: the room row with its players, fleets, attack log, ready
+ * flags and readable deep-water rows nested under it.
+ *
+ * This used to be six requests on the way in (five of them one after another) and five more on every
+ * resync - and a resync runs on every channel join and every time a tab comes back to the front, which
+ * in a match is constantly. Every request is a metered gateway log line. Each nested table still
+ * answers under its own row-level security, so a crew still sees only its own fleet, a spectator every
+ * fleet, and nobody a hiding place that hasn't been fired at.
+ *
+ * The relationships are named because `attacks` and `square_counts` also join rooms to players, which
+ * makes a bare `players(*)` ambiguous to PostgREST.
+ */
+const ROOM_SNAPSHOT =
+  "*, players!players_room_id_fkey(*), fleets!fleets_room_id_fkey(*), attacks!attacks_room_id_fkey(*)," +
+  " team_ready!team_ready_room_id_fkey(*), deep_hides!deep_hides_room_id_fkey(*)";
+
+interface RoomSnapshot {
+  room: Room;
+  players: Player[];
+  fleets: Fleet[];
+  attacks: Attack[];
+  teamReady: TeamReady[];
+  deepHides: DeepHide[];
+}
+
+function toDeepHides(rows: { cell_index: number; creature: string; decoy?: boolean | null }[]): DeepHide[] {
+  return rows.map((row) => ({ cellIndex: row.cell_index, creature: row.creature, decoy: row.decoy ?? false }) as DeepHide);
+}
+
+/** The room by code or id. Null when no such room exists; throws when the read itself failed. */
+async function readRoomSnapshot(column: "code" | "id", value: string): Promise<RoomSnapshot | null> {
+  const { data, error } = await supabase
+    .from("rooms")
+    .select(ROOM_SNAPSHOT)
+    .eq(column, value)
+    .order("created_at", { referencedTable: "attacks", ascending: true })
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const { players, fleets, attacks, team_ready, deep_hides, ...room } = data as unknown as Record<string, unknown>;
+  return {
+    room: room as unknown as Room,
+    players: (players ?? []) as Player[],
+    fleets: (fleets ?? []) as Fleet[],
+    attacks: (attacks ?? []) as Attack[],
+    teamReady: (team_ready ?? []) as TeamReady[],
+    deepHides: toDeepHides((deep_hides ?? []) as { cell_index: number; creature: string; decoy?: boolean | null }[]),
+  };
+}
+
+/**
+ * The squares a deep-water row could be uncovered on: fired at, resolved, and not a hit on anybody.
+ *
+ * Every hiding place sits in water that is empty for EVERY fleet (roll_deep_water excludes every hull),
+ * so a square that came back a hit against anyone cannot be one, and re-reading `deep_hides` for it
+ * would be a request that can only ever return what we already hold.
+ */
+function deepCandidates(attacks: Attack[]): Set<number> {
+  const resolved = new Set<number>();
+  const hit = new Set<number>();
+  for (const a of attacks) {
+    if (a.cell_index < 0 || a.result === "pending") continue;
+    resolved.add(a.cell_index);
+    if (a.result === "hit" || a.result === "sunk") hit.add(a.cell_index);
+  }
+  for (const cell of hit) resolved.delete(cell);
+  return resolved;
+}
+
 function withAttack(prev: RoomState, row: Attack): RoomState {
   const attacks = [...prev.attacks];
   const idx = attacks.findIndex((a) => a.id === row.id);
@@ -123,6 +193,9 @@ export function useRoom(code: string | undefined) {
    */
   const resyncRef = useRef<(() => Promise<void>) | null>(null);
 
+  /** The deep-water candidate squares the water was last read for - see the deep-water effect. */
+  const deepSeenRef = useRef<{ roomId: string; cells: Set<number> } | null>(null);
+
   const patch = useCallback((partial: Partial<RoomState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
@@ -139,12 +212,9 @@ export function useRoom(code: string | undefined) {
 
         // Normalized so a hand-typed or shared-with-spaces URL still resolves to the room.
         const lookup = normalizeRoomCode(code);
-        const { data: room, error: roomErr } = await supabase
-          .from("rooms")
-          .select()
-          .eq("code", lookup)
-          .maybeSingle();
-        if (roomErr) throw roomErr;
+        // The room and everything in it, in one request - see readRoomSnapshot.
+        const snapshot = await readRoomSnapshot("code", lookup);
+        const room = snapshot?.room ?? null;
         // A code that matches nothing is NOT an error - it's the ordinary end of a room's life.
         // Rooms are pruned an hour after they go quiet, so every stale link, every bookmark and
         // every "back to the room" in the top bar eventually lands here.
@@ -155,17 +225,13 @@ export function useRoom(code: string | undefined) {
         // that forgets the room so the top bar stops offering it - could never fire either, so the
         // dead link survived every visit. `error` is left for the failures that really are failures:
         // no network, no database, a rejected read.
-        if (!room) {
+        if (!snapshot || !room) {
           if (!cancelled) patch({ loading: false, error: null, room: null });
           return;
         }
         if (cancelled) return;
 
-        const { data: players, error: playersErr } = await supabase
-          .from("players")
-          .select()
-          .eq("room_id", room.id);
-        if (playersErr) throw playersErr;
+        const { players } = snapshot;
 
         // Match on user_id first, falling back to the stored player id. The auth session is the
         // real identity; the localStorage id is just a cache. Relying on the cache alone meant
@@ -173,67 +239,37 @@ export function useRoom(code: string | undefined) {
         // as a stranger, even though your row - and your fleet - were sitting right there.
         const storedId = getStoredPlayerId(room.code);
         const myPlayer =
-          (players ?? []).find((p) => p.user_id === userId) ??
-          (players ?? []).find((p) => p.id === storedId) ??
+          players.find((p) => p.user_id === userId) ??
+          players.find((p) => p.id === storedId) ??
           null;
         if (myPlayer) storePlayerId(room.code, myPlayer.id);
 
-        let myFleet: Fleet | null = null;
-        let revealedFleets: Fleet[] = [];
-        if (myPlayer?.team !== null && myPlayer?.team !== undefined) {
-          const { data: fleet } = await supabase
-            .from("fleets")
-            .select()
-            .eq("room_id", room.id)
-            .eq("team", myPlayer.team)
-            .maybeSingle();
-          myFleet = (fleet as Fleet) ?? null;
-        } else if (myPlayer) {
-          // Spectator: allowed to read every fleet in this room (see the "fleets select by
-          // spectator" policy). Returns [] if that policy hasn't been applied yet, which just
-          // means ship overlays stay hidden rather than the page erroring.
-          const { data: fleets } = await supabase.from("fleets").select().eq("room_id", room.id);
-          revealedFleets = (fleets as Fleet[]) ?? [];
-        }
+        // RLS has already decided which fleets came back: a crew's own row, every row for a
+        // spectator (the "fleets select by spectator" policy), and every row for anybody once the
+        // match is finished (the post-match reveal). Split the same way the separate reads did.
+        const myTeam = myPlayer?.team;
+        const spectating = myPlayer != null && (myTeam === null || myTeam === undefined);
+        const myFleet = myTeam !== null && myTeam !== undefined ? snapshot.fleets.find((f) => f.team === myTeam) ?? null : null;
+        const revealedFleets = myPlayer && (spectating || room.status === "finished") ? snapshot.fleets : [];
 
-        const { data: attacks, error: attacksErr } = await supabase
-          .from("attacks")
-          .select()
-          .eq("room_id", room.id)
-          .order("created_at", { ascending: true });
-        if (attacksErr) throw attacksErr;
-
-        const { data: teamReady, error: teamReadyErr } = await supabase
-          .from("team_ready")
-          .select()
-          .eq("room_id", room.id);
-        if (teamReadyErr) throw teamReadyErr;
-
-        // Read here as well as in the effect below, so that `loading: false` means the water has
-        // been read too. The post-match report archives itself the moment it mounts, and a recap
-        // that mounted before the first read landed would file a match with its deep-water honors
-        // missing - permanently, since the archive dedupes and never writes that match again.
-        //
-        // Unchecked, unlike the reads above: an un-migrated project has no such table, and a room
-        // that cannot load at all is a far worse outcome than a match with nothing hiding in it.
-        const { data: deepHides } = await supabase.from("deep_hides").select().eq("room_id", room.id);
+        // The water is part of the same read, so `loading: false` means it has been read too. The
+        // post-match report archives itself the moment it mounts, and a recap that mounted before
+        // the water was read would file a match with its deep-water honors missing - permanently,
+        // since the archive dedupes and never writes that match again.
+        deepSeenRef.current = { roomId: room.id, cells: deepCandidates(snapshot.attacks) };
 
         if (cancelled) return;
         patch({
           loading: false,
           error: null,
-          room: room as Room,
-          players: (players as Player[]) ?? [],
+          room,
+          players,
           myPlayer,
           myFleet,
           revealedFleets,
-          attacks: (attacks as Attack[]) ?? [],
-          teamReady: (teamReady as TeamReady[]) ?? [],
-          deepHides: (deepHides ?? []).map((row) => ({
-            cellIndex: row.cell_index,
-            creature: row.creature,
-            decoy: row.decoy ?? false,
-          })),
+          attacks: snapshot.attacks,
+          teamReady: snapshot.teamReady,
+          deepHides: snapshot.deepHides,
         });
 
         const roomId = room.id;
@@ -293,42 +329,43 @@ export function useRoom(code: string | undefined) {
         }
 
         async function readEverything() {
-          const [
-            { data: freshPlayers },
-            { data: freshAttacks },
-            { data: freshReady },
-            { data: freshRoom },
-            { data: freshFleets },
-          ] = await Promise.all([
-            supabase.from("players").select().eq("room_id", roomId),
-            supabase.from("attacks").select().eq("room_id", roomId).order("created_at", { ascending: true }),
-            supabase.from("team_ready").select().eq("room_id", roomId),
-            supabase.from("rooms").select().eq("id", roomId).maybeSingle(),
-            /**
-             * Fleets belong here too, and their absence is what SALTYLANTERN was built out of.
-             *
-             * Everything else in this room was repaired on every channel join; the fleet was the one
-             * thing that could only ever be learned from a realtime message, and a missed message
-             * was permanent. So `room` and `myFleet` refreshed on different clocks and could
-             * describe different moments - and the self-heal below reads BOTH to decide whether a
-             * board is last match's leftovers. Handed a fresh confirmed fleet beside a room still
-             * remembered as an empty lobby, it read exactly what it was built to read, and wiped a
-             * fleet in the middle of a live battle.
-             *
-             * One row for a player (RLS gives a crew their own team and nothing else) and every row
-             * for a spectator, which is the same split the initial read makes - so the assignment
-             * below has to make it too.
-             */
-            supabase.from("fleets").select().eq("room_id", roomId),
-          ]);
+          /**
+           * One request for the whole room - see readRoomSnapshot. Fleets are in it, and their
+           * absence is what SALTYLANTERN was built out of.
+           *
+           * Everything else in this room was repaired on every channel join; the fleet was the one
+           * thing that could only ever be learned from a realtime message, and a missed message
+           * was permanent. So `room` and `myFleet` refreshed on different clocks and could
+           * describe different moments - and the self-heal below reads BOTH to decide whether a
+           * board is last match's leftovers. Handed a fresh confirmed fleet beside a room still
+           * remembered as an empty lobby, it read exactly what it was built to read, and wiped a
+           * fleet in the middle of a live battle. Being one request now, they cannot even come
+           * from different moments.
+           *
+           * One fleet row for a player (RLS gives a crew their own team and nothing else) and every
+           * row for a spectator, which is the same split the initial read makes - so the assignment
+           * below has to make it too.
+           *
+           * A failed read changes nothing: not having heard is not evidence that anything went away.
+           */
+          let snapshot: RoomSnapshot | null;
+          try {
+            snapshot = await readRoomSnapshot("id", roomId);
+          } catch {
+            return;
+          }
           if (cancelled) return;
+          // This read covered the water for every square in it, so the deep-water effect need not.
+          if (snapshot) deepSeenRef.current = { roomId, cells: deepCandidates(snapshot.attacks) };
           setState((prev) => {
-            const room = (freshRoom as Room) ?? prev.room;
-            const players = (freshPlayers as Player[]) ?? prev.players;
-            const attacks = (freshAttacks as Attack[]) ?? prev.attacks;
-            const teamReady = (freshReady as TeamReady[]) ?? prev.teamReady;
+            // A room that has gone keeps its last known row, as it always has; its contents are empty.
+            const room = snapshot?.room ?? prev.room;
+            const players = snapshot?.players ?? [];
+            const attacks = snapshot?.attacks ?? [];
+            const teamReady = snapshot?.teamReady ?? [];
+            const deepHides = snapshot?.deepHides ?? prev.deepHides;
 
-            const fleets = (freshFleets as Fleet[]) ?? [];
+            const fleets = snapshot?.fleets ?? [];
             const myTeam = prev.myPlayer?.team;
             const spectating = prev.myPlayer != null && (myTeam === null || myTeam === undefined);
             // `?? prev.myFleet` rather than null: a read that came back empty means RLS showed us
@@ -345,7 +382,9 @@ export function useRoom(code: string | undefined) {
             const readySame = sameRows(teamReady, prev.teamReady);
             const myFleetSame = JSON.stringify(myFleet) === JSON.stringify(prev.myFleet);
             const revealedSame = JSON.stringify(revealedFleets) === JSON.stringify(prev.revealedFleets);
-            if (roomSame && playersSame && attacksSame && readySame && myFleetSame && revealedSame) return prev;
+            // The water comes along with the same read, so a find whose re-read was missed is repaired here too.
+            const deepSame = sameRows(deepHides, prev.deepHides);
+            if (roomSame && playersSame && attacksSame && readySame && myFleetSame && revealedSame && deepSame) return prev;
 
             return {
               ...prev,
@@ -355,6 +394,7 @@ export function useRoom(code: string | undefined) {
               teamReady: readySame ? prev.teamReady : teamReady,
               myFleet: myFleetSame ? prev.myFleet : myFleet,
               revealedFleets: revealedSame ? prev.revealedFleets : revealedFleets,
+              deepHides: deepSame ? prev.deepHides : deepHides,
             };
           });
         }
@@ -561,39 +601,51 @@ export function useRoom(code: string | undefined) {
   }, [state.room, state.myPlayer?.team, state.myFleet?.team, patch]);
 
   /**
-   * Re-read the water every time a shot resolves on a square nobody had resolved one on before.
+   * Re-read the water when a shot resolves on a square that could be hiding something.
    *
    * A `deep_hides` row becomes readable when an ATTACK resolves, not when the row itself changes -
    * the row was written before the match started and never touches again. Realtime can only push
    * changes to the table it is watching, so there is no subscription that could deliver this, and
-   * polling would be reading a table that is usually static. Firing on the count of squares with a
-   * resolved shot is exactly the trigger: it ticks once per newly-searched square, which is the only
-   * event that can uncover anything, and it drops to zero on a reset so the next match starts blind.
+   * polling would be reading a table that is usually static.
+   *
+   * The trigger is a NEW candidate square (see deepCandidates): resolved, and a miss for everyone.
+   * It used to be every newly resolved square, hits included - but nothing can hide under a hull, so
+   * each of those re-reads, in every open tab, could only ever return what was already held. Not
+   * debounced, deliberately: the recap archives the finds this hook holds the moment the match ends,
+   * and a find from the final shot must already be here by then.
+   *
+   * The initial load and every resync read the water too, and record what they covered in
+   * deepSeenRef, so the read on the way in is not immediately repeated here. A reset to zero shots
+   * empties the water locally: with the attack log cleared, RLS shows no hiding place at all, so a
+   * request would only confirm it.
    */
   const deepRoomId = state.room?.id;
-  const searchedCells = new Set(
-    state.attacks.filter((a) => a.cell_index >= 0 && a.result !== "pending").map((a) => a.cell_index)
-  ).size;
+  const candidates = deepCandidates(state.attacks);
+  const candidateKey = [...candidates].sort((a, b) => a - b).join(",");
   useEffect(() => {
     if (!deepRoomId) return;
+    const cells = candidateKey ? candidateKey.split(",").map(Number) : [];
+    const seen = deepSeenRef.current;
+
+    if (cells.length === 0) {
+      deepSeenRef.current = { roomId: deepRoomId, cells: new Set() };
+      setState((prev) => (prev.room?.id === deepRoomId && prev.deepHides.length > 0 ? { ...prev, deepHides: [] } : prev));
+      return;
+    }
+    if (seen?.roomId === deepRoomId && cells.every((cell) => seen.cells.has(cell))) return;
+    deepSeenRef.current = { roomId: deepRoomId, cells: new Set(cells) };
 
     let cancelled = false;
     (async () => {
-      // Unchecked: an un-migrated project has no such table, and the only consequence is a match
-      // with nothing hiding in it.
       const { data } = await supabase.from("deep_hides").select().eq("room_id", deepRoomId);
       if (cancelled) return;
-      const hides: DeepHide[] = (data ?? []).map((row) => ({
-        cellIndex: row.cell_index,
-        creature: row.creature,
-        decoy: row.decoy ?? false,
-      }));
+      const hides = toDeepHides(data ?? []);
       setState((prev) => (prev.room?.id === deepRoomId ? { ...prev, deepHides: hides } : prev));
     })();
     return () => {
       cancelled = true;
     };
-  }, [deepRoomId, searchedCells]);
+  }, [deepRoomId, candidateKey]);
 
   // Resync everything whenever the match changes phase.
   //
@@ -602,40 +654,42 @@ export function useRoom(code: string | undefined) {
   // So clearing the attack log on reset updated the database while every browser kept rendering
   // the previous match's hits. Rather than depend on replication for removals, re-read the
   // authoritative state on each phase change - it happens a handful of times per match.
-  const lastStatusRef = useRef<string | null>(null);
+  //
+  // Not on the FIRST status seen for a room: the initial load read all of this a moment ago, in the
+  // same request, and used to be followed straight away by three or four more reading it again.
+  const lastStatusRef = useRef<{ roomId: string; status: string } | null>(null);
   useEffect(() => {
     const room = state.room;
     if (!room) return;
-    if (lastStatusRef.current === room.status) return;
-    lastStatusRef.current = room.status;
+    const last = lastStatusRef.current;
+    if (last?.roomId === room.id && last.status === room.status) return;
+    lastStatusRef.current = { roomId: room.id, status: room.status };
+    if (last?.roomId !== room.id) return;
 
     let cancelled = false;
     (async () => {
-      const [{ data: attacks }, { data: teamReady }] = await Promise.all([
-        supabase.from("attacks").select().eq("room_id", room.id).order("created_at", { ascending: true }),
-        supabase.from("team_ready").select().eq("room_id", room.id),
-      ]);
-      if (cancelled) return;
-      patch({ attacks: (attacks as Attack[]) ?? [], teamReady: (teamReady as TeamReady[]) ?? [] });
+      let snapshot: RoomSnapshot | null;
+      try {
+        snapshot = await readRoomSnapshot("id", room.id);
+      } catch {
+        return;
+      }
+      if (cancelled || !snapshot) return;
 
       const team = state.myPlayer?.team;
-      if (team !== null && team !== undefined) {
-        const { data: fleet } = await supabase
-          .from("fleets")
-          .select()
-          .eq("room_id", room.id)
-          .eq("team", team)
-          .maybeSingle();
-        if (!cancelled && fleet) patch({ myFleet: fleet as Fleet });
-      }
-
+      const fleet = team !== null && team !== undefined ? snapshot.fleets.find((f) => f.team === team) : undefined;
       // Spectators can always see every fleet; players can once the match is over (the
-      // post-match reveal policy). Re-read here rather than on mount because the reveal only
-      // becomes readable at the exact moment status flips to 'finished'.
-      if (state.myPlayer && (team === null || team === undefined || room.status === "finished")) {
-        const { data: fleets } = await supabase.from("fleets").select().eq("room_id", room.id);
-        if (!cancelled) patch({ revealedFleets: (fleets as Fleet[]) ?? [] });
-      }
+      // post-match reveal policy). Re-read here because the reveal only becomes readable at the
+      // exact moment status flips to 'finished'.
+      const reveal = state.myPlayer && (team === null || team === undefined || room.status === "finished");
+      deepSeenRef.current = { roomId: room.id, cells: deepCandidates(snapshot.attacks) };
+      patch({
+        attacks: snapshot.attacks,
+        teamReady: snapshot.teamReady,
+        deepHides: snapshot.deepHides,
+        ...(fleet ? { myFleet: fleet } : {}),
+        ...(reveal ? { revealedFleets: snapshot.fleets } : {}),
+      });
     })();
     return () => {
       cancelled = true;

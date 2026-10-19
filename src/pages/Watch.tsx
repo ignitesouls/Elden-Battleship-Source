@@ -8,7 +8,6 @@ import { activeTeams } from "../lib/battleshipLogic";
 import { deepWater } from "../lib/deepWater";
 import { groupIntoShots } from "../lib/attackFeed";
 import { igonAnchor } from "../lib/challenges";
-import { setEgressRole, setEgressRoom } from "../lib/egressMeter";
 import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
 import { MatchClock } from "../components/MatchClock";
@@ -67,19 +66,6 @@ export function Watch() {
 
   const code = session?.roomCode ?? undefined;
   const state = useRoom(code);
-
-  /**
-   * Tell the byte meter what this tab is.
-   *
-   * An audience is where a popular match's realtime cost actually comes from - one streamer with
-   * four hundred viewers is four hundred subscribers on one room - so filing them under the route's
-   * guess would hide the single biggest line in the bill. They are counted as spectators because
-   * that is what they are, seat or no seat.
-   */
-  useEffect(() => setEgressRole("spectator"), []);
-  useEffect(() => {
-    if (code) setEgressRoom(code, "spectator");
-  }, [code]);
 
   /**
    * The streamer's own hulls, but only if they have said yes.

@@ -77,17 +77,18 @@ async function adopt(user: User | null, force = false): Promise<void> {
   if (!base.isTwitch) return;
 
   // Mirror the Twitch identity into `profiles` so leaderboard entries can show a real name and
-  // avatar. Awaited, not fired and forgotten, so the row is certain to exist before it's read back.
-  if (base.displayName) {
-    await upsertProfile({
-      id: base.userId,
-      twitchId: base.twitchId,
-      displayName: base.displayName,
-      avatarUrl: base.avatarUrl,
-    });
-  }
+  // avatar. The write hands the row back, nickname and all, so it is only read separately when there
+  // was nothing to write or the write didn't land.
+  const written = base.displayName
+    ? await upsertProfile({
+        id: base.userId,
+        twitchId: base.twitchId,
+        displayName: base.displayName,
+        avatarUrl: base.avatarUrl,
+      })
+    : null;
 
-  const row = await fetchProfile(base.userId);
+  const row = written ?? (await fetchProfile(base.userId));
   // A sign-out or a second sign-in may have landed while that was in flight; don't overwrite it.
   if (current?.userId !== base.userId) return;
   publish({ ...base, nickname: row?.nickname ?? null });
