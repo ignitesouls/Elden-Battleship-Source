@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { DEFAULT_SQUARE_SET, displaySquareSet } from "./squareSets";
+import { DEFAULT_SQUARE_SET, displaySquareSet, squareSet } from "./squareSets";
 
 /**
  * The player's side of auto-marking: the token the game mod carries, and who may have one.
@@ -28,10 +28,12 @@ import { DEFAULT_SQUARE_SET, displaySquareSet } from "./squareSets";
  * `null` means the room predates square sets and is therefore on the default, which is the boss set.
  *
  * Asked of the DISPLAYED set, so both cuts of the boss board answer yes: the small-crew cut is the
- * same squares with the far end taken out, and every one of them has an event flag.
+ * same squares with the far end taken out, and every one of them has an event flag. Boss Shuffle
+ * answers yes too: it deals the boss board itself (squareSets.dealsAs), and the randomizer moves
+ * where a boss stands, not the flag its death sets.
  */
 export function autoFireSupported(squareSetId: string | null | undefined): boolean {
-  return displaySquareSet(squareSetId) === DEFAULT_SQUARE_SET;
+  return (squareSet(squareSetId).dealsAs ?? displaySquareSet(squareSetId)) === DEFAULT_SQUARE_SET;
 }
 
 /**

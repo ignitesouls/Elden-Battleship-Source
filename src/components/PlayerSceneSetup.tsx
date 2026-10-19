@@ -21,6 +21,8 @@ const EXTRA_IDS = ["timer", "key", "fire-mini"];
  * sources are already their box's size (see playerSceneParts), so they only need the position.
  */
 function whereItGoes(part: PlayerPart, t: ReturnType<typeof useT>): string {
+  // Sound only - a position would be a number nobody needs to type.
+  if (part.capture === "mic" || part.capture === "game-audio") return part.what;
   const { x, y } = part.at;
   const shown = part.fit
     ? t(`, bounding box ${part.fit.w} x ${part.fit.h} (Ctrl+E)`, `, boîte englobante ${part.fit.w} x ${part.fit.h} (Ctrl+E)`)
@@ -284,6 +286,12 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
           </li>
           <li>
             {t(
+              "Your Mic and ER Game Audio arrive muted, so nobody gets their voice twice. If Mic/Aux and Desktop Audio aren't already on in Settings → Audio, unmute them in the Audio Mixer. If they are, delete these two.",
+              "Your Mic et ER Game Audio arrivent en sourdine, pour que personne n'ait sa voix en double. Si Micro/Aux et Audio du bureau ne sont pas déjà activés dans Paramètres → Audio, réactivez-les dans le Mélangeur audio. S'ils le sont, supprimez ces deux sources."
+            )}
+          </li>
+          <li>
+            {t(
               "That's it. ER Gameplay is already aimed at Elden Ring and appears once the game is running. Your fire board and fleet stay empty until you're in a match, then fill in on their own - every match, with nothing to paste.",
               "C'est tout. ER Gameplay vise déjà Elden Ring et apparaît dès que le jeu tourne. Votre plateau de tir et votre flotte restent vides tant que vous n'êtes pas en partie, puis se remplissent tout seuls - à chaque partie, sans rien coller."
             )}
@@ -317,8 +325,8 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
             <li>
               <strong>{t("On a Mac or Linux:", "Sur Mac ou Linux :")}</strong>{" "}
               {t(
-                "ER Gameplay and Your Webcam are Windows sources and won't open. Delete them, add your own capture and camera, and drag both below EB Player Frame in the Sources list.",
-                "ER Gameplay et Your Webcam sont des sources Windows et ne s'ouvriront pas. Supprimez-les, ajoutez votre propre capture et caméra, et glissez-les sous EB Player Frame dans la liste des Sources."
+                "ER Gameplay, Your Webcam, Your Mic and ER Game Audio are Windows sources and won't open. Delete them, add your own capture, camera and audio, and drag the capture and camera below EB Player Frame in the Sources list.",
+                "ER Gameplay, Your Webcam, Your Mic et ER Game Audio sont des sources Windows et ne s'ouvriront pas. Supprimez-les, ajoutez votre propre capture, caméra et audio, et glissez la capture et la caméra sous EB Player Frame dans la liste des Sources."
               )}
             </li>
           </ul>

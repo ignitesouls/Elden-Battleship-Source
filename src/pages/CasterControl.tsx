@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import type { OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
+import { supabase } from "../lib/supabase";
 import { activeTeams, sunkCellOrientations, attackerTeamsByCell, cellLabel } from "../lib/battleshipLogic";
 import { cellVisuals } from "../lib/cellVisuals";
 import { challengesForRoom, rowSquareSet, igonAnchor } from "../lib/challenges";
@@ -88,6 +89,47 @@ const CLICK_SLOP = 4;
  * `pointer-events: none` on this page so the drag belongs to the preview, and hit-testing would
  * make this depend on both of those staying true.
  */
+/**
+ * "No find alerts on player streams", for the whole lobby.
+ *
+ * The players' own alert cards would show inside their screen boxes on the cast, a second copy of
+ * what the caster's alert already puts over the board. This blanks every crew member's alert source
+ * in the room at once (see `muted` in OverlayEgg); the caster's own alert is untouched.
+ *
+ * Stored on the room rather than sent down the cast channel, so it holds with the desk closed and
+ * reaches a player's source that restarts mid-match. Shows the room's live value, not a local copy:
+ * anyone in the room may flip it (see the migration), and the box must say what is actually set.
+ */
+function FindAlertsSwitch({ roomId, off }: { roomId: string; off: boolean }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function flip() {
+    setBusy(true);
+    setError(null);
+    const { error: e } = await supabase.rpc("set_find_alerts_off", { p_room: roomId, p_off: !off });
+    setBusy(false);
+    if (e) setError(e.message);
+  }
+
+  return (
+    <div className="stack" style={{ gap: "0.2rem", marginTop: "0.5rem" }}>
+      <label className="cast-row" style={{ gap: "0.4rem" }}>
+        <input type="checkbox" checked={off} disabled={busy} onChange={() => void flip()} />
+        <span>{t("No find alerts on player streams", "Pas d'alertes de découverte sur les flux des joueurs")}</span>
+      </label>
+      <p className="cast-note muted">
+        {t(
+          "Blanks every player's own find card in this lobby, so it doesn't pop up inside their box on your cast. Your alert over the board keeps working.",
+          "Masque la carte de découverte de chaque joueur dans ce salon, pour qu'elle n'apparaisse pas dans sa boîte sur votre cast. Votre alerte sur le plateau continue de fonctionner."
+        )}
+      </p>
+      {error && <p className="cast-note" style={{ color: "var(--hit)" }}>{error}</p>}
+    </div>
+  );
+}
+
 function cellAtPoint(root: HTMLElement, x: number, y: number): number | null {
   for (const el of root.querySelectorAll<HTMLElement>("[data-cell]")) {
     const r = el.getBoundingClientRect();
@@ -1753,6 +1795,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
               {t("Latency is read from each box every few seconds. If one stream drifts on its own, add a", "La latence est lue sur chaque boîte toutes les quelques secondes. Si un flux dérive de son côté, ajoutez un filtre")}{" "}
               <strong>{t("Render Delay", "Render Delay")}</strong> {t("filter to that Screen source in OBS to nudge it back.", "à cette source Screen dans OBS pour le recaler.")}
             </p>
+            {room && <FindAlertsSwitch roomId={room.id} off={Boolean(room.find_alerts_off)} />}
           </section>
 
           <section>

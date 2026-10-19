@@ -49,6 +49,12 @@ export interface Room {
    * before the column existed have none, and those read as too early - see squareSetFormat.igonUnveiled.
    */
   seed_set_at?: string | null;
+  /**
+   * The caster's switch: players' own find-alert sources stay empty in this lobby. Set through the
+   * set_find_alerts_off RPC, which any spectator may call - see that migration. Optional because a
+   * room fetched before the column existed carries none.
+   */
+  find_alerts_off?: boolean;
   /** Which pool the board's squares come from - see lib/squareSets. Null means the default. */
   square_set?: string | null;
   /**

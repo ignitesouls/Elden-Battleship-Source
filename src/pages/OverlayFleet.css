@@ -49,12 +49,16 @@
  *
  * The board source hides its gutter instead of collapsing it, for the opposite reason: it pans, and
  * a footprint that changed with a setting would move every offset under it.
+ *
+ * Two classes on the frame, not one, and display: none rather than a zeroed font. This rule used to
+ * be `.ovf-no-coords .bg-coord` - the same specificity as the `.ovf-board .bg-coord` sizing below,
+ * which came later and so won: the labels went invisible but kept their clamp(9px..) font and
+ * padding, and the "collapsed" gutter sat on stream as an empty dark band down the left edge and
+ * along the top, pushing the squares off-centre in the frame's fleet hole. With the labels out of
+ * layout entirely the auto tracks size to nothing, and all that is left is one 2px grid line.
  */
-.ovf-no-coords .bg-coord {
-  visibility: hidden;
-  font-size: 0;
-  line-height: 0;
-  padding: 0;
+.ovf-board.ovf-no-coords .bg-coord {
+  display: none;
 }
 
 /**

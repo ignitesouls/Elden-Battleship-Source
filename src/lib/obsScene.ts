@@ -637,8 +637,9 @@ export function castSceneFilename(): string {
  *  The gameplay and the webcam are the two things a website cannot hand over, so they arrive as
  *  OBS's own Game Capture and Video Capture Device, already sitting in their holes with a bounding
  *  box. The game capture is aimed at Elden Ring too, so the player's one job is picking their
- *  camera. Both are Windows source types; on any other OS they import as sources OBS can't open,
- *  and the player swaps in their own.
+ *  camera. Under them sit the player's mic and the game's sound, muted until the player says
+ *  otherwise (see AUDIO_CAPTURES). All four are Windows source types; on any other OS they import as
+ *  sources OBS can't open, and the player swaps in their own.
  * ==================================================================================== */
 
 export const PLAYER_SCENE = "EB Player";
@@ -646,9 +647,10 @@ export const PLAYER_SCENE = "EB Player";
 /** One source in the player frame scene. */
 export interface PlayerPart {
   name: string;
-  /** The browser source and its URL - null for the two capture sources OBS supplies. */
+  /** The browser source and its URL - null for the capture sources OBS supplies. */
   entry: SceneEntry | null;
-  capture?: "game" | "webcam";
+  /** "mic" and "game-audio" are sound only - see AUDIO_CAPTURES for why they arrive muted. */
+  capture?: "game" | "webcam" | "mic" | "game-audio";
   at: SourcePlacement;
   /** A bounding box, for the captures whose size the file cannot know. */
   fit?: SceneFit;
@@ -708,6 +710,22 @@ export function playerSceneParts({
   const hole = (r: Rect): SourcePlacement => ({ x: r.x, y: r.y, scale: 1 });
 
   const parts: PlayerPart[] = [];
+  // The player's own voice and game sound, at the very bottom: sound only, so where they sit in the
+  // stack and on the canvas means nothing. Muted on arrival - see AUDIO_CAPTURES.
+  parts.push({
+    name: "Your Mic",
+    entry: null,
+    capture: "mic",
+    at: { x: 0, y: 0, scale: 1 },
+    what: "Audio Input Capture on your default mic - arrives muted, unmute it in the Audio Mixer",
+  });
+  parts.push({
+    name: "ER Game Audio",
+    entry: null,
+    capture: "game-audio",
+    at: { x: 0, y: 0, scale: 1 },
+    what: "Application Audio Capture, aimed at Elden Ring only - arrives muted, unmute it in the Audio Mixer",
+  });
   if (sound) {
     const source = pick("audio");
     parts.push({
@@ -797,23 +815,46 @@ const ELDEN_RING_CAPTURE = {
   window: "ELDEN RING™:ELDEN RING™:eldenring.exe",
 };
 
+/**
+ * The mic and the game's sound, as OBS source ids and settings.
+ *
+ * Both arrive MUTED, and that is the whole design. Most streamers already have Mic/Aux and Desktop
+ * Audio switched on in Settings -> Audio, which lives in the OBS profile rather than the scene
+ * collection, so an import never touches it. A live mic here would be a second copy of the same
+ * voice on top of the global one - an echo the player hears only when chat tells them. Muted, the
+ * source is a fader waiting in the mixer: a player with no global audio unmutes it, one who has it
+ * deletes it, and nobody is doubled by default.
+ *
+ * The game audio is an Application Audio Capture (OBS 28+, Windows 10 2004+) aimed the same way as
+ * the game capture, so it carries Elden Ring and not Discord, music or the browser. Its window
+ * string is the game capture's, by the same reasoning - see ELDEN_RING_CAPTURE.
+ */
+const AUDIO_CAPTURES = {
+  mic: { id: "wasapi_input_capture", settings: { device_id: "default" } },
+  "game-audio": {
+    id: "wasapi_process_output_capture",
+    settings: { window: ELDEN_RING_CAPTURE.window, priority: 2 },
+  },
+} as const;
+
 /** OBS's own capture sources, set up as far as a file can take them. */
 function captureSource(part: PlayerPart, uuid: string) {
-  const id = part.capture === "game" ? "game_capture" : "dshow_input";
+  const audio = part.capture === "mic" || part.capture === "game-audio" ? AUDIO_CAPTURES[part.capture] : null;
+  const id = audio ? audio.id : part.capture === "game" ? "game_capture" : "dshow_input";
   return {
     prev_ver: PREV_VER,
     name: part.name,
     uuid,
     id,
     versioned_id: id,
-    settings: part.capture === "game" ? ELDEN_RING_CAPTURE : {},
+    settings: audio ? audio.settings : part.capture === "game" ? ELDEN_RING_CAPTURE : {},
     mixers: 255,
     sync: 0,
     flags: 0,
     volume: 1.0,
     balance: 0.5,
     enabled: true,
-    muted: false,
+    muted: Boolean(audio),
     "push-to-mute": false,
     "push-to-mute-delay": 0,
     "push-to-talk": false,

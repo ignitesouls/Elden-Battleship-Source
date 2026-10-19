@@ -147,9 +147,10 @@ const CHASERS = 2;
  *
  * Every cut of the boss board counts, listed out for the same reason: callers hand this whatever
  * they have, and a caller passing a stored id rather than a folded one would otherwise be told its
- * squares were not bosses. Keep in step with the variants in squareSets.ts.
+ * squares were not bosses. Keep in step with the variants in squareSets.ts, and with the sets that
+ * deal as the boss board (Boss Shuffle).
  */
-const BOSS_BOARDS = new Set(["bosses", "bosses-2v2"]);
+const BOSS_BOARDS = new Set(["bosses", "bosses-2v2", "boss-shuffle"]);
 
 function isBossBoard(id: SquareSetId | null | undefined): boolean {
   return id === undefined || id === null || BOSS_BOARDS.has(id);

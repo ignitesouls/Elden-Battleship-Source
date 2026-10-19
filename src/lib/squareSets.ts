@@ -56,6 +56,16 @@ interface BaseSet {
    */
   variantOf?: string;
   /**
+   * The set whose deal this one copies exactly - same pack, same seeding - while keeping its own id,
+   * and so its own records.
+   *
+   * The opposite of a variant: a variant is a different deal that shares a board's records, this is
+   * the same deal kept out of them. Boss Shuffle needs it because its matches were first played as
+   * plain boss rooms and re-filed afterwards; seeding from its own id would rebuild every one of
+   * those boards differently from the one that was played. See dealSeed in challenges.ts.
+   */
+  dealsAs?: string;
+  /**
    * This cut's button, for a set that comes in more than one. Absent on a set that has no cuts,
    * which is how the lobby knows not to draw the row at all.
    *
@@ -165,6 +175,29 @@ export const SQUARE_SETS: Record<string, SquareSetDef> = {
     tooltipReplacesName: true,
     variantOf: "bosses",
     cutLabel: "Small crew",
+    tooltipsFr: bossTooltipsFr as Record<string, string>,
+    namesFr: (bossNamesFr as { names: Record<string, string> }).names,
+    shortNamesFr: (bossNamesFr as { shorts: Record<string, string> }).shorts,
+  },
+  /**
+   * The boss board, played with the boss randomizer mod on the Elden Ring side.
+   *
+   * The squares are the boss board's squares and the deal is the boss board's deal - see dealsAs -
+   * but every boss is standing somewhere else, so a kill time here says nothing about the same kill
+   * on the regular board. Hence a set of its own rather than a variant: its own records tab, its own
+   * Hall of Fame weights, and none of its timings feeding the balancer's cost tables (balance-board
+   * and the build-* scripts only read the two boss cuts, so they skip this without being told).
+   */
+  "boss-shuffle": {
+    id: "boss-shuffle",
+    label: "Boss Shuffle",
+    blurb:
+      "The boss board on the boss randomizer - same squares, but every boss is somewhere else. " +
+      "Kept on its own records tab, since the timings mean nothing next to the regular board.",
+    format: "flat",
+    data: bossData as Challenge[],
+    tooltipReplacesName: true,
+    dealsAs: "bosses",
     tooltipsFr: bossTooltipsFr as Record<string, string>,
     namesFr: (bossNamesFr as { names: Record<string, string> }).names,
     shortNamesFr: (bossNamesFr as { shorts: Record<string, string> }).shorts,

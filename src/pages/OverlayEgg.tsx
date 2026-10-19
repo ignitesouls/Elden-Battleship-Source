@@ -122,9 +122,19 @@ export function OverlayEgg(props: OverlaySourceProps = {}) {
     return () => clearTimeout(t);
   }, [current, secs]);
 
+  /**
+   * The caster has turned the players' alerts off for this lobby (rooms.find_alerts_off).
+   *
+   * Only a CREW member's source obeys it - `?crew=1` is written by the stream route when the token's
+   * owner holds a fleet - so the caster's own alert, the one over the board, keeps working. Checked
+   * here at the very end rather than before the queue: the queue keeps moving while muted, so
+   * switching alerts back on mid-match doesn't replay every find the switch held back.
+   */
+  const muted = Boolean(room?.find_alerts_off) && params.get("crew") === "1";
+
   // Nothing found, nothing on screen. A browser source drawing an empty box would be a rectangle
   // of nothing parked in a scene for the whole match.
-  if (!room || current === null) return null;
+  if (!room || current === null || muted) return null;
 
   const { find, mark } = current;
   const who = find.who;

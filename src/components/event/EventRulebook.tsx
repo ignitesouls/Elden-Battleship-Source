@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import type { EventConfig, EventDetail } from "../../lib/tournament/api";
 import { rulebook, type RuleBlock } from "../../lib/tournament/rulebook";
-import { displaySquareSet, squareSetLabel } from "../../lib/squareSets";
+import { squareSetLabel } from "../../lib/squareSets";
+import { autoFireSupported } from "../../lib/autoFire";
 import { useLanguage, useT } from "../../lib/language";
 
 function Block({ block }: { block: RuleBlock }) {
@@ -28,7 +29,7 @@ export function EventRulebook({ event, config }: { event: EventDetail; config: E
       teamSize: event.team_size,
       rules: event.rules,
       setLabel: set ? squareSetLabel(set) : null,
-      bossBoard: !set || displaySquareSet(set) === "bosses",
+      bossBoard: !set || autoFireSupported(set),
       format: config?.format ?? null,
     }, lang);
   }, [event, config, lang]);

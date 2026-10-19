@@ -149,6 +149,9 @@ export function StreamSource() {
     // The fleet source resolves its ships from the token itself rather than from a rejoin code, so
     // it is the one element that gets it back. See fetchOverlayFleetByToken.
     if (name === "fleet" && token) next.set("token", token);
+    // A player's find alert, as opposed to a caster's - the one a caster can switch off for the
+    // lobby. See `muted` in OverlayEgg.
+    if (name === "egg" && session?.team !== null && session?.team !== undefined) next.set("crew", "1");
     return next;
   }, [params, session?.team, name, token]);
 

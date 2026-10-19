@@ -249,6 +249,14 @@ console.log("\nplayer frame - collection");
   ok("exactly one scene, the player scene", scenes.length === 1 && scenes[0].name === PLAYER_SCENE);
   ok("the collection opens on it", file.current_scene === PLAYER_SCENE);
   ok("one game capture and one webcam", inputs.filter((s) => s.id === "game_capture").length === 1 && inputs.filter((s) => s.id === "dshow_input").length === 1);
+  const mic = inputs.find((s) => s.id === "wasapi_input_capture");
+  const gameAudio = inputs.find((s) => s.id === "wasapi_process_output_capture");
+  ok("one mic and one game-audio placeholder", Boolean(mic) && Boolean(gameAudio));
+  ok("both audio placeholders arrive muted, so a global mic is never doubled", Boolean(mic?.muted) && Boolean(gameAudio?.muted));
+  ok(
+    "the game audio is aimed at eldenring.exe",
+    String((gameAudio?.settings as { window?: string } | undefined)?.window ?? "").endsWith(":eldenring.exe")
+  );
   const names = inputs.map((s) => s.name);
   ok("finds are OFF unless asked for", !names.includes("EB Finds"));
   ok("fleet and sound are on by default", names.includes("EB Your Fleet") && names.includes("EB Audio"));

@@ -82,10 +82,19 @@ async function rows<T>(query: postgres.PendingQuery<postgres.Row[]>): Promise<T[
  * Both are cuts of the boss board - see squareSets.ts. The smaller one is what a room lands on when
  * every team is one or two players, and it is auto-fireable for the same reason the full one is:
  * every square in it is a boss with an event flag, because it is a subset of the full one.
+ *
+ * Boss Shuffle is the full board played on the boss randomizer: same squares, same deal, its own
+ * records. The randomizer moves where a boss stands, not the flag its death sets.
  */
 const BOSS_SETS: Record<string, { name: string; tooltip?: string }[]> = {
   'bosses': bossData,
   'bosses-2v2': bossData2v2,
+  'boss-shuffle': bossData,
+}
+
+/** Mirrors squareSets.dealsAs: the set whose seeding a set borrows, so its boards deal identically. */
+const DEALS_AS: Record<string, string> = {
+  'boss-shuffle': 'bosses',
 }
 
 /** `null` is a room from before square sets, which is the default set. */
@@ -145,7 +154,9 @@ function boardIndex(
   perm: number[] | null,
   dealtAt: string | null
 ): Map<string, number[]> {
-  const base = setId === DEFAULT_SET ? roomId : `${roomId}:${setId}`
+  // A set that deals as another seeds as it too - squareSets.dealsAs, mirrored by DEALS_AS.
+  const dealId = DEALS_AS[setId] ?? setId
+  const base = dealId === DEFAULT_SET ? roomId : `${roomId}:${dealId}`
   const next = rng(seedFrom(seed ? `${base}:${seed}` : base))
   // Same pool challengesForRoom deals from: a square added to the set after this board was dealt is
   // not on it, and leaving it in would re-deal the board and fire every kill at the wrong cell.
@@ -315,13 +326,17 @@ const PB_TTL_MS = 30 * 60 * 1000
 const pbCache = new Map<string, { at: number; bests: PersonalBests }>()
 
 /**
- * Every stored id that folds into the boss board: null (rooms from before square sets) and both
- * cuts. They are one board for records, exactly as displaySquareSet folds them on the website.
+ * Every stored id that shares a records board with `setId`, exactly as displaySquareSet folds them
+ * on the website: the boss board is null (rooms from before square sets) and both cuts; Boss Shuffle
+ * keeps its records apart, so its PBs come from its own games only.
  * A function, not a constant, because a postgres.js fragment is a query and is built per use.
  */
-const bossBoard = () => sql`(square_set is null or square_set in ${sql(Object.keys(BOSS_SETS))})`
+const bossBoard = (setId: string) =>
+  DEALS_AS[setId]
+    ? sql`square_set = ${setId}`
+    : sql`(square_set is null or square_set in ${sql(Object.keys(BOSS_SETS).filter((id) => !DEALS_AS[id]))})`
 
-async function personalBests(userId: string, boardSize: number, shape: string): Promise<PersonalBests> {
+async function personalBests(userId: string, setId: string, boardSize: number, shape: string): Promise<PersonalBests> {
   // No paging: PostgREST's 1000-row cap was the only reason the REST version walked these in pages.
   const [voided, fleets, games, events] = await Promise.all([
     // The durable list, which outlives the 30-day sweep of match_reports - see 20261003000000.
@@ -331,12 +346,12 @@ async function personalBests(userId: string, boardSize: number, shape: string): 
     rows<{ match_key: string; ship_defs: { size: number }[] | null }>(sql`
       select match_key, ship_defs
       from public.match_fleets
-      where board_size = ${boardSize} and ${bossBoard()}
+      where board_size = ${boardSize} and ${bossBoard(setId)}
       order by match_key, team`),
     rows<{ match_key: string; shots: number; hits: number; sunk: number }>(sql`
       select match_key, shots, hits, sunk
       from public.match_participants
-      where user_id = ${userId} and ${bossBoard()}
+      where user_id = ${userId} and ${bossBoard(setId)}
       order by match_key`),
     rows<{ match_key: string; cell_index: number; match_seconds: number | null }>(sql`
       select match_key, cell_index, match_seconds
@@ -346,7 +361,7 @@ async function personalBests(userId: string, boardSize: number, shape: string): 
         and cell_index >= 0
         -- Narrows the read server-side; the fleet is matched below along with the participants.
         and board_size = ${boardSize}
-        and ${bossBoard()}
+        and ${bossBoard(setId)}
       -- The order match_events_participant_idx is built in, so the read walks the index, and the
       -- order the first-seen time per square below depends on.
       order by finished_at desc, id desc`),
@@ -401,16 +416,17 @@ async function personalBests(userId: string, boardSize: number, shape: string): 
  */
 async function loadBests(
   userId: string,
-  room: { id: string; board_size: number; ship_defs: { size: number }[] | null },
+  room: { id: string; board_size: number; square_set: string | null; ship_defs: { size: number }[] | null },
   matchStartedAt: string | null
 ): Promise<PersonalBests | null> {
   try {
     const shape = fleetShape(room.ship_defs)
-    const key = `${userId}|${room.id}|${matchStartedAt}|${room.board_size}|${shape}`
+    const setId = room.square_set ?? DEFAULT_SET
+    const key = `${userId}|${room.id}|${matchStartedAt}|${setId}|${room.board_size}|${shape}`
     const now = Date.now()
     let hit = pbCache.get(key)
     if (!hit || now - hit.at > PB_TTL_MS) {
-      hit = { at: now, bests: await personalBests(userId, room.board_size, shape) }
+      hit = { at: now, bests: await personalBests(userId, setId, room.board_size, shape) }
       pbCache.set(key, hit)
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }

@@ -2427,7 +2427,7 @@ var battleshipChallenges_default = [
 		"name": "Devonia",
 		"tooltip": "Crucible Knight Devonia - Ancient Ruins of Rauh",
 		"region": "dlc",
-		"dealtFrom": "pending"
+		"dealtFrom": "2026-10-12T03:47:27.027Z"
 	},
 	{
 		"name": "Metyr, Mother of Fingers",
@@ -3295,7 +3295,7 @@ var battleshipChallenges2v2_default = [
 		"name": "Devonia",
 		"tooltip": "Crucible Knight Devonia - Ancient Ruins of Rauh",
 		"region": "dlc",
-		"dealtFrom": "pending"
+		"dealtFrom": "2026-10-12T03:47:27.027Z"
 	},
 	{
 		"name": "Gideon Ofnir",
@@ -8588,6 +8588,27 @@ const SQUARE_SETS = {
 		namesFr: names$1,
 		shortNamesFr: shorts$1
 	},
+	/**
+	* The boss board, played with the boss randomizer mod on the Elden Ring side.
+	*
+	* The squares are the boss board's squares and the deal is the boss board's deal - see dealsAs -
+	* but every boss is standing somewhere else, so a kill time here says nothing about the same kill
+	* on the regular board. Hence a set of its own rather than a variant: its own records tab, its own
+	* Hall of Fame weights, and none of its timings feeding the balancer's cost tables (balance-board
+	* and the build-* scripts only read the two boss cuts, so they skip this without being told).
+	*/
+	"boss-shuffle": {
+		id: "boss-shuffle",
+		label: "Boss Shuffle",
+		blurb: "The boss board on the boss randomizer - same squares, but every boss is somewhere else. Kept on its own records tab, since the timings mean nothing next to the regular board.",
+		format: "flat",
+		data: battleshipChallenges_default,
+		tooltipReplacesName: true,
+		dealsAs: "bosses",
+		tooltipsFr: battleshipTooltipsFr_default,
+		namesFr: names$1,
+		shortNamesFr: shorts$1
+	},
 	objectives: {
 		id: "objectives",
 		label: "Objectives: Base+DLC",
@@ -8884,7 +8905,8 @@ function applyBoardPerm(board, perm) {
 */
 function dealSeed(roomId, setId, seed) {
 	const set = squareSet(setId);
-	const base = set.id === "bosses" ? roomId : `${roomId}:${set.id}`;
+	const dealId = set.dealsAs ?? set.id;
+	const base = dealId === "bosses" ? roomId : `${roomId}:${dealId}`;
 	return rng(seedFrom(seed ? `${base}:${seed}` : base));
 }
 /**
@@ -9108,4 +9130,4 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 
 //#endregion
 export { POWER_PARAMS, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo };
-export const RATING_CODE_VERSION = "58447b52d37c124a";
+export const RATING_CODE_VERSION = "67fc1589676fdb10";

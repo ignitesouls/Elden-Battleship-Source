@@ -40,7 +40,9 @@ export function dealSeed(
   seed?: string | null
 ): () => number {
   const set = squareSet(setId);
-  const base = set.id === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${set.id}`;
+  // A set that deals as another seeds as that one too - see SquareSetDef.dealsAs.
+  const dealId = set.dealsAs ?? set.id;
+  const base = dealId === DEFAULT_SQUARE_SET ? roomId : `${roomId}:${dealId}`;
   return rng(seedFrom(seed ? `${base}:${seed}` : base));
 }
 
