@@ -79,6 +79,9 @@ export function ScheduledMatches() {
           const streams = multitwitchUrl(m.streams_a, m.streams_b);
           return (
             <div key={m.match_id} className="stack scheduled-match" style={{ gap: "0.3rem", padding: "0.5rem 0" }}>
+              <Link to={`/event/${m.tournament_id}`} className="muted" style={{ alignSelf: "center", fontSize: "0.8rem" }}>
+                {m.event_name} · {stage(m)} · {t("Round", "Tour")} {m.phase}
+              </Link>
               <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: "0.6rem", flexWrap: "wrap" }}>
                 <div className="stack" style={{ alignItems: "center", gap: "0.1rem" }}>
                   <TeamLabel name={<strong><PlayerName name={m.team_a_name} login={solo(m, "a")} /></strong>} logo={logo(m, "a")} size={1.5} />
@@ -96,9 +99,6 @@ export function ScheduledMatches() {
                 ) : (
                   m.agreed_at && <strong>{when(m.agreed_at)}</strong>
                 )}
-                <Link to={`/event/${m.tournament_id}`} className="muted">
-                  {m.event_name} · {stage(m)} · {t("Round", "Tour")} {m.phase}
-                </Link>
               </div>
               {(live || streams) && (
                 <div className="row" style={{ justifyContent: "center", gap: "0.5rem" }}>
