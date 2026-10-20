@@ -255,6 +255,12 @@ body.overlay-mode .tb-bar {
   position: relative;
 }
 
+/* The other half of the checkerboard, matching --cell-alt on the site board: a lighter navy and a
+   touch more opaque, so neighbouring names separate over footage without hiding much more of it. */
+.ov-grid-cell-alt {
+  background: rgba(18, 44, 62, 0.62);
+}
+
 /* Band stack for combined mode, pushed behind the label layer. */
 .ov-grid-bands {
   position: absolute;

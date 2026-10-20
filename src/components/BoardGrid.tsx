@@ -742,7 +742,9 @@ export function BoardGrid({
         key={i}
         type="button"
         data-cell={i}
-        className={`bg-cell bg-${visual}${axisShadow ? " bg-cell-axis-shadow" : ""}${
+        className={`bg-cell bg-${visual}${(rawRow + rawCol) % 2 === 1 ? " bg-cell-alt" : ""}${
+          axisShadow ? " bg-cell-axis-shadow" : ""
+        }${
           interactive ? "" : " bg-cell-inert"
         }${cellCounts.length > 0 ? " bg-cell-has-counts" : ""}${holding ? " bg-cell-holding" : ""}${
           tint

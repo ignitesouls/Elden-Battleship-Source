@@ -444,6 +444,12 @@
   background: var(--cell);
 }
 
+/* Checkerboard, so each square's name sits in its own box instead of running into its neighbours.
+   Unfired squares only: a hit, miss or sunk fill replaces it, same as it replaces --cell. */
+.bg-cell-alt.bg-empty {
+  background: var(--cell-alt);
+}
+
 /**
  * A square wearing its own challenge's colour, for the boards with no room to write the name.
  *
@@ -472,6 +478,10 @@
  */
 .bg-cell-tinted.bg-empty {
   background: color-mix(in srgb, var(--bg-region, transparent) var(--bg-tint, 20%), var(--cell));
+}
+
+.bg-cell-alt.bg-cell-tinted.bg-empty {
+  background: color-mix(in srgb, var(--bg-region, transparent) var(--bg-tint, 20%), var(--cell-alt));
 }
 
 /**

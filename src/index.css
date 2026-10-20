@@ -76,6 +76,10 @@
   /* Board surfaces - open water, with rigging-line grid gaps. */
   --board-line: #1b3d52;
   --cell: #0a1c28;
+  /* The other half of the checkerboard (.bg-cell-alt). A player asked for it: on a board with a
+     name in every square, neighbours in one flat navy ran together. Just a step lighter, so the
+     names keep their contrast and the pattern doesn't compete with the result fills. */
+  --cell-alt: #10283a;
   --cell-hover: #102c3d;
   --cell-text: #bed0db;
   --preview-valid: #3f9d7a99;

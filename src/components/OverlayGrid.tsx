@@ -241,7 +241,10 @@ function Cell({
   return (
     <>
       <span
-        className={`ov-grid-cell${layers.some((l) => l.pulseCell === index) ? " ov-grid-cell-latest" : ""}`}
+        // Both tracks carry the same gutter offset, so the sum's parity is the square's own.
+        className={`ov-grid-cell${(gridRow + gridColumn) % 2 === 1 ? " ov-grid-cell-alt" : ""}${
+          layers.some((l) => l.pulseCell === index) ? " ov-grid-cell-latest" : ""
+        }`}
         style={{ width: cell, height: cell, gridRow, gridColumn }}
       >
         {/* Bands sit behind everything as a background wash so the name stays on top of them. */}
