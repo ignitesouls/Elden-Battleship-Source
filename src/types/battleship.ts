@@ -118,6 +118,13 @@ export interface Room {
   /** Which fleet (team index) each of the two teams sits on. Bound by whoever sits first. */
   official_team_a?: number | null;
   official_team_b?: number | null;
+  /**
+   * The seed the official-seed function drew for this official match - one whose boss pool passes
+   * the official cutoff for the board (see lib/officialPool). The board is vetted while this equals
+   * `seed`; any other change to the seed, board size or square set clears it, and an official boss
+   * room cannot leave the lobby until it is set again. Server-written only.
+   */
+  official_seed?: string | null;
 }
 
 /** One stretch of stopped clock, written by the host once the window closes. */

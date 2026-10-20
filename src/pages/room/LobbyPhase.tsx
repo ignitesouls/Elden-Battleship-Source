@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../lib/language";
-import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed } from "../../lib/rooms";
+import { beginPlacementPhase, handOverCaptaincy, kickPlayer, setTeamName, rerollSeed, drawOfficialSeed } from "../../lib/rooms";
+import { VETTED_SETS } from "../../lib/officialPool";
 import { HostTakeover } from "../../components/HostTakeover";
 import { OverlayLinkBox } from "../../components/OverlayLinkBox";
 import { LeaveMatchButton } from "../../components/LeaveMatchButton";
@@ -60,9 +61,31 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
 
   // An official match cannot start until both teams have entered their entry codes. The database
   // refuses it too (see guard_official_room); this is the button saying so before it is pressed.
-  const awaitingCodes =
-    !!room.tournament_match_id && !(room.official_a_confirmed && room.official_b_confirmed);
-  const canStart = usedTeams.length >= 2 && !awaitingCodes;
+  const official = !!room.tournament_match_id;
+  const awaitingCodes = official && !(room.official_a_confirmed && room.official_b_confirmed);
+
+  // An official boss match is dealt from a vetted pool, and the server draws its seed -
+  // see lib/officialPool and the official-seed function. The database refuses to start one until it
+  // has (guard_official_room); this is the lobby asking for the draw and saying it is waiting.
+  const vettedSet = official && (VETTED_SETS as readonly string[]).includes(room.square_set ?? "bosses");
+  const seedVetted = !vettedSet || (!!room.seed && room.official_seed === room.seed);
+  const [drawError, setDrawError] = useState<string | null>(null);
+  const [drawTry, setDrawTry] = useState(0);
+  // Once per seed, board and set: those are what clear a vetted seed, so a change to any of them is
+  // the next draw to ask for - and a remount or a realtime echo of the same row is not.
+  const drawKey = `${room.id}:${room.seed}:${room.board_size}:${room.square_set}:${drawTry}`;
+  const drawnFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!myPlayer.is_host || seedVetted || drawnFor.current === drawKey) return;
+    drawnFor.current = drawKey;
+    setDrawError(null);
+    void drawOfficialSeed(room.id).then((r) => {
+      // room_changed is a race the next room update resolves on its own, with a fresh key.
+      if (!r.vetted && r.reason !== "room_changed") setDrawError(r.reason ?? "unknown");
+    });
+  }, [myPlayer.is_host, seedVetted, drawKey, room.id]);
+
+  const canStart = usedTeams.length >= 2 && !awaitingCodes && seedVetted;
 
   async function handleStart() {
     setBusy(true);
@@ -242,7 +265,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
             >
               {copiedSeed ? t("Copied", "Copié") : t("Copy", "Copier")}
             </button>
-            {myPlayer.is_host && (
+            {/* No reroll in an official match: the seed is the server's, and the database refuses
+                a browser changing it (guard_official_room). */}
+            {myPlayer.is_host && !official && (
               <button
                 disabled={busy}
                 onClick={() => void handleReroll()}
@@ -253,6 +278,27 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
               </button>
             )}
           </div>
+          {!seedVetted && (
+            <div style={{ fontSize: "0.72rem", marginTop: "0.25rem" }}>
+              {drawError ? (
+                <span className="error-text">
+                  {t(`Couldn't draw the official board (${drawError}).`, `Impossible de tirer le plateau officiel (${drawError}).`)}{" "}
+                  {myPlayer.is_host && (
+                    <button onClick={() => setDrawTry((n) => n + 1)} style={{ fontSize: "0.68rem", padding: "0.1rem 0.4rem" }}>
+                      {t("Try again", "Réessayer")}
+                    </button>
+                  )}
+                </span>
+              ) : (
+                <span className="muted">
+                  {t(
+                    "Drawing the official board - set your game up once this seed is final.",
+                    "Tirage du plateau officiel - configurez votre jeu une fois cette graine définitive."
+                  )}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="row" style={{ gap: "0.4rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {/* The lobby is where a streamer sets their scene up, before there is anything to watch -
@@ -407,7 +453,9 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
             ? t("Start ship placement", "Commencer le placement des navires")
             : awaitingCodes
               ? t("Waiting for both teams to enter their entry codes", "En attente des codes d'entrée des deux équipes")
-              : t("Need at least 2 fleets with players", "Il faut au moins 2 flottes avec des joueurs")}
+              : !seedVetted
+                ? t("Waiting for the official board to be drawn", "En attente du tirage du plateau officiel")
+                : t("Need at least 2 fleets with players", "Il faut au moins 2 flottes avec des joueurs")}
         </button>
       ) : (
         <div className="muted" style={{ textAlign: "center" }}>

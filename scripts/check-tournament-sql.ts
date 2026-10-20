@@ -1868,6 +1868,9 @@ async function officialMatches(admin: Person) {
       (await who.client.rpc('link_official_room', { p_room: roomId, p_tournament: ev.id, p_code: code })).data as { ok: boolean; error?: string }
     const confirm = async (who: Person, roomId: string, code: string) =>
       (await who.client.rpc('confirm_official_team', { p_room: roomId, p_code: code })).data as { ok: boolean; error?: string }
+    /** What the official-seed Edge Function writes once it has drawn a pool: the seed and its vetting, in one service write. */
+    const vet = async (roomId: string, seed = String(100_000_000 + Math.floor(Math.random() * 900_000_000))) =>
+      (await svc.from('rooms').update({ seed, official_seed: seed }).eq('id', roomId)).error
     /**
      * Archives a finished game the way a real one is archived: as the database's own function running on
      * behalf of an ordinary player. That matters. The service key is deliberately exempt from several
@@ -2007,7 +2010,20 @@ async function officialMatches(admin: Person) {
     allowed('...but can take the other one', (await seat(capB, r1.id, 1)).error)
     check('...which becomes team B\'s', (await state(r1.id)).official_team_b === 1)
     refused('and a team cannot move to the other team\'s fleet', (await seat(host, r1.id, 1)).error, /different fleet|belongs to the other/)
-    allowed('once both have confirmed, the match can start', (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r1.id)).error)
+
+    console.log('  -- the official board is drawn by the server')
+    refused('it cannot start before the server has drawn its seed',
+      (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r1.id)).error, /official board has not been drawn/)
+    refused('a player cannot mark a seed as vetted themselves',
+      (await host.client.from('rooms').update({ official_seed: '123456789' }).eq('id', r1.id)).error, /drawn by the server/)
+    allowed('(the server draws one)', await vet(r1.id))
+    const drawn = await state(r1.id)
+    refused('the host cannot reroll it in the lobby',
+      (await host.client.from('rooms').update({ seed: '111111111' }).eq('id', r1.id)).error, /cannot be rerolled/)
+    const kept = await state(r1.id)
+    check('...and the drawn seed is still the vetted one', kept.seed === drawn.seed && kept.official_seed === kept.seed && kept.seed !== null)
+
+    allowed('once both have confirmed and the board is drawn, the match can start', (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r1.id)).error)
 
     console.log('  -- the result goes into the bracket')
     const rep = await report(r1.code, `OMK${run}:1`, 0)
@@ -2038,6 +2054,17 @@ async function officialMatches(admin: Person) {
     const g1 = (await svc.from('tournament_matches').select('status, score_a, score_b').eq('id', e3.matchId).single()).data
     check('game 1 to Bravo is 0-1 to Alpha-Bravo, and the series is still on', g1?.status === 'in_progress' && g1.score_a === 0 && g1.score_b === 1, JSON.stringify(g1))
     check('...the room stays official for game 2', (await state(r3.id)).tournament_match_id === e3.matchId)
+    // The way back to the lobby for game 2 is resetRoomToLobby, which rolls a fresh seed from the
+    // host's browser in the same write as the status flip. That has to be allowed - and has to leave
+    // game 2 waiting for the server's draw rather than playing the browser's seed.
+    allowed('(game 2 starts on a drawn board)', await vet(r3.id))
+    allowed('(...and leaves the lobby)', (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r3.id)).error)
+    allowed('the reset back to the lobby may roll a fresh seed from the browser',
+      (await host.client.from('rooms').update({ status: 'lobby', seed: '222333444' }).eq('id', r3.id)).error)
+    const reset = await state(r3.id)
+    check('...which is NOT vetted: the reset cleared the drawn seed', reset.seed === '222333444' && reset.official_seed === null, JSON.stringify({ seed: reset.seed, official: reset.official_seed }))
+    refused('...so the next game cannot start until the server draws again',
+      (await host.client.from('rooms').update({ status: 'placement' }).eq('id', r3.id)).error, /official board has not been drawn/)
     await report(r3.code, `OMK${run}:3`, 0)
     const g2 = (await svc.from('tournament_matches').select('status, score_b, winner').eq('id', e3.matchId).single()).data
     check('game 2 to Bravo decides it 0-2, and Bravo is the winner', g2?.status === 'done' && g2.score_b === 2 && g2.winner === e3.b, JSON.stringify(g2))
@@ -2093,6 +2120,7 @@ async function officialMatches(admin: Person) {
     await confirm(capB, r6.id, e6.codeB)
     await seat(host, r6.id, 0)
     await seat(capB, r6.id, 1)
+    await vet(r6.id)
     await host.client.from('rooms').update({ status: 'placement' }).eq('id', r6.id)
     check('once the match has started, the host can no longer unlink', ((await host.client.rpc('unlink_official_room', { p_room: r6.id })).data as { ok: boolean }).ok === false)
     check('an administrator can, at any time', ((await admin.client.rpc('unlink_official_room', { p_room: r6.id })).data as { ok: boolean }).ok === true)

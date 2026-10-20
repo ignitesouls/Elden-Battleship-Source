@@ -221,6 +221,26 @@ export async function rerollSeed(roomId: string): Promise<string> {
   return seed;
 }
 
+/**
+ * Asks the server to draw an official match's seed - one whose boss pool passes the official cutoff
+ * for its board. See supabase/functions/official-seed.
+ *
+ * Host only, and safe to call more than once: a lobby already on a vetted seed is left alone. The new
+ * seed arrives through the room's realtime row like any other change, so this returns only whether
+ * it worked and, if not, why.
+ */
+export async function drawOfficialSeed(roomId: string): Promise<{ vetted: boolean; reason?: string }> {
+  const { data, error } = await supabase.functions.invoke("official-seed", { body: { roomId } });
+  if (error) {
+    const body = await (error as { context?: { json?: () => Promise<unknown> } }).context
+      ?.json?.()
+      .catch(() => null);
+    const reason = (body as { reason?: string } | null)?.reason;
+    return { vetted: false, reason: reason ?? (error as Error).message };
+  }
+  return { vetted: !!data?.vetted, reason: data?.reason };
+}
+
 export interface RoomSettings {
   board_size?: number;
   ship_defs?: ShipDefinition[];
