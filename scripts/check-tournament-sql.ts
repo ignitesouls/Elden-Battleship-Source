@@ -561,6 +561,7 @@ async function rules() {
   await groupNames(admin, eve)
   await plans(admin, eve)
   await frontPageMatches(admin, eve)
+  await officialCasts(admin, eve)
   await startRules(admin)
   await laterStages(admin)
   await officialMatches(admin)
@@ -1441,6 +1442,78 @@ async function frontPageMatches(admin: Person, visitor: Person) {
   await svc.from('tournament_matches').insert({ tournament_id: hidden.id, key: 'W1-0', stage: 'knockout', bracket: 'W', round: 1, idx: 0, entrant_a: he[0].id, entrant_b: he[1].id, status: 'ready', agreed_at: soon })
   check('a test event\'s matches never reach the front page', !(await listed()).some((r) => r.tournament_id === hidden.id))
   void admin
+}
+
+// ===========================================================================================
+async function officialCasts(admin: Person, visitor: Person) {
+  console.log('\nOfficial casters')
+  const capA = await person('oc_a')
+  const capB = await person('oc_b')
+  const caster = await person('oc_caster')
+  const cohost = await person('oc_cohost')
+  const anon = await person('oc_anon', { twitch: false })
+  const ev = await newTournament({ team_size: 1, name: `Casts ${run}`, status: 'live' })
+  const made = await svc.from('tournament_entrants').insert([
+    { tournament_id: ev.id, name: 'Cast A', captain_user_id: capA.id, status: 'approved' },
+    { tournament_id: ev.id, name: 'Cast B', captain_user_id: capB.id, status: 'approved' },
+  ]).select('id, name')
+  const [a, b] = ['Cast A', 'Cast B'].map((n) => made.data!.find((e) => e.name === n)!.id as string)
+  const soon = new Date(Date.now() + 3600_000).toISOString()
+  const ms = (await svc.from('tournament_matches').insert([
+    { tournament_id: ev.id, key: 'W1-0', stage: 'knockout', bracket: 'W', round: 1, idx: 0, entrant_a: a, entrant_b: b, status: 'ready', best_of: 1, agreed_at: soon },
+    { tournament_id: ev.id, key: 'W2-0', stage: 'knockout', bracket: 'W', round: 2, idx: 0, entrant_a: null, entrant_b: null, status: 'pending', best_of: 1 },
+  ]).select('id, key')).data!
+  const m = ms.find((r) => r.key === 'W1-0')!.id as string
+  const later = ms.find((r) => r.key === 'W2-0')!.id as string
+  const ask = (p: Person, match = m) => p.client.rpc('request_cast', { p_match: match })
+  const castRow = async (p: Person) => (await svc.from('official_casts').select('id, status').eq('match_id', m).eq('caster_user_id', p.id).maybeSingle()).data as { id: string; status: string } | null
+  const card = async (p: Person) => ((await p.client.rpc('scheduled_official_matches', { p_limit: 50 })).data as Array<Record<string, unknown>> ?? []).find((r) => r.match_id === m)
+
+  refused('a player in the match cannot ask to cast it', (await ask(capA)).error, /^You're playing in this match - your stream is already in the Multitwitch$/)
+  refused('nor can the other team\'s', (await ask(capB)).error, /^You're playing in this match/)
+  refused('an account without Twitch cannot ask', (await ask(anon)).error, /^Sign in with Twitch to ask to cast a match$/)
+  refused('a match whose teams are not decided cannot be asked for', (await ask(caster, later)).error, /^That match isn't waiting to be played$/)
+  allowed('anyone else signed in with Twitch can ask', (await ask(caster)).error)
+  refused('...once', (await ask(caster)).error, /^You have already asked to cast this match - an administrator will get to it$/)
+  allowed('a second caster can ask for the same match', (await ask(cohost)).error)
+
+  const direct = await caster.client.from('official_casts').update({ status: 'approved' }).eq('match_id', m).select('id')
+  check('a caster cannot approve themselves by writing the row', (direct.data ?? []).length === 0 && (await castRow(caster))?.status === 'pending', JSON.stringify(direct))
+  const inserted = await visitor.client.from('official_casts').insert({ tournament_id: ev.id, match_id: m, caster_user_id: visitor.id, twitch_login: visitor.login, display_name: 'x', status: 'approved' })
+  refused('nobody can insert a row directly', inserted.error)
+
+  check('a pending request is not shown to visitors', ((await card(visitor))?.casters as unknown[] | undefined)?.length === 0, JSON.stringify(await card(visitor)))
+  check('...but the caster\'s own card says it is waiting', (await card(caster))?.my_cast === 'pending')
+  check('...and a visitor\'s card says nothing about it', (await card(visitor))?.my_cast === null)
+  const seenByVisitor = (await visitor.client.from('official_casts').select('id').eq('match_id', m)).data ?? []
+  check('a visitor cannot read pending requests', seenByVisitor.length === 0, JSON.stringify(seenByVisitor))
+  const seenByAdmin = (await admin.client.from('official_casts').select('id').eq('match_id', m)).data ?? []
+  check('an administrator reads every request', seenByAdmin.length === 2, JSON.stringify(seenByAdmin))
+
+  const pending = (await castRow(caster))!
+  refused('a non-administrator cannot approve', (await caster.client.rpc('decide_cast', { p_cast: pending.id, p_approve: true })).error, /^Only an administrator can approve or decline a cast$/)
+  allowed('an administrator approves', (await admin.client.rpc('decide_cast', { p_cast: pending.id, p_approve: true })).error)
+  allowed('...and a second caster on the same match', (await admin.client.rpc('decide_cast', { p_cast: (await castRow(cohost))!.id, p_approve: true })).error)
+
+  let shown = (await card(visitor))?.casters as Array<{ login: string; name: string }> | undefined
+  check('approved casters reach the front page, earliest asked first, with their Twitch', shown?.length === 2 && shown[0].login === caster.login && shown[1].login === cohost.login, JSON.stringify(shown))
+  const embedded = (await visitor.client.from('tournament_matches').select('id, casts:official_casts(twitch_login, status)').eq('id', m).single()).data as { casts: Array<{ twitch_login: string; status: string }> } | null
+  check('...and the event page\'s match read (fetchMatches\' embed) carries them for anyone', embedded?.casts.length === 2 && embedded.casts.every((c) => c.status === 'approved'), JSON.stringify(embedded))
+
+  allowed('an approved caster can back out', (await cohost.client.rpc('withdraw_cast', { p_match: m })).error)
+  refused('...but only once', (await cohost.client.rpc('withdraw_cast', { p_match: m })).error, /^You have no cast to withdraw for this match$/)
+  refused('a withdrawn request cannot be approved', (await admin.client.rpc('decide_cast', { p_cast: (await castRow(cohost))!.id, p_approve: true })).error, /^The caster has withdrawn this request$/)
+  allowed('a caster who withdrew can ask again', (await ask(cohost)).error)
+  check('...and is waiting again', (await castRow(cohost))?.status === 'pending')
+
+  allowed('an administrator can take back an approval', (await admin.client.rpc('decide_cast', { p_cast: pending.id, p_approve: false })).error)
+  shown = (await card(visitor))?.casters as Array<{ login: string; name: string }> | undefined
+  check('...and the button goes', shown?.length === 0, JSON.stringify(shown))
+  refused('a declined caster cannot ask again', (await ask(caster)).error, /^An administrator turned down your cast for this match$/)
+
+  await svc.from('tournament_matches').update({ status: 'done', score_a: 1, score_b: 0, winner: a }).eq('id', m)
+  refused('a request for a match already played cannot be approved', (await admin.client.rpc('decide_cast', { p_cast: (await castRow(cohost))!.id, p_approve: true })).error, /^That match isn't waiting to be played any more$/)
+  refused('nor can anyone ask for it', (await ask(visitor)).error, /^That match isn't waiting to be played$/)
 }
 
 // ===========================================================================================

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  approvedCasters,
   fetchEntryCode,
   multitwitchUrl,
   type EventDetail,
@@ -14,6 +15,7 @@ import { useLanguage, useT } from "../../lib/language";
 import { PlayerName, TeamLabel } from "./TeamLogo";
 import { MatchOdds } from "./PowerLine";
 import { MatchTimeField, agreedByLabel } from "./MatchTimeField";
+import { CasterLinks } from "./CasterLinks";
 
 interface Props {
   event: EventDetail;
@@ -161,6 +163,7 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
                 {t("Both teams' streams (Multitwitch)", "Les streams des deux équipes (Multitwitch)")}
               </a>
             )}
+            <CasterLinks casters={approvedCasters(next)} />
           </div>
           {isCaptain && code && (
             <span className="muted" style={{ fontSize: "0.72rem" }}>{t("Keep the code off stream.", "Gardez le code hors du stream.")}</span>

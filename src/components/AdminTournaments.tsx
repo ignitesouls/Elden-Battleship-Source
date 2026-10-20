@@ -392,6 +392,7 @@ function EventCard({ event, open, onToggle, busy, act }: { event: AdminEventRow;
           {t(`${event.team_count} approved`, `${event.team_count} approuvée(s)`)}
           {event.pending_count > 0 && <strong style={{ color: "var(--accent-bright)" }}> · {t(`${event.pending_count} awaiting`, `${event.pending_count} en attente`)}</strong>}
           {event.waiting_count > 0 && ` · ${t(`${event.waiting_count} solo`, `${event.waiting_count} solo`)}`}
+          {event.cast_count > 0 && <strong style={{ color: "var(--accent-bright)" }}> · {t(`${event.cast_count} cast request(s)`, `${event.cast_count} demande(s) de cast`)}</strong>}
         </span>
       </div>
 

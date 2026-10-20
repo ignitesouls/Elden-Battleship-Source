@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchScheduledMatches, multitwitchUrl, teamLogoUrl, type ScheduledMatch } from "../lib/tournament/api";
+import { fetchScheduledMatches, multitwitchUrl, requestCast, teamLogoUrl, withdrawCast, type ScheduledMatch } from "../lib/tournament/api";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useLanguage, useT } from "../lib/language";
 import { groupLabel } from "../lib/tournament/groupNames";
+import { useAuthProfile } from "../hooks/useAuthProfile";
+import { CasterLinks } from "./event/CasterLinks";
 import { PlayerName, TeamLabel } from "./event/TeamLogo";
 import "./Tournament.css";
 
@@ -19,7 +21,11 @@ const REFRESH_MS = 120_000;
  *
  *   Watch        the official room itself, as a spectator (only once the room exists).
  *   Multitwitch  every player on both teams streaming side by side.
+ *   Official cast  each caster an administrator approved, their own Twitch.
  *   Tale of the tape  opens under the card - the event's data is read only then, and only while open.
+ *
+ * Anyone signed in with Twitch can ask to cast a match from its card; an administrator approves it on the
+ * event desk. The card says where their request stands and lets them withdraw it.
  *
  * One request (scheduled_official_matches) per look, and nothing at all while the tab is hidden. Renders
  * nothing when there is nothing scheduled - most days, between events.
@@ -27,28 +33,46 @@ const REFRESH_MS = 120_000;
 export function ScheduledMatches() {
   const t = useT();
   const lang = useLanguage();
+  const me = useAuthProfile();
   const [rows, setRows] = useState<ScheduledMatch[]>([]);
   // One card open at a time: each open tape re-reads its event every minute.
   const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [castError, setCastError] = useState<{ match: string; message: string } | null>(null);
+
+  const read = useCallback(() => {
+    if (!isSupabaseConfigured || document.visibilityState !== "visible") return Promise.resolve();
+    return fetchScheduledMatches()
+      .then(setRows)
+      .catch(() => undefined); // a front page must never fail over an extra
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    let cancelled = false;
-    const read = () => {
-      if (document.visibilityState !== "visible") return;
-      fetchScheduledMatches()
-        .then((found) => !cancelled && setRows(found))
-        .catch(() => undefined); // a front page must never fail over an extra
-    };
-    read();
-    const timer = setInterval(read, REFRESH_MS);
-    document.addEventListener("visibilitychange", read);
+    const tick = () => void read();
+    tick();
+    const timer = setInterval(tick, REFRESH_MS);
+    document.addEventListener("visibilitychange", tick);
     return () => {
-      cancelled = true;
       clearInterval(timer);
-      document.removeEventListener("visibilitychange", read);
+      document.removeEventListener("visibilitychange", tick);
     };
-  }, []);
+    // Re-read when the account changes: my_cast is the reader's own.
+  }, [read, me?.userId]);
+
+  /** Asks to cast, or withdraws; the server's refusal is shown under the card in its own words. */
+  async function cast(m: ScheduledMatch, action: (matchId: string) => Promise<void>) {
+    setBusy(m.match_id);
+    setCastError(null);
+    try {
+      await action(m.match_id);
+    } catch (e) {
+      setCastError({ match: m.match_id, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      await read();
+      setBusy(null);
+    }
+  }
 
   if (rows.length === 0) return null;
 
@@ -69,6 +93,10 @@ export function ScheduledMatches() {
     m.team_size === 1 ? (side === "a" ? m.team_a_avatar : m.team_b_avatar) : teamLogoUrl(side === "a" ? m.team_a_logo : m.team_b_logo);
   // In an individual event the side's name is its one player's, so it opens their Twitch.
   const solo = (m: ScheduledMatch, side: "a" | "b") => (m.team_size === 1 ? (side === "a" ? m.streams_a : m.streams_b)[0] : null);
+  // Players can't cast their own match (request_cast refuses). The account's Twitch display name is its
+  // login in another case, near enough to hide the button from them; the server's rule is the real one.
+  const myName = me?.displayName?.toLowerCase();
+  const plays = (m: ScheduledMatch) => !!myName && [...m.streams_a, ...m.streams_b].some((l) => l.toLowerCase() === myName);
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem" }}>
@@ -100,7 +128,7 @@ export function ScheduledMatches() {
                   m.agreed_at && <strong>{when(m.agreed_at)}</strong>
                 )}
               </div>
-              {(live || streams) && (
+              {(live || streams || m.casters?.length > 0) && (
                 <div className="row" style={{ justifyContent: "center", gap: "0.5rem" }}>
                   {live && (
                     // ?spectate=1, like the front page's "Current battles" and the lobby's spectator link: the
@@ -114,7 +142,33 @@ export function ScheduledMatches() {
                       {t("Players' streams (Multitwitch)", "Streams des joueurs (Multitwitch)")}
                     </a>
                   )}
+                  <CasterLinks casters={m.casters ?? []} style={{ fontSize: "0.82rem" }} />
                 </div>
+              )}
+              {me?.isTwitch && !plays(m) && (
+                <div className="row" style={{ justifyContent: "center", gap: "0.5rem", fontSize: "0.78rem" }}>
+                  {m.my_cast === "pending" || m.my_cast === "approved" ? (
+                    <>
+                      <span className="muted">
+                        {m.my_cast === "pending"
+                          ? t("You asked to cast this - waiting for an administrator.", "Vous avez demandé à commenter ce match - en attente d'un administrateur.")
+                          : t("You're an official caster for this match.", "Vous êtes commentateur officiel de ce match.")}
+                      </span>
+                      <button type="button" className="link-button" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, withdrawCast)}>
+                        {t("Withdraw", "Retirer")}
+                      </button>
+                    </>
+                  ) : m.my_cast === "declined" ? (
+                    <span className="muted">{t("An administrator turned down your cast for this match.", "Un administrateur a refusé votre commentaire pour ce match.")}</span>
+                  ) : (
+                    <button type="button" className="link-button" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, requestCast)}>
+                      🎙 {t("Ask to cast this match", "Demander à commenter ce match")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {castError?.match === m.match_id && (
+                <span className="error-text" style={{ alignSelf: "center", fontSize: "0.78rem" }}>{castError.message}</span>
               )}
               <button
                 type="button"

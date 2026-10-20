@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
+  approvedCasters,
   fetchEntryCode,
   fetchOfficialLeaderboard,
   multitwitchUrl,
   teamIdentityOpen,
+  twitchUrl,
   type EventDetail,
   type MatchRow,
   type PlayerProfileBits,
@@ -26,6 +28,7 @@ import { JustForFun, MatchOdds, PowerTag } from "../components/event/PowerLine";
 import { StandingsTable } from "../components/event/StandingsTable";
 import { BracketView } from "../components/event/BracketView";
 import { EventRulebook } from "../components/event/EventRulebook";
+import { CasterLinks } from "../components/event/CasterLinks";
 import { MatchTimeField, agreedByLabel, useMatchWhen } from "../components/event/MatchTimeField";
 import { PlayerSceneSetup } from "../components/PlayerSceneSetup";
 import { OverlayTokenBox, OverlayTokenError, OverlayTokenStart, useMyOverlayToken } from "../components/OverlayToken";
@@ -381,6 +384,7 @@ function OrderCard({ event, match, mine, userId, isCaptain, data }: { event: Eve
   const weAreA = match.entrant_a === mine.id;
   const logins = (team: TeamRow) => team.roster.map((m) => data.profiles.get(m.user_id)?.twitch_login);
   const streams = multitwitchUrl(logins(mine), logins(them));
+  const casters = useMemo(() => approvedCasters(match), [match]);
   const myLogin = data.profiles.get(userId)?.twitch_login;
   const base = `${window.location.origin}${window.location.pathname}`;
   const myWatch = myLogin ? watchUrl(base, myLogin) : null;
@@ -394,8 +398,12 @@ function OrderCard({ event, match, mine, userId, isCaptain, data }: { event: Eve
       lines.push(`${t("When", "Quand")}: <t:${unix}:F> (<t:${unix}:R>)`);
     }
     if (streams) lines.push(`${t("Streams", "Streams")}: <${streams}>`);
+    for (const c of casters) {
+      const url = twitchUrl(c.login);
+      if (url) lines.push(`${t("Official cast", "Cast officiel")}: <${url}>`);
+    }
     return lines.join("\n");
-  }, [mine.name, them.name, event.name, round, bestOf, match.agreed_at, streams, t]);
+  }, [mine.name, them.name, event.name, round, bestOf, match.agreed_at, streams, casters, t]);
 
   return (
     <div className="panel stack next-match">
@@ -441,6 +449,7 @@ function OrderCard({ event, match, mine, userId, isCaptain, data }: { event: Eve
               {t("Multitwitch (both teams)", "Multitwitch (les deux équipes)")}
             </a>
           )}
+          <CasterLinks casters={casters} style={{ fontSize: "0.8rem" }} />
           {myWatch && <CopyButton text={myWatch} label={t("Copy my watch link", "Copier mon lien de visionnage")} />}
         </div>
         <span className="muted" style={{ fontSize: "0.72rem" }}>

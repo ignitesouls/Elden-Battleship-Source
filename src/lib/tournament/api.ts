@@ -135,6 +135,30 @@ export interface MatchRow {
   agreed_at: string | null;
   /** The account that last set (or cleared) agreed_at - a captain, or an administrator. */
   agreed_by: string | null;
+  /**
+   * Cast requests for the match the reader may see: approved ones for everyone, plus the reader's own at
+   * any status, and every one for an administrator. Show approvedCasters(), not this.
+   */
+  casts?: CastRow[];
+}
+
+export interface CastRow {
+  id: string;
+  caster_user_id: string;
+  twitch_login: string;
+  display_name: string;
+  status: "pending" | "approved" | "declined" | "withdrawn";
+}
+
+/** The official casters of a match, earliest asked first, as the front page's RPC returns them. */
+export interface Caster {
+  login: string;
+  name: string;
+}
+
+/** A match's approved casters, from the casts fetchMatches embedded. */
+export function approvedCasters(match: Pick<MatchRow, "casts">): Caster[] {
+  return (match.casts ?? []).filter((c) => c.status === "approved").map((c) => ({ login: c.twitch_login, name: c.display_name }));
 }
 
 // ===========================================================================
@@ -278,13 +302,13 @@ export async function fetchMatches(eventId: string): Promise<MatchRow[]> {
   const { data, error } = await supabase
     .from("tournament_matches")
     .select(
-      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at, agreed_by",
+      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at, agreed_by, casts:official_casts(id, caster_user_id, twitch_login, display_name, status)",
     )
     .eq("tournament_id", eventId)
     .order("phase", { ascending: true })
     .order("idx", { ascending: true });
   if (error) fail(error);
-  return (data ?? []) as MatchRow[];
+  return (data ?? []) as unknown as MatchRow[];
 }
 
 /** A team's invitations - readable by its captain (and admins) only. */
@@ -519,6 +543,10 @@ export interface ScheduledMatch {
   lost_b: number;
   /** The official room playing it right now, if there is one - spectate at /room/<code>. */
   room_code: string | null;
+  /** Approved official casters, earliest asked first. */
+  casters: Caster[];
+  /** The reader's own request to cast it, or null - including for a visitor who isn't signed in. */
+  my_cast: CastRow["status"] | null;
 }
 
 /** Scheduled and in-progress official matches across every running event, soonest first - one request. */
@@ -526,6 +554,43 @@ export async function fetchScheduledMatches(limit = 12): Promise<ScheduledMatch[
   const { data, error } = await supabase.rpc("scheduled_official_matches", { p_limit: limit });
   if (error) fail(error);
   return (data ?? []) as ScheduledMatch[];
+}
+
+// -- Official casters ----------------------------------------------------------------------------------
+
+/** Asks to cast an official match. The database refuses players in it and anyone without Twitch. */
+export async function requestCast(matchId: string): Promise<void> {
+  const { error } = await supabase.rpc("request_cast", { p_match: matchId });
+  if (error) fail(error);
+}
+
+/** Backs out of a cast, whether it was still waiting or already approved. */
+export async function withdrawCast(matchId: string): Promise<void> {
+  const { error } = await supabase.rpc("withdraw_cast", { p_match: matchId });
+  if (error) fail(error);
+}
+
+/** Approves a cast request, or declines it - which also takes back an approval (administrators). */
+export async function decideCast(castId: string, approve: boolean): Promise<void> {
+  const { error } = await supabase.rpc("decide_cast", { p_cast: castId, p_approve: approve });
+  if (error) fail(error);
+}
+
+export interface EventCastRow extends CastRow {
+  match_id: string;
+  created_at: string;
+}
+
+/** Every pending and approved cast request in an event, oldest first (administrators). */
+export async function fetchEventCasts(eventId: string): Promise<EventCastRow[]> {
+  const { data, error } = await supabase
+    .from("official_casts")
+    .select("id, match_id, caster_user_id, twitch_login, display_name, status, created_at")
+    .eq("tournament_id", eventId)
+    .in("status", ["pending", "approved"])
+    .order("created_at", { ascending: true });
+  if (error) fail(error);
+  return (data ?? []) as EventCastRow[];
 }
 
 // -- Team power -------------------------------------------------------------------------------------
@@ -637,6 +702,8 @@ export interface AdminEventRow extends EventDetail {
   team_count: number;
   pending_count: number;
   waiting_count: number;
+  /** Cast requests waiting for an administrator. */
+  cast_count: number;
 }
 
 /** Every event, drafts included - only an administrator's session can read the drafts. */
@@ -649,16 +716,22 @@ export async function adminListEvents(): Promise<AdminEventRow[]> {
 
   const rows = (data ?? []) as Array<Record<string, unknown>>;
   const ids = rows.map((r) => r.id as string);
-  const counts = new Map<string, { approved: number; pending: number; waiting: number }>();
-  for (const id of ids) counts.set(id, { approved: 0, pending: 0, waiting: 0 });
+  const counts = new Map<string, { approved: number; pending: number; waiting: number; casts: number }>();
+  for (const id of ids) counts.set(id, { approved: 0, pending: 0, waiting: 0, casts: 0 });
 
   if (ids.length > 0) {
-    const [teams, agents] = await Promise.all([
+    const [teams, agents, casts] = await Promise.all([
       supabase.from("tournament_entrants").select("tournament_id, status").in("tournament_id", ids),
       supabase.from("tournament_free_agents").select("tournament_id").eq("status", "waiting").in("tournament_id", ids),
+      supabase.from("official_casts").select("tournament_id").eq("status", "pending").in("tournament_id", ids),
     ]);
     if (teams.error) fail(teams.error);
     if (agents.error) fail(agents.error);
+    if (casts.error) fail(casts.error);
+    for (const c of casts.data ?? []) {
+      const n = counts.get(c.tournament_id as string);
+      if (n) n.casts++;
+    }
     for (const t of teams.data ?? []) {
       const c = counts.get(t.tournament_id as string);
       if (!c) continue;
@@ -673,7 +746,7 @@ export async function adminListEvents(): Promise<AdminEventRow[]> {
 
   return rows.map((row) => {
     const c = counts.get(row.id as string)!;
-    return { ...toDetail(row), created_at: row.created_at as string, team_count: c.approved, pending_count: c.pending, waiting_count: c.waiting };
+    return { ...toDetail(row), created_at: row.created_at as string, team_count: c.approved, pending_count: c.pending, waiting_count: c.waiting, cast_count: c.casts };
   });
 }
 
