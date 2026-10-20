@@ -1,6 +1,7 @@
 /**
- * One player box in a casting scene: a muted Twitch stream filling the source, with a name plate
- * and a hit / miss / accuracy line over its top-left corner.
+ * One player box in a casting scene: a muted Twitch stream filling the source inside a border in the
+ * crew's colour, the player's name over the top-right corner in that colour, and a hit / miss /
+ * accuracy line over the top-left.
  *
  * The box IS the source - the casting scene places one of these per seat and sizes each to its slot
  * in the layout, so there is nothing to centre or scale here. Everything is sized in rem off the
@@ -26,47 +27,79 @@
   display: block;
 }
 
+/**
+ * Cropped to the player frame's gameplay hole (see OverlayScreen). The embed is made wider than the
+ * box by the canvas-to-hole ratio, kept 16:9, and shifted by the hole's corner; translate's
+ * percentages are of the embed's own size, so the hole lands exactly on the box at any box size.
+ * What hangs outside is trimmed by .ovs's overflow: hidden. `max-width: none` because the crop only
+ * works if the embed may be wider than its box: a stray `max-width: 100%` from any stylesheet
+ * shrinks it back to the box and leaves the webcam in shot with black down the side.
+ */
+.ovs-stream--game iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ovs-crop-w);
+  max-width: none;
+  max-height: none;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  transform: translate(var(--ovs-crop-x), var(--ovs-crop-y));
+}
+
 /* A seat filled by an account with no linked Twitch: a quiet panel so the box is not a hole, with
-   the plate still standing over it. */
+   the name and the tally still standing over it. */
 .ovs-stream-empty {
   background: rgba(6, 16, 24, 0.82);
 }
 
-/**
- * The name plate, in the board font, pinned to the top-left the way a cam label sits on a stream.
- *
- * On its own translucent plate rather than bare text with a shadow: it is composited over live
- * video that can be any colour from one second to the next, and a shadow alone loses the name
- * against a bright frame. The team colour is the left edge, so the plate says whose box this is
- * without a second element.
- */
-.ovs-plate {
+/* The crew's colour round the whole box, over the video, so each box says whose side it is at a
+   glance - the way a split-screen tournament feed marks its players. */
+.ovs-border {
   position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.4rem 0.85rem 0.45rem 0.7rem;
-  background: rgba(6, 16, 24, 0.74);
-  border-left: 4px solid var(--ovs-accent, #8fb3c8);
-  border-bottom-right-radius: 8px;
-  max-width: 92%;
+  inset: 0;
+  border: 0.3rem solid var(--ovs-accent, #8fb3c8);
+  pointer-events: none;
 }
 
+/**
+ * The nametag: the player's name, big, bold and italic, in the crew's colour, in the top-right
+ * corner - who is playing, readable from across the room.
+ *
+ * Bare text with a hard dark outline rather than a plate: an outline keeps it legible over any
+ * frame of video and covers less of the game than a box would. Sans rather than the board font,
+ * which has no italic and goes thin at a glance.
+ */
 .ovs-name {
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: 0.02em;
-  color: #f2f7fa;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
-  /* Cinzel's lowercase reads as small caps, so a long nickname stays on one plate rather than
-     wrapping into the video. */
+  position: absolute;
+  top: 0.45rem;
+  right: 0.8rem;
+  max-width: 62%;
+  font-family: "Arial Black", "Segoe UI", system-ui, sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.1;
+  color: var(--ovs-accent, #f2f7fa);
+  -webkit-text-stroke: 0.14rem rgba(0, 0, 0, 0.9);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Italic leans past the box's edge; a little padding keeps the last letter whole. */
+  padding-right: 0.15rem;
+}
+
+/* The live tally, small and out of the way in the top-left. */
+.ovs-plate {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.3rem;
+  display: flex;
+  padding: 0.25rem 0.6rem;
+  background: rgba(6, 16, 24, 0.7);
+  border-bottom-right-radius: 6px;
 }
 
 .ovs-stats {

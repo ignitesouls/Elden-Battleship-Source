@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { CAST_ART, PLAYER_ART } from "../lib/castSceneLayout";
+import { useFrameBeacon } from "../lib/frameBeacon";
 import "./OverlayFrame.css";
 
 /**
@@ -23,11 +24,18 @@ import "./OverlayFrame.css";
  * and show through; lib/castSceneLayout holds the same holes as rects, so the scene puts each source
  * exactly under its hole. Nothing here captures or composites video. It carries no live data and
  * needs no room - a caster shows the break scene precisely when there is no match.
+ *
+ * -- The player frame says it is showing --------------------------------------------------------
+ *
+ * With `?layout=player` and an owner (the account the token resolved to), the page announces that
+ * owner's frame is up for as long as it runs - see lib/frameBeacon. That is how a caster's box knows
+ * to crop that player's Twitch feed to the gameplay hole, with nothing for anyone to tick.
  */
 
-export function OverlayFrame(props: OverlaySourceProps = {}) {
+export function OverlayFrame(props: OverlaySourceProps & { ownerId?: string | null } = {}) {
   const { params } = useOverlaySource(props);
   const layout = params.get("layout") ?? "casters";
+  useFrameBeacon(layout === "player" ? props.ownerId : null);
 
   useEffect(() => {
     const root = document.documentElement;

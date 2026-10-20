@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
@@ -6,11 +6,22 @@ import { useScreenAux } from "../lib/castAux";
 import { groupIntoShots } from "../lib/attackFeed";
 import { buildPlayerStats } from "../lib/matchReport";
 import { teamHex, teamName } from "../lib/teamColors";
+import { CAST_CANVAS, playerGameRect } from "../lib/castSceneLayout";
+import { useFramesOnAir } from "../lib/frameBeacon";
 import "./OverlayScreen.css";
 
 /**
- * One player box in a casting scene: their muted Twitch stream, their name in the board font, and a
- * live hit / miss / accuracy line under it.
+ * One player box in a casting scene: their muted Twitch stream inside a border in their crew's
+ * colour, their name in the top-right corner in that colour, and a live hit / miss / accuracy line.
+ *
+ * -- Cropping to the gameplay ------------------------------------------------------------------
+ *
+ * A player streaming our player frame (fire board, fleet and webcam around a 16:9 gameplay hole)
+ * would otherwise arrive here as their whole overlay shrunk into a box. When their frame is showing
+ * (lib/frameBeacon - nothing to tick) the embed is blown up and shifted so the box shows the
+ * gameplay hole only, edge to edge, and the stream is asked for 720p instead of 480p, so the crop
+ * still has more pixels than the box. The switch waits out the stream's own delay, so the box
+ * changes when the viewer's picture does rather than seconds before it.
  *
  * -- One source per box, driven by `?slot=` --------------------------------------------------
  *
@@ -87,41 +98,73 @@ function twitch(): TwitchNamespace | null {
   return (window as unknown as { Twitch?: TwitchNamespace }).Twitch ?? null;
 }
 
+/** The quality cap for a whole-stream box, and for one cropped to the gameplay hole. */
+const CAP_WHOLE = 480;
+const CAP_CROPPED = 720;
+
 /**
  * Cap the player at a low-but-legible rung so six of these on one PC do not melt it.
  *
- * The highest rung at or below 480p, or failing that the lowest real rung. `auto` is left off the
- * table deliberately - it climbs to source on a good connection, which is exactly what a wall of
+ * The highest rung at or below `maxHeight`, or failing that the lowest real rung. `auto` is left off
+ * the table deliberately - it climbs to source on a good connection, which is exactly what a wall of
  * boxes cannot afford. Best-effort throughout: a throw here just leaves the stream on `auto`.
  */
-function capQuality(player: TwitchPlayer): void {
+function capQuality(player: TwitchPlayer, maxHeight: number): void {
   try {
     const rungs = player.getQualities().filter((q) => q.group && q.group !== "auto");
     if (rungs.length === 0) return;
     const withHeight = rungs.filter((q) => typeof q.height === "number");
     const sized = withHeight.length > 0 ? withHeight : rungs;
     const byHeight = [...sized].sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
-    const capped = byHeight.filter((q) => (q.height ?? 9999) <= 480).pop() ?? byHeight[0];
+    const capped = byHeight.filter((q) => (q.height ?? 9999) <= maxHeight).pop() ?? byHeight[0];
     if (capped) player.setQuality(capped.group);
   } catch {
     /* quality control is a nice-to-have, not a reason to break the box */
   }
 }
 
+/**
+ * Where the gameplay hole sits in the player frame, as the CSS that blows the embed up around it:
+ * the embed is made as much wider than the box as the canvas is than the hole, kept 16:9, and moved
+ * up and left by the hole's corner - in its own size, which is what translate's percentages are.
+ */
+const GAME = playerGameRect();
+const CROP_STYLE = {
+  ["--ovs-crop-w" as string]: `${(CAST_CANVAS.w / GAME.w) * 100}%`,
+  ["--ovs-crop-x" as string]: `${(-GAME.x / CAST_CANVAS.w) * 100}%`,
+  ["--ovs-crop-y" as string]: `${(-GAME.y / CAST_CANVAS.h) * 100}%`,
+};
+
+/** Twitch's delay when the box can't read it yet - near the low end of what a player's stream runs. */
+const DEFAULT_DELAY_MS = 4000;
+
 /** How often a box re-reads its own latency, for the desk's readout. Latency drifts slowly. */
 const LATENCY_POLL_MS = 4000;
 
-/** The muted Twitch embed, filling its box. Rebuilt on a channel change or a resync (via `key`). */
+/**
+ * The muted Twitch embed, filling its box - or, `cropped`, showing only the player frame's gameplay
+ * hole. Rebuilt on a channel change or a resync (via `key`); cropping only restyles it and moves the
+ * quality cap, so the stream never reloads when it flips.
+ */
 function TwitchStream({
   channel,
+  cropped,
   onLatency,
 }: {
   channel: string;
+  cropped: boolean;
   onLatency: (ms: number | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
   const onLatencyRef = useRef(onLatency);
   onLatencyRef.current = onLatency;
+  const playerRef = useRef<TwitchPlayer | null>(null);
+  const capRef = useRef(cropped ? CAP_CROPPED : CAP_WHOLE);
+  capRef.current = cropped ? CAP_CROPPED : CAP_WHOLE;
+
+  useEffect(() => {
+    if (playerRef.current) capQuality(playerRef.current, capRef.current);
+  }, [cropped]);
 
   useEffect(() => {
     const holder = holderRef.current;
@@ -148,7 +191,8 @@ function TwitchStream({
           width: "100%",
           height: "100%",
         });
-        const cap = () => player && capQuality(player);
+        playerRef.current = player;
+        const cap = () => player && capQuality(player, capRef.current);
         player.addEventListener(T.Player.PLAYING, cap);
         player.addEventListener(T.Player.READY, cap);
 
@@ -168,6 +212,7 @@ function TwitchStream({
 
     return () => {
       disposed = true;
+      playerRef.current = null;
       if (poll) clearInterval(poll);
       onLatencyRef.current(null);
       try {
@@ -179,7 +224,22 @@ function TwitchStream({
     };
   }, [channel]);
 
-  return <div className="ovs-stream" ref={holderRef} />;
+  return <div className={cropped ? "ovs-stream ovs-stream--game" : "ovs-stream"} style={cropped ? CROP_STYLE : undefined} ref={holderRef} />;
+}
+
+/**
+ * Whether the box should be cropped now: the frame's showing, as the VIEWER sees it. Presence moves
+ * the instant a player switches scene, but their stream shows the switch only after its delay, so a
+ * change is held back by that delay - the box's own measured latency, or a typical one until known.
+ */
+function useDelayedCrop(onAir: boolean, latencyRef: React.RefObject<number | null>): boolean {
+  const [cropped, setCropped] = useState(onAir);
+  useEffect(() => {
+    if (onAir === cropped) return;
+    const timer = setTimeout(() => setCropped(onAir), latencyRef.current ?? DEFAULT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [onAir, cropped, latencyRef]);
+  return cropped;
 }
 
 export function OverlayScreen(props: OverlaySourceProps = {}) {
@@ -203,6 +263,10 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
   );
   const stats = useMemo(() => buildPlayerStats(state.players, shots), [state.players, shots]);
   const mine = screen ? stats.find((s) => s.playerId === screen.playerId) ?? null : null;
+
+  // Only a box with a stream to crop listens for frames.
+  const framesOnAir = useFramesOnAir(!!screen?.twitchLogin);
+  const cropped = useDelayedCrop(!!screen && framesOnAir.has(screen.userId), latencyRef);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -230,6 +294,7 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
         <TwitchStream
           key={`${screen.twitchLogin}:${resyncNonce}`}
           channel={screen.twitchLogin}
+          cropped={cropped}
           onLatency={(ms) => {
             latencyRef.current = ms;
           }}
@@ -238,14 +303,15 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
         <div className="ovs-stream ovs-stream-empty" />
       )}
 
+      <span className="ovs-name">{label}</span>
       <div className="ovs-plate">
-        <span className="ovs-name">{label}</span>
         <span className="ovs-stats">
           <span className="ovs-stat">H- {hits}</span>
           <span className="ovs-stat">M- {misses}</span>
           <span className="ovs-stat">A- {accuracy}%</span>
         </span>
       </div>
+      <div className="ovs-border" />
     </div>
   );
 }

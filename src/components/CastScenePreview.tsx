@@ -87,12 +87,13 @@ export function CastScenePreview({
             className="csp-screen"
             style={{ ...place(r), backgroundImage: footage, ["--csp-accent" as string]: teamHex(team) }}
           >
+            <span className="csp-name">{t("Player", "Joueur")} {i + 1}</span>
             <div className="csp-plate">
-              <span className="csp-name">{t("Player", "Joueur")} {i + 1}</span>
               <span className="csp-stats">
                 H- {hits} M- {misses} A- {Math.round((hits / (hits + misses)) * 100)}%
               </span>
             </div>
+            <div className="csp-border" />
           </div>
         );
       })}

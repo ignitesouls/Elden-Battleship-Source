@@ -183,8 +183,9 @@ export function StreamSource() {
 
   // The camera-break frame carries no live data and has nothing to resolve - a caster shows it
   // precisely between matches, when a token has no room. So it draws whether or not the session
-  // does, and never waits on the round trip the room sources wait on.
-  if (name === "frame") return <OverlayFrame search={search} />;
+  // does, and never waits on the round trip the room sources wait on. The owner arrives once that
+  // round trip lands, and the player frame uses it to say it is showing (lib/frameBeacon).
+  if (name === "frame") return <OverlayFrame search={search} ownerId={session?.userId} />;
 
   if (loading || !session?.roomCode) return null;
   if (!name || !(ELEMENTS as string[]).includes(name)) return null;
