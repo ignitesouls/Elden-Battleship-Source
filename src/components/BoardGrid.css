@@ -2153,10 +2153,56 @@
   }
 }
 
+/**
+ * The followed shot: the rest of the board goes dark and the ring gets louder.
+ *
+ * A veil per unlit square rather than a filter on the cells, because a filter on a cell cannot reach
+ * the hull sprites and marker layers that are its siblings - see the note on the ring above. Above
+ * the tallies (4), so nothing on an unlit square pokes through it.
+ *
+ * The ring is lifted over the veils (6) so its glow, which spills past its own square, isn't dimmed
+ * by the neighbours'. Thicker and barely breathing: on a dark board a deep pulse reads as the light
+ * flickering off, and for the length of the hold this square is the only thing anybody should see.
+ */
+.bg-spot-veil {
+  position: relative;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.62);
+  animation: bg-spot-veil-in 0.25s ease-out;
+}
+
+.bg-grid-spot-dim .bg-spot-ring {
+  z-index: 6;
+  padding: max(4px, 13%);
+  box-shadow:
+    0 0 20px 6px var(--bg-spot, #ffffff),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  animation: bg-spot-pulse-strong 1.2s ease-in-out infinite;
+}
+
+@keyframes bg-spot-veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes bg-spot-pulse-strong {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
 /* Somebody who has asked their system not to animate things still needs to see WHICH square. The
    ring stays at full strength; only the breathing stops. */
 @media (prefers-reduced-motion: reduce) {
-  .bg-spot-ring {
+  .bg-spot-ring,
+  .bg-grid-spot-dim .bg-spot-ring,
+  .bg-spot-veil {
     animation: none;
   }
 }

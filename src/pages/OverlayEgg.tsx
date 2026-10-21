@@ -6,7 +6,7 @@ import { deepWater, finalFinds, type DeepFindRow } from "../lib/deepWater";
 import { freshDeepEvents } from "../lib/deepQueue";
 import { igonAnchor } from "../lib/challenges";
 import { cellLabel } from "../lib/battleshipLogic";
-import { readOpacity, readAlertSecs } from "../lib/overlayCast";
+import { readOpacity, readAlertSecs, useCastReceiver } from "../lib/overlayCast";
 import { FindCard } from "../components/FindCard";
 import "./Overlay.css";
 import "./OverlayEgg.css";
@@ -132,9 +132,21 @@ export function OverlayEgg(props: OverlaySourceProps = {}) {
    */
   const muted = Boolean(room?.find_alerts_off) && params.get("crew") === "1";
 
+  /**
+   * The caster's own alert answers to their desk, and is off until the desk turns it on.
+   *
+   * `?desk=1` is written by the stream route for a token whose owner holds no fleet - see
+   * StreamSource. It joins the cast channel and shows a card only while the latest frame says
+   * `alerts`; no desk, no frame, no cards (see CastView.alerts). Same place in the pipeline as
+   * `muted`, so the queue keeps moving and switching it on mid-match doesn't replay old finds.
+   */
+  const desk = params.get("desk") === "1";
+  const { message: cast } = useCastReceiver(desk ? code : undefined);
+  const deskOff = desk && cast?.view.alerts !== true;
+
   // Nothing found, nothing on screen. A browser source drawing an empty box would be a rectangle
   // of nothing parked in a scene for the whole match.
-  if (!room || current === null || muted) return null;
+  if (!room || current === null || muted || deskOff) return null;
 
   const { find, mark } = current;
   const who = find.who;

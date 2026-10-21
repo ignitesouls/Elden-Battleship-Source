@@ -22,7 +22,7 @@ import scaduLeagueTooltipsFr from "../data/scaduLeagueTooltipsFr.json";
 import scaduLeagueOptionsFr from "../data/scaduLeagueOptionsFr.json";
 import scaduLeagueColorNamesFr from "../data/scaduLeagueColorNamesFr.json";
 import ringusNamesFr from "../data/ringusNamesFr.json";
-import { colorLegend, largestBoardFor, type BingoSquareSet, type Challenge, type ColorLegendEntry, type KeywordColor } from "./squareSetFormat";
+import { colorLegend, dealtPool, largestBoardFor, type BingoSquareSet, type Challenge, type ColorLegendEntry, type KeywordColor } from "./squareSetFormat";
 import { BOARD_SIZES } from "../types/battleship";
 
 export type { Challenge, BingoSquare, BingoSquareSet, Region, KeywordColor, ColorLegendEntry } from "./squareSetFormat";
@@ -346,9 +346,12 @@ export function squareSet(id: string | null | undefined): SquareSetDef {
   return SQUARE_SETS[id ?? ""] ?? SQUARE_SETS[DEFAULT_SQUARE_SET];
 }
 
-/** How many distinct squares a set holds - the flat list's length, or the bingo file's `squares`. */
+/**
+ * How many distinct squares a set deals today - the flat list less any square not live yet or on
+ * hold (see dealtPool), or the bingo file's `squares`.
+ */
 export function squarePool(set: SquareSetDef): number {
-  return set.format === "flat" ? set.data.length : set.data.squares.length;
+  return set.format === "flat" ? dealtPool(set.data, new Date().toISOString()).length : set.data.squares.length;
 }
 
 /**

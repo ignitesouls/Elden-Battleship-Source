@@ -576,10 +576,14 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
           // changed colour a hundred times a match would be reading as an attribution - a job the
           // firedBy rings already do, underneath it, without moving.
           spotColor={camera.running ? undefined : (view.spotColor ?? undefined)}
+          // The rest of the board dimmed around a followed shot - the desk's light only, for the
+          // same reason the colour is. See CastView.spotDim.
+          spotDim={!camera.running && Boolean(view.spotDim)}
           // Drawn the moment any of it is found - see lib/deepWater.ts. This source needs no frame
           // from the desk to know: the finds are in the public log, so it works them out for itself
-          // and they appear on stream by themselves.
-          deepCells={deepCells}
+          // and they appear on stream by themselves. The desk can turn them off (CastView.eggs);
+          // a pinned source never hears it and keeps them.
+          deepCells={view.eggs === false ? undefined : deepCells}
           // The fleet's own tallies, on their own board and nowhere else. Read-only: with no
           // onCount, a source draws the chips and cannot add to them.
           counts={counts}

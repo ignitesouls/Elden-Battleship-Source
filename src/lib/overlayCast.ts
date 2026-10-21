@@ -120,6 +120,38 @@ export interface CastView {
    */
   spotColor?: string | null;
   /**
+   * Darken every square but the lit one, for as long as the light is up.
+   *
+   * Set only by "swing to the newest shot". A ring on its own is one square out of a hundred that
+   * are all carrying names, sprites and attribution rings, and on a stream that is easy to miss -
+   * the viewer is told a shot landed and then has to hunt for it. Dimming the rest is what makes the
+   * square the only thing on the board for a beat.
+   *
+   * NOT set by the caster's own click or a hull button: those point at something they are already
+   * talking about, and blacking out the board around it would take the context away with it. Cleared
+   * the moment the light moves anywhere else. Optional and defaulted off by every reader.
+   */
+  spotDim?: boolean;
+  /**
+   * Draw what has been found in the water - the easter eggs (see lib/deepWater).
+   *
+   * Off, a square where something surfaced draws as the plain miss it was, and the board is hits and
+   * misses and nothing else. For a caster who would rather call the finds out themselves, or keep
+   * the board clean for a match where nobody is chasing them.
+   *
+   * Optional and defaulted ON by every reader, like `markers` - a frame from an older controller, and
+   * every player-pinned source, carry no opinion and keep drawing them.
+   */
+  eggs?: boolean;
+  /**
+   * Let the caster's find alert show its cards - the "EB Finds" source over the board.
+   *
+   * The OPPOSITE default to `eggs`: absent means off. The caster's alert (`?desk=1`, written by the
+   * stream route for a token with no fleet) stays empty until a desk says otherwise, so a scene with
+   * the desk closed shows nothing rather than a card nobody chose. A player's alert never reads this.
+   */
+  alerts?: boolean;
+  /**
    * How large the square names are drawn, as a fraction of what the square will hold.
    *
    * 1 means fill it: every name is drawn at the largest size that fits its own cell, so a short

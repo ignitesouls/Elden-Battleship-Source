@@ -199,6 +199,12 @@ interface BoardGridProps {
    */
   spotColor?: string;
   /**
+   * Darken every square that isn't spotlit, so the lit one is the only thing on the board.
+   *
+   * For a caster following the newest shot - see CastView.spotDim. Does nothing without spotCells.
+   */
+  spotDim?: boolean;
+  /**
    * Let a name grow to fill its square instead of stopping at the board's natural ratio.
    *
    * For the stream sources only. In the app a square is about a centimetre across and the ratio is
@@ -315,6 +321,7 @@ export function BoardGrid({
   maxCellFont,
   spotCells,
   spotColor,
+  spotDim = false,
   growText = false,
   highlightKey,
 }: BoardGridProps) {
@@ -676,6 +683,15 @@ export function BoardGrid({
   // Rendered as a separate layer AFTER the ship overlays below, so hit/miss/sunk markers sit
   // in front of a ship sprite instead of getting buried under it.
   const marks = [];
+  /**
+   * The dark veils of a dimmed spotlight, one per unlit square, drawn after everything else.
+   *
+   * Per square rather than one sheet with a hole cut in it, for the reason spotCells gives: the grid
+   * already knows where every square is, and a hull spotlight is a hole of any shape. Last in the DOM
+   * and above the tallies, so a hull sprite running past the lit square is dimmed with the rest.
+   */
+  const veils = [];
+  const dimming = spotDim && (spotCells?.size ?? 0) > 0;
   // Whether any square carries a colourblind-mode code, which is what reserves the strip for it on
   // every cell - see .bg-grid-coded for why it has to be all of them or none.
   let coded = false;
@@ -921,6 +937,10 @@ export function BoardGrid({
         </div>
       );
     }
+
+    if (dimming && !spot) {
+      veils.push(<div key={`v${i}`} className="bg-spot-veil" style={{ gridRow: row, gridColumn: col }} aria-hidden />);
+    }
   }
 
   /**
@@ -967,7 +987,7 @@ export function BoardGrid({
           ref={gridRef}
           className={`bg-grid${fill ? " bg-grid-fill" : ""}${highlightKey ? " bg-grid-highlighting" : ""}${
             coded ? " bg-grid-coded" : ""
-          }`}
+          }${dimming ? " bg-grid-spot-dim" : ""}`}
           role="grid"
           aria-label={label ?? t("Game board", "Plateau de jeu")}
           style={{
@@ -1039,6 +1059,7 @@ export function BoardGrid({
             );
           })}
           {marks}
+          {veils}
         </div>
       </div>
 

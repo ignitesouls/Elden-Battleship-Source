@@ -4,6 +4,7 @@ import { readyToResume, type PauseInfo } from "../lib/matchPause";
 import { pauseMatch, requestPause, resumeMatch, setPauseReady, settlePause } from "../lib/rooms";
 import { playSfx } from "../lib/sfx";
 import { useT } from "../lib/language";
+import { isBot } from "../lib/bot";
 import type { Player, Room } from "../types/battleship";
 import "./PauseControls.css";
 
@@ -32,8 +33,9 @@ interface Props {
 }
 
 /** Everyone the resume is waiting on: fleets only, so a spectator cannot hold the room up. */
+/** The people on fleets. Never the bot: it has no Ready button to press, and would hold every resume. */
 function crewOf(players: Player[]): Player[] {
-  return players.filter((p) => p.team !== null);
+  return players.filter((p) => p.team !== null && !isBot(p));
 }
 
 function outstandingRequests(players: Player[]): Player[] {

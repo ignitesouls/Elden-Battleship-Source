@@ -128,10 +128,19 @@ function rng(seed) {
   };
 }
 
-// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack.
+// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack,
+// and a square on hold when it was dealt was out of it too.
+function heldAt(sq, at) {
+  return (sq.holds ?? []).some((h) => {
+    const from = Date.parse(h.from);
+    const until = h.until === undefined ? Infinity : Date.parse(h.until);
+    return Number.isFinite(at) && Number.isFinite(from) && at >= from && !(at >= until);
+  });
+}
 function dealtPool(list, dealtAt) {
   const at = Date.parse(dealtAt ?? "");
   return list.filter((sq) => {
+    if (heldAt(sq, at)) return false;
     if (sq.dealtFrom === undefined) return true;
     const from = Date.parse(sq.dealtFrom);
     return Number.isFinite(from) && Number.isFinite(at) && at >= from;

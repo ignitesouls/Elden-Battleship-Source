@@ -152,6 +152,10 @@ export function StreamSource() {
     // A player's find alert, as opposed to a caster's - the one a caster can switch off for the
     // lobby. See `muted` in OverlayEgg.
     if (name === "egg" && session?.team !== null && session?.team !== undefined) next.set("crew", "1");
+    // ...and a caster's: the token's owner holds no fleet. That one answers to the desk instead -
+    // see `desk` in OverlayEgg. Decided here at runtime rather than written into the scene, so a
+    // scene downloaded before the switch existed picks it up without being re-made.
+    else if (name === "egg" && session?.team === null) next.set("desk", "1");
     return next;
   }, [params, session?.team, name, token]);
 

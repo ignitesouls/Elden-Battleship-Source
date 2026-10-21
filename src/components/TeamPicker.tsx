@@ -52,9 +52,15 @@ export function TeamPicker({ room, playerId, currentTeam, players, onError }: Pr
       <select value={currentTeam ?? -1} disabled={busy} onChange={(e) => void change(Number(e.target.value))}>
         <option value={-1}>{t("Spectator", "Spectateur")}</option>
         {allTeams.map((tm) => (
-          <option key={tm} value={tm}>
+          // The bot's fleet is listed so the colours read the same as everyone else's, but nobody can
+          // join it - guard_bot_fleet refuses that anyway.
+          <option key={tm} value={tm} disabled={tm === room.bot_team}>
             {teamName(tm)}
-            {players.some((p) => p.team === tm) ? "" : t(" (empty)", " (vide)")}
+            {tm === room.bot_team
+              ? t(" (bot)", " (bot)")
+              : players.some((p) => p.team === tm)
+                ? ""
+                : t(" (empty)", " (vide)")}
           </option>
         ))}
       </select>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { fetchIngestToken, createIngestToken, regenerateIngestToken, maskToken } from "../lib/autoFire";
 import { useT } from "../lib/language";
+import { AutoFireTest } from "./AutoFireTest";
 
 /**
  * Where a player sets up auto-marking: mint a token, copy it into Dionysus, replace it if it
@@ -184,6 +185,9 @@ export function AutoFireSetup() {
       </button>
 
       {guideOpen && <SetupGuide />}
+
+      {/* After the guide: the test only means something once the token is in Dionysus. */}
+      {token !== null && <AutoFireTest />}
     </div>
   );
 }

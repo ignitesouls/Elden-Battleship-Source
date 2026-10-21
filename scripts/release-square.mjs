@@ -101,8 +101,8 @@ Nothing has been deployed. Send it out now, in this order:
 
   1. The database column the archive needs (skip if already applied):
        npx supabase db push --project-ref ${PROJECT_REF}
-  2. The four functions that deal boards:
-       npx supabase functions deploy auto-fire balance-board balance-stats battle-ratings --project-ref ${PROJECT_REF}
+  2. The six functions that deal boards:
+       npx supabase functions deploy auto-fire balance-board balance-stats battle-ratings official-seed bot --project-ref ${PROJECT_REF}
   3. Commit and push the source, then build and deploy the site (README, "Deploying").
 
 Changed your mind before deploying? node scripts/release-square.mjs ${name} pending

@@ -11,6 +11,7 @@ import { TeamPicker } from "../../components/TeamPicker";
 import { FleetDraw } from "../../components/FleetDraw";
 import { BrandMark } from "../../components/BrandMark";
 import { activeTeams, captainOf } from "../../lib/battleshipLogic";
+import { humans, isBot } from "../../lib/bot";
 import { formatRoomCode } from "../../lib/roomCode";
 import { teamHex, teamName, customTeamName, defaultTeamName } from "../../lib/teamColors";
 import type { Room, Player } from "../../types/battleship";
@@ -361,9 +362,11 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                   return (
                     <div key={p.id} className="row" style={{ justifyContent: "space-between", gap: "0.4rem" }}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                        <PresenceDot id={p.id} />
+                        {/* The bot has no tab to be online in, so it gets a badge, not an "away" dot. */}
+                        {!isBot(p) && <PresenceDot id={p.id} />}
                         {p.nickname} {p.is_host && <span className="badge">{t("host", "hôte")}</span>}
-                        {captain?.id === p.id && <span className="badge">{t("captain", "capitaine")}</span>}
+                        {isBot(p) && <span className="badge">{t("bot", "bot")}</span>}
+                        {captain?.id === p.id && !isBot(p) && <span className="badge">{t("captain", "capitaine")}</span>}
                         {p.id === myPlayer.id && <span className="badge">{t("you", "vous")}</span>}
                       </span>
                       <div className="row" style={{ gap: "0.3rem", flex: "none" }}>
@@ -391,7 +394,8 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
                             {t("Make captain", "Nommer capitaine")}
                           </button>
                         )}
-                        {myPlayer.is_host && p.id !== myPlayer.id && (
+                        {/* The bot comes and goes through the Opponent setting, which also tidies its fleet name. */}
+                        {myPlayer.is_host && p.id !== myPlayer.id && !isBot(p) && (
                           <button disabled={busy} onClick={() => handleKick(p.id)} title={t("Kick", "Exclure")}>
                             {t("Kick", "Exclure")}
                           </button>
@@ -434,14 +438,15 @@ export function LobbyPhase({ room, players, myPlayer, onlinePlayerIds }: Props) 
        * see FleetDraw for how a draw reaches the people who did not press it.
        */}
       {myPlayer.is_host && (
-        <button className="secondary" onClick={() => setDrawOpen(true)} disabled={players.length < 2}>
+        <button className="secondary" onClick={() => setDrawOpen(true)} disabled={humans(players).length < 2}>
           {t("Draw teams at sea", "Tirer les équipes au sort")}
         </button>
       )}
 
+      {/* People only: the bot already has its fleet, and drawing it onto another would be refused. */}
       <FleetDraw
         roomId={room.id}
-        players={players}
+        players={humans(players)}
         isHost={myPlayer.is_host}
         open={drawOpen}
         onOpenChange={setDrawOpen}

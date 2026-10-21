@@ -12,7 +12,7 @@
  *   node --experimental-strip-types scripts/check-boards.ts
  */
 import { readFileSync, readdirSync } from 'node:fs'
-import { buildBingoBoard, buildFlatBoard, dealtPool, boardColor, colorLegend, strictFill, relaxedFill, largestBoardFor, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
+import { buildBingoBoard, buildFlatBoard, dealtPool, holdsAt, boardColor, colorLegend, strictFill, relaxedFill, largestBoardFor, REGION_ORDER, type BingoSquareSet, type BingoSquare, type Challenge, type KeywordColor, type Region } from '../src/lib/squareSetFormat.ts'
 import { BOARD_SIZES, FLEET_PRESETS, fleetFor, type Attack, type ShipDefinition } from '../src/types/battleship.ts'
 import {
   eliminatedTeamsFromAttacks,
@@ -238,6 +238,23 @@ console.log('\n=== A square added later re-deals nothing ===\n')
   check('A late square is out of a board dealt before its date', !dealtPool(probe, '2026-10-09T23:59:59Z').some((c) => c.name === 'Probe'))
   check('A late square is in a board dealt on or after its date', dealtPool(probe, '2026-10-10T00:00:00Z').some((c) => c.name === 'Probe'))
   check('A late square is out of a board with no deal date', !dealtPool(probe, null).some((c) => c.name === 'Probe'))
+  // Holds: the square leaves only the boards dealt inside the hold - see Challenge.holds.
+  const held = (holds: NonNullable<Challenge['holds']>) =>
+    bosses.map((c, i) => (i === 0 ? { ...c, holds } : c)).filter((c) => c.dealtFrom === undefined)
+  const first = bosses[0].name
+  const open = held([{ from: '2026-10-10T00:00:00Z', note: 'probe' }])
+  const shut = held([{ from: '2026-10-10T00:00:00Z', until: '2026-10-12T00:00:00Z', note: 'probe' }])
+  check('A held square is in a board dealt before its hold', dealtPool(open, '2026-10-09T23:59:59Z').some((c) => c.name === first))
+  check('A held square is out of a board dealt during its hold', !dealtPool(open, '2026-10-10T00:00:00Z').some((c) => c.name === first))
+  check('A held square is in a board with no deal date', dealtPool(open, null).some((c) => c.name === first))
+  check('A returned square is back in a board dealt on or after its return', dealtPool(shut, '2026-10-12T00:00:00Z').some((c) => c.name === first))
+  check('A returned square stays out of a board dealt while it was held', !dealtPool(shut, '2026-10-11T00:00:00Z').some((c) => c.name === first))
+  check('holdsAt names the hold covering a board', holdsAt(open, '2026-10-11T00:00:00Z').length === 1 && holdsAt(shut, '2026-10-13T00:00:00Z').length === 0)
+  // A hold on one cut and not the other would be two rules for one boss - see hold-square.mjs.
+  for (const sq of bosses.filter((c) => c.holds !== undefined)) {
+    const twin = bosses2v2.find((c) => c.name === sq.name)
+    check(`${sq.name}: small-crew copy carries the same holds`, !twin || JSON.stringify(twin.holds) === JSON.stringify(sq.holds))
+  }
   // Every late square has to be in both cuts' flag and cost tables like any other - see build-boss-flags.
   for (const sq of late) {
     const twin = bosses2v2.find((c) => c.name === sq.name)

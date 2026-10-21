@@ -47,6 +47,12 @@ import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import { MATCH_START_MARKER, matchTimings, battlePhaseAt } from '../../../src/lib/matchTime.ts'
 import { pauseInfoAt, pausedMsAt, type PauseFields } from '../../../src/lib/matchPause.ts'
 import { fleetShape } from '../../../src/lib/boardShape.ts'
+import {
+  AUTOFIRE_TEST_MINUTES,
+  AUTOFIRE_TEST_SQUARES,
+  autoFireTestPhaseAt,
+  type AutoFireTestKill,
+} from '../../../src/lib/autoFireTest.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
 import bossData2v2 from '../../../src/data/battleshipChallenges2v2.json' with { type: 'json' }
 import bossFlags from '../../../src/data/bossFlags.json' with { type: 'json' }
@@ -525,6 +531,77 @@ function computeClock(room: { starting_seconds?: number; prep_seconds?: number }
   }
 }
 
+/**
+ * Answers a poll from the player's auto-marking test - see the 20261023000000 migration and
+ * lib/autoFireTest. Only reached when the player is in no live match: a real match always wins.
+ *
+ * The same flag -> tooltip lookup a real kill goes through, against a fixed two-cell board, so a pass
+ * here is the token, the mod and that lookup all proven. The reply is shaped like a match's - fired,
+ * tally, clock - so the in-game overlay shows the test as it would a game. Each test square is its
+ * own one-cell ship, so a kill reports `sunk`.
+ *
+ * A kill first seen during the preparation countdown is recorded as such and not fired: the mod sends
+ * every set flag on every poll, so it means the boss was already dead on this save.
+ */
+async function answerTest(
+  userId: string,
+  test: { started_at: string; kills: Record<string, AutoFireTestKill> },
+  kills: KillReport[]
+) {
+  const now = Date.now()
+  const { phase, seconds } = autoFireTestPhaseAt(Date.parse(test.started_at), now)
+  // The query only hands over tests inside the window; this covers the instant it closes between the two.
+  if (phase === 'over') return jsonResponse({ ok: false, error: 'not_in_match' })
+  // Anything but a plain object reads as no kills yet, rather than as kills that can never be found.
+  const recorded: Record<string, AutoFireTestKill> =
+    test.kills && typeof test.kills === 'object' && !Array.isArray(test.kills) ? { ...test.kills } : {}
+  const fresh: Record<string, AutoFireTestKill> = {}
+  const fired: { flag: number; cell: number; result: string | null }[] = []
+  const skipped: { flag: number; reason: string }[] = []
+
+  for (const kill of kills) {
+    const flag = Number(kill?.flag)
+    if (!Number.isFinite(flag)) continue
+    const tooltip = flagToTooltip.get(flag)
+    const cell = AUTOFIRE_TEST_SQUARES.findIndex((s) => s.tooltip === tooltip)
+    if (cell < 0) {
+      skipped.push({ flag, reason: tooltip ? 'not_on_this_board' : 'not_a_square' })
+      continue
+    }
+    if (recorded[tooltip!]) {
+      skipped.push({ flag, reason: 'already_fired' })
+      continue
+    }
+    const reported = kill.at ? Date.parse(kill.at) : NaN
+    const at = new Date(
+      Number.isFinite(reported) ? Math.min(Math.max(reported, now - MAX_BACKDATE_MS), now) : now
+    ).toISOString()
+    const entry: AutoFireTestKill = { at, phase: phase === 'preparation' ? 'preparation' : 'match' }
+    recorded[tooltip!] = fresh[tooltip!] = entry
+    if (entry.phase === 'match') fired.push({ flag, cell, result: 'sunk' })
+    else skipped.push({ flag, reason: 'dead_before_start' })
+  }
+
+  // sql.json, not JSON.stringify: postgres.js serialises a parameter by the type the server infers
+  // for it, so a pre-stringified object arrives as a jsonb STRING and `||` turns kills into an array.
+  // Written on every test poll, kills or not: last_seen_at is how the page knows the mod is reaching
+  // us. Direct to the database, so no gateway log line - and only for the ten minutes a test lasts.
+  await sql`
+    update public.autofire_tests
+       set last_seen_at = now(), kills = kills || ${sql.json(fresh as unknown as postgres.JSONValue)}
+     where user_id = ${userId}`
+
+  const hits = Object.values(recorded).filter((k) => k.phase === 'match').length
+  return jsonResponse({
+    ok: true,
+    test: true,
+    fired,
+    skipped,
+    tally: { hits, misses: 0, shots: hits, accuracy: hits > 0 ? 100 : null, pace: null, sunk: hits },
+    clock: { phase, seconds, running: true },
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return jsonResponse({ ok: false, error: 'method_not_allowed' }, 405)
@@ -559,6 +636,7 @@ Deno.serve(async (req) => {
         seed_set_at: string | null
         ship_defs: { size: number }[] | null
       } & { starting_seconds?: number; prep_seconds?: number } & PauseFields)[]
+      test: { started_at: string; kills: Record<string, AutoFireTestKill> } | null
     }>(sql`
       select
         t.user_id,
@@ -570,7 +648,12 @@ Deno.serve(async (req) => {
                    from public.rooms
                   where status = 'battle'
                     and id in (select room_id from public.players
-                                where user_id = t.user_id and team is not null)) r) as battles
+                                where user_id = t.user_id and team is not null)) r) as battles,
+        -- A running auto-marking test, answered only if there is no live match - see answerTest.
+        (select row_to_json(x)
+           from (select started_at, kills from public.autofire_tests
+                  where user_id = t.user_id
+                    and started_at > now() - make_interval(mins => ${AUTOFIRE_TEST_MINUTES})) x) as test
       from public.ingest_tokens t
       where t.token = ${token}`)
     if (!tokenRow) return jsonResponse({ ok: false, error: 'unknown_token' }, 403)
@@ -580,7 +663,10 @@ Deno.serve(async (req) => {
       const room = tokenRow.battles.find((r) => r.id === seat.room_id)
       return room ? [{ seat, room }] : []
     })
-    if (live.length === 0) return jsonResponse({ ok: false, error: 'not_in_match' })
+    if (live.length === 0) {
+      if (tokenRow.test) return await answerTest(tokenRow.user_id, tokenRow.test, kills)
+      return jsonResponse({ ok: false, error: 'not_in_match' })
+    }
     // Two live matches means guessing which board to fire at. A shot cannot be taken back, so this
     // refuses rather than picks.
     if (live.length > 1) return jsonResponse({ ok: false, error: 'ambiguous_match' }, 409)

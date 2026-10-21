@@ -2421,7 +2421,12 @@ var battleshipChallenges_default = [
 	{
 		"name": "Romina",
 		"tooltip": "Romina, Saint of the Bud - Church of the Bud",
-		"region": "dlc"
+		"region": "dlc",
+		"holds": [{
+			"from": "2026-10-21T05:15:23.500Z",
+			"note": "Dionysus can't register her kill, so she can't be finished",
+			"noteFr": "Dionysus ne détecte pas sa mise à mort, elle ne peut donc pas être terminée"
+		}]
 	},
 	{
 		"name": "Devonia",
@@ -8078,6 +8083,13 @@ const RENAMED_SQUARES = {
 function canonicalSquareName(name) {
 	return name == null ? name : RENAMED_SQUARES[name] ?? name;
 }
+/** Whether `hold` covers a board dealt at `at` (a Date.parse result). A board with no stamp predates every hold. */
+function holdCovers(hold, at) {
+	if (!Number.isFinite(at)) return false;
+	const from = Date.parse(hold.from);
+	const until = hold.until === void 0 ? Infinity : Date.parse(hold.until);
+	return Number.isFinite(from) && at >= from && !(at >= until);
+}
 /**
 * The display form of a square's name.
 *
@@ -8510,13 +8522,19 @@ function buildBingoBoard(set, count, next, shortNames = {}, regions = {}, colors
 * which is right for every board from before the column existed, and the same rule igonUnveiled
 * follows. A `dealtFrom` that does not parse (e.g. "pending") means the square is not dealt yet.
 *
+* A square's `holds` take it back out the same way, for boards dealt inside a hold only - so pulling
+* a broken boss re-deals nothing already dealt, and putting it back re-deals nothing dealt while it
+* was out.
+*
 * Returns the list itself when nothing is held back, so the common case costs nothing.
 */
 function dealtPool(list, dealtAt) {
 	const fromOf = (sq) => sq.dealtFrom;
-	if (!list.some((sq) => fromOf(sq) !== void 0)) return list;
+	const holdsOf = (sq) => sq.holds;
+	if (!list.some((sq) => fromOf(sq) !== void 0 || holdsOf(sq) !== void 0)) return list;
 	const at = Date.parse(dealtAt ?? "");
 	return list.filter((sq) => {
+		if (holdsOf(sq)?.some((hold) => holdCovers(hold, at))) return false;
 		const dealtFrom = fromOf(sq);
 		if (dealtFrom === void 0) return true;
 		const from = Date.parse(String(dealtFrom));
@@ -9130,4 +9148,4 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 
 //#endregion
 export { POWER_PARAMS, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo };
-export const RATING_CODE_VERSION = "67fc1589676fdb10";
+export const RATING_CODE_VERSION = "69ab46aa45a382a8";

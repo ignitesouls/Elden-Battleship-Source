@@ -170,10 +170,19 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack.
+// Mirrors squareSetFormat.dealtPool: a square added after this board was dealt was never in its pack,
+// and a square on hold when it was dealt was out of it too.
+function heldAt(sq, at) {
+  return (sq.holds ?? []).some((h) => {
+    const from = Date.parse(h.from);
+    const until = h.until === undefined ? Infinity : Date.parse(h.until);
+    return Number.isFinite(at) && Number.isFinite(from) && at >= from && !(at >= until);
+  });
+}
 function dealtPool(list, dealtAt) {
   const at = Date.parse(dealtAt ?? "");
   return list.filter((sq) => {
+    if (heldAt(sq, at)) return false;
     if (sq.dealtFrom === undefined) return true;
     const from = Date.parse(sq.dealtFrom);
     return Number.isFinite(from) && Number.isFinite(at) && at >= from;
@@ -245,8 +254,23 @@ for (let page = 0; page < 40; page++) {
   if (!data || data.length < 1000) break;
 }
 
+// Voided matches - practice runs, and every match against a bot opponent, which is always practice -
+// are not evidence about how long a square takes. A bot's kill times are its own dice rolls, and if
+// they were read back in here the bot would end up pricing the squares it is meant to be priced by.
+const voided = new Set();
+for (let page = 0; page < 40; page++) {
+  const { data, error } = await supabase
+    .from("voided_matches")
+    .select("match_key")
+    .range(page * 1000, page * 1000 + 999);
+  if (error) throw new Error(`voided_matches: ${error.message}`);
+  for (const v of data ?? []) voided.add(v.match_key);
+  if (!data || data.length < 1000) break;
+}
+
 const byMatch = new Map();
 for (const r of rows) {
+  if (voided.has(r.match_key)) continue;
   if (!byMatch.has(r.match_key)) byMatch.set(r.match_key, []);
   byMatch.get(r.match_key).push(r);
 }

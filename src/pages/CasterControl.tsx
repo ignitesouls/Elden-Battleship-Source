@@ -186,7 +186,11 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   const t = useT();
   const lang = useLanguage();
 
-  const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true });
+  // Easter eggs start OFF on the desk: a cast board is hits and misses unless the caster asks for
+  // the finds. Sent explicitly rather than left absent, because absent means "draw them" to every
+  // reader - that default is for the player-pinned sources, which never hear from a desk.
+  // The caster's find alert starts off too - see CastView.alerts, which defaults that way anyway.
+  const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true, eggs: false, alerts: false });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
   /**
    * The space the monitor is allowed to fill, measured rather than assumed.
@@ -217,6 +221,22 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
    * at all, and it fails at exactly the moment they most need control.
    */
   const [follow, setFollow] = useState(false);
+  /**
+   * Rotate the View through each fleet in turn, one defending board at a time.
+   *
+   * Desk state, like the lap's length: the sources only ever see the `mode` it lands on. Any View
+   * button takes it off - the caster has picked a board, and a rotation that carried on would take
+   * it away from them seconds later.
+   */
+  const [rotate, setRotate] = useState(false);
+  const [rotateSecs, setRotateSecs] = useState(20);
+  /**
+   * Puts out a followed shot's dimming after the hold - see the follow effect. Separate from the
+   * punch's own restore timer because it also runs with Punch-in off, and because a caster taking the
+   * aim cancels the punch but must not leave the whole board dark indefinitely.
+   */
+  const dimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => clearTimeout(dimRef.current ?? undefined), []);
   /**
    * Punch-in: a highlight doesn't just light up, it takes the camera.
    *
@@ -491,7 +511,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
     const timer = setTimeout(
       () => {
         punchRef.current = null;
-        setView((v) => ({ ...v, zoom: back.zoom, cx: back.cx, cy: back.cy, spot: null, spotColor: null }));
+        setView((v) => ({ ...v, zoom: back.zoom, cx: back.cx, cy: back.cy, spot: null, spotColor: null, spotDim: false }));
       },
       Math.max(1, punchCfg.current.secs) * 1000
     );
@@ -504,6 +524,9 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
       cy,
       spot: cells,
       spotColor: color,
+      // Off unless the caller is the shot follow, which turns it on straight after - a hull punch
+      // points at something the caster is talking about and keeps the board around it.
+      spotDim: false,
       // Belt and braces with the dropMotion above: a punch and a lap cannot both be aiming.
       motion: null,
     }));
@@ -548,24 +571,63 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   const followBoard = room?.board_size ?? 0;
   useEffect(() => {
     if (followCell === null || followBoard <= 0) return;
-    // With punch-in on, the shot takes the camera and the light burns in the firing fleet's colour
-    // for the hold. Without it, the older behaviour: slide the frame across and change nothing else.
-    if (punchCfg.current.on) {
-      punchTo([followCell], followTeam === null ? null : teamHex(followTeam), followBoard);
-      return;
-    }
-    setView((v) =>
-      v.zoom <= MIN_ZOOM
-        ? v
+    const color = followTeam === null ? null : teamHex(followTeam);
+    // With punch-in on, the shot takes the camera for the hold. Without it, the frame slides across
+    // at the zoom it was on. Either way the square is lit in the firing fleet's colour with the rest
+    // of the board dimmed (CastView.spotDim) - a ring alone was too easy to lose among a hundred names.
+    const punched = punchCfg.current.on;
+    if (punched) punchTo([followCell], color, followBoard);
+    setView((v) => ({
+      ...v,
+      ...(punched || v.zoom <= MIN_ZOOM
+        ? null
         : {
-            ...v,
             // Centre of the square, not its corner - a shot in the last column would otherwise
             // frame half a square of board and half a square of nothing.
             cx: ((followCell % followBoard) + 0.5) / followBoard,
             cy: (Math.floor(followCell / followBoard) + 0.5) / followBoard,
-          }
+          }),
+      spot: [followCell],
+      spotColor: color,
+      spotDim: true,
+    }));
+
+    // The dimming always ends with the hold. With Punch-in off nothing else would put the light out,
+    // so this does that too; with it on, the punch's own restore already will, and a caster who took
+    // the aim mid-hold keeps their lit square - only the dark goes.
+    clearTimeout(dimRef.current ?? undefined);
+    dimRef.current = setTimeout(
+      () => {
+        dimRef.current = null;
+        setView((v) =>
+          !v.spotDim ? v : punched ? { ...v, spotDim: false } : { ...v, spotDim: false, spot: null, spotColor: null }
+        );
+      },
+      Math.max(1, punchCfg.current.secs) * 1000
     );
   }, [followCell, followTeam, followBoard, punchTo]);
+
+  /**
+   * The fleet rotation - see `rotate`.
+   *
+   * Keyed on the fleets as a string rather than the array: `teams` is rebuilt whenever any player
+   * row changes, and restarting the clock on every ready-up would mean the rotation never ticked.
+   * A tick is skipped while a followed shot is lit, so a hit is never swapped out for a different
+   * fleet's board in the middle of its hold.
+   */
+  const teamsKey = teams.join(",");
+  useEffect(() => {
+    const order = teamsKey ? teamsKey.split(",").map(Number) : [];
+    if (!rotate || order.length < 2) return;
+    const tick = setInterval(() => {
+      if (viewRef.current.spotDim) return;
+      setView((v) => {
+        const at = typeof v.mode === "number" ? order.indexOf(v.mode) : -1;
+        return { ...v, mode: order[(at + 1) % order.length] };
+      });
+    }, rotateSecs * 1000);
+    return () => clearInterval(tick);
+  }, [rotate, rotateSecs, teamsKey]);
 
   /**
    * Two keyboards' worth of aiming, for two different jobs.
@@ -1040,7 +1102,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 // Clicking the lit square again puts the light out, which is the gesture everyone
                 // tries first and the only way to clear it without reaching for another control.
                 const lit = v.spot?.length === 1 && v.spot[0] === cell;
-                return { ...v, spot: cell === null || lit ? null : [cell] };
+                return { ...v, spot: cell === null || lit ? null : [cell], spotDim: false };
               });
             }}
             onPointerCancel={() => {
@@ -1110,9 +1172,11 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   ships={ships}
                   sunkOrientation={sunkCells}
                   firedBy={firedBy}
-                  deepCells={deepCells}
+                  // Exactly as the source resolves both - see the notes there.
+                  deepCells={view.eggs === false ? undefined : deepCells}
                   spotCells={spotCells}
                   spotColor={camera.running ? undefined : (view.spotColor ?? undefined)}
+                  spotDim={!camera.running && Boolean(view.spotDim)}
                   // Matches the source exactly - the monitor has to BE the frame, not resemble it.
                   //
                   // These three were missing, and that was a real fault rather than an omission:
@@ -1205,14 +1269,20 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             <div className="cast-buttons">
               <button
                 className={view.mode === "results" ? "primary" : ""}
-                onClick={() => set({ mode: "results" })}
+                onClick={() => {
+                  setRotate(false);
+                  set({ mode: "results" });
+                }}
                 title={t("Shots only - no ship positions on stream", "Tirs seulement - aucune position de navire à l'écran")}
               >
                 {t("Results only", "Résultats seulement")}
               </button>
               <button
                 className={view.mode === "all" ? "primary" : ""}
-                onClick={() => set({ mode: "all" })}
+                onClick={() => {
+                  setRotate(false);
+                  set({ mode: "all" });
+                }}
                 title={t("Every fleet's ships on one board", "Les navires de toutes les flottes sur un plateau")}
               >
                 {t("All fleets", "Toutes les flottes")}
@@ -1221,7 +1291,10 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 <button
                   key={tm}
                   className={view.mode === tm ? "primary" : ""}
-                  onClick={() => set({ mode: tm })}
+                  onClick={() => {
+                    setRotate(false);
+                    set({ mode: tm });
+                  }}
                   style={{ color: teamHex(tm) }}
                   title={`${t("Only", "Seuls les navires de")} ${teamName(tm)}${t("'s ships", "")}`}
                 >
@@ -1229,6 +1302,46 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 </button>
               ))}
             </div>
+            {/* One fleet at a time, on its own clock - see `rotate`. Needs two fleets to rotate
+                between; with one there is nothing to alternate, so it greys out rather than hiding. */}
+            <label className="cast-check">
+              <input
+                type="checkbox"
+                checked={rotate}
+                disabled={teams.length < 2}
+                onChange={(e) => {
+                  setRotate(e.target.checked);
+                  // Start on a fleet straight away rather than waiting out the first interval on
+                  // Results or All fleets.
+                  if (e.target.checked && typeof view.mode !== "number" && teams.length > 0) set({ mode: teams[0] });
+                }}
+              />
+              <span>{t("Rotate fleets, one board at a time", "Alterner les flottes, un plateau à la fois")}</span>
+            </label>
+            {rotate && (
+              <div className="cast-row">
+                <input
+                  type="range"
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={rotateSecs}
+                  className="eb-slider"
+                  style={{ ["--eb-fill" as string]: (rotateSecs - 5) / 55 }}
+                  onChange={(e) => setRotateSecs(Number(e.target.value))}
+                  title={t("How long each fleet's board stays up", "Combien de temps le plateau de chaque flotte reste affiché")}
+                />
+                <span className="cast-zoom-value">{rotateSecs}s</span>
+              </div>
+            )}
+            <label className="cast-check">
+              <input type="checkbox" checked={view.eggs !== false} onChange={(e) => set({ eggs: e.target.checked })} />
+              <span>{t("Show easter eggs on the board", "Afficher les easter eggs sur le plateau")}</span>
+            </label>
+            <label className="cast-check">
+              <input type="checkbox" checked={view.alerts === true} onChange={(e) => set({ alerts: e.target.checked })} />
+              <span>{t("Show find alerts over the board", "Afficher les alertes de découverte sur le plateau")}</span>
+            </label>
             {view.mode !== "results" && room.status === "battle" && (
               <p className="cast-warn">
                 {t(
@@ -1469,17 +1582,17 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                   )
                 : punchOn
                 ? t(
-                    "Each shot takes the camera and holds it, lit in the firing fleet's colour.",
-                    "Chaque tir prend la caméra et la maintient, éclairée dans la couleur de la flotte qui tire."
+                    "Each shot takes the camera and holds it, lit in the firing fleet's colour with the rest of the board dimmed.",
+                    "Chaque tir prend la caméra et la maintient, éclairée dans la couleur de la flotte qui tire, le reste du plateau assombri."
                   )
                 : view.zoom <= MIN_ZOOM
                   ? t(
-                      "Nothing to follow at 1x - the whole board is already in frame. Zoom in first.",
-                      "Rien à suivre à 1x - tout le plateau est déjà à l'écran. Zoomez d'abord."
+                      `The whole board is in frame at 1x, so each new shot is lit and the rest dimmed for ${punchSecs}s.`,
+                      `Tout le plateau est à l'écran à 1x, donc chaque nouveau tir est éclairé et le reste assombri pendant ${punchSecs}s.`
                     )
                   : t(
-                      "Slides the frame to each new shot without changing the zoom.",
-                      "Déplace le cadre vers chaque nouveau tir sans changer le zoom."
+                      `Slides the frame to each new shot without changing the zoom, lit with the rest dimmed for ${punchSecs}s.`,
+                      `Déplace le cadre vers chaque nouveau tir sans changer le zoom, éclairé avec le reste assombri pendant ${punchSecs}s.`
                     )}
             </p>
           </section>
@@ -1556,7 +1669,7 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                 disabled={!view.spot?.length}
                 onClick={() => {
                   cancelPunch();
-                  set({ spot: null, spotColor: null });
+                  set({ spot: null, spotColor: null, spotDim: false });
                 }}
                 title={t("Put the light out", "Éteindre le projecteur")}
               >
@@ -1595,12 +1708,12 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
                       onClick={() => {
                         if (spotIsHull(h.cells)) {
                           cancelPunch();
-                          set({ spot: null, spotColor: null });
+                          set({ spot: null, spotColor: null, spotDim: false });
                         } else if (punchOn) {
                           // Takes the camera to the whole hull and holds it, in that fleet's colour.
                           punchTo(h.cells, teamHex(h.team), boardSize);
                         } else {
-                          set({ spot: h.cells, spotColor: teamHex(h.team) });
+                          set({ spot: h.cells, spotColor: teamHex(h.team), spotDim: false });
                         }
                       }}
                       title={canSpotShips ? t("Ring this hull on stream", "Encercler cette coque à l'écran") : t("Not while the view is Results only", "Pas tant que la vue est Résultats seulement")}

@@ -242,6 +242,45 @@ export interface Challenge {
    * being dealt. Absent on every square that was there from the start. See dealtPool.
    */
   dealtFrom?: string;
+  /**
+   * Spells where this square is taken out of the deal - a boss Dionysus can't register, say - each
+   * from an instant and, once it is fixed, until one. A board dealt inside a hold never has the square;
+   * every board dealt outside one is untouched. Written by scripts/hold-square.mjs. See dealtPool.
+   */
+  holds?: SquareHold[];
+}
+
+/** One spell out of the deal - see Challenge.holds. */
+export interface SquareHold {
+  /** When boards stopped dealing the square, UTC ISO. */
+  from: string;
+  /** When they started again. Absent while the hold is still on. */
+  until?: string;
+  /** What is wrong, for the admin page and the lobby. */
+  note: string;
+  noteFr?: string;
+}
+
+/** Whether `hold` covers a board dealt at `at` (a Date.parse result). A board with no stamp predates every hold. */
+function holdCovers(hold: SquareHold, at: number): boolean {
+  if (!Number.isFinite(at)) return false;
+  const from = Date.parse(hold.from);
+  const until = hold.until === undefined ? Infinity : Date.parse(hold.until);
+  return Number.isFinite(from) && at >= from && !(at >= until);
+}
+
+/**
+ * The holds covering a board dealt at `dealtAt`, with the square each is on - what the lobby says is
+ * missing from this room's board. Empty for a board dealt outside every hold.
+ */
+export function holdsAt<T>(list: T[], dealtAt: string | null | undefined): Array<{ square: T; hold: SquareHold }> {
+  const at = Date.parse(dealtAt ?? "");
+  const out: Array<{ square: T; hold: SquareHold }> = [];
+  for (const square of list) {
+    const holds = (square as { holds?: SquareHold[] }).holds ?? [];
+    for (const hold of holds) if (holdCovers(hold, at)) out.push({ square, hold });
+  }
+  return out;
 }
 
 /**
@@ -1022,15 +1061,21 @@ export function buildBingoBoard(
  * which is right for every board from before the column existed, and the same rule igonUnveiled
  * follows. A `dealtFrom` that does not parse (e.g. "pending") means the square is not dealt yet.
  *
+ * A square's `holds` take it back out the same way, for boards dealt inside a hold only - so pulling
+ * a broken boss re-deals nothing already dealt, and putting it back re-deals nothing dealt while it
+ * was out.
+ *
  * Returns the list itself when nothing is held back, so the common case costs nothing.
  */
 export function dealtPool<T>(list: T[], dealtAt: string | null | undefined): T[] {
-  // Read loosely, because the Edge Functions declare their square lists without this field - and a
-  // list typed without it is exactly where the field going unnoticed would matter.
+  // Read loosely, because the Edge Functions declare their square lists without these fields - and a
+  // list typed without them is exactly where a field going unnoticed would matter.
   const fromOf = (sq: T) => (sq as { dealtFrom?: unknown }).dealtFrom;
-  if (!list.some((sq) => fromOf(sq) !== undefined)) return list;
+  const holdsOf = (sq: T) => (sq as { holds?: SquareHold[] }).holds;
+  if (!list.some((sq) => fromOf(sq) !== undefined || holdsOf(sq) !== undefined)) return list;
   const at = Date.parse(dealtAt ?? "");
   return list.filter((sq) => {
+    if (holdsOf(sq)?.some((hold) => holdCovers(hold, at))) return false;
     const dealtFrom = fromOf(sq);
     if (dealtFrom === undefined) return true;
     const from = Date.parse(String(dealtFrom));

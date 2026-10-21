@@ -11,6 +11,7 @@ import { initialHitsRemaining, emptyGrid } from "./battleshipLogic";
 import { teamName } from "./teamColors";
 import { generateRoomCode, normalizeRoomCode, formatRoomCode, generateRejoinCode, generateSeed } from "./roomCode";
 import { storePlayerId } from "./playerSession";
+import type { BotTier } from "./bot";
 import type { CLASSIC_SHIPS } from "../types/battleship";
 import type { Room, Player, Fleet, ShipPlacement, ShipDefinition } from "../types/battleship";
 
@@ -241,6 +242,40 @@ export async function drawOfficialSeed(roomId: string): Promise<{ vetted: boolea
   return { vetted: !!data?.vetted, reason: data?.reason };
 }
 
+/**
+ * Seats a bot opponent in the room, swaps its tier, or (with null) takes it out. Host only, lobby
+ * only, never on an official match - see set_room_bot in the bot_opponent migration, which also
+ * makes the match practice. The bot's seat, fleet name and the practice flag all arrive through the
+ * room's realtime rows.
+ */
+export async function setRoomBot(roomId: string, tier: BotTier | null): Promise<void> {
+  const { error } = await supabase.rpc("set_room_bot", { p_room_id: roomId, p_tier: tier });
+  if (!error) return;
+  if (error.code === "PGRST202" || /set_room_bot/.test(error.message)) {
+    throw new Error(
+      "This project hasn't had the bot-opponent migration applied yet. Run " +
+        "supabase/migrations/20261022000000_bot_opponent.sql in the SQL editor."
+    );
+  }
+  throw error;
+}
+
+/**
+ * Tells the bot it may be its turn - to place its ships during placement, or to fire during the
+ * match. It decides for itself whether it is (see supabase/functions/bot), so an early or duplicate
+ * call is harmless. Returns the match second it next fires at, when it said.
+ */
+export async function nudgeBot(roomId: string): Promise<{ next?: number; reason?: string }> {
+  const { data, error } = await supabase.functions.invoke("bot", { body: { roomId } });
+  if (error) {
+    const body = await (error as { context?: { json?: () => Promise<unknown> } }).context
+      ?.json?.()
+      .catch(() => null);
+    return { reason: (body as { reason?: string } | null)?.reason ?? (error as Error).message };
+  }
+  return { next: typeof data?.next === "number" ? data.next : undefined, reason: data?.reason };
+}
+
 export interface RoomSettings {
   board_size?: number;
   ship_defs?: ShipDefinition[];
@@ -276,7 +311,11 @@ export async function updateRoomSettings(roomId: string, settings: RoomSettings)
   // Same courtesy for the practice flag, and the same reason: a host who ticks a box and gets
   // "column rooms.practice does not exist" has been told what happened but not what to do, and the
   // match itself is fine either way - it just counts.
-  if (/practice/i.test(error.message)) {
+  //
+  // Only a MISSING column, though: a room with a bot opponent refuses practice=false with a sentence
+  // of its own (guard_room_bot) that mentions practice too, and that one should reach the host as
+  // written.
+  if (/practice/i.test(error.message) && /column|schema cache/i.test(error.message)) {
     throw new Error(
       "This project hasn't had the practice-match migration applied yet, so a match can't be set " +
         "to practice. Run supabase/migrations/20260830040000_practice_matches.sql in the SQL editor."

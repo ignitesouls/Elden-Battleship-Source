@@ -54,6 +54,7 @@ import { LeaveMatchButton } from "../components/LeaveMatchButton";
 import { useBoxSize, boardSideFor, boardColumns } from "../hooks/useBoxSize";
 import { CanvasPanel } from "../components/CanvasPanel";
 import { usePanelLayout } from "../hooks/usePanelLayout";
+import { useBotDriver } from "../hooks/useBotDriver";
 import {
   defaultSpectatorLayout,
   spectatorPanelIds,
@@ -80,6 +81,9 @@ export function Room() {
   // this page draws. See useBattlePhase.
   const battlePhase = useBattlePhaseName(state.attacks, state.room);
   const prevPhase = useRef<string | null>(null);
+  // Here rather than in a phase component, so the bot keeps playing whichever screen - or spectator
+  // view - the browser driving it happens to be on.
+  useBotDriver(state);
 
   // Horn #1: the battle begins (STARTING countdown opens).
   useEffect(() => {

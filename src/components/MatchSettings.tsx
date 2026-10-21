@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useT } from "../lib/language";
-import { updateRoomSettings } from "../lib/rooms";
+import { updateRoomSettings, setRoomBot } from "../lib/rooms";
+import { BOT_TIERS, BOT_TIER_SPECS, isBotTier, type BotTier } from "../lib/bot";
 import { formatDuration } from "../lib/matchTime";
 import { SQUARE_SET_LIST, squareSet, displaySquareSet, squareSetVariants, DEFAULT_SQUARE_SET } from "../lib/challenges";
 import { squarePool, maxBoardSize, clampBoardSize } from "../lib/challenges";
-import { strictFill } from "../lib/squareSetFormat";
+import { strictFill, holdsAt } from "../lib/squareSetFormat";
 import {
   BOARD_SIZES,
   CUSTOM_HULLS,
@@ -83,6 +84,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   // Absent reads as a real match - see Room.practice. A room from before the migration, or a
   // project that hasn't run it, is a room whose matches count, which is what they always did.
   const practice = room.practice ?? false;
+  const botTier = isBotTier(room.bot_tier) ? room.bot_tier : null;
   const set = squareSet(room.square_set ?? DEFAULT_SQUARE_SET);
   // What the room is told it is playing. Identical to `set` except on a variant, which describes
   // itself as its parent because that is the only set anyone here chose - see squareSets.variantOf.
@@ -109,6 +111,21 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   const cleanFill = set.format === "bingo" ? strictFill(set.data, cells) : cells;
   const shortfall = Math.max(0, cells - cleanFill);
 
+  // Squares this room's board was dealt without because they were on hold - a boss the tracker can't
+  // register, say. Read at the room's own deal time, so an older board that still has the square
+  // doesn't claim to be missing it. See Challenge.holds.
+  const heldOut = set.format === "flat" ? holdsAt(set.data, room.seed_set_at) : [];
+  const heldLine =
+    heldOut.length > 0 ? (
+      <span style={{ fontSize: "0.72rem", color: "var(--accent)"}}>
+        {heldOut.map(({ square, hold }) => (
+          <span key={square.name} style={{ display: "block" }}>
+            {t(`${square.name} is out of this board for now: ${hold.note}`, `${square.name} est retiré de ce plateau pour l'instant : ${hold.noteFr ?? hold.note}`)}
+          </span>
+        ))}
+      </span>
+    ) : null;
+
   /**
    * Puts the room on a set - or on another cut of the one it is already on, which is the same write
    * either way, since a cut is a set as far as the database is concerned.
@@ -126,6 +143,19 @@ export function MatchSettings({ room, isHost, onError }: Props) {
         ? {}
         : { board_size: size, ship_defs: refitFleet(shipDefs, boardSize, size) }),
     });
+  }
+
+  async function chooseBot(tier: BotTier | null) {
+    if (tier === botTier) return;
+    setBusy(true);
+    onError(null);
+    try {
+      await setRoomBot(room.id, tier);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function apply(patch: Parameters<typeof updateRoomSettings>[1]) {
@@ -149,6 +179,7 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   // panel, and "which board are we actually playing" is now a thing somebody chose.
   const cutSuffix = set.id !== shownSet.id && set.cutLabel ? ` - ${set.cutLabel.toLowerCase()}` : "";
   const summary =
+    (botTier ? `${t("vs", "contre")} ${BOT_TIER_SPECS[botTier].name} · ` : "") +
     (practice ? `${t("Practice", "Entraînement")} · ` : "") +
     `${boardSize}x${boardSize} · ${
       defaultFleet
@@ -164,9 +195,10 @@ export function MatchSettings({ room, isHost, onError }: Props) {
   // wandered in deserves to know what they're about to play without having to ask.
   if (!isHost) {
     return (
-      <div className="panel row" style={{ gap: "0.5rem", alignItems: "baseline" }}>
+      <div className="panel row" style={{ gap: "0.5rem", alignItems: "baseline", flexWrap: "wrap" }}>
         <span className="muted" style={{ fontSize: "0.78rem" }}>{t("Match settings", "Paramètres du match")}</span>
         <span style={{ fontSize: "0.82rem" }}>{summary}</span>
+        {heldLine && <div style={{ flexBasis: "100%" }}>{heldLine}</div>}
       </div>
     );
   }
@@ -177,6 +209,8 @@ export function MatchSettings({ room, isHost, onError }: Props) {
         {open ? "▾" : "▸"} {t("Match settings", "Paramètres du match")}
         <span className="muted"> - {summary}</span>
       </button>
+      {/* Outside the fold, because a missing boss is worth knowing before anyone opens the panel. */}
+      {heldLine}
 
       {open && (
         <div className="stack" style={{ gap: "0.6rem", paddingLeft: "0.2rem" }}>
@@ -345,6 +379,55 @@ export function MatchSettings({ room, isHost, onError }: Props) {
             </select>
           </Field>
 
+          {/* People or a bot. Above Record because it decides Record: a bot match is always practice,
+              which set_room_bot sets and guard_room_bot holds. The bot takes the first free fleet
+              colour and is named for its tier - see lib/bot. Never offered on an official match. */}
+          {!official && (
+            <>
+              <Field label={t("Opponent", "Adversaire")}>
+                <Choice active={!botTier} busy={busy} onClick={() => void chooseBot(null)}>
+                  {t("People", "Joueurs")}
+                  <BotCaption>{t("Real match", "Vrai match")}</BotCaption>
+                </Choice>
+                {/* A name alone says nothing to somebody who hasn't met the bots, so each button
+                    carries its difficulty underneath and its full description on hover. */}
+                {BOT_TIERS.map((tier) => {
+                  const spec = BOT_TIER_SPECS[tier];
+                  return (
+                    <Choice
+                      key={tier}
+                      active={botTier === tier}
+                      busy={busy}
+                      title={t(spec.blurb.en, spec.blurb.fr)}
+                      onClick={() => void chooseBot(tier)}
+                    >
+                      {spec.name}
+                      <BotCaption>{t(spec.difficulty.en, spec.difficulty.fr)}</BotCaption>
+                    </Choice>
+                  );
+                })}
+              </Field>
+              <span className="muted" style={{ fontSize: "0.72rem", marginTop: "-0.35rem" }}>
+                {botTier
+                  ? `${t(BOT_TIER_SPECS[botTier].blurb.en, BOT_TIER_SPECS[botTier].blurb.fr)} ${t(
+                      "Fires like a crew the size of your biggest fleet, and only at squares a real crew could have reached by then.",
+                      "Tire comme un équipage de la taille de votre plus grande flotte, et seulement sur des cases qu'un vrai équipage aurait pu atteindre à ce moment-là."
+                    )}`
+                  : t(
+                      "No one to play? Pick a bot to practise against, from Chud (easy) to Shaker (borderline impossible).",
+                      "Personne contre qui jouer ? Choisissez un bot pour vous entraîner, de Chud (facile) à Shaker (presque imbattable)."
+                    )}{" "}
+                {/* Said whichever is picked, so nobody has to choose a bot to find out. */}
+                <strong>
+                  {t(
+                    "A match against a bot is always practice - it never counts for anything.",
+                    "Un match contre un bot est toujours un entraînement - il ne compte jamais."
+                  )}
+                </strong>
+              </span>
+            </>
+          )}
+
           {/* The one setting here that isn't about how the match plays.
 
               Two buttons rather than a checkbox because everything else in this panel is a pair of
@@ -358,7 +441,13 @@ export function MatchSettings({ room, isHost, onError }: Props) {
               the host delete any game they lost. The panel is only rendered in the lobby anyway, so
               the trigger is guarding against a stale tab, not against this code. */}
           <Field label={t("Record", "Enregistrement")}>
-            <Choice active={!practice} busy={busy} onClick={() => void apply({ practice: false })}>
+            <Choice
+              active={!practice}
+              busy={busy}
+              unavailable={!!botTier}
+              title={botTier ? t("A match against a bot is always practice.", "Un match contre un bot est toujours un entraînement.") : undefined}
+              onClick={() => void apply({ practice: false })}
+            >
               {t("Counts", "Compte")}
             </Choice>
             <Choice active={practice} busy={busy} onClick={() => void apply({ practice: true })}>
@@ -417,6 +506,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {/* Wraps: ten board sizes don't fit one row on a narrow window. */}
       <div className="row" style={{ gap: "0.35rem", flexWrap: "wrap" }}>{children}</div>
     </label>
+  );
+}
+
+/** The small second line on an Opponent button. */
+function BotCaption({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="muted" style={{ display: "block", fontSize: "0.68rem", marginTop: "0.1rem" }}>
+      {children}
+    </span>
   );
 }
 

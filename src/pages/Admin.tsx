@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { AdminPanel } from "../components/AdminPanel";
 import { AdminTournaments } from "../components/AdminTournaments";
 import { BalanceStats } from "../components/BalanceStats";
+import { SquareHolds } from "../components/admin/SquareHolds";
 import { LoadingScreen } from "../components/BrandMark";
 import { useAdminStatus } from "../lib/admin";
 import { fetchRecentMatchReports, countMatchReports } from "../lib/rooms";
@@ -116,6 +117,8 @@ export function Admin() {
         }
         onChanged={() => setReload((n) => n + 1)}
       />
+
+      <SquareHolds />
 
       <BalanceStats />
     </div>

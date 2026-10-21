@@ -125,6 +125,15 @@ export interface Room {
    * room cannot leave the lobby until it is set again. Server-written only.
    */
   official_seed?: string | null;
+  /**
+   * The bot opponent in this room - see lib/bot.ts and the bot_opponent migration. Null (or absent,
+   * on a project without the migration) is a room of people only. A room with one is always practice.
+   */
+  bot_tier?: string | null;
+  /** The fleet the bot sits on. */
+  bot_team?: number | null;
+  /** Match seconds at which the bot next fires. Server-written; null until the match opens. */
+  bot_next_s?: number | null;
 }
 
 /** One stretch of stopped clock, written by the host once the window closes. */
