@@ -1,9 +1,12 @@
 /**
  * Takes a boss square out of the deal from this moment, with a note on why - or puts it back.
  *
- *   node scripts/hold-square.mjs Romina "Dionysus never registers her kill"           out from now
- *   node scripts/hold-square.mjs Romina "Dionysus never..." --fr "Dionysus ne..."      with French
- *   node scripts/hold-square.mjs Romina return                                         back from now
+ *   node scripts/hold-square.mjs Romina "a Dionysus bug related to her interactions with PCR."    out from now
+ *   node scripts/hold-square.mjs Romina "a Dionysus bug..." --fr "d'un bug de Dionysus..."       with French
+ *   node scripts/hold-square.mjs Romina return                                                   back from now
+ *
+ * The note finishes a sentence: the lobby says "<name> is out for now, due to <note>" (French:
+ * "<name> est retiré pour l'instant, en raison <noteFr>", so the French note brings its own "de"/"d'").
  *
  * For a square that can't be finished through no fault of the players - a boss the tracker can't see
  * die. It is a hold, not a cut: the square stays in the list, gains a `holds` entry, and comes back
@@ -47,7 +50,7 @@ function fail(message) {
 }
 
 if (!name || !noteOrReturn || (frAt >= 0 && !noteFr)) {
-  fail('Usage: node scripts/hold-square.mjs <square name> "<what is wrong>" [--fr "<en français>"]\n' +
+  fail('Usage: node scripts/hold-square.mjs <square name> "<finishes: is out for now, due to ...>" [--fr "<finit : en raison ...>"]\n' +
     "       node scripts/hold-square.mjs <square name> return");
 }
 

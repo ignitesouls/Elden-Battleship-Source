@@ -2424,8 +2424,8 @@ var battleshipChallenges_default = [
 		"region": "dlc",
 		"holds": [{
 			"from": "2026-10-21T05:15:23.500Z",
-			"note": "Dionysus can't register her kill, so she can't be finished",
-			"noteFr": "Dionysus ne détecte pas sa mise à mort, elle ne peut donc pas être terminée"
+			"note": "a Dionysus bug related to her interactions with PCR.",
+			"noteFr": "d'un bug de Dionysus lié à ses interactions avec PCR."
 		}]
 	},
 	{
@@ -9148,4 +9148,4 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 
 //#endregion
 export { POWER_PARAMS, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo };
-export const RATING_CODE_VERSION = "69ab46aa45a382a8";
+export const RATING_CODE_VERSION = "710550f7494afe0e";

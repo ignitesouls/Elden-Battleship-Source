@@ -54,7 +54,7 @@ export function SquareHolds() {
                     ? t(`Held ${when(h.from)} - ${when(h.until)}`, `Retiré du ${when(h.from)} au ${when(h.until)}`)
                     : t(`Out since ${when(h.from)}`, `Retiré depuis le ${when(h.from)}`)}
                 </span>
-                {" - "}
+                {t(", due to ", ", en raison ")}
                 {t(h.note, h.noteFr ?? h.note)}
               </span>
             ))}

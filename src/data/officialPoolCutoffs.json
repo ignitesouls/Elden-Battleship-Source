@@ -7,7 +7,7 @@
   ],
   "percentile": 0.01,
   "samples": 20000,
-  "source": "940cf5ef",
+  "source": "48e2c391",
   "cutoffs": {
     "bosses": {
       "5": 726.8,

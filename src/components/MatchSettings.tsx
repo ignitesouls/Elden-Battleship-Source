@@ -120,7 +120,8 @@ export function MatchSettings({ room, isHost, onError }: Props) {
       <span style={{ fontSize: "0.72rem", color: "var(--accent)"}}>
         {heldOut.map(({ square, hold }) => (
           <span key={square.name} style={{ display: "block" }}>
-            {t(`${square.name} is out of this board for now: ${hold.note}`, `${square.name} est retiré de ce plateau pour l'instant : ${hold.noteFr ?? hold.note}`)}
+            {/* The note finishes the sentence - see scripts/hold-square.mjs. */}
+            {t(`${square.name} is out for now, due to ${hold.note}`, `${square.name} est retiré pour l'instant, en raison ${hold.noteFr ?? hold.note}`)}
           </span>
         ))}
       </span>
