@@ -346,8 +346,59 @@ export function chooseShots(input: BotTurnInput): number[] {
   return out;
 }
 
+/**
+ * How much the bot's aim pulls towards each square, as a multiplier on its route - 0 for a square
+ * already fired at, 1 for "aim has no opinion".
+ *
+ * This is the boss-board bot's aim (see botCrew.ts). chooseShots above lets aim PICK the square,
+ * which is what made the bot gun ships down instead of playing like a crew; here aim only leans on a
+ * captain's route, and how hard it leans is the tier.
+ *
+ *   chud       none - he plays his route and lets the hits fall where they fall
+ *   tarnished  follows up a hit, harder once there are two in a line
+ *   sweat      the same, steered by where the unsunk hulls could still lie, and shy of dead water
+ *   shaker     sweat, plus the real hull of anything he has hit
+ */
+export function aimWeights(input: Omit<BotTurnInput, "cost" | "matchElapsed" | "random">): Float64Array {
+  const n = input.boardSize;
+  const spec = BOT_TIER_SPECS[input.tier];
+  const fired = new Set(input.shots.map((s) => s.cell));
+  const weights = new Float64Array(n * n).fill(1);
+  for (const c of fired) if (c >= 0 && c < n * n) weights[c] = 0;
+  if (spec.finish === "forgetful") return weights;
+
+  const boards = input.defenders.map((d) => buildBoard({ ...input, cost: null, matchElapsed: 0, random: Math.random }, d));
+  const smart = spec.hunt === "density";
+
+  // Dead water: no unsunk hull fits there on any board. A crew that has been paying attention stops
+  // going out of its way for those - but the square still has its boss, so it is shunned, not banned.
+  const hunt = new Float64Array(n * n);
+  for (const b of boards) density(b, n, false).forEach((v, i) => (hunt[i] += v));
+  const peak = Math.max(1, ...hunt);
+  for (let c = 0; c < n * n; c++) {
+    if (weights[c] === 0) continue;
+    if (hunt[c] === 0) weights[c] *= smart ? 0.15 : 0.4;
+    else if (smart) weights[c] *= 0.6 + 0.8 * (hunt[c] / peak);
+  }
+
+  for (const b of boards) {
+    if (openHits(b).length === 0) continue;
+    const beside = besideHits(b, n, fired);
+    const ends = new Set(lineEnds(b, n, fired));
+    const through = smart ? density(b, n, true) : null;
+    const throughPeak = through ? Math.max(1, ...through) : 1;
+    for (const c of beside) {
+      let pull = ends.has(c) ? 6 : 3;
+      if (through) pull = 2 + 8 * (through[c] / throughPeak);
+      weights[c] *= pull;
+    }
+    if (spec.finish === "knows") for (const c of alongTheHull(b, n, fired)) weights[c] *= 4;
+  }
+  return weights;
+}
+
 /** A standard normal draw (Box-Muller). */
-function gaussian(random: () => number): number {
+export function gaussian(random: () => number): number {
   const u = Math.max(random(), 1e-12);
   const v = random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
