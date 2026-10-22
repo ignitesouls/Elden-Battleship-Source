@@ -55,7 +55,7 @@ import "./OverlayEgg.css";
 export function OverlayEgg(props: OverlaySourceProps = {}) {
   // The room and the query string come from the URL, or from the persistent stream route that has
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
-  const { code, params } = useOverlaySource(props);
+  const { code, params, owner } = useOverlaySource(props);
   const state = useRoom(code);
 
   // Same opt-out every overlay route makes - see the note in pages/Overlay.
@@ -155,7 +155,7 @@ export function OverlayEgg(props: OverlaySourceProps = {}) {
    * `muted`, so the queue keeps moving and switching it on mid-match doesn't replay old finds.
    */
   const desk = params.get("desk") === "1";
-  const { message: cast } = useCastReceiver(desk ? code : undefined);
+  const { message: cast } = useCastReceiver(desk ? code : undefined, owner);
   const deskOff = desk && cast?.view.alerts !== true;
 
   // Nothing found, nothing on screen. A browser source drawing an empty box would be a rectangle

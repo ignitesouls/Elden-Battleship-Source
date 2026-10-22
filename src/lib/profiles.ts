@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { canonicalSquareName } from "./squareSetFormat";
-import { participantKey, type ParticipantRow } from "./careerStats";
+import { participantKey, type OfficialParticipantRow, type ParticipantRow } from "./careerStats";
+import type { MatchEventRow } from "./almanac";
 import { withoutVoided } from "./voidedMatches";
 import { cached, forget } from "./archiveCache";
 import { prepareEvents, prepareParticipants, type BoardSource } from "./battleRatingBoards";
@@ -411,6 +412,59 @@ export async function fetchMatchBoards(matchKeys: string[]): Promise<Map<string,
     })
   );
   return out;
+}
+
+/**
+ * Official tournament participation rows only, each with the event it was played in - the /official
+ * page's feed.
+ *
+ * Narrowed server-side rather than filtered out of fetchParticipants: official games are a sliver of
+ * the archive, and this page has no other reason to download the rest.
+ */
+export async function fetchOfficialParticipants(limit = ARCHIVE_ROW_CAP): Promise<OfficialParticipantRow[]> {
+  return cached("participants:official", async () => {
+    return prepareParticipants(
+      await withoutVoided(
+        await fetchAllRows<OfficialParticipantRow>("match_participants", `${PARTICIPANT_COLUMNS},tournament_id`, limit, {
+          column: "official",
+          value: "true",
+        })
+      )
+    ) as OfficialParticipantRow[];
+  });
+}
+
+/**
+ * The shots of these matches only, for the /official page's pace column.
+ *
+ * Asked for by match key, in chunks, for the same reason as fetchMatchBoards - the whole shot log is
+ * the biggest read on the site, and pace for a handful of tournament games needs none of it. Each chunk
+ * pages on its own, since a few matches' shots can run past the 1000-row page PostgREST hands back.
+ */
+export async function fetchEventsForMatches(matchKeys: string[]): Promise<MatchEventRow[]> {
+  const keys = [...new Set(matchKeys)].sort();
+  if (keys.length === 0) return [];
+  return cached(`events:matches:${keys.join(",")}`, async () => {
+    const CHUNK = 20;
+    const out: MatchEventRow[] = [];
+    await Promise.all(
+      Array.from({ length: Math.ceil(keys.length / CHUNK) }, async (_, i) => {
+        const chunk = keys.slice(i * CHUNK, (i + 1) * CHUNK);
+        for (let from = 0; ; from += PAGE_SIZE) {
+          const { data, error } = await supabase
+            .from("match_events")
+            .select(EVENT_COLUMNS)
+            .in("match_key", chunk)
+            .order("id")
+            .range(from, from + PAGE_SIZE - 1);
+          if (error || !data) break;
+          out.push(...(data as unknown as MatchEventRow[]));
+          if (data.length < PAGE_SIZE) break;
+        }
+      })
+    );
+    return out.map((r) => ({ ...r, challenge_name: canonicalSquareName(r.challenge_name) }));
+  });
 }
 
 /** Participation rows, newest first. The whole career table is small enough to aggregate client-side. */

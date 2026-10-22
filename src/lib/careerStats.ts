@@ -25,6 +25,12 @@ export interface ParticipantRow {
   square_set?: string | null;
 }
 
+/** A participation row from an official tournament match - see fetchOfficialParticipants. */
+export interface OfficialParticipantRow extends ParticipantRow {
+  /** The event (division) it was played in. Null only if that could not be told when it was archived. */
+  tournament_id: string | null;
+}
+
 export interface CareerStats {
   /** Stable grouping key: the auth user id when signed in, else `name:<nickname>`. */
   key: string;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { castTopic } from "./overlayCast";
 
 /**
  * The casting scene's out-of-band channel: resync the player streams, and report how far behind
@@ -35,7 +36,8 @@ const LATENCY_REPORT_MS = 8000;
 /** A reading older than this is stale - the box was closed or refreshed - and the desk drops it. */
 export const LATENCY_STALE_MS = 25000;
 
-const channelName = (code: string) => `cast-aux:${code.toUpperCase()}`;
+// Per stream, like the frame channel: each stream has its own screen boxes running their own latency.
+const channelName = (code: string, owner?: string | null) => `cast-aux:${castTopic(code, owner)}`;
 
 interface LatencyMsg {
   slot: number;
@@ -57,6 +59,7 @@ interface ResyncMsg {
  */
 export function useScreenAux(
   code: string | undefined,
+  owner: string | null | undefined,
   slot: number,
   getLatencyMs: () => number | null
 ): number {
@@ -66,7 +69,7 @@ export function useScreenAux(
 
   useEffect(() => {
     if (!code) return;
-    const channel = supabase.channel(channelName(code), { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
 
     channel
       .on("broadcast", { event: RESYNC_EVENT }, ({ payload }) => {
@@ -92,7 +95,7 @@ export function useScreenAux(
       clearInterval(beat);
       void supabase.removeChannel(channel);
     };
-  }, [code, slot]);
+  }, [code, owner, slot]);
 
   return resyncNonce;
 }
@@ -112,13 +115,14 @@ export interface CasterAux {
  * A second channel object on a topic the publisher does not touch, so it needs nothing from
  * useCastPublisher and cannot interfere with a frame in flight.
  */
-export function useCasterAux(code: string | undefined): CasterAux {
+export function useCasterAux(code: string | undefined, owner?: string | null): CasterAux {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [readings, setReadings] = useState<Map<number, { ms: number; at: number }>>(new Map());
 
   useEffect(() => {
     if (!code) return;
-    const channel = supabase.channel(channelName(code), { config: { broadcast: { self: false } } });
+    setReadings(new Map());
+    const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
     channelRef.current = channel;
 
     channel
@@ -154,7 +158,7 @@ export function useCasterAux(code: string | undefined): CasterAux {
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [code]);
+  }, [code, owner]);
 
   const resync = useCallback((slot?: number) => {
     const channel = channelRef.current;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useOverlayToken } from "../hooks/useOverlayToken";
 import { useT } from "../lib/language";
@@ -14,7 +14,8 @@ import { OverlayFrame } from "./OverlayFrame";
 import { OverlaySoon } from "./OverlaySoon";
 import { OverlayTrailer } from "./OverlayTrailer";
 import { CasterControl } from "./CasterControl";
-import { DeskMatchup } from "../components/DeskMatchup";
+import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
+import { DeskCasts } from "../components/DeskCasts";
 import type { StreamElement } from "../lib/streamOverlay";
 
 /**
@@ -55,11 +56,13 @@ import type { StreamElement } from "../lib/streamOverlay";
 function element(
   name: StreamElement,
   code: string,
-  params: URLSearchParams
+  params: URLSearchParams,
+  owner: string
 ) {
   switch (name) {
     case "board":
-      return <OverlayBoard code={code} search={params} />;
+      // The owner picks which desk drives it, so two streams of one room each follow their own.
+      return <OverlayBoard code={code} search={params} owner={owner} />;
     case "fleet":
       return <OverlayFleet code={code} search={params} />;
     case "timer":
@@ -71,10 +74,10 @@ function element(
     case "audio":
       return <OverlayAudio code={code} search={params} />;
     case "egg":
-      return <OverlayEgg code={code} search={params} />;
+      return <OverlayEgg code={code} search={params} owner={owner} />;
     case "screen":
       // The casting scene's per-player Twitch box. `?slot=` inside `params` picks which seat.
-      return <OverlayScreen code={code} search={params} />;
+      return <OverlayScreen code={code} search={params} owner={owner} />;
     case "frame":
       // A dressed frame for camera breaks and holds - no room, so it is handled before the
       // room gate below and never reaches here. Listed so the switch is exhaustive.
@@ -107,6 +110,8 @@ export function StreamSource() {
 
   const { loading, session } = useOverlayToken(token);
   const t = useT();
+  /** The teams of a lobby just opened from the desk, for the Starting Soon screen - see DeskCasts. */
+  const [deskTeams, setDeskTeams] = useState<DeskTeams | null>(null);
 
   /**
    * The transparent-background opt-out, taken here as well as in each page.
@@ -188,8 +193,10 @@ export function StreamSource() {
                   "Ce jeton d'overlay n'est pas valide. Générez-en un nouveau sur la page OBS et marquage automatique."
                 )}
           </p>
+          {/* The caster's official matches, a click from their lobbies - which fills the matchup below. */}
+          {session && <DeskCasts tokenOwner={session.userId} onTeams={setDeskTeams} />}
           {/* The Starting Soon matchup needs no room - it's up before there is one. */}
-          {session && <DeskMatchup userId={session.userId} />}
+          {session && <DeskMatchup userId={session.userId} teams={deskTeams} />}
         </div>
       );
     }
@@ -200,7 +207,7 @@ export function StreamSource() {
   // precisely between matches, when a token has no room. So it draws whether or not the session
   // does, and never waits on the round trip the room sources wait on. The owner arrives once that
   // round trip lands, and the player frame uses it to say it is showing (lib/frameBeacon).
-  if (name === "frame") return <OverlayFrame code={session?.roomCode ?? undefined} search={search} ownerId={session?.userId} />;
+  if (name === "frame") return <OverlayFrame code={session?.roomCode ?? undefined} search={search} owner={session?.userId} />;
   // The caster's holding screens: shown before and between matches, so no room is needed. Starting
   // Soon takes its matchup from the desk by the token's owner (lib/deskLink); the trailer needs
   // nothing at all.
@@ -210,5 +217,5 @@ export function StreamSource() {
   if (loading || !session?.roomCode) return null;
   if (!name || !(ELEMENTS as string[]).includes(name)) return null;
 
-  return element(name as StreamElement, session.roomCode, search);
+  return element(name as StreamElement, session.roomCode, search, session.userId);
 }

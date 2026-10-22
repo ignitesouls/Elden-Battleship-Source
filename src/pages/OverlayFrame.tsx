@@ -102,10 +102,11 @@ function CasterPlate({ rect, name, art }: { rect: Rect; name: string; art: strin
   );
 }
 
-export function OverlayFrame(props: OverlaySourceProps & { ownerId?: string | null } = {}) {
-  const { code, params } = useOverlaySource(props);
+export function OverlayFrame(props: OverlaySourceProps = {}) {
+  const { code, params, owner } = useOverlaySource(props);
   const layout = params.get("layout") ?? "casters";
-  useFrameBeacon(layout === "player" ? props.ownerId : null);
+  // The token's owner only - a `?owner=` typed into a URL must not light somebody else's beacon.
+  useFrameBeacon(layout === "player" ? props.owner : null);
 
   // Only the match frame needs the room, and only for which fleet is on which side.
   const state = useRoom(layout === "cast" ? code : undefined);
@@ -113,7 +114,7 @@ export function OverlayFrame(props: OverlaySourceProps & { ownerId?: string | nu
     const screens = screensFromRoster(state.players, new Map());
     return { left: screens[0]?.team ?? null, right: screens[CAST_SEATS / 2]?.team ?? null };
   }, [state.players]);
-  const { message } = useCastReceiver(layout === "cast" ? code : undefined);
+  const { message } = useCastReceiver(layout === "cast" ? code : undefined, owner);
   const casters = message?.view.casters ?? [];
 
   // The players in their boxes, with names off their profiles, and each one's running tally.

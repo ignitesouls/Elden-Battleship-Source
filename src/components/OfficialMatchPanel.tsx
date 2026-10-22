@@ -165,10 +165,16 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
       ) : (
         <div className="stack" style={{ gap: "0.4rem" }}>
           <span>
-            {t(
-              `Waiting for ${aDone ? teamB : teamA} to confirm. Someone from that team - their captain - enters THEIR entry code here:`,
-              `En attente de la confirmation de ${aDone ? teamB : teamA}. Quelqu'un de cette équipe - son capitaine - saisit SON code d'entrée ici :`,
-            )}
+            {/* Neither confirmed: a caster opened this lobby, and both captains confirm here. */}
+            {!aDone && !bDone
+              ? t(
+                  `Waiting for both teams. Each captain - ${teamA}'s and ${teamB}'s - enters THEIR team's entry code here:`,
+                  `En attente des deux équipes. Chaque capitaine - celui de ${teamA} et celui de ${teamB} - saisit le code d'entrée de SON équipe ici :`,
+                )
+              : t(
+                  `Waiting for ${aDone ? teamB : teamA} to confirm. Someone from that team - their captain - enters THEIR entry code here:`,
+                  `En attente de la confirmation de ${aDone ? teamB : teamA}. Quelqu'un de cette équipe - son capitaine - saisit SON code d'entrée ici :`,
+                )}
           </span>
           <div className="row">
             <input
@@ -177,7 +183,7 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
               maxLength={8}
               placeholder={t("Entry code", "Code d'entrée")}
               style={{ width: "9rem", textTransform: "uppercase", letterSpacing: "0.15em" }}
-              aria-label={t("The other team's entry code", "Le code d'entrée de l'autre équipe")}
+              aria-label={t("Your team's entry code", "Le code d'entrée de votre équipe")}
             />
             <button className="primary" disabled={busy || code.trim().length < 4} onClick={() => void run(() => confirmOfficialTeam(room.id, code), () => setCode(""))}>
               {t("Confirm", "Confirmer")}

@@ -253,7 +253,7 @@ function useDelayedCrop(onAir: boolean, latencyRef: React.RefObject<number | nul
 }
 
 export function OverlayScreen(props: OverlaySourceProps = {}) {
-  const { code, params } = useOverlaySource(props);
+  const { code, params, owner } = useOverlaySource(props);
   const state = useRoom(code);
 
   const slotRaw = params.get("slot");
@@ -265,7 +265,7 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
 
   /** This box's own latency to its broadcaster, in ms, published to the desk by useScreenAux. */
   const latencyRef = useRef<number | null>(null);
-  const resyncNonce = useScreenAux(code, slotKey, () => latencyRef.current);
+  const resyncNonce = useScreenAux(code, owner, slotKey, () => latencyRef.current);
 
   // Only a box with a stream to crop listens for frames.
   const framesOnAir = useFramesOnAir(!!screen?.twitchLogin);

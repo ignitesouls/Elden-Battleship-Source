@@ -40,7 +40,10 @@ import {
 import { useCasterAux } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
-import { DeskMatchup } from "../components/DeskMatchup";
+import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
+import { fetchOfficialMatch } from "../lib/tournament/api";
+import { useCastDesks } from "../lib/castDesks";
+import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import "./CasterControl.css";
 import "./OverlayTiers.css";
 import "./OverlayBoard.css";
@@ -194,18 +197,39 @@ const PAD: Array<[string, number, number, string]> = [
  */
 export function CasterControl({
   code: codeProp,
-  userId,
+  userId: userIdProp,
 }: Pick<OverlaySourceProps, "code"> & { userId?: string | null } = {}) {
   // The room comes from /cast/:code, or from the persistent /stream/cast route which resolved it off
-  // the caster's overlay token. The cast channel is keyed on the room code (see lib/overlayCast), so
-  // a token-resolved desk and a token-resolved board meet on it without either knowing the other
-  // arrived by a different door. No query string: this page has never taken one.
+  // the caster's overlay token. No query string: this page has never taken one.
   const { code: routeCode } = useParams<{ code: string }>();
   const code = codeProp ?? routeCode;
   const state = useRoom(code);
-  const { publish, ready } = useCastPublisher(code);
+  const profile = useAuthProfile();
+  /**
+   * The caster: the token's owner on /stream/cast, else whoever is signed in on /cast/CODE - the
+   * same account their overlay token belongs to, so either door reaches the same stream.
+   */
+  const userId = userIdProp ?? profile?.userId ?? null;
+  const myName =
+    state.players.find((p) => p.user_id === userId)?.nickname || accountName(profile) || "Caster";
+
+  /**
+   * Which stream's desk this page is at - see lib/castDesks. The caster's own until they pick a
+   * co-caster's from the list. Its name comes along, so the list can say whose it is even before the
+   * owner's own desk is open.
+   */
+  const [deskPick, setDeskPick] = useState<{ owner: string; name: string } | null>(null);
+  const deskOwner = deskPick?.owner ?? userId;
+  const ownDesk = deskOwner === userId;
+  const desks = useCastDesks(code, userId ? { user: userId, name: myName } : null, deskOwner, deskPick?.name ?? myName);
+  const driving = desks.driving;
+  const drivingRef = useRef(driving);
+  drivingRef.current = driving;
+
+  // Frames and the player-stream channel are per stream - see castTopic in lib/overlayCast.
+  const { publish, ready, heard, edit, sendEdit } = useCastPublisher(code, deskOwner, driving);
   /** The player-stream boxes and how far behind each is running - see lib/castAux. */
-  const aux = useCasterAux(code);
+  const aux = useCasterAux(code, deskOwner);
   const screens = useCastScreens(state.players);
   const t = useT();
   const lang = useLanguage();
@@ -367,6 +391,27 @@ export function CasterControl({
   const [dragging, setDragging] = useState(false);
 
   const room = state.room;
+
+  /**
+   * An official room's two teams, for the Starting Soon screen - so a desk that walks into an official
+   * lobby, however it got there, has the matchup up without anyone typing it (see DeskMatchup). Only on
+   * the caster's own desk, the one that may fill it.
+   */
+  const officialMatch = room?.tournament_match_id ?? null;
+  const [officialTeams, setOfficialTeams] = useState<DeskTeams | null>(null);
+  useEffect(() => {
+    if (!officialMatch || !ownDesk) return;
+    let cancelled = false;
+    fetchOfficialMatch(officialMatch)
+      .then((m) => {
+        if (!cancelled && m) setOfficialTeams({ match: officialMatch, names: [m.teamA, m.teamB] });
+      })
+      .catch(() => undefined); // a convenience - the caster can still type them
+    return () => {
+      cancelled = true;
+    };
+  }, [officialMatch, ownDesk]);
+
   // Drives the reveal gate below: names hold until the board has finished being dealt.
   const battlePhase = useBattlePhaseName(state.attacks, room);
   const teams = useMemo(() => activeTeams(state.players), [state.players]);
@@ -432,6 +477,45 @@ export function CasterControl({
   useEffect(() => {
     publish({ view, fleets });
   }, [publish, view, fleets]);
+
+  /**
+   * At a desk somebody else holds: show exactly what they are sending.
+   *
+   * The whole view, not just the names, so this monitor is the stream and a Take carries on from
+   * precisely where the last caster left the camera rather than cutting to wherever this desk was.
+   */
+  useEffect(() => {
+    if (!driving && heard) setView(heard.view);
+  }, [driving, heard]);
+
+  // A co-caster's names, arriving at the desk that holds the board, which sends them out with the rest.
+  useEffect(() => {
+    if (!drivingRef.current || !edit) return;
+    setView((v) => ({ ...v, casters: edit.casters }));
+    if (ownDesk) writeCasterNames(edit.casters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit]);
+
+  // Handing the board over: none of this desk's automation may keep aiming a camera it no longer holds.
+  useEffect(() => {
+    if (driving) return;
+    setFollow(false);
+    setRotate(false);
+    cancelPunch();
+    clearTimeout(dimRef.current ?? undefined);
+    dimRef.current = null;
+  }, [driving, cancelPunch]);
+
+  // A different stream's desk: its plates are not this caster's own names. Mirrored straight away when
+  // somebody is already there; typed in when nobody is.
+  const firstDesk = useRef(true);
+  useEffect(() => {
+    if (firstDesk.current) {
+      firstDesk.current = false;
+      return;
+    }
+    setView((v) => ({ ...v, casters: ownDesk ? readCasterNames() : [] }));
+  }, [deskOwner, ownDesk]);
 
   /**
    * Moves the frame, in whole steps or fine nudges. Shared by the keyboard and the on-screen pad.
@@ -721,7 +805,7 @@ export function CasterControl({
     }
 
     function onKey(e: KeyboardEvent) {
-      if (isTyping(e.target)) return;
+      if (isTyping(e.target) || !drivingRef.current) return;
 
       const digit = digitOf(e.code);
 
@@ -816,13 +900,15 @@ export function CasterControl({
    * every time the caster nudged a slider, which is a cut to the far side of the board.
    */
   useEffect(() => {
+    // Not while watching: the lap on the view is the holding desk's, with that desk's settings.
+    if (!driving) return;
     setView((v) => {
       if (!v.motion) return v;
       const spot = punchOn ? punchSecs : 0;
       if (v.motion.lap === lapSecs && v.motion.spot === spot) return v;
       return { ...v, motion: { ...v.motion, lap: lapSecs, spot } };
     });
-  }, [lapSecs, punchOn, punchSecs]);
+  }, [lapSecs, punchOn, punchSecs, driving]);
 
   if (!room) {
     return (
@@ -1009,7 +1095,8 @@ export function CasterControl({
   const set = (patch: Partial<CastView>) => setView((v) => ({ ...v, ...patch }));
 
   const origin = `${window.location.origin}${import.meta.env.BASE_URL}`;
-  const boardUrl = `${origin}#/overlay-board/${room.code}`;
+  // Carries the desk's stream, so this board follows this desk and not another one in the room.
+  const boardUrl = `${origin}#/overlay-board/${room.code}${deskOwner ? `?owner=${deskOwner}` : ""}`;
   /**
    * The caster's clock, which is the player's clock with the odds bar built into it.
    *
@@ -1076,6 +1163,58 @@ export function CasterControl({
         </Link>
       </div>
 
+      {/*
+        Whose stream this desk drives, and whose hands are on it - see lib/castDesks. Every caster
+        starts at their own; a co-caster picks the stream they're casting on. A second-language cast
+        is simply a second desk on this list, and never touches the first one's board or names.
+      */}
+      {userId && (
+        <div className="cast-desk-bar">
+          <label className="cast-row">
+            <span className="cast-status">{t("Desk", "Poste")}</span>
+            <select
+              value={deskOwner ?? ""}
+              onChange={(e) => {
+                const pick = desks.desks.find((d) => d.owner === e.target.value);
+                setDeskPick(!pick || pick.owner === userId ? null : { owner: pick.owner, name: pick.name });
+              }}
+            >
+              {desks.desks.map((d) => (
+                <option key={d.owner} value={d.owner}>
+                  {d.owner === userId ? t("My stream", "Mon stream") : t(`${d.name}'s stream`, `Stream de ${d.name}`)}
+                  {d.casters.length > 0 ? ` - ${d.casters.map((c) => c.name).join(", ")}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {driving ? (
+            <span className="cast-desk-holder cast-status-live">{t("You have the board", "Vous avez le plateau")}</span>
+          ) : desks.driver ? (
+            <>
+              <span className="cast-desk-holder">
+                {t(`${desks.driver.name} has the board`, `${desks.driver.name} a le plateau`)}
+              </span>
+              <button className="primary" onClick={desks.take}>
+                {t("Take the desk", "Prendre le poste")}
+              </button>
+            </>
+          ) : (
+            <span className="cast-desk-holder">{t("joining...", "connexion...")}</span>
+          )}
+          <span className="cast-note muted">
+            {driving
+              ? t(
+                  "Co-casters on this stream pick it from their own Desk list. Anyone at it can edit the names; the board is yours until someone takes it.",
+                  "Les co-commentateurs de ce stream le choisissent dans leur propre liste Poste. Tout le monde peut modifier les noms ; le plateau est à vous jusqu'à ce que quelqu'un le prenne."
+                )
+              : t(
+                  "You're watching this stream's board as it goes out. You can still edit the names.",
+                  "Vous voyez le plateau de ce stream tel qu'il est diffusé. Vous pouvez toujours modifier les noms."
+                )}
+          </span>
+        </div>
+      )}
+
       {shipsMissing && (
         <div className="panel" style={{ borderColor: "var(--accent)", fontSize: "0.85rem" }}>
           {t(
@@ -1090,7 +1229,8 @@ export function CasterControl({
             MEASURED. Everything about how large the board is drawn comes from it - see `previewPx`,
             and the layout note at the top of CasterControl.css for why it can't be the monitor
             itself that gets measured. */}
-        <div className="cast-deck" ref={deckRef}>
+        {/* Watching another caster's hands: the monitor still shows the stream, but can't be aimed. */}
+        <div className="cast-deck" ref={deckRef} inert={!driving}>
           {/* Drag to slide the stream view around; the wheel zooms. Both act on the same point
               under the cursor, so following a fleet is one gesture rather than a set of decisions. */}
           <div
@@ -1294,6 +1434,8 @@ export function CasterControl({
         </div>
 
         <div className="cast-panel">
+          {/* Everything that aims or dresses the board belongs to whoever holds it. */}
+          <div className="cast-board-controls" inert={!driving}>
           <section>
             <h3>{t("View", "Vue")}</h3>
             <div className="cast-buttons">
@@ -1874,6 +2016,7 @@ export function CasterControl({
               )}
             </p>
           </section>
+          </div>
 
           {/*
             The player streams: how far the board is held back to meet them, and a way to kick a
@@ -1893,6 +2036,7 @@ export function CasterControl({
                 max={MAX_DELAY_MS}
                 step={100}
                 value={view.delayMs ?? 0}
+                disabled={!driving}
                 className="eb-slider"
                 style={{ ["--eb-fill" as string]: (view.delayMs ?? 0) / MAX_DELAY_MS }}
                 onChange={(e) => set({ delayMs: Number(e.target.value) })}
@@ -1902,7 +2046,7 @@ export function CasterControl({
                 {((view.delayMs ?? 0) / 1000).toFixed(1)}s
               </span>
               <button
-                disabled={aux.slowestMs === null}
+                disabled={!driving || aux.slowestMs === null}
                 onClick={() => set({ delayMs: Math.min(MAX_DELAY_MS, Math.round(aux.slowestMs ?? 0)) })}
                 title={t("Set the hold to the slowest stream's current latency", "Régler le retard sur la latence actuelle du flux le plus lent")}
               >
@@ -1960,8 +2104,11 @@ export function CasterControl({
                   onChange={(e) => {
                     const next = [view.casters?.[0] ?? "", view.casters?.[1] ?? ""];
                     next[i] = e.target.value;
-                    writeCasterNames(next);
+                    // Remembered only for the caster's own stream - see DeskMatchup for why.
+                    if (ownDesk) writeCasterNames(next);
                     set({ casters: next });
+                    // Anyone at the desk may type the names; the desk holding the board sends them.
+                    if (!driving) sendEdit({ casters: next });
                   }}
                   style={{ flex: 1, minWidth: 0 }}
                 />
@@ -1975,8 +2122,8 @@ export function CasterControl({
             </p>
           </section>
 
-          {/* Only on the persistent desk, which knows whose it is - see DeskMatchup. */}
-          {userId && <DeskMatchup userId={userId} />}
+          {/* Only on a desk that knows whose stream it is - see DeskMatchup. */}
+          {deskOwner && <DeskMatchup key={deskOwner} userId={deskOwner} own={ownDesk} teams={officialTeams} />}
 
           <section>
             <h3>{t("Browser sources", "Sources navigateur")}</h3>

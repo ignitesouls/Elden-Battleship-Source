@@ -365,19 +365,54 @@ const MIN_SEND_GAP_MS = 110;
 /** How long without a frame before a source should assume its controller is gone. */
 export const STALE_AFTER_MS = 20000;
 
-const channelName = (code: string) => `cast:${code.toUpperCase()}`;
+/**
+ * A co-caster's change to the shared desk fields, sent to whichever desk holds the board.
+ *
+ * Only the names so far. Everything else on the view belongs to the board, and only the desk
+ * holding it changes those - see lib/castDesks.
+ */
+const EDIT_EVENT = "cast-edit";
+
+export interface CastEdit {
+  casters: string[];
+}
+
+/**
+ * One stream's topic: the room, and whose stream it is.
+ *
+ * Keyed on the room alone, every desk in a room drove every stream watching it - so in a two-language
+ * cast the French desk's names landed on the English plates, and each new shot made every desk send
+ * its own copy and the last one won. The owner is the account whose overlay token the scene's sources
+ * resolve through (see pages/StreamSource), so each stream hears only its own desk.
+ *
+ * No owner is the old room-wide topic, still used by the hand-pasted /cast/CODE and
+ * /overlay-board/CODE pair, which carry no token and so belong to no stream in particular.
+ */
+export const castTopic = (code: string, owner?: string | null) =>
+  owner ? `${code.toUpperCase()}:${owner}` : code.toUpperCase();
+
+const channelName = (code: string, owner?: string | null) => `cast:${castTopic(code, owner)}`;
 
 /**
  * Drives the browser sources. Used by the control page only.
  *
  * `publish` is cheap to call on every render of the controller - it stores the frame and sends it,
  * and the sources are idempotent in what they do with it.
+ *
+ * `live` is whether this desk holds the board (lib/castDesks). A desk that doesn't sends nothing at
+ * all - no frames, no heartbeat, no answer to a source's hello - and instead hands back what the
+ * holding desk is sending as `heard`, so it can show the stream as it is and take over from exactly
+ * there. Two desks both sending was the bug this exists to end.
  */
-export function useCastPublisher(code: string | undefined) {
+export function useCastPublisher(code: string | undefined, owner?: string | null, live = true) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const last = useRef<CastMessage | null>(null);
   const [ready, setReady] = useState(false);
   const [sourceSize, setSourceSize] = useState<SourceSize | null>(null);
+  const [heard, setHeard] = useState<CastMessage | null>(null);
+  const [edit, setEdit] = useState<CastEdit | null>(null);
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   /** When the last frame actually went out, and the trailing send if one is queued. */
   const sentAt = useRef(0);
@@ -406,7 +441,7 @@ export function useCastPublisher(code: string | undefined) {
     }
     const channel = channelRef.current;
     const message = last.current;
-    if (!channel || !message) return;
+    if (!channel || !message || !liveRef.current) return;
     sentAt.current = Date.now();
 
     const key = frameKey(message);
@@ -443,7 +478,7 @@ export function useCastPublisher(code: string | undefined) {
 
     // self:false - the controller draws its own preview from its own state and has no use for an
     // echo of what it just sent.
-    const channel = supabase.channel(channelName(code), { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
     channelRef.current = channel;
 
     channel
@@ -452,6 +487,10 @@ export function useCastPublisher(code: string | undefined) {
       // OTHER sources are already holding says nothing about what this one needs.
       .on("broadcast", { event: HELLO_EVENT }, () => push(true))
       .on("broadcast", { event: SIZE_EVENT }, ({ payload }) => setSourceSize(payload as SourceSize))
+      // Only a desk ever sends a frame, so a frame heard here is the holding desk's.
+      .on("broadcast", { event: STATE_EVENT }, ({ payload }) => setHeard(payload as CastMessage))
+      // A fresh object every time, so the same names sent twice still reach the holding desk.
+      .on("broadcast", { event: EDIT_EVENT }, ({ payload }) => setEdit({ ...(payload as CastEdit) }))
       .subscribe((status) => setReady(status === "SUBSCRIBED"));
 
     const beat = setInterval(() => push(), HEARTBEAT_MS);
@@ -465,9 +504,19 @@ export function useCastPublisher(code: string | undefined) {
       // open by saying something rather than pinging about a frame it never sent.
       sentFrame.current = null;
       setReady(false);
+      setHeard(null);
       void supabase.removeChannel(channel);
     };
-  }, [code, push]);
+  }, [code, owner, push]);
+
+  // Taking the board: say the whole frame at once, so the sources switch to this desk's picture
+  // rather than waiting for the next change. It is the frame this desk was mirroring, so nothing
+  // on stream should visibly move.
+  useEffect(() => {
+    if (!live) return;
+    sentFrame.current = null;
+    push(true);
+  }, [live, push]);
 
   const publish = useCallback(
     (message: Omit<CastMessage, "at">) => {
@@ -477,7 +526,12 @@ export function useCastPublisher(code: string | undefined) {
     [pushSoon]
   );
 
-  return { publish, ready, sourceSize };
+  /** A co-caster's edit, for the holding desk to apply and send out. */
+  const sendEdit = useCallback((next: CastEdit) => {
+    void channelRef.current?.send({ type: "broadcast", event: EDIT_EVENT, payload: next });
+  }, []);
+
+  return { publish, ready, sourceSize, heard, edit, sendEdit };
 }
 
 /**
@@ -487,7 +541,7 @@ export function useCastPublisher(code: string | undefined) {
  * heard from a controller knows nothing about what to show, and guessing would put a stale or
  * wrong board on somebody's stream.
  */
-export function useCastReceiver(code: string | undefined) {
+export function useCastReceiver(code: string | undefined, owner?: string | null) {
   const [message, setMessage] = useState<CastMessage | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   /**
@@ -511,7 +565,7 @@ export function useCastReceiver(code: string | undefined) {
 
   useEffect(() => {
     if (!code) return;
-    const channel = supabase.channel(channelName(code), { config: { broadcast: { self: false } } });
+    const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
     channelRef.current = channel;
     const timers = held.current;
 
@@ -558,7 +612,7 @@ export function useCastReceiver(code: string | undefined) {
       timers.clear();
       void supabase.removeChannel(channel);
     };
-  }, [code]);
+  }, [code, owner]);
 
   /** Tell the controller how big this source is, so its preview can frame honestly. */
   const report = useCallback((size: SourceSize) => {

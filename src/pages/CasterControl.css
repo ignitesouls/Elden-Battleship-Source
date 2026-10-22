@@ -58,6 +58,35 @@
   color: #6fd08c;
 }
 
+/* Whose stream, and who has the board - one line above the desk, see lib/castDesks. */
+.cast-desk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cast-desk-bar select {
+  max-width: 22rem;
+}
+
+.cast-desk-holder {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* A wrapper for the inert switch only - its sections stay direct flex children of the panel. */
+.cast-board-controls {
+  display: contents;
+}
+
+/* Another caster holds the board: say so by look as well as by refusing the click. `display:
+   contents` has no box to fade, so the fade goes on what it holds. The monitor stays at full
+   strength - it is the stream, and a watching caster is talking over it. */
+.cast-board-controls[inert] > section {
+  opacity: 0.55;
+}
+
 /**
  * Board, readout, controls - in that order and in roughly that proportion.
  *

@@ -137,7 +137,7 @@ function pinnedView(params: URLSearchParams): CastView | null {
 export function OverlayBoard(props: OverlaySourceProps = {}) {
   // The room and the query string come from the URL, or from the persistent stream route that has
   // resolved them off an overlay token. See hooks/useOverlaySource for why this page takes props.
-  const { code, params } = useOverlaySource(props);
+  const { code, params, owner } = useOverlaySource(props);
   const t = useT();
   const lang = useLanguage();
   const debug = params.get("debug") === "1";
@@ -190,7 +190,7 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
    * missing code as "nothing to subscribe to", so passing undefined is the whole mechanism.
    */
   const pinned = pinnedView(params);
-  const { message: cast, report, linkEpoch } = useCastReceiver(pinned ? undefined : code);
+  const { message: cast, report, linkEpoch } = useCastReceiver(pinned ? undefined : code, owner);
 
   /**
    * The owner's own fleet, for a pinned source that asked for it with ?key=.

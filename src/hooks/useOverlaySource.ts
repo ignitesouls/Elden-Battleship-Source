@@ -11,6 +11,13 @@ import { useParams, useSearchParams } from "react-router-dom";
 export interface OverlaySourceProps {
   code?: string;
   search?: URLSearchParams;
+  /**
+   * Whose stream this source is part of - the account its overlay token belongs to. Picks which desk
+   * drives it (see castTopic in lib/overlayCast). On a hand-pasted room URL it comes from `?owner=`,
+   * which the desk writes into the board URL it hands out; with neither, the source follows the
+   * room-wide desk as it always has.
+   */
+  owner?: string | null;
 }
 
 /**
@@ -35,11 +42,13 @@ export interface OverlaySourceProps {
  * for hooks and because a page rendered under the stream route genuinely has no `:code` to read -
  * useParams simply returns undefined for it, which the props then override.
  */
-export function useOverlaySource({ code, search }: OverlaySourceProps): {
+export function useOverlaySource({ code, search, owner }: OverlaySourceProps): {
   code: string | undefined;
   params: URLSearchParams;
+  owner: string | null;
 } {
   const route = useParams<{ code: string }>();
   const [routeSearch] = useSearchParams();
-  return { code: code ?? route.code, params: search ?? routeSearch };
+  const params = search ?? routeSearch;
+  return { code: code ?? route.code, params, owner: owner ?? params.get("owner") };
 }

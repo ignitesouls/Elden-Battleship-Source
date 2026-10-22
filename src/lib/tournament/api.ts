@@ -992,7 +992,36 @@ async function officialCall(fn: string, args: Record<string, unknown>): Promise<
 export const linkOfficialRoom = (roomId: string, eventId: string, code: string) =>
   officialCall("link_official_room", { p_room: roomId, p_tournament: eventId, p_code: code });
 
-/** Anyone in the room: confirm the OTHER team with its entry code. */
+/**
+ * An approved caster's host: make this room that match's lobby, no code typed. Neither team starts
+ * confirmed - each captain enters their own code in the lobby.
+ */
+export const linkCastRoom = (roomId: string, matchId: string) =>
+  officialCall("link_cast_room", { p_room: roomId, p_match: matchId });
+
+/** One of the matches the signed-in caster is approved to cast, still waiting to be played. */
+export interface MyCastMatch {
+  match_id: string;
+  tournament_id: string;
+  event_name: string;
+  team_a_name: string;
+  team_b_name: string;
+  best_of: number;
+  score_a: number;
+  score_b: number;
+  agreed_at: string | null;
+  /** Its lobby, when one is already open - a co-caster's, or a team's. */
+  room_code: string | null;
+}
+
+/** The caster desk's list: the matches this account is approved to cast - one request. */
+export async function fetchMyCasts(): Promise<MyCastMatch[]> {
+  const { data, error } = await supabase.rpc("my_cast_matches");
+  if (error) fail(error);
+  return (data ?? []) as MyCastMatch[];
+}
+
+/** Anyone in the room: confirm a team with its entry code - either team's while neither has. */
 export const confirmOfficialTeam = (roomId: string, code: string) =>
   officialCall("confirm_official_team", { p_room: roomId, p_code: code });
 
@@ -1071,6 +1100,35 @@ export async function officialStatsEnabled(): Promise<boolean> {
   const { data, error } = await supabase.rpc("official_stats_enabled");
   if (error) return false;
   return data === true;
+}
+
+/** One event (or division) as the /official page lists it. */
+export interface StatsEvent {
+  id: string;
+  name: string;
+  division_name: string;
+  /** The event this division was split from; null for an event that is its own root. */
+  division_of: string | null;
+  status: string;
+  went_live_at: string;
+  logo_path: string | null;
+}
+
+/**
+ * Every event that has gone live, newest first - the ones that can have official games to count.
+ *
+ * Test events are left out even for administrators, who could otherwise see them: no official game is
+ * ever played in one, and official_stats_enabled ignores them for the same reason.
+ */
+export async function fetchStatsEvents(): Promise<StatsEvent[]> {
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, name, division_name, division_of, status, went_live_at, logo_path")
+    .not("went_live_at", "is", null)
+    .eq("is_test", false)
+    .order("went_live_at", { ascending: false });
+  if (error) fail(error);
+  return (data ?? []) as StatsEvent[];
 }
 
 export interface OfficialRecordRow {

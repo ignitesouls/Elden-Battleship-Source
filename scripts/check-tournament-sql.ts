@@ -2065,6 +2065,58 @@ async function officialMatches(admin: Person) {
     check('...then it links, keeping the host\'s board and taking the event\'s fleet',
       fleetOk.ok && fo.board_size === 10 && sameFleet(fo.ship_defs, fleetFor(14)), `${JSON.stringify(fleetOk)} ${fo.board_size}`)
 
+    console.log('  -- an approved caster opens the lobby')
+    const caster = await person('om_caster')
+    const stranger = await person('om_stranger')
+    const ec = await event('Cast lobby', 1)
+    const castErr = (await svc.from('official_casts').insert({
+      tournament_id: ec.id, match_id: ec.matchId, caster_user_id: caster.id, twitch_login: caster.login, display_name: caster.login, status: 'approved',
+    })).error
+    if (castErr) throw new Error(`cast: ${castErr.message}`)
+    type CastMatch = { match_id: string; team_a_name: string; team_b_name: string; room_code: string | null }
+    const desk = async (who: Person) => ((await who.client.rpc('my_cast_matches')).data ?? []) as CastMatch[]
+    const castLink = async (who: Person, roomId: string, matchId: string) =>
+      (await who.client.rpc('link_cast_room', { p_room: roomId, p_match: matchId })).data as { ok: boolean; error?: string; team_a?: string; team_b?: string }
+
+    const onDesk = (await desk(caster)).find((r) => r.match_id === ec.matchId)
+    check('an approved caster\'s desk lists the match, both teams named, with no lobby yet',
+      onDesk?.team_a_name === 'Alpha' && onDesk?.team_b_name === 'Bravo' && onDesk?.room_code === null, JSON.stringify(onDesk))
+    check('...and nobody else\'s desk does', (await desk(stranger)).every((r) => r.match_id !== ec.matchId))
+
+    const sr = await room(stranger, 'CS')
+    const notCaster = await castLink(stranger, sr.id, ec.matchId)
+    check('a host who is not an approved caster cannot link without a code',
+      !notCaster.ok && notCaster.error === 'You are not an approved caster for that match', notCaster.error)
+    const cr = await room(caster, 'CC')
+    await join(host, cr.id)
+    await join(capB, cr.id)
+    const notHostCast = await castLink(host, cr.id, ec.matchId)
+    check('only the room\'s host can', !notHostCast.ok && /Only the host/.test(notHostCast.error ?? ''), notHostCast.error)
+    const opened = await castLink(caster, cr.id, ec.matchId)
+    check('the approved caster links their own room, no code typed', opened.ok && opened.team_a === 'Alpha' && opened.team_b === 'Bravo', JSON.stringify(opened))
+    const co = await state(cr.id)
+    check('...with NEITHER team confirmed, and the event\'s settings taken',
+      co.tournament_match_id === ec.matchId && co.official_a_confirmed === false && co.official_b_confirmed === false && co.prep_seconds === 120,
+      `${co.official_a_confirmed}/${co.official_b_confirmed} ${co.prep_seconds}`)
+    check('...and the desk now points at that lobby', (await desk(caster)).find((r) => r.match_id === ec.matchId)?.room_code === cr.code)
+    const cr2 = await room(caster, 'CD')
+    const second = await castLink(caster, cr2.id, ec.matchId)
+    check('a second lobby for the same match is refused', !second.ok && /already has a lobby/.test(second.error ?? ''), second.error)
+    refused('it cannot start with neither team confirmed',
+      (await caster.client.from('rooms').update({ status: 'placement' }).eq('id', cr.id)).error, /Both teams have to enter/)
+
+    const wrongEither = await confirm(capB, cr.id, 'ZZZZZZ')
+    check('a wrong code confirms nobody', !wrongEither.ok && /not right for either team/.test(wrongEither.error ?? ''), wrongEither.error)
+    const bFirst = await confirm(capB, cr.id, ec.codeB)
+    const afterB = await state(cr.id)
+    check('either captain may go first - team B\'s code confirms team B only',
+      bFirst.ok && afterB.official_b_confirmed === true && afterB.official_a_confirmed === false, JSON.stringify(bFirst))
+    const bAgain = await confirm(capB, cr.id, ec.codeB)
+    check('...and the same code again does not stand in for team A', !bAgain.ok && /already confirmed/.test(bAgain.error ?? ''), bAgain.error)
+    const aNext = await confirm(host, cr.id, ec.codeA)
+    const afterA = await state(cr.id)
+    check('then team A confirms with theirs, and both are in', aNext.ok && afterA.official_a_confirmed === true && afterA.official_b_confirmed === true, JSON.stringify(aNext))
+
     console.log('  -- the other team confirms')
     const wrongB = await confirm(capB, r1.id, 'ZZZZZZ')
     check('a wrong code does not confirm the other team', !wrongB.ok && /not right for the team you are playing/.test(wrongB.error ?? ''))

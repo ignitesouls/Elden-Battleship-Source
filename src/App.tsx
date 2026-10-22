@@ -31,6 +31,7 @@ import { LoadingScreen } from "./components/BrandMark";
  * parsed and compiled the lot on the way to a page that would never call any of it.
  */
 const Leaderboard = lazy(() => import("./pages/Leaderboard").then((m) => ({ default: m.Leaderboard })));
+const Official = lazy(() => import("./pages/Official").then((m) => ({ default: m.Official })));
 const PlayerStats = lazy(() => import("./pages/PlayerStats").then((m) => ({ default: m.PlayerStats })));
 const Almanac = lazy(() => import("./pages/Almanac").then((m) => ({ default: m.Almanac })));
 const ArchivedMatch = lazy(() => import("./pages/ArchivedMatch").then((m) => ({ default: m.ArchivedMatch })));
@@ -143,6 +144,8 @@ function App() {
               the site chrome: this is a page for people, not a source in a scene. */}
           <Route path="/watch/:handle" element={<Watch />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          {/* Official tournament matches only - all time, and per tournament. See pages/Official. */}
+          <Route path="/official" element={<Official />} />
           <Route path="/player/:key" element={<PlayerStats />} />
           <Route path="/almanac" element={<Almanac />} />
           {/* match_key is `CODE:timestamp`, so it is URI-encoded into this slot and decoded back
