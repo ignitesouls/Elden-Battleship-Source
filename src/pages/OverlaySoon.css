@@ -24,16 +24,23 @@
   object-fit: cover;
 }
 
-/* Darkens the middle of the sea just enough for the text to read, and leaves the sky and edges alone. */
+/* Darkens the sea behind the text just enough for it to read, and leaves the boat and the sky alone. */
 .ovn-shade {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 60% 55% at 50% 52%, rgba(2, 8, 14, 0.55), rgba(2, 8, 14, 0) 70%);
+  background: radial-gradient(ellipse 28% 48% at 19% 56%, rgba(2, 8, 14, 0.55), rgba(2, 8, 14, 0) 72%);
 }
 
+/* The left part of the frame. The boat sails just right of centre in the video - and at the start of
+   the loop, close to the camera, its bow reaches back to about 39% of the width - so the wordmark
+   stays inside the left 37%, out of its way for the whole loop. */
 .ovn-content {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 1%;
+  width: 36%;
+  padding-top: calc(4 * var(--u));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -43,14 +50,14 @@
 }
 
 .ovn-logo {
-  width: calc(26 * var(--u));
+  width: calc(22 * var(--u));
   height: auto;
   filter: drop-shadow(0 calc(0.4 * var(--u)) calc(1.2 * var(--u)) rgba(0, 0, 0, 0.7));
 }
 
 .ovn-title {
   font-family: var(--font-display);
-  font-size: calc(4.2 * var(--u));
+  font-size: calc(3.4 * var(--u));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -70,12 +77,13 @@
 }
 
 .ovn-side {
-  font-size: calc(3 * var(--u));
+  font-size: calc(2.6 * var(--u));
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: calc(38 * var(--u));
+  /* Half the left column each, so two long crew names still fit beside "vs." without reaching the boat. */
+  max-width: calc(15 * var(--u));
 }
 
 .ovn-vs {
