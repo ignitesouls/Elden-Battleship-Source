@@ -2425,7 +2425,8 @@ var battleshipChallenges_default = [
 		"holds": [{
 			"from": "2026-10-21T05:15:23.500Z",
 			"note": "a Dionysus bug related to her interactions with PCR.",
-			"noteFr": "d'un bug de Dionysus lié à ses interactions avec PCR."
+			"noteFr": "d'un bug de Dionysus lié à ses interactions avec PCR.",
+			"until": "2026-10-22T15:00:32.878Z"
 		}]
 	},
 	{
@@ -9148,4 +9149,4 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 
 //#endregion
 export { POWER_PARAMS, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo };
-export const RATING_CODE_VERSION = "710550f7494afe0e";
+export const RATING_CODE_VERSION = "12a77705b9c64c88";
