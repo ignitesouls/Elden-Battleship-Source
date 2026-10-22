@@ -431,7 +431,12 @@ input:focus, select:focus, button:focus-visible {
     overflow: visible !important;
   }
 
-  .bg-grid {
+  /* Not on an overlay page. An OBS Browser Source is a browser window the size of its box, so the
+     player scene's 594px fire board and 400px fleet both land under this breakpoint and were being
+     treated as phones: 94vw shrank each board to 94% of its own source, leaving a 3% ring of empty
+     canvas round it inside the frame's hole. The overlays size their boards to the box exactly and
+     need no phone cap - overlay-mode is the class every overlay page puts on <html> (see Overlay.css). */
+  html:not(.overlay-mode) .bg-grid {
     width: min(var(--bg-max-vh, 78vh), 94vw, 1600px) !important;
     height: min(var(--bg-max-vh, 78vh), 94vw, 1600px) !important;
   }
@@ -449,8 +454,11 @@ input:focus, select:focus, button:focus-visible {
      rule simply wins and this does nothing at all, which is what it had been doing.
 
      No line-height here on purpose. It used to force 1, tighter even than the 1.1 that was
-     cutting the tails off g's and y's; inheriting the component's 1.25 keeps them intact. */
-  .bg-cell-text {
+     cutting the tails off g's and y's; inheriting the component's 1.25 keeps them intact.
+
+     Not on an overlay page, for the reason in the 900px block above: a small Browser Source is not a
+     phone, and its board fits names to its own cells. */
+  html:not(.overlay-mode) .bg-cell-text {
     font-size: 7px !important;
   }
 }
