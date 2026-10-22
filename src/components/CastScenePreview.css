@@ -38,44 +38,44 @@
 
 /* The real box (OverlayScreen.css) in rem on a 1920-wide canvas, restated in cqw so it scales with
    the frame: 1rem there is 0.833cqw here. */
-.csp-plate {
+.csp-tag {
   position: absolute;
-  top: 0.25cqw;
-  left: 0.25cqw;
+  top: 0.29cqw;
+  right: 0.46cqw;
+  max-width: 48%;
   display: flex;
-  padding: 0.2cqw 0.5cqw;
-  background: rgba(6, 16, 24, 0.7);
-  border-bottom-right-radius: 0.3cqw;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .csp-border {
   position: absolute;
   inset: 0;
-  border: 0.25cqw solid var(--csp-accent, #8fb3c8);
+  border: 0.167cqw solid var(--csp-accent, #8fb3c8);
 }
 
 .csp-name {
-  position: absolute;
-  top: 0.375cqw;
-  right: 0.667cqw;
   font-family: "Arial Black", "Segoe UI", system-ui, sans-serif;
-  font-size: 1.667cqw;
+  font-size: 1.083cqw;
   font-weight: 900;
   font-style: italic;
   line-height: 1.1;
   color: var(--csp-accent, #f2f7fa);
-  -webkit-text-stroke: 0.117cqw rgba(0, 0, 0, 0.9);
+  -webkit-text-stroke: 0.083cqw rgba(0, 0, 0, 0.9);
   paint-order: stroke fill;
   white-space: nowrap;
-  padding-right: 0.125cqw;
+  padding-right: 0.1cqw;
 }
 
 .csp-stats {
   font-family: var(--font-display);
-  font-size: 0.8cqw;
-  font-weight: 600;
+  font-size: 0.708cqw;
+  font-weight: 700;
   letter-spacing: 0.04em;
-  color: #cfe0ea;
+  color: #eef4f7;
+  text-shadow:
+    0 0 1px #000,
+    0 0 1px #000;
   white-space: nowrap;
 }
 

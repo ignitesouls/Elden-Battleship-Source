@@ -1,7 +1,7 @@
 /**
  * One player box in a casting scene: a muted Twitch stream filling the source inside a border in the
- * crew's colour, the player's name over the top-right corner in that colour, and a hit / miss /
- * accuracy line over the top-left.
+ * crew's colour, and a small tag in the top-right corner: the player's name in that colour over a
+ * hit / miss / accuracy line.
  *
  * The box IS the source - the casting scene places one of these per seat and sizes each to its slot
  * in the layout, so there is nothing to centre or scale here. Everything is sized in rem off the
@@ -58,60 +58,66 @@
 .ovs-border {
   position: absolute;
   inset: 0;
-  border: 0.3rem solid var(--ovs-accent, #8fb3c8);
+  border: 0.2rem solid var(--ovs-accent, #8fb3c8);
   pointer-events: none;
 }
 
 /**
- * The nametag: the player's name, big, bold and italic, in the crew's colour, in the top-right
- * corner - who is playing, readable from across the room.
+ * The tag: name over the live tally, together in the top-right corner.
  *
- * Bare text with a hard dark outline rather than a plate: an outline keeps it legible over any
- * frame of video and covers less of the game than a box would. Sans rather than the board font,
- * which has no italic and goes thin at a glance.
+ * Top-right because it is the one corner Elden Ring's HUD leaves empty - health, FP and stamina run
+ * along the top-left, the compass is top-centre, equipment is bottom-left and runes bottom-right. The
+ * tally used to sit top-left on its own plate, squarely over the health bar. One tag, kept small and
+ * capped in width, covers as little of the game as a label can.
+ *
+ * Bare text with a hard dark outline rather than a plate: legible over any frame of video, and
+ * nothing solid over the game.
  */
-.ovs-name {
+.ovs-tag {
   position: absolute;
-  top: 0.45rem;
-  right: 0.8rem;
-  max-width: 62%;
+  top: 0.35rem;
+  right: 0.55rem;
+  max-width: 48%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  pointer-events: none;
+}
+
+/* Sans rather than the board font, which has no italic and goes thin at a glance. */
+.ovs-name {
+  max-width: 100%;
   font-family: "Arial Black", "Segoe UI", system-ui, sans-serif;
-  font-size: 2rem;
+  font-size: 1.3rem;
   font-weight: 900;
   font-style: italic;
   line-height: 1.1;
   color: var(--ovs-accent, #f2f7fa);
-  -webkit-text-stroke: 0.14rem rgba(0, 0, 0, 0.9);
+  -webkit-text-stroke: 0.1rem rgba(0, 0, 0, 0.9);
   paint-order: stroke fill;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   /* Italic leans past the box's edge; a little padding keeps the last letter whole. */
-  padding-right: 0.15rem;
-}
-
-/* The live tally, small and out of the way in the top-left. */
-.ovs-plate {
-  position: absolute;
-  top: 0.3rem;
-  left: 0.3rem;
-  display: flex;
-  padding: 0.25rem 0.6rem;
-  background: rgba(6, 16, 24, 0.7);
-  border-bottom-right-radius: 6px;
+  padding-right: 0.12rem;
 }
 
 .ovs-stats {
   display: flex;
-  gap: 0.7rem;
+  gap: 0.5rem;
   font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
-  color: #cfe0ea;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  color: #eef4f7;
+  /* An outline built from shadows - the board font is thin, and this is read over moving video. */
+  text-shadow:
+    0 0 2px #000,
+    0 0 2px #000,
+    0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .ovs-stat {

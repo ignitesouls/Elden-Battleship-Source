@@ -58,6 +58,7 @@ interface TwitchPlaybackStats {
 
 interface TwitchPlayer {
   setQuality(group: string): void;
+  getQuality?(): string;
   getQualities(): TwitchQuality[];
   getPlaybackStats?(): TwitchPlaybackStats | null;
   addEventListener(event: string, listener: () => void): void;
@@ -108,8 +109,16 @@ const CAP_CROPPED = 720;
  * The highest rung at or below `maxHeight`, or failing that the lowest real rung. `auto` is left off
  * the table deliberately - it climbs to source on a good connection, which is exactly what a wall of
  * boxes cannot afford. Best-effort throughout: a throw here just leaves the stream on `auto`.
+ *
+ * -- Only ever set it once per target --------------------------------------------------------------
+ *
+ * setQuality makes the player rebuffer, and coming out of a rebuffer fires PLAYING - which is one of
+ * the events this runs on. Setting it unconditionally there was a loop: set, buffer, PLAYING, set
+ * again, forever, with Twitch's dimmed buffering screen over the box the whole time. So it remembers
+ * the rung it last asked for (`applied`) and skips a call that would ask for the same one, and skips
+ * one the player is already on. A new target - the crop flipping the cap - still goes through, once.
  */
-function capQuality(player: TwitchPlayer, maxHeight: number): void {
+function capQuality(player: TwitchPlayer, maxHeight: number, applied: { current: string | null }): void {
   try {
     const rungs = player.getQualities().filter((q) => q.group && q.group !== "auto");
     if (rungs.length === 0) return;
@@ -117,7 +126,10 @@ function capQuality(player: TwitchPlayer, maxHeight: number): void {
     const sized = withHeight.length > 0 ? withHeight : rungs;
     const byHeight = [...sized].sort((a, b) => (a.height ?? 0) - (b.height ?? 0));
     const capped = byHeight.filter((q) => (q.height ?? 9999) <= maxHeight).pop() ?? byHeight[0];
-    if (capped) player.setQuality(capped.group);
+    if (!capped || capped.group === applied.current) return;
+    applied.current = capped.group;
+    if (player.getQuality?.() === capped.group) return;
+    player.setQuality(capped.group);
   } catch {
     /* quality control is a nice-to-have, not a reason to break the box */
   }
@@ -161,9 +173,11 @@ function TwitchStream({
   const playerRef = useRef<TwitchPlayer | null>(null);
   const capRef = useRef(cropped ? CAP_CROPPED : CAP_WHOLE);
   capRef.current = cropped ? CAP_CROPPED : CAP_WHOLE;
+  /** The rung this player was last asked for - see capQuality. Reset with each new player. */
+  const appliedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (playerRef.current) capQuality(playerRef.current, capRef.current);
+    if (playerRef.current) capQuality(playerRef.current, capRef.current, appliedRef);
   }, [cropped]);
 
   useEffect(() => {
@@ -192,7 +206,8 @@ function TwitchStream({
           height: "100%",
         });
         playerRef.current = player;
-        const cap = () => player && capQuality(player, capRef.current);
+        appliedRef.current = null;
+        const cap = () => player && capQuality(player, capRef.current, appliedRef);
         player.addEventListener(T.Player.PLAYING, cap);
         player.addEventListener(T.Player.READY, cap);
 
@@ -303,8 +318,8 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
         <div className="ovs-stream ovs-stream-empty" />
       )}
 
-      <span className="ovs-name">{label}</span>
-      <div className="ovs-plate">
+      <div className="ovs-tag">
+        <span className="ovs-name">{label}</span>
         <span className="ovs-stats">
           <span className="ovs-stat">H- {hits}</span>
           <span className="ovs-stat">M- {misses}</span>
