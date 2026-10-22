@@ -14,9 +14,16 @@ import type { MatchEventRow } from "../lib/almanac";
 import { SiteFooter } from "../components/SiteFooter";
 import { useT } from "../lib/language";
 import { OfficialRecord } from "../components/OfficialRecord";
-import { RatingsBoard } from "../components/RatingsBoard";
+import { useRatedPlayers } from "../hooks/useRatedPlayers";
 
-type SortKey = "name" | "wins" | "winRate" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
+type SortKey = "name" | "wins" | "winRate" | "elo" | "battle" | "shots" | "hits" | "sunk" | "accuracy" | "pace";
+
+/** Columns that can be blank. A blank sits at the bottom in both directions rather than sorting as zero. */
+const NULLABLE: Partial<Record<SortKey, (r: Row) => number | null>> = {
+  pace: (r) => r.pace,
+  elo: (r) => r.elo,
+  battle: (r) => r.battle,
+};
 
 /**
  * How many matches a career needs before the "regulars only" filter keeps it.
@@ -37,6 +44,10 @@ interface Row extends CareerStats {
   pace: number | null;
   /** The name as SHOWN, so sorting by captain matches what the reader is looking at. */
   displayName: string;
+  /** All-time Elo across every board, or null with no two-fleet game (or while loading). */
+  elo: number | null;
+  /** All-time battle rating across every board, or null with no rated game (or while loading). */
+  battle: number | null;
 }
 
 /**
@@ -79,6 +90,26 @@ function buildColumns(t: (en: string, fr: string) => string): SortColumn<SortKey
       title: t(
         "Share of finished matches won. Sorting by this falls back to total wins.",
         "Part des parties terminées gagnées. Le tri par cette colonne se rabat sur le total de victoires."
+      ),
+    },
+    {
+      key: "elo",
+      label: "Elo",
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "All time, across every board - not just this one. Everyone starts at 1500; every two-fleet game moves it, and beating a stronger crew gains more than beating a weaker one. A crew wins or loses together. 1v1s count; practice never does. Blank with no two-fleet game yet.",
+        "Depuis toujours, sur tous les plateaux - pas seulement celui-ci. Tout le monde commence à 1500 ; chaque partie à deux flottes le fait bouger, et battre un équipage plus fort rapporte plus qu'en battre un plus faible. Un équipage gagne ou perd ensemble. Les 1v1 comptent ; l'entraînement jamais. Vide sans partie à deux flottes."
+      ),
+    },
+    {
+      key: "battle",
+      label: t("Battle", "Combat"),
+      align: "right",
+      firstDirection: "desc",
+      title: t(
+        "All time, across every board - not just this one. The Hall of Fame battle rating (0-100), averaged over every rated game - how a captain plays: squares taken, hard squares, sinks. Pulled slightly towards 50 so one great night isn't a great player. 1v1s and practice never count.",
+        "Depuis toujours, sur tous les plateaux - pas seulement celui-ci. La note de combat du Panthéon (0-100), en moyenne sur toutes les parties notées - la façon dont un capitaine joue : cases prises, cases difficiles, navires coulés. Légèrement ramenée vers 50 pour qu'une grande soirée ne fasse pas un grand joueur. Les 1v1 et l'entraînement ne comptent jamais."
       ),
     },
     {
@@ -150,6 +181,11 @@ function compare(a: Row, b: Row, key: SortKey): number {
       return a.wins - b.wins || a.winRate - b.winRate;
     case "winRate":
       return a.winRate - b.winRate || a.wins - b.wins;
+    // Nulls for these and pace are handled before this is reached - see the sort below.
+    case "elo":
+      return (a.elo ?? 0) - (b.elo ?? 0) || a.wins - b.wins;
+    case "battle":
+      return (a.battle ?? 0) - (b.battle ?? 0) || (a.elo ?? 0) - (b.elo ?? 0);
     case "shots":
       return a.shots - b.shots || a.hits - b.hits;
     case "hits":
@@ -159,7 +195,6 @@ function compare(a: Row, b: Row, key: SortKey): number {
     case "accuracy":
       return a.accuracy - b.accuracy || a.hits - b.hits;
     case "pace":
-      // Nulls are handled before this is reached - see the sort below.
       return (a.pace ?? 0) - (b.pace ?? 0) || b.shots - a.shots;
   }
 }
@@ -186,6 +221,9 @@ export function Leaderboard() {
 
   /** Career totals, or one row per player per match - see GameTable. */
   const [view, setView] = useState<"career" | "game">("career");
+
+  /** All-time ratings, joined onto the rows by player key. Null while the request is out. */
+  const rated = useRatedPlayers();
 
   useEffect(() => {
     void (async () => {
@@ -222,12 +260,18 @@ export function Leaderboard() {
     // Careers are aggregated per set, never across: an accuracy averaged over boss kills and
     // "acquire 3 painting rewards" describes neither board.
     const list = aggregateCareers((rows ?? []).filter((r) => rowSquareSet(r) === shownSet));
-    return list.map((c) => ({
-      ...c,
-      pace: paces.get(c.key) ?? null,
-      displayName: profileName(c.userId ? profiles.get(c.userId) : undefined) ?? c.nickname,
-    }));
-  }, [rows, shownSet, paces, profiles]);
+    return list.map((c) => {
+      const r = rated?.get(c.key);
+      return {
+        ...c,
+        pace: paces.get(c.key) ?? null,
+        displayName: profileName(c.userId ? profiles.get(c.userId) : undefined) ?? c.nickname,
+        // An Elo with no games behind it is just the 1500 starting point, not a rating.
+        elo: r && r.games > 0 ? r.elo : null,
+        battle: r?.battle ?? null,
+      };
+    });
+  }, [rows, shownSet, paces, profiles, rated]);
 
   /**
    * "Regulars only" - hide careers thinner than REGULAR_MATCHES matches.
@@ -247,11 +291,12 @@ export function Leaderboard() {
   const sorted = useMemo(() => {
     const shown = regularsOnly ? careers.filter((c) => c.matches >= REGULAR_MATCHES) : careers;
     return [...shown].sort((a, b) => {
-      // A captain without a pace yet sits at the bottom in BOTH directions rather than sorting as
-      // zero, which would otherwise read as infinitely fast. Same for any column that can be blank.
-      if (sort === "pace" && (a.pace === null || b.pace === null)) {
-        if (a.pace === null && b.pace === null) return b.shots - a.shots;
-        return a.pace === null ? 1 : -1;
+      // A captain without a pace (or rating) yet sits at the bottom in BOTH directions rather than
+      // sorting as zero, which would otherwise read as infinitely fast - or infinitely bad.
+      const pick = NULLABLE[sort];
+      if (pick && (pick(a) === null || pick(b) === null)) {
+        if (pick(a) === null && pick(b) === null) return b.shots - a.shots;
+        return pick(a) === null ? 1 : -1;
       }
       const cmp = compare(a, b, sort);
       return direction === "asc" ? cmp : -cmp;
@@ -279,10 +324,6 @@ export function Leaderboard() {
         <OfficialRecord />
         <p className="muted">{t("Career records for one board at a time.", "Records de carrière, un plateau à la fois.")}</p>
       </div>
-
-      {/* Above the board tabs: these two lists are all-time across every board, so they don't
-          change when a board is picked below. */}
-      <RatingsBoard />
 
       {/* Outside the empty check, so a set with no matches yet can still be switched away from. */}
       <div className="panel stack" style={{ gap: "0.4rem" }}>
@@ -403,6 +444,13 @@ export function Leaderboard() {
                         {c.wins}-{c.losses}
                       </td>
                       <td style={num}>{Math.round(c.winRate * 100)}%</td>
+                      {/* Same "still reading" vs "none yet" split as pace below. */}
+                      <td style={{ ...num, color: c.elo === null ? "var(--text-dim)" : undefined }}>
+                        {c.elo !== null ? Math.round(c.elo) : rated === null ? "..." : "-"}
+                      </td>
+                      <td style={{ ...num, color: c.battle === null ? "var(--text-dim)" : undefined }}>
+                        {c.battle !== null ? Math.round(c.battle) : rated === null ? "..." : "-"}
+                      </td>
                       <td style={num}>{c.shots}</td>
                       <td style={{ ...num, color: "var(--hit)" }}>{c.hits}</td>
                       <td style={{ ...num, color: "var(--sunk)" }}>{c.sunk}</td>
