@@ -28,7 +28,7 @@
   pointer-events: none;
 }
 
-/* A stand-in player stream: gameplay footage, with the same name plate the real source draws. */
+/* A stand-in player stream: gameplay footage, bare like the real box. */
 .csp-screen {
   background-color: #2b2a26;
   background-size: cover;
@@ -36,27 +36,28 @@
   overflow: hidden;
 }
 
-/* The real box (OverlayScreen.css) in rem on a 1920-wide canvas, restated in cqw so it scales with
-   the frame: 1rem there is 0.833cqw here. */
+.csp-strip {
+  pointer-events: none;
+}
+
+/* The player tag - OverlayFrame.css's .ovf-seat/.ovf-tag, restated in cqw (1vw there = 1cqw here). */
+.csp-seat {
+  overflow: hidden;
+}
+
 .csp-tag {
   position: absolute;
   top: 0.29cqw;
   right: 0.46cqw;
-  max-width: 48%;
+  max-width: 60%;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
 
-.csp-border {
-  position: absolute;
-  inset: 0;
-  border: 0.167cqw solid var(--csp-accent, #8fb3c8);
-}
-
 .csp-name {
   font-family: "Arial Black", "Segoe UI", system-ui, sans-serif;
-  font-size: 1.083cqw;
+  font-size: 1.08cqw;
   font-weight: 900;
   font-style: italic;
   line-height: 1.1;
@@ -68,14 +69,39 @@
 }
 
 .csp-stats {
+  display: flex;
+  gap: 0.42cqw;
   font-family: var(--font-display);
-  font-size: 0.708cqw;
+  font-size: 0.71cqw;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #eef4f7;
   text-shadow:
-    0 0 1px #000,
-    0 0 1px #000;
+    0 0 0.1cqw #000,
+    0 0 0.1cqw #000;
+  white-space: nowrap;
+}
+
+/* The caster name plate - OverlayFrame.css's .ovf-plate, restated in cqw (1vw there = 1cqw here). */
+.csp-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-top: 0.21cqw solid #fff;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+.csp-plate span {
+  font-family: var(--font-display);
+  font-size: 1.1cqw;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f2f7fa;
+  text-shadow:
+    0 0 0.16cqw #000,
+    0 0.05cqw 0.3cqw rgba(0, 0, 0, 0.9);
   white-space: nowrap;
 }
 
@@ -109,7 +135,8 @@
 
 .csp-cam span {
   position: absolute;
-  bottom: 12%;
+  /* Clear of the name plate along the bottom of a match-scene cam box. */
+  bottom: 18%;
   font-size: 1cqw;
   color: #9fb6c6;
   white-space: nowrap;

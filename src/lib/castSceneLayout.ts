@@ -81,6 +81,49 @@ export function castCamRects(): Rect[] {
   ];
 }
 
+/**
+ * The white divider strips in the match frame that sit against one fleet's column: the full-height
+ * strip between that column and the channel, and the two gaps between its three boxes. The frame
+ * source paints these in that fleet's colour, so which side is which reads at a glance. The lines
+ * across the channel - above and below the board, between the cams - border no fleet and stay
+ * white. Measured off the art like the holes.
+ */
+export function fleetStripRects(side: "left" | "right"): Rect[] {
+  const STRIP = 8;
+  const strip = side === "left" ? COLUMN_W : CAST_CANVAS.w - COLUMN_W - STRIP;
+  const column = side === "left" ? 0 : CAST_CANVAS.w - COLUMN_W;
+  return [
+    { x: strip, y: 0, w: STRIP, h: CAST_CANVAS.h },
+    ...COLUMN_ROWS.slice(1).map(({ y }) => ({ x: column, y: y - STRIP, w: COLUMN_W, h: STRIP })),
+  ];
+}
+
+/**
+ * The caster name plates: a strip along the bottom of each cam hole in the match scene, over the
+ * space a webcam that doesn't fill its box leaves under the face. Drawn by the frame source, names
+ * from the caster desk - see CastView.casters.
+ */
+export const CASTER_PLATE_H = 40;
+export function casterPlateRects(): Rect[] {
+  return castCamRects().map((r) => ({ x: r.x, y: r.y + r.h - CASTER_PLATE_H, w: r.w, h: CASTER_PLATE_H }));
+}
+
+/**
+ * The plate's background: the slice of the match art's water banner (the strip the clock sits on)
+ * centred on the banner, as CSS for a box of `plate`'s size. Reusing the art itself rather than a
+ * look-alike gradient is what keeps the plates the same water as the rest of the frame.
+ */
+export function bannerSliceStyle(plate: Rect): { backgroundSize: string; backgroundPosition: string } {
+  const banner = clockRect();
+  const x = banner.x + (banner.w - plate.w) / 2;
+  const y = banner.y + (banner.h - plate.h) / 2;
+  return {
+    backgroundSize: `${(CAST_CANVAS.w / plate.w) * 100}% ${(CAST_CANVAS.h / plate.h) * 100}%`,
+    // A background-position percentage is of (image - box), so a pixel offset divides by that.
+    backgroundPosition: `${(x / (CAST_CANVAS.w - plate.w)) * 100}% ${(y / (CAST_CANVAS.h - plate.h)) * 100}%`,
+  };
+}
+
 /** The two big camera holes in the "EB Casters" break scene. */
 export function casterCamRects(): Rect[] {
   return [

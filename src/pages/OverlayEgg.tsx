@@ -91,10 +91,24 @@ export function OverlayEgg(props: OverlaySourceProps = {}) {
 
   /** What has already been shown. Null until the first pass has primed it - see freshDeepEvents. */
   const shown = useRef<Set<string> | null>(null);
+  /** The room `shown` was primed on - a new one starts over. */
+  const shownRoom = useRef<string | null>(null);
   const [queue, setQueue] = useState<DeepFindRow[]>([]);
   const [current, setCurrent] = useState<DeepFindRow | null>(null);
+  const loaded = !state.loading && room !== null;
+  const roomId = room?.id ?? null;
 
   useEffect(() => {
+    // Nothing primes until the room's first read is in. Before it `rows` is empty, and priming on
+    // that meant every find of the match so far queued up as new the moment the log landed - each
+    // time OBS restarted this source mid-match. Same fix, same reason as useSpectatorSfx.
+    if (!loaded) return;
+    // A new room (the token moved to another match): forget what the last one showed.
+    if (shownRoom.current !== roomId) {
+      shownRoom.current = roomId;
+      shown.current = null;
+      setQueue([]);
+    }
     // Priming, collapsing a wake to one event and putting headlines first all live in lib/deepQueue,
     // which the sound source reads too - so a stream cannot show a whale the speakers never mention.
     const { fresh, keys } = freshDeepEvents(
@@ -107,7 +121,7 @@ export function OverlayEgg(props: OverlaySourceProps = {}) {
     // Memoised above, so this runs when the log moves rather than on every render - which matters
     // here in a way it doesn't for the sound: this component re-renders on its own timer as each
     // alert comes and goes, and an unmemoised list would rebuild the whole hunt on every tick of it.
-  }, [rows]);
+  }, [rows, loaded, roomId]);
 
   /** One at a time, in order. The timer is the only thing that ends a showing. */
   useEffect(() => {

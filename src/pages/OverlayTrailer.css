@@ -1,0 +1,13 @@
+/* The trailer, filling the source. Letterboxed rather than cropped if the source isn't 16:9. */
+.ovtr {
+  position: fixed;
+  inset: 0;
+  background: #000;
+}
+
+.ovtr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}

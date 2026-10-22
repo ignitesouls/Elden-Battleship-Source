@@ -1,6 +1,23 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
-import { CAST_ART, PLAYER_ART } from "../lib/castSceneLayout";
+import { useRoom } from "../hooks/useRoom";
+import { useCastScreens } from "../hooks/useCastScreens";
+import {
+  CAST_ART,
+  CAST_SEATS,
+  PLAYER_ART,
+  bannerSliceStyle,
+  casterPlateRects,
+  fleetStripRects,
+  frac,
+  screenRects,
+  type Rect,
+} from "../lib/castSceneLayout";
+import { useCastReceiver } from "../lib/overlayCast";
+import { screensFromRoster } from "../lib/castScreens";
+import { groupIntoShots } from "../lib/attackFeed";
+import { buildPlayerStats } from "../lib/matchReport";
+import { teamHex, teamName } from "../lib/teamColors";
 import { useFrameBeacon } from "../lib/frameBeacon";
 import "./OverlayFrame.css";
 
@@ -30,12 +47,82 @@ import "./OverlayFrame.css";
  * With `?layout=player` and an owner (the account the token resolved to), the page announces that
  * owner's frame is up for as long as it runs - see lib/frameBeacon. That is how a caster's box knows
  * to crop that player's Twitch feed to the gameplay hole, with nothing for anyone to tick.
+ *
+ * -- The match frame wears the fleets' colours ----------------------------------------------------
+ *
+ * With `?layout=cast` and a room, the white strips against each side's column are painted in the
+ * colour of the fleet in those boxes (fleetStripRects). The sides come from the same slot order the
+ * screen sources use (lib/castScreens): slots 0-2 down the left, 3-5 down the right. No room - the
+ * caster between matches - and the strips stay the art's white.
+ *
+ * -- And the players' names -------------------------------------------------------------------------
+ *
+ * In the top-right of each player hole: the player's name in their fleet's colour over a live
+ * hit / miss / accuracy line. Drawn HERE, once, rather than by each screen source, so all six are the
+ * same size whatever size a caster gave each Browser Source, and they sit on the top layer with the
+ * art. The numbers are buildPlayerStats over the room's public attack log - the same function the
+ * recap uses, so the tag and the recap can never disagree.
+ *
+ * -- And the casters' names -------------------------------------------------------------------------
+ *
+ * Under each cam hole, a plate on a slice of the art's own water banner carrying that caster's name,
+ * typed on the caster desk and sent on the cast channel (CastView.casters) - so it changes live,
+ * with nothing to re-import. No desk, or an empty name, and there is no plate.
  */
 
+function place(rect: Rect) {
+  const f = frac(rect);
+  return { left: `${f.left * 100}%`, top: `${f.top * 100}%`, width: `${f.width * 100}%`, height: `${f.height * 100}%` };
+}
+
+function Strip({ rect, color }: { rect: Rect; color: string }) {
+  return <div className="ovf-strip" style={{ ...place(rect), background: color }} />;
+}
+
+function PlayerTag({ rect, name, color, hits, misses, accuracy }: { rect: Rect; name: string; color: string; hits: number; misses: number; accuracy: number }) {
+  return (
+    <div className="ovf-seat" style={place(rect)}>
+      <div className="ovf-tag" style={{ ["--ovf-accent" as string]: color }}>
+        <span className="ovf-name">{name}</span>
+        <span className="ovf-stats">
+          <span>H- {hits}</span>
+          <span>M- {misses}</span>
+          <span>A- {accuracy}%</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CasterPlate({ rect, name, art }: { rect: Rect; name: string; art: string }) {
+  return (
+    <div className="ovf-plate" style={{ ...place(rect), backgroundImage: `url(${art})`, ...bannerSliceStyle(rect) }}>
+      <span>{name}</span>
+    </div>
+  );
+}
+
 export function OverlayFrame(props: OverlaySourceProps & { ownerId?: string | null } = {}) {
-  const { params } = useOverlaySource(props);
+  const { code, params } = useOverlaySource(props);
   const layout = params.get("layout") ?? "casters";
   useFrameBeacon(layout === "player" ? props.ownerId : null);
+
+  // Only the match frame needs the room, and only for which fleet is on which side.
+  const state = useRoom(layout === "cast" ? code : undefined);
+  const sides = useMemo(() => {
+    const screens = screensFromRoster(state.players, new Map());
+    return { left: screens[0]?.team ?? null, right: screens[CAST_SEATS / 2]?.team ?? null };
+  }, [state.players]);
+  const { message } = useCastReceiver(layout === "cast" ? code : undefined);
+  const casters = message?.view.casters ?? [];
+
+  // The players in their boxes, with names off their profiles, and each one's running tally.
+  const screens = useCastScreens(state.players);
+  const stats = useMemo(
+    () => buildPlayerStats(state.players, groupIntoShots(state.attacks, state.players)),
+    [state.players, state.attacks]
+  );
+  const holes = screenRects();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -53,6 +140,34 @@ export function OverlayFrame(props: OverlaySourceProps & { ownerId?: string | nu
   return (
     <div className="ovf">
       <img className="ovf-art" src={art} alt="" />
+      {layout === "cast" &&
+        (["left", "right"] as const).map((side) =>
+          sides[side] === null
+            ? null
+            : fleetStripRects(side).map((r, i) => <Strip key={`${side}${i}`} rect={r} color={teamHex(sides[side] as number)} />)
+        )}
+      {layout === "cast" &&
+        screens
+          .filter((s) => s.slot < holes.length)
+          .map((s) => {
+            const mine = stats.find((p) => p.playerId === s.playerId);
+            return (
+              <PlayerTag
+                key={s.slot}
+                rect={holes[s.slot]}
+                name={s.name ?? teamName(s.team)}
+                color={teamHex(s.team)}
+                hits={mine?.hits ?? 0}
+                misses={mine?.misses ?? 0}
+                accuracy={mine ? Math.round(mine.accuracy * 100) : 0}
+              />
+            );
+          })}
+      {layout === "cast" &&
+        casterPlateRects().map((r, i) => {
+          const name = (casters[i] ?? "").trim();
+          return name ? <CasterPlate key={i} rect={r} name={name} art={art} /> : null;
+        })}
     </div>
   );
 }

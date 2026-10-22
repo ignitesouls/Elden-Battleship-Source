@@ -187,6 +187,39 @@
   overflow: hidden;
 }
 
+/**
+ * The eval bar: each fleet a segment whose share of the width is its chance of winning. flex-grow
+ * carries the share, and it transitions, so a swing slides the boundary across rather than jumping -
+ * the back-and-forth that makes a chess eval bar readable at a glance. A thin centre tick marks
+ * even odds, so "ahead" reads without a number.
+ */
+.ovt-eval {
+  position: relative;
+  display: flex;
+  height: 1.4rem;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(180, 210, 230, 0.35);
+  background: rgba(6, 16, 24, 0.6);
+}
+
+.ovt-eval-seg {
+  flex-basis: 0;
+  min-width: 0;
+  transition: flex-grow 0.9s ease-in-out;
+}
+
+.ovt-eval::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.75);
+}
+
 .ovt-odds-keys {
   display: flex;
   justify-content: center;

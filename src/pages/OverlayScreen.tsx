@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useScreenAux } from "../lib/castAux";
-import { groupIntoShots } from "../lib/attackFeed";
-import { buildPlayerStats } from "../lib/matchReport";
-import { teamHex, teamName } from "../lib/teamColors";
 import { CAST_CANVAS, playerGameRect } from "../lib/castSceneLayout";
 import { useFramesOnAir } from "../lib/frameBeacon";
 import "./OverlayScreen.css";
 
 /**
- * One player box in a casting scene: their muted Twitch stream inside a border in their crew's
- * colour, their name in the top-right corner in that colour, and a live hit / miss / accuracy line.
+ * One player box in a casting scene: their muted Twitch stream and nothing over it. The crew colour
+ * round the box is the frame source's job (pages/OverlayFrame paints the art's divider strips).
+ *
+ * -- No text on the box ------------------------------------------------------------------------
+ *
+ * It used to carry the player's name and a live hit / miss / accuracy tag. That moved to the frame
+ * source (pages/OverlayFrame), which draws all six tags itself: one source means one size for every
+ * tag, where six sources each scaled differently by OBS gave six different sizes.
  *
  * -- Cropping to the gameplay ------------------------------------------------------------------
  *
@@ -31,19 +34,11 @@ import "./OverlayScreen.css";
  * separate sources rather than one grid page because a caster wants each box independently
  * refreshable when a stream hitches - which is what lib/castAux's resync is for.
  *
- * -- Why the numbers are read straight from the public log -----------------------------------
- *
- * `attacks` carries `attacker_player_id` and is world-readable, and buildPlayerStats already turns
- * it into the exact per-player scoreboard the recap prints - "at any point in a match", see the note
- * there. So this needs no controller and no relay: it watches the room like the scorebug does and
- * runs the same function, which means the box and the end-of-match recap can never disagree.
- *
  * -- The empty states -----------------------------------------------------------------------------
  *
  * A missing or out-of-range slot, and a token whose owner is between matches, both draw nothing at
  * all - the same rule every persistent source follows (see pages/StreamSource). A seat that IS
- * filled by an account with no linked Twitch draws the name plate and the tally over an empty frame:
- * "player here, stream not linked" is a real state and better said than hidden.
+ * filled by an account with no linked Twitch draws a quiet dark panel, so the box is not a hole.
  */
 
 interface TwitchQuality {
@@ -272,13 +267,6 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
   const latencyRef = useRef<number | null>(null);
   const resyncNonce = useScreenAux(code, slotKey, () => latencyRef.current);
 
-  const shots = useMemo(
-    () => groupIntoShots(state.attacks, state.players),
-    [state.attacks, state.players]
-  );
-  const stats = useMemo(() => buildPlayerStats(state.players, shots), [state.players, shots]);
-  const mine = screen ? stats.find((s) => s.playerId === screen.playerId) ?? null : null;
-
   // Only a box with a stream to crop listens for frames.
   const framesOnAir = useFramesOnAir(!!screen?.twitchLogin);
   const cropped = useDelayedCrop(!!screen && framesOnAir.has(screen.userId), latencyRef);
@@ -297,14 +285,8 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
   // outlived the match it was pointed at. Never the last match's box.
   if (!screen) return null;
 
-  const label = screen.name ?? teamName(screen.team);
-  const accent = teamHex(screen.team);
-  const hits = mine?.hits ?? 0;
-  const misses = mine?.misses ?? 0;
-  const accuracy = mine ? Math.round(mine.accuracy * 100) : 0;
-
   return (
-    <div className="ovs" style={{ ["--ovs-accent" as string]: accent }}>
+    <div className="ovs">
       {screen.twitchLogin ? (
         <TwitchStream
           key={`${screen.twitchLogin}:${resyncNonce}`}
@@ -317,16 +299,6 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
       ) : (
         <div className="ovs-stream ovs-stream-empty" />
       )}
-
-      <div className="ovs-tag">
-        <span className="ovs-name">{label}</span>
-        <span className="ovs-stats">
-          <span className="ovs-stat">H- {hits}</span>
-          <span className="ovs-stat">M- {misses}</span>
-          <span className="ovs-stat">A- {accuracy}%</span>
-        </span>
-      </div>
-      <div className="ovs-border" />
     </div>
   );
 }

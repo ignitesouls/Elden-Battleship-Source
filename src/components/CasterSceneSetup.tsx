@@ -2,8 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { CastScenePreview } from "./CastScenePreview";
 import { OverlaySetting as Setting, textReadout } from "./OverlaySetting";
 import { SourceRow } from "./SourceRow";
+import { OverlaySoon, SOON_VIDEO } from "../pages/OverlaySoon";
+import { TRAILER_VIDEO } from "../pages/OverlayTrailer";
 import { CAST_ART } from "../lib/castSceneLayout";
-import { buildCastCollection, castSceneFilename, castSceneParts, CAST_SCENE_MAIN, CAST_SCENE_BREAK, type CastPart } from "../lib/obsScene";
+import {
+  buildCastCollection,
+  castSceneFilename,
+  castSceneParts,
+  CAST_SCENE_MAIN,
+  CAST_SCENE_BREAK,
+  CAST_SCENE_SOON,
+  CAST_SCENE_TRAILER,
+  type CastPart,
+} from "../lib/obsScene";
 import { DEFAULT_ALERT_SECS, MAX_ALERT_SECS, MAX_DELAY_MS, MIN_ALERT_SECS, MIN_OPACITY } from "../lib/overlayCast";
 import { MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "../lib/overlayText";
 import { sourcesFor, streamCastUrl, streamSourceUrl, type SceneSettings } from "../lib/streamOverlay";
@@ -43,7 +54,7 @@ function whereItGoes(part: CastPart, t: ReturnType<typeof useT>): string {
  */
 export function CasterSceneSetup({ base, token }: { base: string; token: string }) {
   const t = useT();
-  const [view, setView] = useState<"match" | "break">("match");
+  const [view, setView] = useState<"match" | "break" | "soon" | "trailer">("match");
   const [delayMs, setDelayMs] = useState(0);
   const [clockOpacity, setClockOpacity] = useState(1);
   const [clockText, setClockText] = useState(1);
@@ -101,8 +112,8 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
     <div className="stack cst" style={{ gap: "1rem" }}>
       <span className="muted cst-lede">
         {t(
-          "A finished broadcast layout for a 3v3 match: all six players' streams, the board, the clock and odds, and boxes for you and your co-caster, inside the Elden Battleship frame. There's a second scene for breaks. Player streams fill themselves in from whichever match you join.",
-          "Une mise en page de diffusion complète pour un match 3c3 : les flux des six joueurs, le plateau, l'horloge et les cotes, et des cadres pour vous et votre co-commentateur, dans le cadre Elden Battleship. Une seconde scène sert aux pauses. Les flux des joueurs se remplissent tout seuls selon la partie que vous rejoignez."
+          "A finished broadcast for a 3v3 match: all six players' streams, the board, the clock and odds, and boxes for you and your co-caster, inside the Elden Battleship frame. Plus a break scene, a Starting Soon screen and the trailer. Player streams fill themselves in from whichever match you join.",
+          "Une diffusion complète pour un match 3c3 : les flux des six joueurs, le plateau, l'horloge et les cotes, et des cadres pour vous et votre co-commentateur, dans le cadre Elden Battleship. Avec une scène de pause, un écran « Bientôt » et la bande-annonce. Les flux des joueurs se remplissent tout seuls selon la partie que vous rejoignez."
         )}
       </span>
 
@@ -115,18 +126,49 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
           <button role="tab" aria-selected={view === "break"} className={view === "break" ? "on" : ""} onClick={() => setView("break")}>
             {t("Break scene", "Scène de pause")}
           </button>
+          <button role="tab" aria-selected={view === "soon"} className={view === "soon" ? "on" : ""} onClick={() => setView("soon")}>
+            {t("Starting Soon", "Bientôt")}
+          </button>
+          <button role="tab" aria-selected={view === "trailer"} className={view === "trailer" ? "on" : ""} onClick={() => setView("trailer")}>
+            {t("Trailer", "Bande-annonce")}
+          </button>
         </div>
-        <CastScenePreview
-          scene={view}
-          clockOpacity={clockOpacity}
-          clockText={clockText}
-          alertMark={finds && view === "match" ? playing : null}
-        />
+        {view === "soon" ? (
+          <div className="csp">
+            <OverlaySoon names={[t("Green Fleet", "Flotte verte"), t("Purple Fleet", "Flotte violette")]} />
+          </div>
+        ) : view === "trailer" ? (
+          // Muted and not autoplaying: a setup page has no business making a noise on its own.
+          <video
+            className="cst-trailer"
+            src={`${import.meta.env.BASE_URL}${TRAILER_VIDEO}`}
+            controls
+            muted
+            preload="metadata"
+          />
+        ) : (
+          <CastScenePreview
+            scene={view}
+            clockOpacity={clockOpacity}
+            clockText={clockText}
+            alertMark={finds && view === "match" ? playing : null}
+          />
+        )}
         <span className="muted cst-small">
-          {view === "match"
+          {view === "soon"
             ? t(
-                "Sample footage and a sample board. On stream, each box shows that player's live Twitch and their real hits, misses and accuracy.",
-                "Images et plateau d'exemple. En direct, chaque cadre montre le Twitch du joueur et ses vrais touchés, manqués et précision."
+                "Your holding screen before the match. Type the two team names on your caster desk - they change on stream as you type, even before you've joined a room.",
+                "Votre écran d'attente avant le match. Tapez les deux noms d'équipes sur votre poste de commentaire - ils changent en direct à mesure que vous tapez, même avant d'avoir rejoint une partie."
+              )
+            : view === "trailer"
+              ? t(
+                  "Plays from the start, with sound, each time you switch to the EB Trailer scene. Its sound gets its own fader in the OBS mixer.",
+                  "Se lance depuis le début, avec le son, chaque fois que vous passez sur la scène EB Trailer. Son son a son propre curseur dans le mixeur OBS."
+                )
+              : view === "match"
+            ? t(
+                "Sample footage and a sample board. On stream, each box shows that player's live Twitch with their name and real hits, misses and accuracy, and the strips beside each column take that fleet's colour.",
+                "Images et plateau d'exemple. En direct, chaque cadre montre le Twitch du joueur avec son nom et ses vrais touchés, manqués et précision, et les bandes à côté de chaque colonne prennent la couleur de sa flotte."
               )
             : t(
                 "For the parts of the show that aren't a match. It's just the frame: your webcams go in the two boxes.",
@@ -259,8 +301,10 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
                 <strong>{CAST_SCENE_MAIN}</strong>.
               </li>
               <li>
-                {t("You now have two scenes:", "Vous avez maintenant deux scènes :")} <strong>{CAST_SCENE_MAIN}</strong>{" "}
-                {t("for the match and", "pour le match et")} <strong>{CAST_SCENE_BREAK}</strong> {t("for breaks.", "pour les pauses.")}
+                {t("You now have four scenes:", "Vous avez maintenant quatre scènes :")} <strong>{CAST_SCENE_SOON}</strong>{" "}
+                {t("before the show,", "avant l'émission,")} <strong>{CAST_SCENE_TRAILER}</strong>,{" "}
+                <strong>{CAST_SCENE_MAIN}</strong> {t("for the match and", "pour le match et")} <strong>{CAST_SCENE_BREAK}</strong>{" "}
+                {t("for breaks.", "pour les pauses.")}
               </li>
             </ol>
           </div>
@@ -280,6 +324,30 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
             <details className="cst-details">
               <summary>{t("Break scene sources", "Sources de la scène de pause")}</summary>
               <div className="stack" style={{ gap: "0.5rem" }}>{partRows("break")}</div>
+            </details>
+            <details className="cst-details">
+              <summary>{t("Starting Soon and trailer sources", "Sources « Bientôt » et bande-annonce")}</summary>
+              <div className="stack" style={{ gap: "0.5rem" }}>
+                {partRows("soon")}
+                {partRows("trailer")}
+              </div>
+            </details>
+            <details className="cst-details">
+              <summary>{t("Videos (MP4)", "Vidéos (MP4)")}</summary>
+              <span className="muted cst-small">
+                {t(
+                  "To play them from your own disk instead, as a Media Source - smoother on a slow connection.",
+                  "Pour les lire depuis votre disque, comme Media Source - plus fluide sur une connexion lente."
+                )}
+              </span>
+              <div className="row" style={{ gap: "0.8rem", flexWrap: "wrap" }}>
+                <a href={`${import.meta.env.BASE_URL}${TRAILER_VIDEO}`} download="Battleship-Trailer.mp4">
+                  {t("Trailer (28 MB)", "Bande-annonce (28 Mo)")}
+                </a>
+                <a href={`${import.meta.env.BASE_URL}${SOON_VIDEO}`} download="Starting-Soon-Loop.mp4">
+                  {t("Starting Soon loop (11 MB)", "Boucle « Bientôt » (11 Mo)")}
+                </a>
+              </div>
             </details>
             <details className="cst-details">
               <summary>{t("Frame images (PNG)", "Images des cadres (PNG)")}</summary>
@@ -345,8 +413,8 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
               {t("Open", "Ouvrez")} <a href={streamCastUrl(base, token)}>{t("your caster desk", "votre poste de commentaire")}</a>
             </strong>{" "}
             {t(
-              "in a normal browser window (not in OBS). It drives the board: zoom, pan, spotlight, markers and stream delay.",
-              "dans une fenêtre de navigateur normale (pas dans OBS). Il pilote le plateau : zoom, panoramique, projecteur, marqueurs et décalage du flux."
+              "in a normal browser window (not in OBS). It drives the board (zoom, pan, spotlight, markers, stream delay), sets the caster names on the plates under your cams, and the two team names on the Starting Soon screen.",
+              "dans une fenêtre de navigateur normale (pas dans OBS). Il pilote le plateau (zoom, panoramique, projecteur, marqueurs, décalage du flux), règle les noms des commentateurs sur les bandeaux sous vos caméras, et les deux noms d'équipes sur l'écran « Bientôt »."
             )}
           </li>
           <li>

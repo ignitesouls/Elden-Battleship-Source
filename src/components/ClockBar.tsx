@@ -101,14 +101,25 @@ export function ClockBar({
         </div>
 
         {/**
-         * The band runs the width of the row above it, so the odds share the clock's axis - a swing
-         * lines up with the minute it happened on. Width comes from measuring that row rather than
-         * from a constant, because a four-fleet scorebug is wider than a duel's and a band that
-         * guessed would either fall short or push the bug wider than its own contents.
+         * The odds as an eval bar, like a chess broadcast's: one solid bar split between the fleets
+         * by their chance of winning right now, sliding as it changes. The history graph this used to
+         * be lives on in the Odds source and the spectator page, where there is room to read it; on
+         * the scorebug the question is only "who's ahead, and by how much".
+         *
+         * Width comes from measuring the row above, so the bar runs exactly as wide as the hulls and
+         * clock - a four-fleet scorebug is wider than a duel's.
          */}
-        {odds && odds.points.length > 1 && row.w > 0 && (
+        {odds && odds.teams.length > 1 && row.w > 0 && (
           <div className="ovt-odds">
-            <OddsGraph teams={odds.teams} points={odds.points} width={row.w} height={26} rule={false} />
+            <div className="ovt-eval" style={{ width: row.w }}>
+              {odds.teams.map((t, i) => (
+                <div
+                  className="ovt-eval-seg"
+                  key={t}
+                  style={{ flexGrow: Math.max(0.0001, odds.odds[i] ?? 0), background: teamHex(t) }}
+                />
+              ))}
+            </div>
             <div className="ovt-odds-keys">
               {odds.teams.map((t, i) => (
                 <span className="ovt-odds-key" key={t}>

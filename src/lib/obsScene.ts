@@ -387,6 +387,8 @@ export function sceneFilename(kind: SceneKind): string {
 
 export const CAST_SCENE_MAIN = "EB Cast";
 export const CAST_SCENE_BREAK = "EB Casters";
+export const CAST_SCENE_SOON = "EB Starting Soon";
+export const CAST_SCENE_TRAILER = "EB Trailer";
 
 /** A minimal StreamSource for a box the source catalogue does not describe - screens, the frame. */
 function castSource(id: string, element: StreamSource["element"], obsName: string, w: number, h: number): StreamSource {
@@ -437,7 +439,7 @@ export interface CastCollectionOptions extends CastSceneOptions {
 
 /** One source in the casting collection: which scene it is in, what it is, and where it goes. */
 export interface CastPart {
-  scene: "main" | "break";
+  scene: "main" | "break" | "soon" | "trailer";
   entry: SceneEntry;
   at: SourcePlacement;
   /** What the setup page says it is, for a caster building the scene by hand. */
@@ -507,7 +509,7 @@ export function castSceneParts({
       castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, Math.round(box.w), Math.round(box.h)),
       `screen?token=${token}&slot=${i}`,
       { x: Math.round(box.x), y: Math.round(box.y), scale: 1 },
-      `player ${i + 1}'s Twitch stream and live hit / miss / accuracy (${i < 3 ? "left" : "right"} column)`
+      `player ${i + 1}'s Twitch stream (${i < 3 ? "left" : "right"} column)`
     )
   );
   add(
@@ -522,7 +524,7 @@ export function castSceneParts({
     castSource("cast-cams", "frame", "EB Frame", CAST_CANVAS.w, CAST_CANVAS.h),
     `frame?token=${token}&layout=cast`,
     { x: 0, y: 0, scale: 1 },
-    "the match frame art - everything else shows through its holes"
+    "the match frame art, the fleet-colour strips and every player's name and tally - everything else shows through its holes"
   );
   if (finds) {
     add(
@@ -550,6 +552,25 @@ export function castSceneParts({
     "the break frame art - your webcams go behind its two boxes"
   );
 
+  // -- EB Starting Soon: the looping sea, the wordmark and "Starting Soon: A vs. B", one source. The
+  // names come live from the caster desk - see pages/OverlaySoon.
+  add(
+    "soon",
+    castSource("soon", "soon", "EB Starting Soon", CAST_CANVAS.w, CAST_CANVAS.h),
+    `soon?token=${token}`,
+    { x: 0, y: 0, scale: 1 },
+    "the Starting Soon screen - the matchup is typed on your caster desk"
+  );
+
+  // -- EB Trailer: the trailer with its sound, from the top each time the scene is shown.
+  add(
+    "trailer",
+    { ...castSource("trailer", "trailer", "EB Trailer", CAST_CANVAS.w, CAST_CANVAS.h), audio: true },
+    `trailer?token=${token}`,
+    { x: 0, y: 0, scale: 1 },
+    "the Elden Battleship trailer, with sound on its own mixer fader - restarts each time you switch to it"
+  );
+
   return parts;
 }
 
@@ -575,12 +596,14 @@ export const CAST_AUDIO = [
   { name: "Caster Desktop Audio", id: "wasapi_output_capture", settings: { device_id: "default" } },
 ] as const;
 
-/** The two-scene casting collection, built from castSceneParts. */
+/** The casting collection - match, break, Starting Soon and trailer - built from castSceneParts. */
 export function buildCastCollection({ newId, ...options }: CastCollectionOptions) {
   const uuid = newId ?? (() => crypto.randomUUID());
   const parts = castSceneParts(options);
   const mainParts = parts.filter((p) => p.scene === "main");
   const breakParts = parts.filter((p) => p.scene === "break");
+  const soonParts = parts.filter((p) => p.scene === "soon");
+  const trailerParts = parts.filter((p) => p.scene === "trailer");
   // Made once and placed in both scenes - see CAST_AUDIO.
   const audio = CAST_AUDIO.map((a) => ({ ...a, uuid: uuid() }));
 
@@ -628,18 +651,20 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
 
   const main = scene(CAST_SCENE_MAIN, mainParts);
   const brk = scene(CAST_SCENE_BREAK, breakParts);
+  const soon = scene(CAST_SCENE_SOON, soonParts);
+  const trailer = scene(CAST_SCENE_TRAILER, trailerParts);
+  const all = [main, brk, soon, trailer];
 
   return {
     name: CAST_SCENE_MAIN,
     current_scene: CAST_SCENE_MAIN,
     current_program_scene: CAST_SCENE_MAIN,
-    scene_order: [{ name: CAST_SCENE_MAIN }, { name: CAST_SCENE_BREAK }],
+    // In the order a show runs: holding screen, trailer, the match, the break.
+    scene_order: [{ name: CAST_SCENE_SOON }, { name: CAST_SCENE_TRAILER }, { name: CAST_SCENE_MAIN }, { name: CAST_SCENE_BREAK }],
     sources: [
       ...audio.map((a) => inputSource(a.name, a.uuid, a.id, a.settings, true)),
-      ...main.browsers,
-      ...brk.browsers,
-      main.sceneObj,
-      brk.sceneObj,
+      ...all.flatMap((s) => s.browsers),
+      ...all.map((s) => s.sceneObj),
     ],
     groups: [],
     transitions: [],

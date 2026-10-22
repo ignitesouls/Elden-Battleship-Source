@@ -80,6 +80,18 @@ const FATES_GAP_MS = FATES_DELAY_MS + 3000;
  * The first pass only primes the seen-set, so opening a match already in progress doesn't replay
  * the whole log at once.
  *
+ * -- "First pass" has to mean the first pass with the match in it ----------------------------------
+ *
+ * It used to mean the first render, and on a page that has only just mounted that render has an
+ * EMPTY attack log - the room is still loading. So the seen-set primed on nothing, then the whole
+ * log landed and every shot of the match so far played at once: a stream's audio source reloading
+ * mid-match (OBS restarts a hidden source, a caster refreshes it) blasted the lot at the audience.
+ * Callers now pass `enabled` false until the room's first read is in - that read carries the log and
+ * the water together, see readRoomSnapshot - and nothing primes until it is.
+ *
+ * `roomKey` covers the other way to start mid-match: a source that stays mounted while its token
+ * moves to another room. A new key forgets everything heard, so the new room's log primes quietly.
+ *
  * @param deepCells what has been found in the water, if the caller knows (see lib/deepWater). Passing
  * it is what lets a whale sing on a spectator's screen: the shot that found it is a miss against every
  * fleet, so from `attacks` alone the rarest moment in a match sounds like the dullest one.
@@ -91,12 +103,28 @@ export function useSpectatorSfx(
   attacks: Attack[],
   enabled = true,
   deepCells?: ReadonlyMap<number, DeepMark>,
-  fates?: ReadonlySet<number>
+  fates?: ReadonlySet<number>,
+  /** The room being listened to. A change starts over, priming quietly on the new room's log. */
+  roomKey?: string | null
 ): void {
   const seen = useRef(new Set<string>());
   const primed = useRef(false);
   /** Squares already sung about, keyed with what was on them. Null until the first pass has primed it. */
   const heardDeep = useRef<Set<string> | null>(null);
+  /** Finds queued but not yet played - declared here so a room change can drop them too. */
+  const waiting = useRef<Array<{ cell: number; mark: DeepMark }>>([]);
+
+  // A different room: forget everything heard in the last one. Declared before the effects that
+  // play, so in the commit that brings the new room this runs first and they prime rather than play.
+  const lastRoom = useRef<string | null | undefined>(roomKey);
+  useEffect(() => {
+    if (lastRoom.current === roomKey) return;
+    lastRoom.current = roomKey;
+    seen.current = new Set();
+    primed.current = false;
+    heardDeep.current = null;
+    waiting.current = [];
+  }, [roomKey]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -146,7 +174,6 @@ export function useSpectatorSfx(
    * enough with the third-fate chord: two sightings in one match are the same mark on different
    * squares, and only one of them is anybody's third.
    */
-  const waiting = useRef<Array<{ cell: number; mark: DeepMark }>>([]);
   const timer = useRef<number | null>(null);
   /**
    * The chord's own timer, held separately from the queue's.

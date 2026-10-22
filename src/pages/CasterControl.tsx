@@ -40,6 +40,7 @@ import {
 import { useCasterAux } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
+import { DeskMatchup } from "../components/DeskMatchup";
 import "./CasterControl.css";
 import "./OverlayTiers.css";
 import "./OverlayBoard.css";
@@ -70,6 +71,26 @@ const MIN_PREVIEW = 320;
  * small enough that a deliberate pan is never mistaken for a point.
  */
 const CLICK_SLOP = 4;
+
+/** The caster plate names, kept in this browser between shows. Best-effort either way. */
+const CASTER_NAMES_KEY = "eb_caster_names";
+
+function readCasterNames(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CASTER_NAMES_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.slice(0, 2).map((n) => (typeof n === "string" ? n : "")) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCasterNames(names: string[]): void {
+  try {
+    localStorage.setItem(CASTER_NAMES_KEY, JSON.stringify(names));
+  } catch {
+    /* names just won't be remembered next time */
+  }
+}
 
 /**
  * Which square is under a point on screen, asked of the DOM rather than computed.
@@ -171,7 +192,10 @@ const PAD: Array<[string, number, number, string]> = [
  * it every fleet exactly as it does the spectator page. The browser sources get their ships from
  * here rather than from the database - see lib/overlayCast.ts.
  */
-export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code"> = {}) {
+export function CasterControl({
+  code: codeProp,
+  userId,
+}: Pick<OverlaySourceProps, "code"> & { userId?: string | null } = {}) {
   // The room comes from /cast/:code, or from the persistent /stream/cast route which resolved it off
   // the caster's overlay token. The cast channel is keyed on the room code (see lib/overlayCast), so
   // a token-resolved desk and a token-resolved board meet on it without either knowing the other
@@ -190,7 +214,13 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
   // the finds. Sent explicitly rather than left absent, because absent means "draw them" to every
   // reader - that default is for the player-pinned sources, which never hear from a desk.
   // The caster's find alert starts off too - see CastView.alerts, which defaults that way anyway.
-  const [view, setView] = useState<CastView>({ ...DEFAULT_VIEW, names: true, eggs: false, alerts: false });
+  const [view, setView] = useState<CastView>({
+    ...DEFAULT_VIEW,
+    names: true,
+    eggs: false,
+    alerts: false,
+    casters: readCasterNames(),
+  });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
   /**
    * The space the monitor is allowed to fill, measured rather than assumed.
@@ -1910,6 +1940,43 @@ export function CasterControl({ code: codeProp }: Pick<OverlaySourceProps, "code
             </p>
             {room && <FindAlertsSwitch roomId={room.id} off={Boolean(room.find_alerts_off)} />}
           </section>
+
+          {/*
+            The casters' names, on the plates under the two cam boxes in the match frame (see
+            pages/OverlayFrame). Sent on the cast frame like everything else here, so a change is on
+            stream at once; remembered in this browser so a regular desk doesn't retype them.
+          */}
+          <section>
+            <h3>{t("Caster names", "Noms des commentateurs")}</h3>
+            <div className="cast-row">
+              {[t("Caster", "Commentateur"), t("Co-caster", "Co-commentateur")].map((label, i) => (
+                <input
+                  key={i}
+                  type="text"
+                  maxLength={32}
+                  placeholder={label}
+                  aria-label={label}
+                  value={view.casters?.[i] ?? ""}
+                  onChange={(e) => {
+                    const next = [view.casters?.[0] ?? "", view.casters?.[1] ?? ""];
+                    next[i] = e.target.value;
+                    writeCasterNames(next);
+                    set({ casters: next });
+                  }}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+              ))}
+            </div>
+            <p className="cast-note muted">
+              {t(
+                "Shown on a plate along the bottom of each cam box in the match scene. Leave one empty for no plate.",
+                "Affichés sur un bandeau en bas de chaque cadre caméra de la scène de match. Laissez-en un vide pour ne pas afficher de bandeau."
+              )}
+            </p>
+          </section>
+
+          {/* Only on the persistent desk, which knows whose it is - see DeskMatchup. */}
+          {userId && <DeskMatchup userId={userId} />}
 
           <section>
             <h3>{t("Browser sources", "Sources navigateur")}</h3>

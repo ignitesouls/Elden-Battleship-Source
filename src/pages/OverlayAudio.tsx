@@ -150,7 +150,11 @@ export function OverlayAudio(props: OverlaySourceProps = {}) {
 
   // Every shot in the room, one sound per trigger-pull, plus whatever the water gives up. This is
   // the same hook the spectator's seat uses and for the same reason - see useSpectatorSfx.
-  useSpectatorSfx(attacks, true, deepCells, fates);
+  //
+  // Held off until the room's first read is in, and keyed on the room. Before that the log is empty,
+  // and priming on an empty log meant the whole match so far played at once the moment it landed -
+  // every time OBS restarted this source mid-match. See the note in useSpectatorSfx.
+  useSpectatorSfx(attacks, !state.loading && room !== null, deepCells, fates, room?.id ?? null);
 
   /**
    * The horns, the pause chime and the final sting - everything that is about the MATCH rather than

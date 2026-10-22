@@ -1,0 +1,85 @@
+/**
+ * The Starting Soon screen. Full canvas, sized in vw so it composes the same at any source size (the
+ * scene makes it 1920 wide, where 1vw is 19.2 pixels). `.ovn-embedded` is the setup page's preview,
+ * which sits in a 16:9 container and sizes in cqw against it instead.
+ */
+.ovn {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #050d14;
+  --u: 1vw;
+}
+
+.ovn-embedded {
+  position: absolute;
+  --u: 1cqw;
+}
+
+.ovn-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Darkens the middle of the sea just enough for the text to read, and leaves the sky and edges alone. */
+.ovn-shade {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 55% at 50% 52%, rgba(2, 8, 14, 0.55), rgba(2, 8, 14, 0) 70%);
+}
+
+.ovn-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(1.2 * var(--u));
+  text-align: center;
+}
+
+.ovn-logo {
+  width: calc(26 * var(--u));
+  height: auto;
+  filter: drop-shadow(0 calc(0.4 * var(--u)) calc(1.2 * var(--u)) rgba(0, 0, 0, 0.7));
+}
+
+.ovn-title {
+  font-family: var(--font-display);
+  font-size: calc(4.2 * var(--u));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f2f7fa;
+  text-shadow: 0 calc(0.15 * var(--u)) calc(0.8 * var(--u)) rgba(0, 0, 0, 0.85);
+}
+
+.ovn-matchup {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: calc(1.4 * var(--u));
+  max-width: 90%;
+  font-family: var(--font-display);
+  color: #f2f7fa;
+  text-shadow: 0 calc(0.15 * var(--u)) calc(0.7 * var(--u)) rgba(0, 0, 0, 0.85);
+}
+
+.ovn-side {
+  font-size: calc(3 * var(--u));
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(38 * var(--u));
+}
+
+.ovn-vs {
+  font-size: calc(2 * var(--u));
+  font-style: italic;
+  color: #d9a441;
+}

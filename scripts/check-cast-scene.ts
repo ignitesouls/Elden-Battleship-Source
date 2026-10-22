@@ -20,6 +20,7 @@ import {
   playerGameRect,
   playerFireRect,
   playerFleetRect,
+  fleetStripRects,
   CAST_CANVAS,
   CAST_SEATS,
   type Rect,
@@ -31,6 +32,8 @@ import {
   playerSceneParts,
   CAST_SCENE_MAIN,
   CAST_SCENE_BREAK,
+  CAST_SCENE_SOON,
+  CAST_SCENE_TRAILER,
   PLAYER_SCENE,
 } from "../src/lib/obsScene.ts";
 
@@ -71,6 +74,17 @@ console.log("\nlayout - the shape holds");
   // mis-measured number, and one source drawn over another.
   const all = castSceneRects();
   ok("no two boxes in the match scene overlap", all.every((a, i) => all.every((b, j) => i === j || !overlaps(a, b))));
+
+  // The fleet-colour strips repaint the art's white dividers. One that strayed onto a hole would
+  // paint a bar of colour across a player's stream or the board.
+  const strips = [...fleetStripRects("left"), ...fleetStripRects("right")];
+  ok("the fleet strips are on the canvas", strips.every(onCanvas));
+  ok("no fleet strip covers a hole", strips.every((s) => all.every((r) => !overlaps(s, r))));
+  ok(
+    "each side's full-height strip runs between its column and the channel",
+    fleetStripRects("left")[0].x === leftCol[0].x + leftCol[0].w &&
+      fleetStripRects("right")[0].x + fleetStripRects("right")[0].w === rightCol[0].x
+  );
 }
 
 console.log("\nlayout - the channel: clock, board, caster cams top to bottom");
@@ -102,18 +116,32 @@ console.log("\ncollection - shape");
   const scenes = file.sources.filter((s) => s.id === "scene");
   const browsers = file.sources.filter((s) => s.id === "browser_source");
 
-  ok("exactly two scenes", scenes.length === 2);
+  ok("exactly four scenes", scenes.length === 4);
   ok(
-    "the scenes are the cast layout and the break",
-    scenes.map((s) => s.name).sort().join(",") === [CAST_SCENE_BREAK, CAST_SCENE_MAIN].sort().join(",")
+    "the scenes are the match, the break, Starting Soon and the trailer",
+    scenes.map((s) => s.name).sort().join(",") ===
+      [CAST_SCENE_BREAK, CAST_SCENE_MAIN, CAST_SCENE_SOON, CAST_SCENE_TRAILER].sort().join(",")
   );
   ok("the collection opens on the cast layout", file.current_scene === CAST_SCENE_MAIN);
-  ok("scene_order lists both scenes", file.scene_order.length === 2);
+  ok("scene_order lists every scene", file.scene_order.length === 4);
   // EB Cast: 6 screens + board + clock + the match frame + finds + audio. EB Casters: the break frame.
-  ok("one browser source per box", browsers.length === 6 + 2 + 1 + 2 + 1);
+  // EB Starting Soon and EB Trailer: one source each.
+  ok("one browser source per box", browsers.length === 6 + 2 + 1 + 2 + 1 + 1 + 1);
   ok(
-    "only the audio source is routed to the mixer",
-    browsers.filter((s) => (s.settings as { reroute_audio: boolean }).reroute_audio).map((s) => s.name).join() === "EB Audio"
+    "only the board audio and the trailer are routed to the mixer",
+    browsers
+      .filter((s) => (s.settings as { reroute_audio: boolean }).reroute_audio)
+      .map((s) => s.name)
+      .sort()
+      .join() === "EB Audio,EB Trailer"
+  );
+  ok(
+    "Starting Soon and the trailer are full-canvas sources on the persistent route",
+    ["EB Starting Soon", "EB Trailer"].every((n) => {
+      const s = browsers.find((b) => b.name === n);
+      const set = s?.settings as { width: number; height: number; url: string } | undefined;
+      return !!set && set.width === 1920 && set.height === 1080 && set.url.includes(`token=${TOKEN}`);
+    })
   );
 
   // The match frame's banner is opaque and the clock sits on it, so the clock has to be stacked over
@@ -209,7 +237,7 @@ console.log("\ncollection - the caster's settings");
   const off = buildCastCollection({ base: BASE, token: TOKEN, finds: false, sound: false, newId: counter() });
   const names = off.sources.filter((s) => s.id === "browser_source").map((s) => s.name);
   ok("turning off finds and sound drops those two sources", !names.includes("EB Finds") && !names.includes("EB Audio"));
-  ok("and leaves the rest", names.length === 6 + 2 + 1 + 1);
+  ok("and leaves the rest", names.length === 6 + 2 + 1 + 1 + 1 + 1);
 
   const tuned = castSceneParts({ base: BASE, token: TOKEN, clockOpacity: 0.8, clockText: 1.25, alertSecs: 10 });
   const clockUrl = tuned.find((p) => p.entry.source.obsName === "EB Caster Clock")!.entry.url;

@@ -18,3 +18,99 @@
   display: block;
   pointer-events: none;
 }
+
+/* A white divider strip repainted in the fleet colour of the column it sits against. */
+.ovf-strip {
+  position: absolute;
+  pointer-events: none;
+}
+
+/**
+ * A player's tag: name in their fleet colour over the live tally, top-right of their box.
+ *
+ * `.ovf-seat` is the player hole, clipping the tag to it; `.ovf-tag` sits in its top-right corner -
+ * the one corner Elden Ring's HUD leaves empty. Sized in vw of this 1920-wide source (1vw = 19.2
+ * canvas pixels), so all six are identical. Bare outlined text rather than a plate: legible over any
+ * frame of video, with nothing solid over the game.
+ */
+.ovf-seat {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ovf-tag {
+  position: absolute;
+  top: 0.29vw;
+  right: 0.46vw;
+  max-width: 60%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.ovf-name {
+  max-width: 100%;
+  font-family: "Arial Black", "Segoe UI", system-ui, sans-serif;
+  font-size: 1.08vw;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.1;
+  color: var(--ovf-accent, #f2f7fa);
+  -webkit-text-stroke: 0.083vw rgba(0, 0, 0, 0.9);
+  paint-order: stroke fill;
+  text-shadow: 0 0.05vw 0.2vw rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Italic leans past the edge; a little padding keeps the last letter whole. */
+  padding-right: 0.1vw;
+}
+
+.ovf-stats {
+  display: flex;
+  gap: 0.42vw;
+  font-family: var(--font-display);
+  font-size: 0.71vw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: #eef4f7;
+  text-shadow:
+    0 0 0.1vw #000,
+    0 0 0.1vw #000,
+    0 0.05vw 0.16vw rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+/**
+ * A caster's name plate, along the bottom of their cam hole, on a slice of the art's water banner
+ * (set inline - see bannerSliceStyle). A white rule on top, the same weight as the art's own lines,
+ * so it reads as part of the frame. The source is 1920 wide, so 1vw is 19.2 canvas pixels.
+ */
+.ovf-plate {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-top: 0.21vw solid #fff;
+  background-repeat: no-repeat;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ovf-plate span {
+  max-width: 94%;
+  font-family: var(--font-display);
+  font-size: 1.1vw;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f2f7fa;
+  text-shadow:
+    0 0 0.16vw #000,
+    0 0.05vw 0.3vw rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

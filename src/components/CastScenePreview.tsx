@@ -2,10 +2,13 @@ import { FindCard } from "./FindCard";
 import { SampleBoard, SampleClock } from "./OverlaySample";
 import {
   CAST_ART,
+  bannerSliceStyle,
   boardRect,
+  casterPlateRects,
   castCamRects,
   casterCamRects,
   clockRect,
+  fleetStripRects,
   frac,
   screenRects,
   type Rect,
@@ -22,7 +25,7 @@ function place(r: Rect) {
   return { left: `${f.left * 100}%`, top: `${f.top * 100}%`, width: `${f.width * 100}%`, height: `${f.height * 100}%` };
 }
 
-/** Made-up numbers for the six plates - uneven, so the plate reads as live data rather than a template. */
+/** Made-up tallies for the six sample tags - uneven, so they read as live data rather than a template. */
 const SAMPLE_STATS = [
   [9, 4],
   [6, 7],
@@ -78,25 +81,9 @@ export function CastScenePreview({
 
   return (
     <div className="csp" role="img" aria-label={t("Preview of the match scene", "Aperçu de la scène de match")}>
-      {screenRects().map((r, i) => {
-        const team = i < 3 ? 0 : 1;
-        const [hits, misses] = SAMPLE_STATS[i];
-        return (
-          <div
-            key={i}
-            className="csp-screen"
-            style={{ ...place(r), backgroundImage: footage, ["--csp-accent" as string]: teamHex(team) }}
-          >
-            <div className="csp-tag">
-              <span className="csp-name">{t("Player", "Joueur")} {i + 1}</span>
-              <span className="csp-stats">
-                H- {hits} M- {misses} A- {Math.round((hits / (hits + misses)) * 100)}%
-              </span>
-            </div>
-            <div className="csp-border" />
-          </div>
-        );
-      })}
+      {screenRects().map((r, i) => (
+        <div key={i} className="csp-screen" style={{ ...place(r), backgroundImage: footage }} />
+      ))}
 
       <div className="csp-board" style={place(board)}>
         <SampleBoard opacity={1} emptyFade={1} textSize={1} size={boardSize} />
@@ -104,11 +91,45 @@ export function CastScenePreview({
 
       {castCamRects().map((r, i) => (
         <div key={i} className="csp-cam" style={place(r)}>
-          <span>{i === 0 ? t("Your webcam", "Votre webcam") : t("Co-caster", "Co-commentateur")}</span>
+          <span>{i === 0 ? t("Your webcam", "Votre webcam") : t("Co-caster's webcam", "Webcam du co-commentateur")}</span>
         </div>
       ))}
 
       <img className="csp-art" src={`${import.meta.env.BASE_URL}${CAST_ART.match}`} alt="" />
+      {/* The divider strips in each side's fleet colour, as the frame source paints them. */}
+      {(["left", "right"] as const).flatMap((side, team) =>
+        fleetStripRects(side).map((r, i) => (
+          <div key={`${side}${i}`} className="csp-strip" style={{ ...place(r), background: teamHex(team) }} />
+        ))
+      )}
+      {/* The player tags, as the frame source draws them - top-right of each player hole. */}
+      {screenRects().map((r, i) => {
+        const [hits, misses] = SAMPLE_STATS[i];
+        return (
+          <div key={`tag${i}`} className="csp-seat" style={place(r)}>
+            <div className="csp-tag" style={{ ["--csp-accent" as string]: teamHex(i < 3 ? 0 : 1) }}>
+              <span className="csp-name">
+                {t("Player", "Joueur")} {i + 1}
+              </span>
+              <span className="csp-stats">
+                <span>H- {hits}</span>
+                <span>M- {misses}</span>
+                <span>A- {Math.round((hits / (hits + misses)) * 100)}%</span>
+              </span>
+            </div>
+          </div>
+        );
+      })}
+      {/* The caster name plates, as the frame source draws them - names come from the desk. */}
+      {casterPlateRects().map((r, i) => (
+        <div
+          key={`plate${i}`}
+          className="csp-plate"
+          style={{ ...place(r), backgroundImage: `url(${import.meta.env.BASE_URL}${CAST_ART.match})`, ...bannerSliceStyle(r) }}
+        >
+          <span>{i === 0 ? t("Your name", "Votre nom") : t("Co-caster", "Co-commentateur")}</span>
+        </div>
+      ))}
 
       {alertMark ? (
         <div className="csp-alert" style={place(board)}>

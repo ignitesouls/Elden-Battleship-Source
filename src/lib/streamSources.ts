@@ -29,7 +29,9 @@ export type StreamElement =
   | "audio"
   | "egg"
   | "screen"
-  | "frame";
+  | "frame"
+  | "soon"
+  | "trailer";
 
 /** Who a scene is for. The same one question OverlayLinkBox asks, asked once here too. */
 export type SceneKind = "player" | "caster";

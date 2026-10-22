@@ -656,7 +656,7 @@ function SpectatorView({
   // Every shot in the room is audible from here - see useSpectatorSfx for why it's one sound per shot
   // rather than per attack row, and why the whale needs `deepCells` to be heard at all. Sits below the
   // memo it reads rather than at the top of the component, which would be a use-before-declaration.
-  useSpectatorSfx(attacks, true, deepCells, fates);
+  useSpectatorSfx(attacks, true, deepCells, fates, room.id);
 
   const overShoulder = view === "crew" && ridingWith !== null;
   const shown = view === "attacks" || view === "all" ? activeTeamsList : typeof view === "number" ? [view] : [];

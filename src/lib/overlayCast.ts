@@ -195,6 +195,12 @@ export interface CastView {
    * because it has no controller to hear it from - see pages/OverlayTimer.
    */
   delayMs?: number;
+  /**
+   * The two casters' names, for the plates under the cam boxes in the match frame - [caster,
+   * co-caster]. Typed on the desk and drawn by the frame source (pages/OverlayFrame); an empty name
+   * draws no plate. Optional and defaulted to none by the reader, like the fields above.
+   */
+  casters?: string[] | null;
 }
 
 /** Ceiling on the overlay hold. Past this a "delay" is really "the board has stopped". */

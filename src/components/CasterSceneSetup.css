@@ -126,6 +126,16 @@
   margin-bottom: 0.5rem;
 }
 
+/* The trailer in the preview slot - the same 16:9 box the scene previews use. */
+.cst-trailer {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: #000;
+  display: block;
+}
+
 /* A frame image, as a thumbnail you click to download. */
 .cst-file {
   display: flex;
