@@ -347,54 +347,90 @@ export function chooseShots(input: BotTurnInput): number[] {
 }
 
 /**
- * How much the bot's aim pulls towards each square, as a multiplier on its route - 0 for a square
- * already fired at, 1 for "aim has no opinion".
+ * What the crew bot's aim makes of the board - see botCrew.ts.
  *
- * This is the boss-board bot's aim (see botCrew.ts). chooseShots above lets aim PICK the square,
- * which is what made the bot gun ships down instead of playing like a crew; here aim only leans on a
- * captain's route, and how hard it leans is the tier.
- *
- *   chud       none - he plays his route and lets the hits fall where they fall
- *   tarnished  follows up a hit, harder once there are two in a line
- *   sweat      the same, steered by where the unsunk hulls could still lie, and shy of dead water
- *   shaker     sweat, plus the real hull of anything he has hit
+ * chooseShots above lets aim PICK the square, which is what made the first bot gun ships down instead
+ * of playing like a crew. Here aim only says how much each square is worth to a hunter, and a captain
+ * leans on it as hard as its tier and its role say (botCrew raises `pull` to that power): a Limgrave
+ * player barely looks up from its route, a DLC player jumps on a hit, Chud never does.
  */
-export function aimWeights(input: Omit<BotTurnInput, "cost" | "matchElapsed" | "random">): Float64Array {
+export interface AimView {
+  /**
+   * How much each square is worth to someone hunting: 0 already fired, about 1 for "nothing known",
+   * less for water no unsunk hull can still fit in, more where hulls likely lie and a lot more beside
+   * a hit. On a Shaker's view, more again along a hit ship's real hull.
+   */
+  pull: Float64Array;
+  /** The unfired squares that would finish a found ship - beside a hit, or a Shaker's hull. */
+  lead: Set<number>;
+  /**
+   * Every ship still afloat has been found - hit at least once - on some board. From here a crew stops
+   * scouting and goes to finish them, which is the endgame the first bot never played.
+   */
+  endgame: boolean;
+}
+
+/** Separate patches of open hits: a ship found but not yet sunk is (at least) one of these. */
+function hitClusters(board: Board, n: number): number {
+  const seen = new Set<number>();
+  let clusters = 0;
+  for (const start of openHits(board)) {
+    if (seen.has(start)) continue;
+    clusters++;
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const c = stack.pop()!;
+      for (const nb of neighbours(c, n)) {
+        if (board.state[nb] === HIT && !seen.has(nb)) {
+          seen.add(nb);
+          stack.push(nb);
+        }
+      }
+    }
+  }
+  return clusters;
+}
+
+export function aimView(input: Omit<BotTurnInput, "cost" | "matchElapsed" | "random">): AimView {
   const n = input.boardSize;
-  const spec = BOT_TIER_SPECS[input.tier];
   const fired = new Set(input.shots.map((s) => s.cell));
-  const weights = new Float64Array(n * n).fill(1);
-  for (const c of fired) if (c >= 0 && c < n * n) weights[c] = 0;
-  if (spec.finish === "forgetful") return weights;
-
+  const pull = new Float64Array(n * n).fill(1);
+  for (const c of fired) if (c >= 0 && c < n * n) pull[c] = 0;
   const boards = input.defenders.map((d) => buildBoard({ ...input, cost: null, matchElapsed: 0, random: Math.random }, d));
-  const smart = spec.hunt === "density";
 
-  // Dead water: no unsunk hull fits there on any board. A crew that has been paying attention stops
-  // going out of its way for those - but the square still has its boss, so it is shunned, not banned.
+  // Where unsunk hulls could still lie. Dead water - no hull fits on any board - is shunned rather
+  // than banned: the square still has its boss, and a captain on its route may do it anyway.
   const hunt = new Float64Array(n * n);
   for (const b of boards) density(b, n, false).forEach((v, i) => (hunt[i] += v));
   const peak = Math.max(1, ...hunt);
   for (let c = 0; c < n * n; c++) {
-    if (weights[c] === 0) continue;
-    if (hunt[c] === 0) weights[c] *= smart ? 0.15 : 0.4;
-    else if (smart) weights[c] *= 0.6 + 0.8 * (hunt[c] / peak);
+    if (pull[c] === 0) continue;
+    pull[c] *= hunt[c] === 0 ? 0.15 : 0.6 + 0.8 * (hunt[c] / peak);
   }
 
+  const lead = new Set<number>();
+  let endgame = false;
   for (const b of boards) {
-    if (openHits(b).length === 0) continue;
-    const beside = besideHits(b, n, fired);
-    const ends = new Set(lineEnds(b, n, fired));
-    const through = smart ? density(b, n, true) : null;
-    const throughPeak = through ? Math.max(1, ...through) : 1;
-    for (const c of beside) {
-      let pull = ends.has(c) ? 6 : 3;
-      if (through) pull = 2 + 8 * (through[c] / throughPeak);
-      weights[c] *= pull;
+    const open = openHits(b);
+    if (open.length === 0) continue;
+    const through = density(b, n, true);
+    const throughPeak = Math.max(1, ...through);
+    const hull = b.truth ? alongTheHull(b, n, fired) : [];
+    for (const c of besideHits(b, n, fired)) {
+      // Knowing which way a hit ship runs (Shaker) means knowing the squares beside it that are NOT
+      // on its line are no lead at all - they keep only their worth as somewhere to scout.
+      if (b.truth) continue;
+      pull[c] *= 2 + 8 * (through[c] / throughPeak);
+      if (through[c] > 0) lead.add(c);
     }
-    if (spec.finish === "knows") for (const c of alongTheHull(b, n, fired)) weights[c] *= 4;
+    for (const c of hull) {
+      pull[c] *= 40;
+      lead.add(c);
+    }
+    if (b.remaining.length > 0 && hitClusters(b, n) >= b.remaining.length) endgame = true;
   }
-  return weights;
+  return { pull, lead, endgame };
 }
 
 /** A standard normal draw (Box-Muller). */

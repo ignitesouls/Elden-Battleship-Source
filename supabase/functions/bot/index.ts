@@ -38,9 +38,19 @@ import { activeTeams, initialHitsRemaining, randomPlacements, validatePlacements
 import { MATCH_START_MARKER, matchTimings, battlePhaseAt } from '../../../src/lib/matchTime.ts'
 import { pauseInfoAt } from '../../../src/lib/matchPause.ts'
 import { effectiveCosts } from '../../../src/lib/prereqCost.ts'
-import { BOT_USER_ID, isBotTier, type BotTier } from '../../../src/lib/bot.ts'
-import { aimWeights, chooseShots, nextGapSeconds, openingSeconds, type BotShot } from '../../../src/lib/botBrain.ts'
-import { crewDue, crewReady, newCrew, playCrew, type BotRoutes, type CrewState, type CrewWorld } from '../../../src/lib/botCrew.ts'
+import { BOT_CAPTAIN_IDS, BOT_TIER_SPECS, BOT_USER_ID, isBot, isBotTier, type BotTier } from '../../../src/lib/bot.ts'
+import { aimView, chooseShots, nextGapSeconds, openingSeconds, type BotShot } from '../../../src/lib/botBrain.ts'
+import {
+  captainNames,
+  crewDue,
+  crewReady,
+  newCrew,
+  playCrew,
+  type BotRoutes,
+  type CrewShot,
+  type CrewState,
+  type CrewWorld,
+} from '../../../src/lib/botCrew.ts'
 import type { RuleSquare } from '../../../src/lib/botRules.ts'
 import type { ShipDefinition } from '../../../src/types/battleship.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
@@ -158,8 +168,43 @@ interface RoomRow {
   bot_state: CrewState | null
 }
 
+/**
+ * Seats the bot's crew once placement opens: one seat per captain, named for its role, on the bot's
+ * fleet. Fleets are locked from here, so the biggest human crew - and with it the number of captains
+ * - is settled. Off the boss board, or against a solo player, that is the one seat it already has.
+ * Idempotent: a call that finds the seats already right changes nothing.
+ */
+async function seatCrew(room: RoomRow, tier: BotTier, team: number) {
+  const roster = await rows<{ id: string; team: number | null; user_id: string; nickname: string }>(sql`
+    select id, team, user_id, nickname from public.players where room_id = ${room.id}`)
+  const sizes = new Map<number, number>()
+  for (const p of roster) if (p.team !== null && !isBot(p)) sizes.set(p.team, (sizes.get(p.team) ?? 0) + 1)
+  const crew = Math.min(BOT_CAPTAIN_IDS.length, Math.max(1, ...sizes.values()))
+  const board = bossBoard(room.id, room.square_set ?? DEFAULT_SET, room.board_size * room.board_size, room.seed, room.board_perm, room.seed_set_at)
+  const routes = botRoutes as unknown as BotRoutes
+  const names = board && crewReady({ routes, board: board.squares }) ? captainNames(routes, tier, crew) : [BOT_TIER_SPECS[tier].name]
+
+  await sql.begin(async (tx) => {
+    for (let i = 0; i < names.length; i++) {
+      const id = BOT_CAPTAIN_IDS[i]
+      const seat = roster.find((p) => p.user_id === id)
+      if (!seat) {
+        // A second later than the first seat's, so the first stays the fleet's captain.
+        await tx`
+          insert into public.players (room_id, user_id, nickname, team, is_host, team_joined_at)
+          values (${room.id}, ${id}, ${names[i]}, ${team}, false, now() + ${`${i} seconds`}::interval)`
+      } else if (seat.nickname !== names[i]) {
+        await tx`update public.players set nickname = ${names[i]} where id = ${seat.id}`
+      }
+    }
+    const extra = roster.filter((p) => isBot(p) && !BOT_CAPTAIN_IDS.slice(0, names.length).includes(p.user_id)).map((p) => p.id)
+    if (extra.length) await tx`delete from public.players where id in ${tx(extra)}`
+  })
+}
+
 /** Lays the bot's ships once placement opens. Idempotent: a placed bot fleet is left alone. */
 async function place(room: RoomRow, team: number) {
+  await seatCrew(room, room.bot_tier as BotTier, team)
   const cells = room.board_size * room.board_size
   const [fleet] = await rows<{ placement_confirmed: boolean; cells: number }>(sql`
     select placement_confirmed, jsonb_array_length(ship_grid) as cells
@@ -189,22 +234,43 @@ async function place(room: RoomRow, team: number) {
   return jsonResponse({ ok: true, placed: true })
 }
 
+/** A database handle: the pool, or one transaction on it. */
+type Db = postgres.Sql
+
+/** rows(), on a given handle - inside a transaction, every read has to go through the transaction. */
+async function rowsOn<T>(db: Db, query: postgres.PendingQuery<postgres.Row[]>): Promise<T[]> {
+  const [{ rows }] = await db`select coalesce(json_agg(q), '[]'::json) as rows from (${query}) q`
+  return rows as T[]
+}
+
+interface AttackRow {
+  cell_index: number
+  defender_team: number
+  result: string
+  sunk_ship_size: number | null
+  sunk_start_row: number | null
+  sunk_start_col: number | null
+  sunk_horizontal: boolean | null
+}
+
+const toShot = (a: AttackRow): BotShot => ({
+  cell: a.cell_index,
+  defender: a.defender_team,
+  result: a.result as BotShot['result'],
+  sunkSize: a.sunk_ship_size,
+  sunkStartRow: a.sunk_start_row,
+  sunkStartCol: a.sunk_start_col,
+  sunkHorizontal: a.sunk_horizontal,
+})
+
 /** What the bot knows going into a turn: its own shots and verdicts, and who is still afloat. */
-async function knowledge(room: RoomRow, tier: BotTier, team: number, defenders: number[]) {
+async function knowledge(db: Db, room: RoomRow, tier: BotTier, team: number, defenders: number[]) {
   const [mine, fallen] = await Promise.all([
-    rows<{
-      cell_index: number
-      defender_team: number
-      result: string
-      sunk_ship_size: number | null
-      sunk_start_row: number | null
-      sunk_start_col: number | null
-      sunk_horizontal: boolean | null
-    }>(sql`
+    rowsOn<AttackRow>(db, db`
       select cell_index, defender_team, result, sunk_ship_size, sunk_start_row, sunk_start_col, sunk_horizontal
         from public.attacks
        where room_id = ${room.id} and attacker_team = ${team} and cell_index >= 0`),
-    rows<{ team: number }>(sql`
+    rowsOn<{ team: number }>(db, db`
       select team from public.team_ready where room_id = ${room.id} and eliminated`),
   ])
   const sunkTeams = new Set(fallen.map((f) => f.team))
@@ -212,22 +278,38 @@ async function knowledge(room: RoomRow, tier: BotTier, team: number, defenders: 
 
   let truth = new Map<number, number[]>()
   if (tier === 'shaker' && alive.length > 0) {
-    const grids = await rows<{ team: number; ship_index_grid: number[] }>(sql`
+    const grids = await rowsOn<{ team: number; ship_index_grid: number[] }>(db, db`
       select team, ship_index_grid from public.fleets
-       where room_id = ${room.id} and team in ${sql(alive)}`)
+       where room_id = ${room.id} and team in ${db(alive)}`)
     truth = new Map(grids.map((g) => [g.team, g.ship_index_grid]))
   }
+  return { shots: mine.map(toShot), defenders: alive.map((t) => ({ team: t, truth: truth.get(t) ?? null })) }
+}
 
-  const shots: BotShot[] = mine.map((a) => ({
-    cell: a.cell_index,
-    defender: a.defender_team,
-    result: a.result as BotShot['result'],
-    sunkSize: a.sunk_ship_size,
-    sunkStartRow: a.sunk_start_row,
-    sunkStartCol: a.sunk_start_col,
-    sunkHorizontal: a.sunk_horizontal,
-  }))
-  return { shots, defenders: alive.map((t) => ({ team: t, truth: truth.get(t) ?? null })) }
+/**
+ * Writes one bot shot - a row per opposing fleet, as a person's shot is (see sendAttack and
+ * auto-fire) - resolves it on the spot, and returns the settled rows. `at` is the instant the
+ * captain's kill landed, which is the timestamp the fire-on-kill rule says a shot carries.
+ */
+async function writeShot(db: Db, room: RoomRow, team: number, defenders: number[], cell: number, playerId: string, at: string) {
+  const inserted = (await db`
+    insert into public.attacks ${db(defenders.map((defender_team) => ({
+      room_id: room.id,
+      cell_index: cell,
+      attacker_team: team,
+      defender_team,
+      attacker_player_id: playerId,
+      created_at: at,
+    })))}
+    on conflict (room_id, attacker_team, defender_team, cell_index) do nothing
+    returning id`) as unknown as { id: string }[]
+  // Resolved here rather than left for a browser: every client would do it anyway, but the bot's next
+  // move wants to know what this shot found.
+  for (const row of inserted) await db`select public.resolve_attack(${row.id}::uuid)`.catch(() => null)
+  if (inserted.length === 0) return []
+  return await rowsOn<AttackRow>(db, db`
+    select cell_index, defender_team, result, sunk_ship_size, sunk_start_row, sunk_start_col, sunk_horizontal
+      from public.attacks where id in ${db(inserted.map((r) => r.id))}`)
 }
 
 /** Fires the bot's shots if anything is due, and books the next turn. */
@@ -255,7 +337,7 @@ async function fire(room: RoomRow, tier: BotTier, team: number) {
   // One captain per person on the biggest fleet it faces - pace is per captain.
   const crewSizes = new Map<number, number>()
   for (const p of roster) {
-    if (p.team === null || p.user_id === BOT_USER_ID) continue
+    if (p.team === null || isBot(p)) continue
     crewSizes.set(p.team, (crewSizes.get(p.team) ?? 0) + 1)
   }
   const crew = Math.max(1, ...crewSizes.values())
@@ -269,35 +351,23 @@ async function fire(room: RoomRow, tier: BotTier, team: number) {
   const world: CrewWorld | null = board
     ? { tier, routes: botRoutes as unknown as BotRoutes, shared: bossPrereqs as Record<string, unknown>, board: board.squares, lookup: (n) => byName.get(n) }
     : null
-  const asCrew = world !== null && crewReady(world)
   const random = Math.random
 
+  if (world !== null && crewReady(world)) {
+    return await crewTurn(room, tier, team, defenders, roster, seat.id, world, crew, elapsed, now)
+  }
+
+  // -- the plain bot, off the boss board ------------------------------------------------------------
   let firing: number[] = []
   let next: number
-  let state: CrewState | null = room.bot_state
+  const state: CrewState | null = null
 
-  if (asCrew) {
-    const known = await knowledge(room, tier, team, defenders)
-    const turn = {
-      fired: new Set(known.shots.map((s) => s.cell)),
-      aim: aimWeights({ tier, boardSize: room.board_size, shipDefs: room.ship_defs, shots: known.shots, defenders: known.defenders }),
-      random,
-    }
-    // The first turn of a match only sets the captains off; their first kills come after a real
-    // run's opening, twenty-odd minutes in (see openingSeconds).
-    if (!state || state.v !== 1) {
-      state = newCrew(world!, crew, turn)
-      for (const c of state.captains) c.at = Math.max(c.at, elapsed)
-    } else {
-      firing = playCrew(state, world!, turn, elapsed)
-    }
-    next = crewDue(state)
-  } else if (room.bot_next_s === null) {
+  if (room.bot_next_s === null) {
     // The plain bot: the first call books the first shot at a real crew's opening. Never in the past:
     // a driver whose tab only opened late gets a bot that starts now, not one that fires a backlog.
     next = Math.max(elapsed, openingSeconds(tier, crew, random))
   } else {
-    const known = await knowledge(room, tier, team, defenders)
+    const known = await knowledge(sql, room, tier, team, defenders)
     firing = chooseShots({
       tier,
       boardSize: room.board_size,
@@ -311,38 +381,87 @@ async function fire(room: RoomRow, tier: BotTier, team: number) {
     next = elapsed + nextGapSeconds(tier, crew, random)
   }
 
-  // Claim the turn. Whoever moves bot_next_s on is the one who fires; everyone else gets nothing. The
-  // crew's state rides in the same write, so it can never disagree with the shots it explains.
+  // Claim the turn. Whoever moves bot_next_s on is the one who fires; everyone else gets nothing.
   const claimed = room.bot_next_s === null
     ? await sql`
-        update public.rooms set bot_next_s = ${next}, bot_state = ${state ? sql.json(state as unknown as postgres.JSONValue) : null}
+        update public.rooms set bot_next_s = ${next}, bot_state = ${state}
          where id = ${room.id} and bot_next_s is null and status = 'battle' returning id`
     : await sql`
-        update public.rooms set bot_next_s = ${next}, bot_state = ${state ? sql.json(state as unknown as postgres.JSONValue) : null}
+        update public.rooms set bot_next_s = ${next}, bot_state = ${state}
          where id = ${room.id} and bot_next_s = ${room.bot_next_s} and status = 'battle' returning id`
   if (claimed.length === 0) return jsonResponse({ ok: true, raced: true })
 
   const at = new Date(now).toISOString()
-  const fired: number[] = []
-  for (const cell of firing) {
-    const inserted = (await sql`
-      insert into public.attacks ${sql(defenders.map((defender_team) => ({
-        room_id: room.id,
-        cell_index: cell,
-        attacker_team: team,
-        defender_team,
-        attacker_player_id: seat.id,
-        created_at: at,
-      })))}
-      on conflict (room_id, attacker_team, defender_team, cell_index) do nothing
-      returning id`) as unknown as { id: string }[]
-    // Resolved here rather than left for a browser: every client would do it anyway, but the next
-    // turn of the bot wants to know what this shot found.
-    await Promise.all(inserted.map((row) => sql`select public.resolve_attack(${row.id}::uuid)`.catch(() => null)))
-    fired.push(cell)
-  }
+  for (const cell of firing) await writeShot(sql, room, team, defenders, cell, seat.id, at)
+  return jsonResponse({ ok: true, fired: firing, next, crew: false })
+}
 
-  return jsonResponse({ ok: true, fired, next, crew: asCrew })
+/**
+ * One turn of the bot crew, inside a single transaction that holds the room row.
+ *
+ * The lock is what makes it safe to fire shots one at a time while the crew is still deciding: two
+ * browsers waking at once both get here, the second waits on the lock, then finds bot_next_s has moved
+ * and goes home. Each shot is written and resolved the moment its captain lands it, and the verdict is
+ * handed straight back to the crew (see playCrew) before that captain chooses where to go next. The
+ * crew's state is written in the same transaction, so it can never disagree with the shots it explains.
+ *
+ * Each shot is credited to its captain's own seat, and carries the instant that captain's kill landed
+ * rather than the instant this request ran - so three captains finishing between two wake-ups do not
+ * arrive stamped to the same second.
+ */
+async function crewTurn(
+  room: RoomRow,
+  tier: BotTier,
+  team: number,
+  defenders: number[],
+  roster: { id: string; user_id: string }[],
+  fallbackSeat: string,
+  world: CrewWorld,
+  crew: number,
+  elapsed: number,
+  now: number
+) {
+  const seatOf = (captain: number) => roster.find((p) => p.user_id === BOT_CAPTAIN_IDS[captain])?.id ?? fallbackSeat
+  const random = Math.random
+
+  return await sql.begin(async (txRaw) => {
+    const tx = txRaw as unknown as Db
+    const [locked] = await rowsOn<{ status: string; bot_next_s: number | null; bot_state: CrewState | null }>(tx, tx`
+      select status, bot_next_s, bot_state from public.rooms where id = ${room.id} for update`)
+    if (!locked || locked.status !== 'battle' || locked.bot_next_s !== room.bot_next_s) {
+      return jsonResponse({ ok: true, raced: true })
+    }
+
+    const known = await knowledge(tx, room, tier, team, defenders)
+    const shots = known.shots
+    const aim = () =>
+      aimView({ tier, boardSize: room.board_size, shipDefs: room.ship_defs, shots, defenders: known.defenders })
+    const turn = { fired: new Set(shots.map((s) => s.cell)), aim: aim(), random }
+
+    const fired: number[] = []
+    const onShot = async (shot: CrewShot) => {
+      // The kill's own moment, never in the future and never before the catch-up window.
+      const at = new Date(Math.min(now, now - (elapsed - shot.at) * 1000)).toISOString()
+      const settled = await writeShot(tx, room, team, defenders, shot.cell, seatOf(shot.captain), at)
+      shots.push(...settled.map(toShot))
+      fired.push(shot.cell)
+      return aim()
+    }
+
+    let state = locked.bot_state
+    if (!state || state.v !== 1) {
+      // The first turn of a match only sets the captains off; their first kills come after a real
+      // run's opening (see openingSeconds), and never in the past.
+      state = newCrew(world, crew, turn)
+      for (const c of state.captains) c.at = Math.max(c.at, elapsed)
+    } else {
+      await playCrew(state, world, turn, elapsed, onShot)
+    }
+    const next = crewDue(state)
+    await tx`update public.rooms set bot_next_s = ${next}, bot_state = ${tx.json(state as unknown as postgres.JSONValue)}
+              where id = ${room.id}`
+    return jsonResponse({ ok: true, fired, next, crew: true })
+  })
 }
 
 Deno.serve(async (req) => {

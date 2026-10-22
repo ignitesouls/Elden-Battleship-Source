@@ -192,10 +192,12 @@ for (let i = 1; i < BOT_TIERS.length; i++) {
   const crew = openings('tarnished', 3)
   check('a crew of three opens near the median team', crew > 13 * 60 && crew < 17 * 60, mmss(crew))
 
+  // Every tier opens like the median real crew - the tiers differ in everything after the opening,
+  // not in a first shot that arrives before anyone could have earned one.
   const byTier = BOT_TIERS.map((t) => openings(t, 1))
   console.log(`       solo openings: ${BOT_TIERS.map((t, i) => `${t} ${mmss(byTier[i])}`).join(', ')}`)
-  check('each tier opens sooner than the one below', byTier.every((s, i) => i === 0 || s < byTier[i - 1]))
-  check('even Shaker needs a real run before his first kill', byTier[3] > 12 * 60, mmss(byTier[3]))
+  check('every tier opens like the median player', byTier.every((s) => Math.abs(s - OPENING_MEDIAN_SECONDS) < 90),
+    byTier.map(mmss).join(' / '))
 }
 
 console.log(failures === 0 ? '\nall bot checks passed' : `\n${failures} bot check(s) failed`)

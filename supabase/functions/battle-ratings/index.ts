@@ -15,7 +15,7 @@
  * Now the recap makes one request here. The rating itself still moves with the archive: the snapshot
  * carries a fingerprint of what it was computed from, and anything that changes the inputs - a match
  * archived, voided or unvoided, an admin deleting or re-timing a shot, a deploy that changed the rating
- * code - changes the fingerprint, and the next request recomputes. So the recap still agrees with the
+ * code - changes the fingerprint (archive_revision, see fingerprint()), and the next request recomputes. So the recap still agrees with the
  * Hall of Fame about the same game, which is the reason ratings were never frozen at archive time.
  *
  * -- Why the database directly, not supabase-js ---------------------------------------------------
@@ -76,22 +76,16 @@ const PARTICIPANT_LIMIT = 1_000_000
 const LOCK_KEY = 'battle_rating_snapshots'
 
 /**
- * Everything the ratings read, boiled down. Cheap - three aggregates over indexed tables - and run on
- * every request, which is what lets the snapshot follow the archive without a trigger or a cron.
- *
- * Counts catch archives and deletions, the sums catch an admin re-timing or moving a shot and a
- * corrected participation row, the void list catches voids in either direction, and the code version
- * catches a deploy that changed the formula.
+ * Everything the ratings read, boiled down: archive_revision, which any write to match_events,
+ * match_participants or voided_matches bumps (an archive, a void either way, an admin deleting or
+ * re-timing a shot), plus the code version for a deploy that changed the formula. Run on every request,
+ * so it has to be one row - see 20261023015000. It used to be counts and sums over the whole archive,
+ * which by October 2026 was 41% of all database time and up to 21s a call.
  */
 async function fingerprint(tx: postgres.Sql | postgres.TransactionSql): Promise<string> {
   const [row] = await tx`
     select md5(concat_ws('|',
-      (select concat_ws(':', count(*), sum(match_seconds), sum(cell_index), max(finished_at))
-         from public.match_events),
-      (select concat_ws(':', count(*), sum(shots), sum(hits), sum(sunk),
-                        count(*) filter (where won), count(*) filter (where draw))
-         from public.match_participants),
-      (select string_agg(match_key, ',' order by match_key) from public.voided_matches),
+      (select revision from public.archive_revision),
       ${RATING_CODE_VERSION}::text
     )) as fp`
   return row.fp as string
@@ -180,7 +174,7 @@ async function storePowers(
 ): Promise<void> {
   const byMatch = new Map<string, PowerGame>()
   for (const p of parts) {
-    const game = byMatch.get(p.match_key) ?? { matchKey: p.match_key, finishedAt: p.finished_at, players: [] }
+    const game: PowerGame = byMatch.get(p.match_key) ?? { matchKey: p.match_key, finishedAt: p.finished_at, players: [] }
     game.players.push({ key: playerKey(p.user_id, p.nickname), team: p.team, won: !!p.won, draw: !!p.draw })
     byMatch.set(p.match_key, game)
   }

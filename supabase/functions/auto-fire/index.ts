@@ -326,10 +326,32 @@ interface PersonalBests {
  * Safe to hold for the life of the match: the rows are archived games, and the match being played
  * is not one of them until it finishes. Keyed on the match's start marker and its board, not just the
  * room, because a room is replayed: the next match there may be on another board, and has the last
- * one in its archive. The TTL only bounds memory on a long-lived instance; a cold one simply reads again.
+ * one in its archive. The TTL only bounds memory on a long-lived instance.
+ *
+ * Memory alone was not enough: Supabase runs many short-lived copies of this function, and a copy
+ * that had never seen the captain read their whole career again - 13,305 times by October 2026. So a
+ * miss here falls back to autofire_pbs (see 20261023015000), and only a miss there reads the career.
  */
 const PB_TTL_MS = 30 * 60 * 1000
 const pbCache = new Map<string, { at: number; bests: PersonalBests }>()
+
+/** autofire_pbs rows older than this go whenever a new one is written - see the migration. */
+const PB_ROW_TTL = '1 day'
+
+async function storedBests(key: string): Promise<PersonalBests | null> {
+  const [row] = await sql<{ bests: PersonalBests }[]>`
+    select bests from public.autofire_pbs where cache_key = ${key}`
+  return row?.bests ?? null
+}
+
+async function storeBests(key: string, bests: PersonalBests): Promise<void> {
+  // sql.json, not JSON.stringify - see the note in answerTest.
+  await sql`
+    insert into public.autofire_pbs (cache_key, bests)
+    values (${key}, ${sql.json(bests as unknown as postgres.JSONValue)})
+    on conflict (cache_key) do update set bests = excluded.bests, computed_at = now()`
+  await sql`delete from public.autofire_pbs where computed_at < now() - ${PB_ROW_TTL}::interval`
+}
 
 /**
  * Every stored id that shares a records board with `setId`, exactly as displaySquareSet folds them
@@ -432,7 +454,13 @@ async function loadBests(
     const now = Date.now()
     let hit = pbCache.get(key)
     if (!hit || now - hit.at > PB_TTL_MS) {
-      hit = { at: now, bests: await personalBests(userId, setId, room.board_size, shape) }
+      let bests = await storedBests(key)
+      if (!bests) {
+        bests = await personalBests(userId, setId, room.board_size, shape)
+        // A failed write only costs the next cold copy a re-read, never this reply.
+        await storeBests(key, bests).catch(() => {})
+      }
+      hit = { at: now, bests }
       pbCache.set(key, hit)
       for (const [k, v] of pbCache) if (now - v.at > PB_TTL_MS) pbCache.delete(k)
     }
