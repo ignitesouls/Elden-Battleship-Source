@@ -45,6 +45,7 @@ import { useCasterAux, CARD_MS, BOARD_SLOT } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
 import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
+import { DeskMenu } from "../components/DeskMenu";
 import { fetchOfficialMatch } from "../lib/tournament/api";
 import { useCastDesks } from "../lib/castDesks";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
@@ -471,6 +472,13 @@ export function CasterControl({
   /** New live points: lit in the list, and the newest pinned to the top of the panel - see useNewPoints. */
   const newPoints = useNewPoints(talking.live, talking.loading);
   const talkingRef = useRef<HTMLElement | null>(null);
+  /** Bumped by the pinned point's jump, which opens the Talking points group if it was shut. */
+  const [talkSignal, setTalkSignal] = useState(0);
+  const jumpToTalking = useCallback(() => {
+    setTalkSignal((n) => n + 1);
+    // A frame later, once the group has opened and the list has a place on the page to scroll to.
+    requestAnimationFrame(() => talkingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
   const slotFor = useCallback(
     // A point about one player goes over their box; one about nobody in particular, over the board.
     (p: TalkingPoint) => (p.playerId ? (screens.find((s) => s.playerId === p.playerId)?.slot ?? null) : BOARD_SLOT),
@@ -1120,6 +1128,10 @@ export function CasterControl({
   }
 
   const set = (patch: Partial<CastView>) => setView((v) => ({ ...v, ...patch }));
+  /** What a locked group's header says - see DeskMenu. */
+  const lockedNote = desks.driver
+    ? t(`${desks.driver.name} has the board`, `${desks.driver.name} a le plateau`)
+    : t("another caster has the board", "un autre commentateur a le plateau");
 
   const origin = `${window.location.origin}${import.meta.env.BASE_URL}`;
   // Carries the desk's stream, so this board follows this desk and not another one in the room.
@@ -1471,7 +1483,7 @@ export function CasterControl({
             <div key={newPoints.latest.id} className="tp-pinned tp-flash" style={{ ["--tp-color" as string]: newPoints.latest.team === null ? "var(--accent)" : teamHex(newPoints.latest.team) }}>
               <button
                 className="tp-pinned-text"
-                onClick={() => talkingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                onClick={jumpToTalking}
                 title={t("Go to the talking points", "Aller aux points à aborder")}
               >
                 <span className="cast-status">{t("New talking point", "Nouveau point à aborder")}</span>
@@ -1490,8 +1502,27 @@ export function CasterControl({
             </div>
           )}
 
-          {/* Everything that aims or dresses the board belongs to whoever holds it. */}
-          <div className="cast-board-controls" inert={!driving}>
+          {/*
+            The controls, in collapsible groups (components/DeskMenu) - the talking points first and
+            open, since they are what a caster reaches for mid-sentence.
+
+            Commentary rather than the board, so every caster at the desk can use it, holding it or not.
+          */}
+          <DeskMenu id="talk" title={t("Talking points", "Points à aborder")} defaultOpen openSignal={talkSignal}>
+            {chases.length > 0 && (
+              <section>
+                <h3>{t("Records in play", "Records en jeu")}</h3>
+                <RecordChases chases={chases} showTeams title="" />
+              </section>
+            )}
+            <section ref={talkingRef}>
+              <TalkingPoints {...talking} flashing={newPoints.flashing} slotFor={slotFor} onShow={showPoint} />
+            </section>
+          </DeskMenu>
+
+          {/* Everything that aims or dresses the board belongs to whoever holds it: the next three groups
+              lock, still openable, for a caster watching another's hands. */}
+          <DeskMenu id="view" title={t("Board view", "Vue du plateau")} locked={!driving} lockedNote={lockedNote}>
           <section>
             <h3>{t("View", "Vue")}</h3>
             <div className="cast-buttons">
@@ -1672,8 +1703,9 @@ export function CasterControl({
               )}
             </p>
           </section>
+          </DeskMenu>
 
-
+          <DeskMenu id="camera" title={t("Camera", "Caméra")} locked={!driving} lockedNote={lockedNote}>
           {/*
             Framing slots. Save is a separate small button rather than a long-press or a shift-click,
             because the two actions have very different costs: recalling the wrong slot is a
@@ -1959,7 +1991,9 @@ export function CasterControl({
               </>
             )}
           </section>
+          </DeskMenu>
 
+          <DeskMenu id="look" title={t("Board look", "Apparence du plateau")} locked={!driving} lockedNote={lockedNote}>
           {/*
             Result markers. One switch for the sprite AND the cell fill together: turning off only
             the sprite leaves a fully colour-coded board, which is not what anybody means by taking
@@ -2016,22 +2050,7 @@ export function CasterControl({
               </p>
             )}
           </section>
-          </div>
 
-          {/* Commentary rather than the board, so every caster at the desk can use it, holding it or not. */}
-          {chases.length > 0 && (
-            <section>
-              <h3>{t("Records in play", "Records en jeu")}</h3>
-              <RecordChases chases={chases} showTeams title="" />
-            </section>
-          )}
-
-          <section ref={talkingRef}>
-            <h3>{t("Talking points", "Points à aborder")}</h3>
-            <TalkingPoints {...talking} flashing={newPoints.flashing} slotFor={slotFor} onShow={showPoint} />
-          </section>
-
-          <div className="cast-board-controls" inert={!driving}>
           <section>
             <h3>{t("Board", "Plateau")}</h3>
             <div className="cast-buttons">
@@ -2080,8 +2099,9 @@ export function CasterControl({
               )}
             </p>
           </section>
-          </div>
+          </DeskMenu>
 
+          <DeskMenu id="streams" title={t("Player streams", "Flux des joueurs")}>
           {/*
             The player streams: how far the board is held back to meet them, and a way to kick a
             box that has drifted.
@@ -2092,7 +2112,6 @@ export function CasterControl({
             Browser sources list. Only ADDS latency - a Twitch stream cannot be made earlier.
           */}
           <section>
-            <h3>{t("Player streams", "Flux des joueurs")}</h3>
             <div className="cast-row">
               <input
                 type="range"
@@ -2148,6 +2167,9 @@ export function CasterControl({
             </p>
             {room && <FindAlertsSwitch roomId={room.id} off={Boolean(room.find_alerts_off)} />}
           </section>
+          </DeskMenu>
+
+          <DeskMenu id="names" title={t("Names on stream", "Noms à l'écran")}>
 
           {/*
             The casters' names, on the plates under the two cam boxes in the match frame (see
@@ -2188,9 +2210,10 @@ export function CasterControl({
 
           {/* Only on a desk that knows whose stream it is - see DeskMatchup. */}
           {deskOwner && <DeskMatchup key={deskOwner} userId={deskOwner} own={ownDesk} teams={officialTeams} />}
+          </DeskMenu>
 
+          <DeskMenu id="sources" title={t("Browser sources", "Sources navigateur")}>
           <section>
-            <h3>{t("Browser sources", "Sources navigateur")}</h3>
             <p className="muted cast-note">
               {t(
                 "Add each as a Browser Source in OBS. The board follows this page - its transparency, text size, zoom and framing all come from here, which is why none of them are baked into its URL. The clock and the colour key run on their own, so they take the transparency and text size as they stand right now - move a slider afterwards and the board follows by itself, while those two want copying again.",
@@ -2225,6 +2248,7 @@ export function CasterControl({
               note={t("the board's sound - no picture. Tick 'Control audio via OBS' for its own fader", "le son du plateau - pas d'image. Cochez « Control audio via OBS » pour son propre fader")}
             />
           </section>
+          </DeskMenu>
         </div>
       </div>
     </div>

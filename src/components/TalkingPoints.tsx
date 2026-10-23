@@ -160,7 +160,8 @@ export function TalkingPoints({ before, live, loading, flashing, slotFor, onShow
   };
 
   return (
-    <div className="panel stack" style={{ gap: "0.35rem", padding: "0.5rem 0.6rem" }}>
+    // No panel of its own: it sits in the desk's Talking points group, which is the box.
+    <div className="stack" style={{ gap: "0.35rem" }}>
       <label className="row" style={{ gap: "0.35rem", fontSize: "0.72rem", alignItems: "center" }}>
         <input type="checkbox" checked={offerBig} onChange={(e) => toggleOffer(e.target.checked)} />
         {t("Offer big moments (world records, personal bests)", "Proposer les grands moments (records du monde, records personnels)")}

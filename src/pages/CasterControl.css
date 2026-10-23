@@ -145,16 +145,73 @@
   }
 }
 
-/* A wrapper for the inert switch only - its sections stay direct flex children of the panel. */
-.cast-board-controls {
-  display: contents;
+/**
+ * The control column's collapsible groups - see components/DeskMenu.
+ *
+ * Each is a bordered card with a header bar that opens and shuts it; the sections inside keep their
+ * own small headings. Shut, a group is one line, so a desk with everything but the talking points
+ * closed fits on one screen.
+ */
+.cast-menu {
+  flex-shrink: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel);
 }
 
-/* Another caster holds the board: say so by look as well as by refusing the click. `display:
-   contents` has no box to fade, so the fade goes on what it holds. The monitor stays at full
-   strength - it is the stream, and a watching caster is talking over it. */
-.cast-board-controls[inert] > section {
+.cast-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.cast-menu-head::-webkit-details-marker {
+  display: none;
+}
+
+/* The open/shut arrow, drawn so it sits at the start of the bar and turns as the group opens. */
+.cast-menu-head > span:first-child::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  transition: transform 120ms ease;
+}
+
+.cast-menu[open] > .cast-menu-head > span:first-child::before {
+  transform: rotate(90deg);
+}
+
+.cast-menu-head:hover {
+  background: var(--panel-raised);
+}
+
+.cast-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.5rem 0.6rem 0.7rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+/* Another caster holds the board: say so by look as well as by refusing the click. The monitor
+   stays at full strength - it is the stream, and a watching caster is talking over it. */
+.cast-menu-body[inert] {
   opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cast-menu-head > span:first-child::before {
+    transition: none;
+  }
 }
 
 /**
@@ -388,7 +445,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  /* Between the collapsible groups - the sections inside one keep their own wider gap. */
+  gap: 0.45rem;
   /* Reserved so sections don't reflow sideways at the moment the scrollbar appears. */
   padding-right: 0.35rem;
 }
