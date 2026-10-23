@@ -2,8 +2,9 @@ import { useEffect, useMemo } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
-import { useFrameCards, type StatCard } from "../lib/castAux";
+import { BOARD_SLOT, useFrameCards, type StatCard } from "../lib/castAux";
 import {
+  boardRect,
   CAST_ART,
   CAST_CANVAS,
   CAST_SEATS,
@@ -69,7 +70,7 @@ import "./OverlayFrame.css";
  *
  * A caster's talking point sent to one player's box (lib/castAux's CARD) is drawn over that box's
  * hole here, not by the box: anything in the box's own page over the Twitch player makes Twitch pause
- * the stream. See useFrameCards.
+ * the stream. See useFrameCards. A point about nobody in particular (BOARD_SLOT) goes over the board.
  *
  * -- And the casters' names -------------------------------------------------------------------------
  *
@@ -114,9 +115,9 @@ function barnacleSrc(mood: string | undefined): string {
  * it. Drawn here and not by the box - see useFrameCards for why. `--ovf-box` is the hole's share of the
  * canvas width, so the card is sized off the box exactly as it was when the box drew it.
  */
-function SeatCard({ rect, card }: { rect: Rect; card: StatCard }) {
+function SeatCard({ rect, card, width = rect.w }: { rect: Rect; card: StatCard; width?: number }) {
   return (
-    <div className="ovf-seat" style={{ ...place(rect), ["--ovf-box" as string]: rect.w / CAST_CANVAS.w }}>
+    <div className="ovf-seat" style={{ ...place(rect), ["--ovf-box" as string]: width / CAST_CANVAS.w }}>
       {/* Keyed on the point, so a new card replays the entrance rather than swapping words under one already up. */}
       <div
         key={card.id}
@@ -212,7 +213,15 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
             );
           })}
       {layout === "cast" &&
-        [...cards].filter(([slot]) => slot >= 0 && slot < holes.length).map(([slot, card]) => <SeatCard key={slot} rect={holes[slot]} card={card} />)}
+        [...cards].map(([slot, card]) =>
+          slot === BOARD_SLOT ? (
+            // About nobody in particular: over the board, sized as a player box's card so every card on
+            // stream reads the same.
+            <SeatCard key={slot} rect={boardRect()} card={card} width={holes[0]?.w ?? boardRect().w} />
+          ) : slot >= 0 && slot < holes.length ? (
+            <SeatCard key={slot} rect={holes[slot]} card={card} />
+          ) : null
+        )}
       {layout === "cast" &&
         casterPlateRects().map((r, i) => {
           const name = (casters[i] ?? "").trim();

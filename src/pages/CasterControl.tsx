@@ -41,7 +41,7 @@ import {
   type CastFleet,
   type CastView,
 } from "../lib/overlayCast";
-import { useCasterAux, CARD_MS } from "../lib/castAux";
+import { useCasterAux, CARD_MS, BOARD_SLOT } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
 import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
@@ -472,7 +472,8 @@ export function CasterControl({
   const newPoints = useNewPoints(talking.live, talking.loading);
   const talkingRef = useRef<HTMLElement | null>(null);
   const slotFor = useCallback(
-    (p: TalkingPoint) => (p.playerId ? (screens.find((s) => s.playerId === p.playerId)?.slot ?? null) : null),
+    // A point about one player goes over their box; one about nobody in particular, over the board.
+    (p: TalkingPoint) => (p.playerId ? (screens.find((s) => s.playerId === p.playerId)?.slot ?? null) : BOARD_SLOT),
     [screens]
   );
   const showPoint = useCallback(

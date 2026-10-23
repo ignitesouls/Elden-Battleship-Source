@@ -41,6 +41,12 @@ const CARD_CLEAR_EVENT = "card-clear";
 /** How long a card stays up once it is on screen. */
 export const CARD_MS = 8000;
 
+/**
+ * The slot a card about nobody in particular is sent to - a square no one has taken, two crews' record
+ * against each other. The frame draws it over the board's hole instead of a player's box.
+ */
+export const BOARD_SLOT = -1;
+
 /** A talking point on its way to one player's box. */
 export interface StatCard {
   /** The talking point's id, so the desk can tell which one is up. */

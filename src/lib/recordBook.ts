@@ -134,6 +134,13 @@ export const MIN_WIN_STREAK = 2;
  */
 export const MIN_GAP_SECONDS = 10;
 
+/**
+ * Kill counts whose arrival time is kept - "the fastest start to 10 kills". Here rather than with the
+ * code that uses it because this module is import-free, so the server bundle (battleRatingBoards) and the
+ * caster desk (talkingPoints) can both read the one list.
+ */
+export const TEMPO_MILESTONES = [5, 10, 15, 20] as const;
+
 /** How many names sit under the holder as something to chase. */
 const CHASERS = 2;
 

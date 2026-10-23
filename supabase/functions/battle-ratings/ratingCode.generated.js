@@ -980,6 +980,17 @@ function gapText(seconds) {
 //#endregion
 //#region src/lib/recordBook.ts
 /**
+* Kill counts whose arrival time is kept - "the fastest start to 10 kills". Here rather than with the
+* code that uses it because this module is import-free, so the server bundle (battleRatingBoards) and the
+* caster desk (talkingPoints) can both read the one list.
+*/
+const TEMPO_MILESTONES = [
+	5,
+	10,
+	15,
+	20
+];
+/**
 * Collapses `match_events` back into shots, in the order they were fired.
 *
 * A single trigger-pull writes one row per opposing fleet, all sharing a timestamp - so counting rows
@@ -9024,6 +9035,51 @@ function rateBoard(parts, events, set) {
 const SQUARE_RECORD_DEPTH = 3;
 /** Fastest fights kept per square, anybody's, for "3rd fastest all time". Past this, no rank is said. */
 const SQUARE_TOP_DEPTH = 10;
+const middle = (sorted) => {
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+/** Earliest first; a tie goes to whoever got there first, as everywhere in the record book. */
+const byClock = (a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt);
+const asRecord = (s) => ({
+	key: s.key,
+	nickname: s.nickname,
+	seconds: s.seconds,
+	matchKey: s.matchKey,
+	finishedAt: s.finishedAt
+});
+/**
+* How soon into a match captains reach each of TEMPO_MILESTONES kills, on one tab.
+*
+* A captain's Nth kill is their Nth shot of the match - every shot is a square taken, under the
+* fire-on-kill rule. It counts only when that Nth shot was auto-fired, for the reason SquareClock gives.
+*/
+function killTempo(events, set) {
+	const runs = /* @__PURE__ */ new Map();
+	const autos = /* @__PURE__ */ new Map();
+	for (const shot of archivedShots(events.filter((e) => rowSquareSet(e) === set))) {
+		const run = `${shot.matchKey}|${shot.key}`;
+		const list = runs.get(run) ?? [];
+		list.push(shot);
+		runs.set(run, list);
+		const auto = autos.get(run) ?? [];
+		auto.push(shot.auto);
+		autos.set(run, auto);
+	}
+	const out = {};
+	for (const n of TEMPO_MILESTONES) {
+		const reached = [];
+		for (const [run, shots] of runs) if (shots.length >= n && autos.get(run)[n - 1]) reached.push(shots[n - 1]);
+		if (reached.length === 0) continue;
+		reached.sort(byClock);
+		out[String(n)] = {
+			earliest: asRecord(reached[0]),
+			median: middle(reached.map((s) => s.seconds)),
+			runs: reached.length
+		};
+	}
+	return out;
+}
 /**
 * Every square's standing times on one tab, for the caster desk's talking points.
 *
@@ -9038,7 +9094,8 @@ const SQUARE_TOP_DEPTH = 10;
 */
 function squareRecords(events, set) {
 	const bySquare = /* @__PURE__ */ new Map();
-	const timed = fastestKills(events.filter((e) => rowSquareSet(e) === set), Number.POSITIVE_INFINITY).sort((a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt));
+	const onBoard = events.filter((e) => rowSquareSet(e) === set);
+	const timed = fastestKills(onBoard, Number.POSITIVE_INFINITY).sort((a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt));
 	for (const k of timed) {
 		if (!k.challenge) continue;
 		const list = bySquare.get(k.challenge);
@@ -9059,13 +9116,35 @@ function squareRecords(events, set) {
 				finishedAt: k.finishedAt
 			});
 		}
-		const mid = Math.floor(kills.length / 2);
-		const median = kills.length % 2 === 1 ? kills[mid].seconds : (kills[mid - 1].seconds + kills[mid].seconds) / 2;
 		out[square] = {
 			holders,
 			top: kills.slice(0, 10).map((k) => k.seconds),
-			median,
+			median: middle(kills.map((k) => k.seconds)),
 			fights: kills.length
+		};
+	}
+	const clocked = /* @__PURE__ */ new Map();
+	for (const shot of archivedShots(onBoard)) {
+		if (!shot.challenge || !shot.auto) continue;
+		const list = clocked.get(shot.challenge) ?? [];
+		list.push(shot);
+		clocked.set(shot.challenge, list);
+	}
+	for (const [square, shots] of clocked) {
+		shots.sort(byClock);
+		const at = {
+			earliest: asRecord(shots[0]),
+			median: middle(shots.map((s) => s.seconds).sort((a, b) => a - b)),
+			kills: shots.length
+		};
+		out[square] = {
+			...out[square] ?? {
+				holders: [],
+				top: [],
+				median: 0,
+				fights: 0
+			},
+			at
 		};
 	}
 	return out;
@@ -9198,5 +9277,5 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 }
 
 //#endregion
-export { POWER_PARAMS, SQUARE_RECORD_DEPTH, SQUARE_TOP_DEPTH, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo, squareRecords };
-export const RATING_CODE_VERSION = "4ea248dfe2837450";
+export { POWER_PARAMS, SQUARE_RECORD_DEPTH, SQUARE_TOP_DEPTH, boardResolver, killTempo, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo, squareRecords };
+export const RATING_CODE_VERSION = "d8bcda9a9f65a515";

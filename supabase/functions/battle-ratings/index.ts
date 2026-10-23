@@ -42,6 +42,7 @@ import {
   rateEveryBoard,
   replayElo,
   squareRecords,
+  killTempo,
   RATING_CODE_VERSION,
   type BattleRating,
   type BoardSource,
@@ -150,11 +151,12 @@ async function recompute(tx: postgres.TransactionSql, fp: string): Promise<void>
   for (const [set, board] of boards) {
     const byMatch: Record<string, BattleRating[]> = {}
     for (const r of board.ratings) (byMatch[r.matchKey] ??= []).push(r)
-    // Each square's world record rides along - the caster desk's talking points, see squareRecords.
+    // Each square's world record and kill-count pace ride along - the caster desk's talking points, see
+    // squareRecords and killTempo.
     await tx`
-      insert into public.battle_rating_snapshots (square_set, fingerprint, weights, ratings, records)
+      insert into public.battle_rating_snapshots (square_set, fingerprint, weights, ratings, records, tempo)
       values (${set}, ${fp}, ${tx.json(Object.fromEntries(board.weights))}, ${tx.json(byMatch)},
-              ${tx.json(squareRecords(prepared, set))})`
+              ${tx.json(squareRecords(prepared, set))}, ${tx.json(killTempo(prepared, set))})`
   }
 
   await storePowers(tx, fp, parts.rows, boards)
@@ -233,12 +235,13 @@ Deno.serve(async (req) => {
       records?: unknown
     }
 
-    // Every square's world record on one tab, for the caster desk: { records: set } -> { records: {...} }.
-    // An empty object is an answer - a tab nobody has timed a square on - not a failure.
+    // Every square's world record on one tab, and its kill-count pace, for the caster desk:
+    // { records: set } -> { records: {...}, tempo: {...} }. An empty object is an answer - a tab nobody
+    // has timed a square on - not a failure.
     if (typeof body.records === 'string') {
       await ensureFresh()
-      const [row] = await sql`select records from public.battle_rating_snapshots where square_set = ${body.records}::text`
-      return jsonResponse({ records: row?.records ?? {} })
+      const [row] = await sql`select records, tempo from public.battle_rating_snapshots where square_set = ${body.records}::text`
+      return jsonResponse({ records: row?.records ?? {}, tempo: row?.tempo ?? {} })
     }
 
     // Every rated player, for the home page's ratings board: { board: true } -> { players: [...] }. The

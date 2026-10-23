@@ -3,6 +3,7 @@ import { squareWeights, rateBattles, type BattleRating } from "./battleRating";
 import type { ParticipantRow } from "./careerStats";
 import { challengesForRoom, rowSquareSet, squareSetVariants, type SquareSetId } from "./challenges";
 import { canonicalSquareName } from "./squareSetFormat";
+import { archivedShots, TEMPO_MILESTONES } from "./recordBook";
 
 /**
  * Battle ratings for a whole board, from the raw archive rows - the part the browser and the
@@ -109,6 +110,22 @@ export const SQUARE_RECORD_DEPTH = 3;
 /** Fastest fights kept per square, anybody's, for "3rd fastest all time". Past this, no rank is said. */
 export const SQUARE_TOP_DEPTH = 10;
 
+/**
+ * WHEN a square falls, in match time - "how early", where the rest of SquareBoard is "how fast".
+ *
+ * Counted over every kill the mod fired, opening shots included: an opener has no fight to time, but
+ * the moment it landed is exactly what this asks about. Manual clicks are left out, as they are from
+ * every record - a click lands whenever the player got round to it, not when the boss fell.
+ */
+export interface SquareClock {
+  /** The earliest it has ever fallen. `seconds` is match time here, not a fight's length. */
+  earliest: SquareRecord;
+  /** The middle match time it falls at - when it usually goes. */
+  median: number;
+  /** Every auto-fired kill of it. */
+  kills: number;
+}
+
 /** One square's standing times, as the caster desk reads them. */
 export interface SquareBoard {
   /** The record and its chasers, one place per player, fastest first. */
@@ -119,6 +136,66 @@ export interface SquareBoard {
   median: number;
   /** Every timed fight on it. */
   fights: number;
+  /** When it falls in a match. Absent on a snapshot made before this was kept. */
+  at?: SquareClock;
+}
+
+/** How soon into a match captains reach one kill count. */
+export interface KillTempo {
+  /** The earliest anyone has reached it. `seconds` is match time. */
+  earliest: SquareRecord;
+  /** The middle time it is reached at. */
+  median: number;
+  /** Matches in which a captain reached it. */
+  runs: number;
+}
+
+type ClockedShot = { key: string; nickname: string; seconds: number; matchKey: string; finishedAt: string };
+
+const middle = (sorted: number[]) => {
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+/** Earliest first; a tie goes to whoever got there first, as everywhere in the record book. */
+const byClock = (a: ClockedShot, b: ClockedShot) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt);
+
+const asRecord = (s: ClockedShot): SquareRecord => ({
+  key: s.key,
+  nickname: s.nickname,
+  seconds: s.seconds,
+  matchKey: s.matchKey,
+  finishedAt: s.finishedAt,
+});
+
+/**
+ * How soon into a match captains reach each of TEMPO_MILESTONES kills, on one tab.
+ *
+ * A captain's Nth kill is their Nth shot of the match - every shot is a square taken, under the
+ * fire-on-kill rule. It counts only when that Nth shot was auto-fired, for the reason SquareClock gives.
+ */
+export function killTempo(events: MatchEventRow[], set: SquareSetId): Record<string, KillTempo> {
+  const runs = new Map<string, ClockedShot[]>();
+  const autos = new Map<string, boolean[]>();
+  // archivedShots orders by match, then by time - the order kills are counted in.
+  for (const shot of archivedShots(events.filter((e) => rowSquareSet(e) === set))) {
+    const run = `${shot.matchKey}|${shot.key}`;
+    const list = runs.get(run) ?? [];
+    list.push(shot);
+    runs.set(run, list);
+    const auto = autos.get(run) ?? [];
+    auto.push(shot.auto);
+    autos.set(run, auto);
+  }
+  const out: Record<string, KillTempo> = {};
+  for (const n of TEMPO_MILESTONES) {
+    const reached: ClockedShot[] = [];
+    for (const [run, shots] of runs) if (shots.length >= n && autos.get(run)![n - 1]) reached.push(shots[n - 1]);
+    if (reached.length === 0) continue;
+    reached.sort(byClock);
+    out[String(n)] = { earliest: asRecord(reached[0]), median: middle(reached.map((s) => s.seconds)), runs: reached.length };
+  }
+  return out;
 }
 
 /**
@@ -135,10 +212,10 @@ export interface SquareBoard {
  */
 export function squareRecords(events: MatchEventRow[], set: SquareSetId): Record<string, SquareBoard> {
   const bySquare = new Map<string, QuickKill[]>();
-  const timed = fastestKills(
-    events.filter((e) => rowSquareSet(e) === set),
-    Number.POSITIVE_INFINITY
-  ).sort((a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt));
+  const onBoard = events.filter((e) => rowSquareSet(e) === set);
+  const timed = fastestKills(onBoard, Number.POSITIVE_INFINITY).sort(
+    (a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt)
+  );
   for (const k of timed) {
     if (!k.challenge) continue;
     const list = bySquare.get(k.challenge);
@@ -155,9 +232,27 @@ export function squareRecords(events: MatchEventRow[], set: SquareSetId): Record
       holders.push({ key: k.key, nickname: k.nickname, seconds: k.seconds, matchKey: k.matchKey, finishedAt: k.finishedAt });
     }
     // Already fastest first, so the middle one is the median.
-    const mid = Math.floor(kills.length / 2);
-    const median = kills.length % 2 === 1 ? kills[mid].seconds : (kills[mid - 1].seconds + kills[mid].seconds) / 2;
-    out[square] = { holders, top: kills.slice(0, SQUARE_TOP_DEPTH).map((k) => k.seconds), median, fights: kills.length };
+    out[square] = {
+      holders,
+      top: kills.slice(0, SQUARE_TOP_DEPTH).map((k) => k.seconds),
+      median: middle(kills.map((k) => k.seconds)),
+      fights: kills.length,
+    };
+  }
+
+  // When each square falls - every auto-fired kill, so a square only ever taken as an opener (no fight
+  // to time) still gets an entry, with no holders and no fights.
+  const clocked = new Map<string, ClockedShot[]>();
+  for (const shot of archivedShots(onBoard)) {
+    if (!shot.challenge || !shot.auto) continue;
+    const list = clocked.get(shot.challenge) ?? [];
+    list.push(shot);
+    clocked.set(shot.challenge, list);
+  }
+  for (const [square, shots] of clocked) {
+    shots.sort(byClock);
+    const at: SquareClock = { earliest: asRecord(shots[0]), median: middle(shots.map((s) => s.seconds).sort((a, b) => a - b)), kills: shots.length };
+    out[square] = { ...(out[square] ?? { holders: [], top: [], median: 0, fights: 0 }), at };
   }
   return out;
 }

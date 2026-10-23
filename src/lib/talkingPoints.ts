@@ -1,10 +1,10 @@
 import { headToHeadRecords, participantKey, teammateRecords, type ParticipantRow } from "./careerStats";
-import { archivedShots, MIN_GAP_SECONDS } from "./recordBook";
+import { archivedShots, MIN_GAP_SECONDS, TEMPO_MILESTONES } from "./recordBook";
 import { paceFromGaps, paceLabel } from "./squarePace";
 import { matchMs } from "./matchReport";
 import type { MatchEventRow } from "./almanac";
 import type { FeedShot } from "./attackFeed";
-import type { SquareBoard } from "./battleRatingBoards";
+import type { KillTempo, SquareBoard } from "./battleRatingBoards";
 import type { PauseFields } from "./matchPause";
 import type { Language } from "./language";
 
@@ -34,6 +34,17 @@ import type { Language } from "./language";
  * said in the speech bubble when the caster puts the point on stream: short, loud and fun - "That's the
  * fastest Ada has ever killed Malenia!" The voice is deliberate and lives only in the `line`s below, so a
  * change of tone is an edit to those strings and nothing else.
+ *
+ * -- Two clocks ------------------------------------------------------------------------------------
+ *
+ * A kill has two times worth saying. How FAST - the fight, the gap back to that captain's previous kill.
+ * And how EARLY - how far into the match it fell (match time, measured as the archive measures it: from
+ * the moment firing opened, pauses taken off). The early clock also covers kill counts ("10 kills, 45:00
+ * into the match - the fastest start ever") and a square nobody has taken long after it usually falls.
+ * Both count only what the mod fired: a manual click lands whenever the player got round to it.
+ *
+ * One kill can set off several of these at once - a personal best AND the earliest ever, say. Only the
+ * biggest is said (TIMING_RANK), so the desk is never two lines about the same square.
  *
  * Every time read out says what it is measured from - "3:29 after the previous kill" - because a bare
  * "3:29" on a stream reads as the whole fight and invites a question the caster then has to answer. And
@@ -87,6 +98,17 @@ export interface RosterEntry {
 /** Square name -> its standing times. See squareRecords in battleRatingBoards. */
 export type SquareRecords = Record<string, SquareBoard>;
 
+/** Kill count (as text) -> how soon captains reach it. See killTempo in battleRatingBoards. */
+export type TempoRecords = Record<string, KillTempo>;
+
+/** When tonight's match clock started, so a shot can be placed on it - see livePoints. */
+export interface MatchClock {
+  /** The match start marker (matchStartedAt). Null before the match has one. */
+  startedAt: string | null;
+  /** Seconds from the marker to firing opening - countdown plus prep (matchTimings). */
+  beginsAt: number;
+}
+
 /** The language the points are written in, and how a square's (English, archived) name is said in it. */
 export interface Voice {
   lang: Language;
@@ -108,6 +130,10 @@ export interface PlayerHistory {
   gaps: Map<string, number[]>;
   /** Median seconds per square across everything, or null on too few - squarePace's rule. */
   pace: number | null;
+  /** Square -> how far into the match it fell, each auto-fired kill of it, in seconds. */
+  clock: Map<string, number[]>;
+  /** Kill count -> how far into the match they reached it, each match it was auto-fired, in seconds. */
+  tempo: Map<number, number[]>;
 }
 
 /** History needed before a "first time ever" is news rather than a newcomer's every square. */
@@ -122,6 +148,29 @@ export const MILESTONES = [5, 10, 25, 50, 100, 250];
 const PACE_GAP = { seconds: 30, share: 0.25 };
 /** How close to a world record counts as "just off it": this many seconds, or this share of it. */
 const NEAR_RECORD = { seconds: 10, share: 0.1 };
+/** How far off a usual match time a kill must be to be worth saying: this many seconds, or this share. */
+const CLOCK_GAP = { seconds: 300, share: 0.25 };
+/** Kills of a square, by everyone, before "nobody has taken it yet" means anything. */
+const UNFOUND_AFTER_KILLS = 10;
+/** How long past its usual time a square must stand before that is news: this many seconds, or this share. */
+const UNFOUND_LATE = { seconds: 600, share: 0.5 };
+
+/**
+ * Which timing point wins when one kill sets off several - see the header. A world-first beats a
+ * personal one, and how early beats how fast at each level, since it is the rarer thing to say.
+ */
+const TIMING_RANK: Record<string, number> = {
+  "earliest-ever": 100,
+  wr: 90,
+  "earliest-pb": 70,
+  pb: 60,
+  "near-wr": 50,
+  "early-field": 40,
+  "early-usual": 30,
+  "late-usual": 25,
+  pace: 20,
+  field: 10,
+};
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -147,6 +196,8 @@ function phrasebook(voice: Voice) {
     matches: (n: number) => (fr ? `${n} ${n === 1 ? "match" : "matchs"}` : `${n} ${n === 1 ? "match" : "matches"}`),
     /** A fight's time, saying what it is measured from - see the header. */
     after: (time: string) => (fr ? `${time} après le boss précédent` : `${time} after the previous kill`),
+    /** A moment in the match, saying what it is measured from. */
+    into: (time: string) => (fr ? `à ${time} de jeu` : `${time} into the match`),
   };
 }
 
@@ -156,7 +207,8 @@ function phrasebook(voice: Voice) {
  * shares the place it ties, as the record book's first-holder rule would have it.
  */
 export function allTimeRank(board: SquareBoard | undefined, seconds: number): number | null {
-  if (!board) return null;
+  // A square known only from its match times (`at`) has no timed fight to rank against.
+  if (!board || board.fights === 0) return null;
   const faster = board.top.filter((s) => s < seconds).length;
   if (faster < board.top.length) return faster + 1;
   // Slower than everything kept: a place only when the whole square's history fits in the list.
@@ -177,15 +229,28 @@ export function playerHistory(events: MatchEventRow[], key: string): PlayerHisto
   const takes = new Map<string, number>();
   const openers = new Map<string, number>();
   const gaps = new Map<string, number[]>();
+  const clock = new Map<string, number[]>();
+  const tempo = new Map<number, number[]>();
+  const kills = new Map<string, number>();
   const matches = new Set<string>();
   const previous = new Map<string, { seconds: number; auto: boolean }>();
+  const push = <K>(map: Map<K, number[]>, k: K, v: number) => {
+    const list = map.get(k);
+    if (list) list.push(v);
+    else map.set(k, [v]);
+  };
 
   // archivedShots orders by match, then by time - the order both an opener and a gap are read in.
   for (const shot of archivedShots(events.filter((e) => participantKey(e) === key))) {
     const before = previous.get(shot.matchKey);
     previous.set(shot.matchKey, { seconds: shot.seconds, auto: shot.auto });
     matches.add(shot.matchKey);
+    // Every shot is a kill under fire-on-kill, so the count runs whether or not the square was named.
+    const n = (kills.get(shot.matchKey) ?? 0) + 1;
+    kills.set(shot.matchKey, n);
+    if (shot.auto && (TEMPO_MILESTONES as readonly number[]).includes(n)) push(tempo, n, shot.seconds);
     if (!shot.challenge) continue;
+    if (shot.auto) push(clock, shot.challenge, shot.seconds);
 
     takes.set(shot.challenge, (takes.get(shot.challenge) ?? 0) + 1);
     if (before === undefined) {
@@ -200,7 +265,7 @@ export function playerHistory(events: MatchEventRow[], key: string): PlayerHisto
     else gaps.set(shot.challenge, [gap]);
   }
 
-  return { key, matches: matches.size, takes, openers, gaps, pace: paceFromGaps([...gaps.values()].flat()) };
+  return { key, matches: matches.size, takes, openers, gaps, pace: paceFromGaps([...gaps.values()].flat()), clock, tempo };
 }
 
 const emptyHistory = (key: string): PlayerHistory => ({
@@ -210,6 +275,8 @@ const emptyHistory = (key: string): PlayerHistory => ({
   openers: new Map(),
   gaps: new Map(),
   pace: null,
+  clock: new Map(),
+  tempo: new Map(),
 });
 
 /**
@@ -229,7 +296,7 @@ export function matchupPoints(
   teamLabel: (team: number) => string,
   voice: Voice = ENGLISH
 ): TalkingPoint[] {
-  const { tr, times, matches, after } = phrasebook(voice);
+  const { tr, times, matches, after, into } = phrasebook(voice);
   const sq = voice.square;
   const out: TalkingPoint[] = [];
   const teams = [...new Set(roster.map((r) => r.team))].sort((a, b) => a - b);
@@ -477,6 +544,28 @@ export function matchupPoints(
       });
     }
 
+    // The square on tonight's board this captain usually gets to soonest - where to look first.
+    let early: [string, number] | null = null;
+    for (const [s, list] of h.clock) {
+      if (!boardSquares.has(s) || list.length < USUAL_AFTER_FIGHTS) continue;
+      const usual = median(list);
+      if (!early || usual < early[1]) early = [s, usual];
+    }
+    if (early) {
+      const [es, et] = [sq(early[0]), clock(early[1])];
+      out.push({
+        id: `early:${r.key}`,
+        emoji: "🌅",
+        mood: "smug",
+        team: r.team,
+        text: tr(`${who} usually takes ${es} early: around ${into(et)}`, `${who} prend souvent ${es} tôt : vers ${et} de jeu`),
+        line: tr(
+          `${who} usually takes ${es} around ${into(et)} - and it's on the board tonight!`,
+          `${who} prend souvent ${es} vers ${et} de jeu - et c'est au programme ce soir !`
+        ),
+      });
+    }
+
     const held = Object.entries(records)
       .filter(([s, board]) => boardSquares.has(s) && board.holders[0]?.key === r.key)
       .sort((a, b) => a[0].localeCompare(b[0]));
@@ -504,6 +593,8 @@ export function matchupPoints(
  * @param shots this match's shots, as groupIntoShots gives them (any order).
  * @param squareAt the square under a cell on tonight's board, by its English (archived) name.
  * @param pause the room's pause columns, so a fight spanning a stopped clock is not timed as slow.
+ * @param matchClock when firing opened tonight. Without it, nothing is said about how early anything was.
+ * @param tempo how soon captains reach each kill count, all time - see killTempo.
  */
 export function livePoints(
   roster: RosterEntry[],
@@ -512,9 +603,13 @@ export function livePoints(
   histories: Map<string, PlayerHistory>,
   records: SquareRecords,
   pause?: PauseFields | null,
-  voice: Voice = ENGLISH
+  voice: Voice = ENGLISH,
+  matchClock: MatchClock | null = null,
+  tempo: TempoRecords = {}
 ): TalkingPoint[] {
-  const { tr, ordinal, after } = phrasebook(voice);
+  const { tr, ordinal, after, into } = phrasebook(voice);
+  /** Firing opened, on the same clock as `at` below - see matchTimeAt, which the archive agrees with. */
+  const opened = matchClock?.startedAt ? matchMs(matchClock.startedAt, pause) / 1000 + matchClock.beginsAt : null;
   /** " (3rd fastest all time)", or nothing when it is not a top-ten fight - or is the outright fastest. */
   const rankTag = (rank: number | null) =>
     rank === null || rank === 1 ? "" : tr(` (${ordinal(rank)} fastest all time)`, ` (${ordinal(rank)} plus rapide de tous les temps)`);
@@ -523,6 +618,7 @@ export function livePoints(
   const byPlayer = new Map(roster.map((r) => [r.playerId, r]));
   const previous = new Map<string, { seconds: number; auto: boolean }>();
   const takenTonight = new Map<string, number>();
+  const killsTonight = new Map<string, number>();
 
   const inOrder = [...shots].sort((a, b) => matchMs(a.at, pause) - matchMs(b.at, pause));
   for (const shot of inOrder) {
@@ -533,11 +629,56 @@ export function livePoints(
     const auto = shot.rows.every((r) => r.auto === true);
     const before = previous.get(who.key);
     previous.set(who.key, { seconds, auto });
-    const square = squareAt(shot.cellIndex);
-    if (!square) continue;
-
+    /** How far into the match this kill landed, or null when the clock can't place it. */
+    const intoSec = opened !== null && seconds >= opened ? seconds - opened : null;
     const h = histories.get(who.key) ?? emptyHistory(who.key);
     const name = who.nickname;
+
+    // -- Kill count: the fastest start ever, their own fastest start, ahead of the field -----------
+    // Counted before the square is read, as the archive counts it: every shot is a kill.
+    const count = (killsTonight.get(who.key) ?? 0) + 1;
+    killsTonight.set(who.key, count);
+    if (auto && intoSec !== null && (TEMPO_MILESTONES as readonly number[]).includes(count)) {
+      const it = clock(intoSec);
+      const reach = tr(`${name} reaches ${count} kills ${into(it)}`, `${name} atteint ${count} victoires ${into(it)}`);
+      const field = tempo[String(count)];
+      const mine = h.tempo.get(count) ?? [];
+      const point = (kind: string, emoji: string, mood: BarnacleMood, text: string, line: string, big = false) =>
+        out.push({ id: `${shot.key}:${kind}`, emoji, mood, team: who.team, text, line, at, big, playerId: who.playerId, shotAt: shot.at });
+      if (field && field.runs >= GLOBAL_AFTER_FIGHTS && intoSec < field.earliest.seconds) {
+        const was = clock(field.earliest.seconds);
+        point(
+          "tempo",
+          "🏁",
+          "happy",
+          tr(`${reach} - fastest start anyone ever (was ${was}, ${field.earliest.nickname})`, `${reach} - meilleur départ de tous les temps (avant : ${was}, ${field.earliest.nickname})`),
+          tr(`FASTEST START EVER! ${reach} - nobody has done it sooner (${field.earliest.nickname}, ${was})!`, `MEILLEUR DÉPART DE TOUS LES TEMPS ! ${reach} - personne n'avait fait mieux (${field.earliest.nickname}, ${was}) !`),
+          true
+        );
+      } else if (mine.length >= 2 && intoSec < Math.min(...mine)) {
+        const was = clock(Math.min(...mine));
+        point(
+          "tempo",
+          "🏁",
+          "happy",
+          tr(`${reach} - ${name}'s fastest start ever (was ${was})`, `${reach} - meilleur départ de ${name} (avant : ${was})`),
+          tr(`${name}'s fastest start ever: ${count} kills ${into(it)} (was ${was})!`, `Meilleur départ de ${name} : ${count} victoires ${into(it)} (avant : ${was}) !`),
+          true
+        );
+      } else if (field && field.runs >= GLOBAL_AFTER_FIGHTS && field.median - intoSec >= Math.max(CLOCK_GAP.seconds, field.median * CLOCK_GAP.share)) {
+        const usual = clock(field.median);
+        point(
+          "tempo",
+          "🏁",
+          "happy",
+          tr(`${reach} - most players get there around ${usual}`, `${reach} - la plupart des joueurs y arrivent vers ${usual}`),
+          tr(`${reach} - most players get there around ${usual}!`, `${reach} - la plupart des joueurs y arrivent vers ${usual} !`)
+        );
+      }
+    }
+
+    const square = squareAt(shot.cellIndex);
+    if (!square) continue;
     const sq = voice.square(square);
     const say = (kind: string, emoji: string, mood: BarnacleMood, text: string, line: string, big = false) =>
       out.push({ id: `${shot.key}:${kind}`, emoji, mood, team: who.team, text, line, at, big, playerId: who.playerId, shotAt: shot.at });
@@ -604,12 +745,77 @@ export function livePoints(
       );
     }
 
-    // -- The clock: world record, personal best, near the record, off their usual, the field ----
-    if (before === undefined || !before.auto || !auto) continue;
-    const gap = seconds - before.seconds;
-    if (gap < MIN_GAP_SECONDS) continue;
-
+    // -- Timing: every candidate is offered, and only the biggest is said ------------------------
+    // Held in an object: `offer` replaces it from inside a closure, which a plain `let` would hide from the type checker.
+    const pick: { best: { kind: string; emoji: string; mood: BarnacleMood; text: string; line: string; big: boolean } | null } = { best: null };
+    const offer = (kind: string, emoji: string, mood: BarnacleMood, text: string, line: string, big = false) => {
+      if (!pick.best || TIMING_RANK[kind] > TIMING_RANK[pick.best.kind]) pick.best = { kind, emoji, mood, text, line, big };
+    };
     const board = records[square];
+
+    // -- How early: the earliest anyone ever, their own earliest, ahead of the field, off their usual
+    if (auto && intoSec !== null) {
+      const it = clock(intoSec);
+      const tookAt = tr(`${name}: ${sq} ${into(it)}`, `${name} : ${sq} ${into(it)}`);
+      const killAt = tr(`${name} takes ${sq} ${into(it)}`, `${name} vient à bout de ${sq} ${into(it)}`);
+      const field = board?.at;
+      const mine = h.clock.get(square) ?? [];
+      if (field && field.kills >= GLOBAL_AFTER_FIGHTS && intoSec < field.earliest.seconds) {
+        const was = clock(field.earliest.seconds);
+        const own = field.earliest.key === who.key;
+        offer(
+          "earliest-ever",
+          "🌅",
+          "happy",
+          tr(`${tookAt} - earliest anyone ever (was ${was}, ${field.earliest.nickname})`, `${tookAt} - le plus tôt de tous les temps (avant : ${was}, ${field.earliest.nickname})`),
+          own
+            ? tr(`EARLIEST EVER! ${killAt} - beating ${name}'s own ${was}!`, `JAMAIS AUSSI TÔT ! ${killAt} - et bat son propre record (${was}) !`)
+            : tr(`EARLIEST EVER! ${killAt} - nobody has had it sooner (${field.earliest.nickname}, ${was})!`, `JAMAIS AUSSI TÔT ! ${killAt} - personne ne l'avait eu plus tôt (${field.earliest.nickname}, ${was}) !`),
+          true
+        );
+      }
+      if (mine.length >= 2 && intoSec < Math.min(...mine)) {
+        const was = clock(Math.min(...mine));
+        offer(
+          "earliest-pb",
+          "🌅",
+          "happy",
+          tr(`${tookAt} - ${name}'s earliest ever (was ${was})`, `${tookAt} - le plus tôt pour ${name} (avant : ${was})`),
+          tr(`${name}'s earliest ${sq} ever: ${into(it)} (was ${was})!`, `Jamais ${name} n'avait vaincu ${sq} aussi tôt : ${into(it)} (avant : ${was}) !`),
+          true
+        );
+      }
+      if (field && field.kills >= GLOBAL_AFTER_FIGHTS && field.median - intoSec >= Math.max(CLOCK_GAP.seconds, field.median * CLOCK_GAP.share)) {
+        const usual = clock(field.median);
+        offer(
+          "early-field",
+          "🚀",
+          "happy",
+          tr(`${tookAt} - most players get there around ${usual} (${field.kills} kills)`, `${tookAt} - la plupart des joueurs y arrivent vers ${usual} (${field.kills} victoires)`),
+          tr(`${killAt} - most players get there around ${usual}!`, `${killAt} - la plupart des joueurs y arrivent vers ${usual} !`)
+        );
+      }
+      if (mine.length >= USUAL_AFTER_FIGHTS) {
+        const usual = median(mine);
+        const off = intoSec - usual;
+        if (Math.abs(off) >= Math.max(CLOCK_GAP.seconds, usual * CLOCK_GAP.share)) {
+          const u = clock(usual);
+          offer(
+            off < 0 ? "early-usual" : "late-usual",
+            off < 0 ? "⏩" : "🐢",
+            off < 0 ? "happy" : "grim",
+            tr(`${tookAt} - ${name} usually gets there around ${u} (over ${mine.length})`, `${tookAt} - d'habitude, ${name} y arrive vers ${u} (sur ${mine.length})`),
+            off < 0
+              ? tr(`${killAt} - ${name} usually gets there around ${u}!`, `${killAt} - d'habitude, ${name} y arrive vers ${u} !`)
+              : tr(`Running late! ${killAt} - ${name} usually gets there around ${u}!`, `En retard ! ${killAt} - d'habitude, ${name} y arrive vers ${u} !`)
+          );
+        }
+      }
+    }
+
+    // -- How fast: world record, personal best, near the record, off their usual, the field -----
+    if (before !== undefined && before.auto && auto && seconds - before.seconds >= MIN_GAP_SECONDS) {
+    const gap = seconds - before.seconds;
     const wr = board?.holders[0];
     const rank = allTimeRank(board, gap);
     const fights = h.gaps.get(square) ?? [];
@@ -620,7 +826,7 @@ export function livePoints(
 
     if (wr && gap < wr.seconds) {
       const own = wr.key === who.key;
-      say(
+      offer(
         "wr",
         "🌍",
         "happy",
@@ -642,7 +848,7 @@ export function livePoints(
         true
       );
     } else if (pb !== null && gap < pb) {
-      say(
+      offer(
         "pb",
         "🏅",
         "happy",
@@ -657,7 +863,7 @@ export function livePoints(
       const own = wr.key === who.key;
       const tie = gap === wr.seconds;
       const off = clock(gap - wr.seconds);
-      say(
+      offer(
         "near-wr",
         "🌍",
         // Tying your own record is still a good night; missing someone else's by seconds is not.
@@ -689,7 +895,7 @@ export function livePoints(
       const usual = median(fights);
       const off = gap - usual;
       const by = clock(Math.abs(off));
-      say(
+      offer(
         "pace",
         off < 0 ? "⚡" : "🐢",
         off < 0 ? "happy" : "grim",
@@ -702,7 +908,7 @@ export function livePoints(
       );
     } else if (board && board.fights >= GLOBAL_AFTER_FIGHTS && gap < board.median) {
       // The field's typical time is the median, as everywhere a "usual" is read on this site.
-      say(
+      offer(
         "field",
         "🚀",
         "happy",
@@ -713,7 +919,61 @@ export function livePoints(
         tr(`${kill} - faster than the average player${rankTag(rank)}!`, `${kill} - plus vite que la moyenne des joueurs${rankTag(rank)} !`)
       );
     }
+    }
+
+    // The one timing point this kill gets - see TIMING_RANK.
+    const best = pick.best;
+    if (best) say(best.kind, best.emoji, best.mood, best.text, best.line, best.big);
   }
 
   return out.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+}
+
+/**
+ * Squares on tonight's board that nobody has taken, well after they usually fall.
+ *
+ * Read off the match clock rather than a shot, so the desk re-asks as time passes (see
+ * useTalkingPoints). Each square is said once, as of the moment it became news: the id is the square's
+ * and the time is when it crossed the line, so the point holds still while the clock runs on. Only
+ * squares killed often enough for "usually" to mean something, and that nobody has taken tonight.
+ *
+ * @param boardSquares tonight's squares, by English (archived) name.
+ * @param taken every square any captain has taken tonight.
+ * @param elapsed seconds since firing opened, pauses taken off.
+ * @param startAt the match-clock instant firing opened (matchMs, in ms), so `at` sorts with live points.
+ */
+export function unfoundPoints(
+  boardSquares: Iterable<string>,
+  taken: ReadonlySet<string>,
+  elapsed: number,
+  startAt: number,
+  records: SquareRecords,
+  voice: Voice = ENGLISH
+): TalkingPoint[] {
+  const { tr, into } = phrasebook(voice);
+  const out: TalkingPoint[] = [];
+  for (const square of new Set(boardSquares)) {
+    const at = records[square]?.at;
+    if (!at || at.kills < UNFOUND_AFTER_KILLS || taken.has(square)) continue;
+    const line = at.median + Math.max(UNFOUND_LATE.seconds, at.median * UNFOUND_LATE.share);
+    if (elapsed < line) continue;
+    const sq = voice.square(square);
+    const [now, usual] = [clock(line), clock(at.median)];
+    out.push({
+      id: `unfound:${square}`,
+      emoji: "⏳",
+      mood: "smug",
+      team: null,
+      at: startAt + line * 1000,
+      text: tr(
+        `${sq}: still untaken ${into(now)} - usually falls around ${usual} (${at.kills} kills)`,
+        `${sq} : toujours debout ${into(now)} - d'habitude, vaincu vers ${usual} de jeu (${at.kills} victoires)`
+      ),
+      line: tr(
+        `Nobody has taken ${sq} yet, ${into(now)} - it usually falls around ${usual}!`,
+        `Personne n'a encore vaincu ${sq}, ${into(now)} - d'habitude, c'est fait vers ${usual} !`
+      ),
+    });
+  }
+  return out;
 }

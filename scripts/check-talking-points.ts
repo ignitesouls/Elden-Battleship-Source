@@ -29,8 +29,8 @@ registerHooks({
   },
 })
 
-const { playerHistory, matchupPoints, livePoints, allTimeRank } = await import('../src/lib/talkingPoints.ts')
-const { squareRecords } = await import('../src/lib/battleRatingBoards.ts')
+const { playerHistory, matchupPoints, livePoints, unfoundPoints, allTimeRank } = await import('../src/lib/talkingPoints.ts')
+const { squareRecords, killTempo } = await import('../src/lib/battleRatingBoards.ts')
 const { groupIntoShots } = await import('../src/lib/attackFeed.ts')
 
 let failures = 0
@@ -237,6 +237,74 @@ const live = (attacks: Attack[], pause?: Parameters<typeof livePoints>[5]) =>
 
   const order = live([fire(0, 0, 40), fire(0, 3, 300)])
   check('newest first', (order[0]?.at ?? 0) >= (order[order.length - 1]?.at ?? 0))
+}
+
+// -- 4b. how early -------------------------------------------------------------------------------
+// The match clock opens at `start` (no countdown here), so a shot's seconds are its time into the match.
+{
+  const clockAt = { startedAt: new Date(start).toISOString(), beginsAt: 0 }
+  const timing = ['earliest-ever', 'wr', 'earliest-pb', 'pb', 'near-wr', 'early-field', 'early-usual', 'late-usual', 'pace', 'field']
+  const early = (attacks: Attack[], recs: Record<string, unknown>, tempo: Record<string, unknown> = {}) =>
+    livePoints(roster, groupIntoShots(attacks, players), squareAt, histories, recs as typeof records, null, undefined, clockAt, tempo as never)
+  /** The timing points one shot got, by kind. */
+  const kinds = (points: ReturnType<typeof livePoints>) => points.map((p) => p.id.split(':').pop()!).filter((k) => timing.includes(k))
+  const cy = (seconds: number) => ({ key: 'u9', nickname: 'Cy', seconds, matchKey: '9', finishedAt: '' })
+  // Malenia's world record is Cy's 1:40, so Ada's 2:40 fight is only a personal best by the fight's clock.
+  const noWr = { ...records, Malenia: { holders: [cy(100)], top: [100], median: 300, fights: 5 } }
+
+  // Ada's Malenias fell at 3:50, 5:10 and 4:20 into their matches; tonight she has it at 3:20.
+  const pbAndEarliest = early([fire(0, 0, 40), fire(0, 1, 200)], noWr)
+  check('one kill gets one timing point, the biggest: an earliest ever over a personal best',
+    JSON.stringify(kinds(pbAndEarliest)) === '["earliest-pb"]', kinds(pbAndEarliest).join(','))
+  const pbLine = pbAndEarliest.find((p) => p.id.endsWith(':earliest-pb'))?.line
+  check('earliest-ever line says what the time is measured from', pbLine === "Ada's earliest Malenia ever: 3:20 into the match (was 3:50)!", pbLine)
+
+  const fieldFirst = early([fire(0, 0, 40), fire(0, 1, 200)], { ...noWr, Malenia: { ...noWr.Malenia, at: { earliest: cy(250), median: 900, kills: 20 } } })
+  const worldLine = fieldFirst.find((p) => p.id.endsWith(':earliest-ever'))
+  check('sooner than anyone ever beats everything, and is a big moment',
+    JSON.stringify(kinds(fieldFirst)) === '["earliest-ever"]' && worldLine?.big === true, kinds(fieldFirst).join(','))
+  check('earliest-anyone line', worldLine?.line === 'EARLIEST EVER! Ada takes Malenia 3:20 into the match - nobody has had it sooner (Cy, 4:10)!', worldLine?.line)
+
+  const aheadOfField = early([fire(0, 0, 40), fire(0, 1, 400)], { ...noWr, Malenia: { ...noWr.Malenia, at: { earliest: cy(100), median: 900, kills: 20 } } })
+  const aheadLine = aheadOfField.find((p) => p.id.endsWith(':early-field'))?.line
+  check('well ahead of when it usually falls outranks a slow fight', JSON.stringify(kinds(aheadOfField)) === '["early-field"]', kinds(aheadOfField).join(','))
+  check('ahead-of-the-field line', aheadLine === 'Ada takes Malenia 6:40 into the match - most players get there around 15:00!', aheadLine)
+
+  const manual = early([fire(0, 0, 40), fire(0, 1, 200, false)], { ...noWr, Malenia: { ...noWr.Malenia, at: { earliest: cy(250), median: 900, kills: 20 } } })
+  check('a manual click is never called early', !manual.some((p) => /:(earliest-ever|earliest-pb|early-field|early-usual)$/.test(p.id)), kinds(manual).join(','))
+  const noClock = live([fire(0, 0, 40), fire(0, 1, 200)])
+  check('without the match clock nothing is called early', !noClock.some((p) => /:(earliest|early)/.test(p.id)))
+
+  // Five kills by 10:00, where the fastest start anyone ever had was Cy's 15:00.
+  const five = [0, 1, 2, 3, 4].map((cell, i) => fire(0, cell, 120 * (i + 1)))
+  const tempoPoints = early(five, noWr, { 5: { earliest: cy(900), median: 1500, runs: 10 } })
+  const fastStart = tempoPoints.find((p) => p.id.endsWith(':tempo'))
+  check('the fastest start to 5 kills is called, as a big moment', fastStart?.big === true, tempoPoints.map((p) => p.id).join(','))
+  check('fastest-start line', fastStart?.line === 'FASTEST START EVER! Ada reaches 5 kills 10:00 into the match - nobody has done it sooner (Cy, 15:00)!', fastStart?.line)
+
+  // Mohg usually falls at 10:00; Margit is taken; Radahn has no history.
+  const recsAt = { ...noWr, Mohg: { ...records.Mohg, at: { earliest: cy(300), median: 600, kills: 12 } } }
+  const unfound = unfoundPoints(board, new Set(['Margit']), 1500, 0, recsAt)
+  check('a square long past its usual time and untaken is called', unfound.length === 1 && unfound[0].id === 'unfound:Mohg', unfound.map((p) => p.id).join(','))
+  check('untaken line', unfound[0]?.line === 'Nobody has taken Mohg yet, 20:00 into the match - it usually falls around 10:00!', unfound[0]?.line)
+  check('...and it is about nobody in particular', unfound[0]?.playerId === undefined && unfound[0]?.team === null)
+  check('...but not before it is well past due', unfoundPoints(board, new Set(), 1100, 0, recsAt).length === 0)
+
+  // The field's clock, as the battle-ratings function stores it.
+  const bo = [ev('u2', 'Bo', '4', 10, 'Margit'), ev('u2', 'Bo', '4', 200, 'Malenia'), ev('u2', 'Bo', '4', 420, 'Malenia')]
+  const recs = squareRecords([...adaEvents, ...bo], 'bosses')
+  check('when a square falls: earliest and median over every auto kill',
+    recs.Malenia.at?.earliest.nickname === 'Bo' && recs.Malenia.at?.earliest.seconds === 200 && recs.Malenia.at?.median === 260 && recs.Malenia.at?.kills === 5,
+    JSON.stringify(recs.Malenia.at))
+  check('a square only ever opened on still gets a clock', recs.Rennala?.at?.kills === 1 && recs.Rennala.fights === 0, JSON.stringify(recs.Rennala))
+  check('manual clicks are not on the clock', !('Godrick' in recs))
+  const runs = [1, 2, 3, 4, 5].map((n) => ev('u9', 'Cy', '9', n * 100, `S${n}`))
+  const tempo = killTempo([...adaEvents, ...runs], 'bosses')
+  check('the fastest start to 5 kills is the 5th shot of the run', tempo['5']?.earliest.nickname === 'Cy' && tempo['5']?.earliest.seconds === 500 && tempo['5']?.runs === 1, JSON.stringify(tempo['5']))
+
+  const coming = matchupPoints(roster, parts, histories, records, new Set(['Margit', 'Malenia']), label)
+  const usual = coming.find((p) => p.id === 'early:u1')?.text
+  check('before the match: the square a captain usually gets to soonest', usual === 'Ada usually takes Malenia early: around 4:20 into the match', usual)
 }
 
 // -- 5. what the barnacle says -------------------------------------------------------------------

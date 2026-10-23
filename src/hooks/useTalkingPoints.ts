@@ -10,13 +10,19 @@ import {
   livePoints,
   matchupPoints,
   playerHistory,
+  unfoundPoints,
   type PlayerHistory,
   type RosterEntry,
   type SquareRecords,
   type TalkingPoint,
+  type TempoRecords,
   type Voice,
 } from "../lib/talkingPoints";
 import { useLanguage } from "../lib/language";
+import { battlePhaseAt, matchStartedAt, matchTimings } from "../lib/matchTime";
+import { pauseInfoAt } from "../lib/matchPause";
+import { matchMs } from "../lib/matchReport";
+import { serverNow } from "../lib/serverTime";
 import type { Attack, Player, Room } from "../types/battleship";
 
 /**
@@ -25,16 +31,45 @@ import type { Attack, Player, Room } from "../types/battleship";
  * No fallback to working them out here, on purpose: that is the whole shot log, the read the snapshot
  * exists to spare. If the function cannot answer, the desk simply has no world-record points tonight.
  */
-async function fetchSquareRecords(set: string): Promise<SquareRecords> {
+async function fetchSquareRecords(set: string): Promise<{ records: SquareRecords; tempo: TempoRecords }> {
   const { data, error } = await supabase.functions.invoke("battle-ratings", { body: { records: set } });
-  if (error || !data || typeof data.records !== "object" || data.records === null) return {};
-  return data.records as SquareRecords;
+  if (error || !data || typeof data.records !== "object" || data.records === null) return { records: {}, tempo: {} };
+  // `tempo` arrived with the kill-count points; an older function simply has none.
+  const tempo = typeof data.tempo === "object" && data.tempo !== null ? (data.tempo as TempoRecords) : {};
+  return { records: data.records as SquareRecords, tempo };
 }
 
 interface History {
   parts: ParticipantRow[];
   histories: Map<string, PlayerHistory>;
   records: SquareRecords;
+  tempo: TempoRecords;
+}
+
+/** How often the desk re-asks which squares are still standing - a minute or so late is fine for that. */
+const UNFOUND_TICK_MS = 30_000;
+
+/**
+ * Seconds since firing opened, pauses off, re-read every UNFOUND_TICK_MS rather than every second: the
+ * desk is the heaviest page on the site, and nothing here needs the clock finer than half a minute.
+ */
+function useCoarseElapsed(room: Room | null | undefined, attacks: Attack[]): number | null {
+  const startedAt = matchStartedAt(attacks);
+  const live = room?.status === "battle" && startedAt !== null;
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setTick((n) => n + 1), UNFOUND_TICK_MS);
+    return () => clearInterval(timer);
+  }, [live]);
+  return useMemo(() => {
+    if (!live) return null;
+    const now = serverNow();
+    const info = battlePhaseAt(startedAt, now, matchTimings(room), pauseInfoAt(room, now));
+    return info?.phase === "match" ? Math.floor(info.matchElapsed / 30) * 30 : null;
+    // `tick` is what moves it; the room's pause columns move it too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, startedAt, tick, room?.pause_at, room?.resume_at, room?.pause_log, room?.starting_seconds, room?.prep_seconds]);
 }
 
 /**
@@ -73,17 +108,18 @@ export function useTalkingPoints(
     let cancelled = false;
     void (async () => {
       const keys = rosterKeys.split(",");
-      const [parts, events, records] = await Promise.all([
+      const [parts, events, field] = await Promise.all([
         fetchParticipants().catch(() => [] as ParticipantRow[]),
         Promise.all(keys.map((k) => fetchPlayerEvents(k).catch(() => [] as MatchEventRow[]))),
-        fetchSquareRecords(set).catch(() => ({}) as SquareRecords),
+        fetchSquareRecords(set).catch(() => ({ records: {} as SquareRecords, tempo: {} as TempoRecords })),
       ]);
       if (cancelled) return;
       const onBoard = (rows: MatchEventRow[]) => rows.filter((e) => rowSquareSet(e) === set);
       setHistory({
         parts: parts.filter((p) => rowSquareSet(p) === set),
         histories: new Map(keys.map((k, i) => [k, playerHistory(onBoard(events[i] as MatchEventRow[]), k)])),
-        records,
+        records: field.records,
+        tempo: field.tempo,
       });
     })();
     return () => {
@@ -120,13 +156,39 @@ export function useTalkingPoints(
     [history, roster, squares, voice]
   );
 
-  const live = useMemo(
+  // When firing opened tonight, so a kill can be placed in the match - see MatchClock.
+  const startedAt = matchStartedAt(attacks);
+  const beginsAt = matchTimings(room).matchBeginsAt;
+  const shots = useMemo(() => groupIntoShots(attacks, players), [attacks, players]);
+
+  const fromShots = useMemo(
     () =>
       history && room
-        ? livePoints(roster, groupIntoShots(attacks, players), (cell) => squares[cell] ?? null, history.histories, history.records, room, voice)
+        ? livePoints(
+            roster,
+            shots,
+            (cell) => squares[cell] ?? null,
+            history.histories,
+            history.records,
+            room,
+            voice,
+            { startedAt, beginsAt },
+            history.tempo
+          )
         : [],
-    [history, room, roster, attacks, players, squares, voice]
+    [history, room, roster, shots, squares, voice, startedAt, beginsAt]
   );
+
+  // Squares nobody has taken long after they usually fall - read off the clock, not a shot.
+  const elapsed = useCoarseElapsed(room, attacks);
+  const unfound = useMemo(() => {
+    if (!history || !room || elapsed === null || !startedAt) return [];
+    const taken = new Set(shots.map((s) => squares[s.cellIndex]).filter((s): s is string => !!s));
+    const opened = matchMs(startedAt, room) + beginsAt * 1000;
+    return unfoundPoints(squares, taken, elapsed, opened, history.records, voice);
+  }, [history, room, elapsed, startedAt, beginsAt, shots, squares, voice]);
+
+  const live = useMemo(() => [...fromShots, ...unfound].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)), [fromShots, unfound]);
 
   return { before, live, loading: !!set && !!rosterKeys && history === null };
 }
