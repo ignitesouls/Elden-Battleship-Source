@@ -5,6 +5,7 @@ import { groupLabel } from "../../lib/tournament/groupNames";
 import type { TeamPowerInfo } from "../../hooks/useTeamPowers";
 import { MatchOdds } from "./PowerLine";
 import { PlayerName, TeamLogo } from "./TeamLogo";
+import { RecapLinks } from "./RecapLinks";
 
 /**
  * Every match of a running or finished event, grouped by round.
@@ -30,8 +31,13 @@ interface Props {
   logos?: Map<string, string>;
   /** Twitch logins by team id, in an individual event: each name then opens that player's channel. */
   twitch?: Map<string, string>;
-  /** Given, every match with both teams known links to their tale of the tape. */
+  /**
+   * Given, every match with both teams known links to their tale of the tape - until it is decided with
+   * games to show, when it links to each game's recap instead (see `games`).
+   */
   eventId?: string;
+  /** Recap match keys by match id (fetchMatchGames). A match with games shows a link to each. */
+  games?: Map<string, string[]>;
 }
 
 const BRACKET_LABEL: Record<string, [string, string]> = {
@@ -41,7 +47,7 @@ const BRACKET_LABEL: Record<string, [string, string]> = {
   TP: ["Third place", "Troisième place"],
 };
 
-export function MatchList({ matches, names, groupNames, powers, logos, twitch, eventId }: Props) {
+export function MatchList({ matches, names, groupNames, powers, logos, twitch, eventId, games }: Props) {
   const t = useT();
   const lang = useLanguage();
 
@@ -97,6 +103,7 @@ export function MatchList({ matches, names, groupNames, powers, logos, twitch, e
               const b = m.entrant_b ? names.get(m.entrant_b) ?? "?" : t("TBD", "À déterminer");
               const done = m.status === "done";
               const bracket = showBracket(m.bracket) && m.bracket ? BRACKET_LABEL[m.bracket] : null;
+              const recaps = games?.get(m.id);
               return (
                 <div className="t-item" key={m.id}>
                   <span style={{ flex: 1, minWidth: "12rem" }}>
@@ -138,7 +145,9 @@ export function MatchList({ matches, names, groupNames, powers, logos, twitch, e
                         {t("due", "avant le")} {day(m.due_at)}
                       </span>
                     )}
-                    {eventId && m.entrant_a && m.entrant_b && (
+                    <RecapLinks keys={recaps} style={{ fontSize: "0.75rem" }} />
+                    {/* A series still being played keeps its tape beside the games so far. */}
+                    {eventId && m.entrant_a && m.entrant_b && !(done && recaps?.length) && (
                       <Link to={`/event/${eventId}/vs/${m.entrant_a}/${m.entrant_b}`} style={{ fontSize: "0.75rem" }}>
                         {t("Tale of the tape", "Fiche du combat")} ›
                       </Link>

@@ -14,6 +14,7 @@ import { EventLogo } from "../components/event/EventLogo";
 import { PlayerName, TeamLabel, TeamLogo } from "../components/event/TeamLogo";
 import { JustForFun } from "../components/event/PowerLine";
 import { useMatchWhen } from "../components/event/MatchTimeField";
+import { RecapLinks } from "../components/event/RecapLinks";
 import "../components/Tournament.css";
 import "./TaleOfTheTape.css";
 
@@ -379,6 +380,7 @@ function TeamTapeBody({ event, teamId, data }: { event: EventDetail; teamId: str
               const them = theirs ? data.teams.find((y) => y.id === theirs) : undefined;
               const weAreA = x.entrant_a === team.id;
               const done = x.status === "done";
+              const recaps = data.games.get(x.id);
               return (
                 <div className="t-item" key={x.id}>
                   <span>
@@ -391,7 +393,8 @@ function TeamTapeBody({ event, teamId, data }: { event: EventDetail; teamId: str
                     {done && them && x.result_kind !== "forfeit" && <strong className="t-score">{weAreA ? x.score_a : x.score_b} - {weAreA ? x.score_b : x.score_a}</strong>}
                     {x.result_kind === "forfeit" && done && <span className="badge">{t("forfeit", "forfait")}</span>}
                     {!done && x.agreed_at && <span className="badge badge--good">{when(x.agreed_at)}</span>}
-                    {them && <Link to={vs(them.id)}>{t("Tale of the tape", "Fiche du combat")} ›</Link>}
+                    <RecapLinks keys={recaps} />
+                    {them && !(done && recaps?.length) && <Link to={vs(them.id)}>{t("Tale of the tape", "Fiche du combat")} ›</Link>}
                   </span>
                 </div>
               );

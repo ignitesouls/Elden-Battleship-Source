@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   entrantTwitch,
   fetchEventBundle,
+  fetchMatchGames,
   teamLogos,
   type EventConfig,
   type EventDetail,
@@ -107,6 +108,27 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
   const profileIds = useMemo(() => [...rosters.values()].flat(), [rosters]);
   const profiles = useProfileBits(profileIds);
 
+  // The recaps behind each result, so a played match can open its post-match page. Read again only when
+  // another game is recorded (the games played across the event), not on every minute's refresh.
+  const playedIds = useMemo(() => matches.filter((m) => m.score_a + m.score_b > 0).map((m) => m.id), [matches]);
+  const gamesPlayed = matches.reduce((n, m) => n + m.score_a + m.score_b, 0);
+  const [games, setGames] = useState<Map<string, string[]>>(new Map());
+  useEffect(() => {
+    if (!isSupabaseConfigured || playedIds.length === 0) return;
+    let cancelled = false;
+    // A failure here costs the recap links, never the page.
+    fetchMatchGames(playedIds)
+      .then((found) => {
+        if (!cancelled) setGames(found);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // playedIds is a new array on every refresh; gamesPlayed is what says it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, gamesPlayed]);
+
   const names = useMemo(() => new Map(teams.map((team) => [team.id, team.name])), [teams]);
   // In an individual event each "team" is one player, shown with their Twitch avatar.
   const logos = useMemo(() => teamLogos(teams, event?.team_size === 1 ? profiles : undefined), [teams, event?.team_size, profiles]);
@@ -114,5 +136,5 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
   const twitch = useMemo(() => entrantTwitch(teams, event?.team_size === 1 ? profiles : undefined), [teams, event?.team_size, profiles]);
   const departedIds = useMemo(() => new Set(teams.filter((team) => team.forfeited_at).map((team) => team.id)), [teams]);
 
-  return { event, teams, matches, config, error, reload, standings, powers, profiles, names, logos, twitch, departedIds };
+  return { event, teams, matches, config, error, reload, standings, powers, profiles, names, logos, twitch, departedIds, games };
 }

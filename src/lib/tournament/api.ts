@@ -1306,6 +1306,32 @@ export async function fetchEventBundle(id: string): Promise<EventBundle | null> 
   };
 }
 
+/**
+ * The recaps of the games played in these bracket matches: match id -> match keys, in the order they
+ * were played, for the links from a result to its post-match page.
+ *
+ * Not part of fetchEventBundle: match_reports.tournament_match_id has no foreign key (on purpose - see
+ * 20260922010000_official_matches), so PostgREST cannot nest it. A recap is deleted after 30 days, and
+ * with it the only link from a bracket match to its games - a match whose recaps are gone simply has no
+ * entry here. Voided games are left out: they did not count toward the series.
+ */
+export async function fetchMatchGames(matchIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (matchIds.length === 0) return out;
+  const { data, error } = await supabase
+    .from("match_reports")
+    .select("match_key, tournament_match_id")
+    .in("tournament_match_id", matchIds)
+    .eq("official", true)
+    .eq("voided", false)
+    .order("finished_at", { ascending: true });
+  if (error) fail(error);
+  for (const r of (data ?? []) as Array<{ match_key: string; tournament_match_id: string }>) {
+    out.set(r.tournament_match_id, [...(out.get(r.tournament_match_id) ?? []), r.match_key]);
+  }
+  return out;
+}
+
 /** Draws the next Swiss round, or the knockout after a qualifier. Refused if it is the wrong moment. */
 export async function drawStage(eventId: string, stage: "swiss" | "knockout", matches: TMatch[]): Promise<number> {
   const { data, error } = await supabase.rpc("add_tournament_matches", {

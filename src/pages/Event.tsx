@@ -39,7 +39,7 @@ export function Event() {
   const profile = useAuthProfile();
   const userId = profile?.isTwitch ? profile.userId : null;
 
-  const { event, teams, matches, error, reload, standings, powers, profiles, names, logos, twitch, departedIds } = useEventData(id, userId);
+  const { event, teams, matches, error, reload, standings, powers, profiles, names, logos, twitch, departedIds, games } = useEventData(id, userId);
   const showsPower = !!powers && powers.size > 0;
 
   if (!isSupabaseConfigured) {
@@ -186,7 +186,7 @@ export function Event() {
       {(event.status === "live" || event.status === "finished") && (
         <div className="panel stack">
           <h3>{t("Schedule and results", "Calendrier et résultats")}</h3>
-          <MatchList matches={matches} names={names} groupNames={event.group_names} powers={powers} logos={logos} twitch={twitch} eventId={event.id} />
+          <MatchList matches={matches} names={names} groupNames={event.group_names} powers={powers} logos={logos} twitch={twitch} eventId={event.id} games={games} />
         </div>
       )}
 
