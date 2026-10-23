@@ -581,13 +581,13 @@ export interface EventCastRow extends CastRow {
   created_at: string;
 }
 
-/** Every pending and approved cast request in an event, oldest first (administrators). */
+/** Every pending, approved and declined cast request in an event, oldest first (administrators). */
 export async function fetchEventCasts(eventId: string): Promise<EventCastRow[]> {
   const { data, error } = await supabase
     .from("official_casts")
     .select("id, match_id, caster_user_id, twitch_login, display_name, status, created_at")
     .eq("tournament_id", eventId)
-    .in("status", ["pending", "approved"])
+    .in("status", ["pending", "approved", "declined"])
     .order("created_at", { ascending: true });
   if (error) fail(error);
   return (data ?? []) as EventCastRow[];

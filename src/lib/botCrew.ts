@@ -124,21 +124,48 @@ const MAX_ROLES = 4;
 /** Early-value bosses stay attractive until DLC entry, or this far in for a captain who never goes. */
 const EARLY_WINDOW_SECONDS = 40 * 60;
 
-/** A square this much before its usual time is still fair game; past this, it fades. */
-const TIMING_SLACK_SECONDS = 15 * 60;
-const TIMING_FADE_SECONDS = 25 * 60;
+/** A square this much before its usual time is still fair game; past this, it fades - fast. */
+const TIMING_SLACK_SECONDS = 10 * 60;
+const TIMING_FADE_SECONDS = 15 * 60;
+/**
+ * Further ahead of its usual time than this, a square is not a candidate at all outside the endgame.
+ * The fade above is a preference; without a hard edge a strongly aimed tier still overrode it about
+ * one kill in ten (real players: three in a hundred more than half an hour early).
+ */
+const TOO_EARLY_SECONDS = 30 * 60;
+
+/**
+ * How much of a route choice is "where real players went next from here" (the rest is the role's
+ * lane and the clock).
+ *
+ * The first crew bot multiplied the two, with the next-list worth a factor of a few at most - so
+ * within a lane it chose nearly at random, and a live match saw a flex captain go Godskin Snail, Full-
+ * Grown Fallingstar, Demi-Human Chiefs, Dragonbarrow Night's Cavalry, Fire Giant: a run no real
+ * player has ever made, almost every step one that real players took 0 times out of dozens
+ * (GHOSTLYWHARF, October 2026). Mixed instead, real routes lead whenever this board has any of them.
+ */
+const ROUTE_FOLLOW = 0.75;
 
 /** How much each detour kill (a gate off the board, still to do) costs a square's appeal. */
 const DETOUR_PENALTY = 0.4;
-
-/** How decisively a tier follows the route real players take next, as the exponent on that pull. */
-const ROUTE_SHARPNESS: Record<BotTier, number> = { chud: 1, tarnished: 1.5, sweat: 2, shaker: 2.5 };
 
 /** Aim strength before calibration exists - see BotRoutes.calibration. */
 const DEFAULT_AIM: Record<BotTier, number> = { chud: 0, tarnished: 1, sweat: 1.5, shaker: 2 };
 
 /** A captain with nothing left to do waits this long and looks again. */
 const IDLE_SECONDS = 600;
+
+/**
+ * The latest a captain's first kill may land, in match seconds.
+ *
+ * The opening is drawn from real players' first kills, and that spread has a long tail: about one
+ * captain in a thousand drew a first kill near the hour, and sat on its seat with no shots while its
+ * crewmates fired a dozen each - which to the crew facing it looks exactly like a bot that never
+ * connected (GHOSTLYWHARF, October 2026). A real player that slow exists, but a bot seat silent for
+ * an hour reads as broken, so the tail stops here - past it, only about one real player in
+ * twenty-five is still on their first kill.
+ */
+const OPENING_CAP_SECONDS = 35 * 60;
 
 export function rolesFor(routes: BotRoutes, crew: number): RouteRole[] {
   const size = Math.max(1, Math.min(MAX_ROLES, crew));
@@ -257,32 +284,53 @@ function chooseRoute(c: Captain, state: CrewState, world: CrewWorld, turn: CrewT
     }
   }
 
-  const options: { item: Step[]; score: number }[] = [];
+  // Each candidate square, with the two halves of a route choice kept apart until they are mixed:
+  // `followed` - how often real players went here next from the last kill - and `prior`, what the
+  // role, the clock and the rules make of it. See ROUTE_FOLLOW for why they are mixed rather than
+  // multiplied.
+  const candidates: { item: Step[]; followed: number; prior: number; hunt: number }[] = [];
   world.board.forEach((sq, cell) => {
     if (!sq || turn.fired.has(cell) || taken.has(cell) || kills.has(sq.name)) return;
     if (endgame && !turn.aim.lead.has(cell) && !unlocks.has(cell)) return;
     const steps = stepsTo(sq.name, kills, world.lookup, world.shared, price);
     if (steps.some((s) => onBoard.has(s))) return;
 
+    // Past TOO_EARLY_SECONDS ahead of its usual time a square is off the list outright, however good
+    // it looks to aim - finishing included: a crew does not go to Malenia at minute twenty because
+    // there is a hit beside her.
+    const usual = world.routes.squares[sq.name]?.at ?? 3000;
+    if (usual - t > TOO_EARLY_SECONDS) return;
+
     const detour = Math.pow(DETOUR_PENALTY, steps.length);
     const hunt = Math.pow(Math.max(turn.aim.pull[cell], unlocks.get(cell) ?? 0), lean);
-    let score: number;
+    const item = [...steps.map((name) => ({ name, cell: null })), { name: sq.name, cell }];
     if (endgame) {
       // Finishing: the route no longer matters, only what is left to sink and how far away it is.
-      score = hunt * detour;
-    } else {
-      const lane = (role?.regions[sq.region ?? ""] ?? 0) + 0.02;
-      const follow = 1 + 10 * (fromTotal > 0 ? (from?.[sq.name] ?? 0) / fromTotal : 0);
-      const usual = world.routes.squares[sq.name]?.at ?? 3000;
-      const timing = usual <= t + TIMING_SLACK_SECONDS ? 1 : Math.exp(-(usual - t - TIMING_SLACK_SECONDS) / TIMING_FADE_SECONDS);
-      const early = EARLY_VALUE.has(sq.name) && (!entry || t < EARLY_WINDOW_SECONDS) ? 4 : 1;
-      const gate = dlcRole && !entry && (DLC_MAJOR_GATES.includes(sq.name) || DLC_MINOR_GATES.includes(sq.name)) ? 5 : 1;
-      // Route sharpness is not applied to the lane, which is the role's own measured split and would
-      // otherwise come out narrower than any real crew plays it.
-      score = lane * timing * early * gate * detour * Math.pow(follow, ROUTE_SHARPNESS[world.tier]) * hunt;
+      candidates.push({ item, followed: 0, prior: detour, hunt });
+      return;
     }
-    if (score > 0) options.push({ item: [...steps.map((name) => ({ name, cell: null })), { name: sq.name, cell }], score });
+    const lane = (role?.regions[sq.region ?? ""] ?? 0) + 0.02;
+    // A boss far ahead of where runs usually are is not on anybody's list yet. Steep on purpose: a
+    // gentle fade still let a captain open on Godskin Snail - usually done at 77:00 - at 17:00.
+    const ahead = Math.max(0, usual - t - TIMING_SLACK_SECONDS) / TIMING_FADE_SECONDS;
+    const timing = Math.exp(-ahead * ahead);
+    const early = EARLY_VALUE.has(sq.name) && (!entry || t < EARLY_WINDOW_SECONDS) ? 4 : 1;
+    const gate = dlcRole && !entry && (DLC_MAJOR_GATES.includes(sq.name) || DLC_MINOR_GATES.includes(sq.name)) ? 5 : 1;
+    const rules = timing * early * gate * detour;
+    candidates.push({ item, followed: (from?.[sq.name] ?? 0) * Math.sqrt(lane) * rules, prior: lane * rules, hunt });
   });
+
+  // Mix: mostly where real players go next from here, among what this board offers; the rest by lane
+  // and clock. A captain whose last kill has no next-list on this board plays the prior alone.
+  const followedTotal = candidates.reduce((s, x) => s + x.followed, 0);
+  const priorTotal = candidates.reduce((s, x) => s + x.prior, 0);
+  const follow = followedTotal > 0 && fromTotal > 0 ? ROUTE_FOLLOW : 0;
+  const options = candidates.map((x) => ({
+    item: x.item,
+    score:
+      (follow * (followedTotal > 0 ? x.followed / followedTotal : 0) + (1 - follow) * (priorTotal > 0 ? x.prior / priorTotal : 0)) *
+      x.hunt,
+  }));
 
   const picked = weightedPick(options, turn.random);
   if (picked) return picked;
@@ -312,7 +360,7 @@ export function newCrew(world: CrewWorld, crew: number, turn: CrewTurn): CrewSta
   };
   for (const c of state.captains) {
     // Their first square comes after a real run's opening, not after one walk - see openingSeconds.
-    c.at = Math.round(OPENING_MEDIAN_SECONDS * spec.openingFactor * Math.exp(0.36 * gaussian(turn.random)));
+    c.at = Math.min(OPENING_CAP_SECONDS, Math.round(OPENING_MEDIAN_SECONDS * spec.openingFactor * Math.exp(0.36 * gaussian(turn.random))));
     c.queue = chooseRoute(c, state, world, turn, c.at);
   }
   return state;
@@ -343,7 +391,12 @@ export async function playCrew(
   now: number,
   onShot: (shot: CrewShot) => Promise<AimView> | AimView
 ): Promise<CrewShot[]> {
-  for (const c of state.captains) if (c.at < now - 120) c.at = now;
+  for (const c of state.captains) {
+    if (c.at < now - 120) c.at = now;
+    // Also catches a crew drawn before the cap existed: a captain still waiting on a first kill past
+    // the cap gets it now, rather than sitting out the match.
+    if (c.kills.length === 0 && c.at > OPENING_CAP_SECONDS) c.at = Math.max(OPENING_CAP_SECONDS, now);
+  }
   const cellOf = new Map<string, number>();
   world.board.forEach((sq, cell) => sq && cellOf.set(sq.name, cell));
   const out: CrewShot[] = [];

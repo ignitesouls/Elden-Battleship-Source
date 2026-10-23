@@ -132,7 +132,47 @@ const three = await games('tarnished', 3, 'three')
   }
   check('the early-value bosses mostly go in the first forty minutes', early / Math.max(1, dealt) > 0.5, `${early}/${dealt}`)
   check('no square is fired at twice', three.every((g) => new Set(g.shots.map((s) => s.cell)).size === g.shots.length))
+
+  // A captain sitting on its seat with no shots looks like a bot that never connected - see
+  // OPENING_CAP_SECONDS. 400 crews of three, so even a one-in-a-thousand opening gets drawn.
+  const many = await Promise.all(Array.from({ length: 400 }, (_, i) => simulate({ tier: 'tarnished', crew: 3, routes, seed: `awake:${i}`, minutes: 45 })))
+  const silent = many.filter((g) => [0, 1, 2].some((c) => !g.shots.some((s) => s.captain === c))).length
+  check('every captain has fired by minute 45', silent === 0, `${silent} of 400 crews had a silent captain`)
   check('every shot is credited to one of the crew', three.every((g) => g.shots.every((s) => s.captain >= 0 && s.captain < 3)))
+}
+
+// -- the order of a run ---------------------------------------------------------------------------------
+// Lanes alone are not enough: a captain can stay in Altus and still play a run no real player has
+// made. Measured on real players in October 2026, the next kill was one of the common next squares
+// from the last one 46% of the time, and three kills in a hundred fell more than half an hour ahead of
+// when that boss usually goes. Every tier is held near both - the first crew bot managed about 5%
+// on the first, which is what "Godskin Snail at 17:00, Fire Giant at 28:00" looks like from outside.
+{
+  for (const tier of BOT_TIERS) {
+    const list = tier === 'tarnished' ? three : await games(tier, 3, 'order')
+    let pairs = 0
+    let followed = 0
+    let kills = 0
+    let wayEarly = 0
+    for (const g of list) {
+      for (let c = 0; c < 3; c++) {
+        const run = g.shots.filter((s) => s.captain === c).map((s) => ({ name: g.board[s.cell].name, at: s.at }))
+        run.forEach((k, i) => {
+          const usual = routes.squares[k.name]?.at
+          if (usual != null && k.at < 3600) {
+            kills++
+            if (k.at < usual - 1800) wayEarly++
+          }
+          if (i > 0) {
+            pairs++
+            if (routes.next[run[i - 1].name]?.[k.name]) followed++
+          }
+        })
+      }
+    }
+    check(`${tier} follows real routes`, followed / pairs >= 0.3, `${pct(followed / pairs)} of next kills are a common real next (real players 46%)`)
+    check(`${tier} keeps to the clock`, wayEarly / kills <= 0.05, `${pct(wayEarly / kills)} of first-hour kills 30+ min early (real players 3%)`)
+  }
 }
 
 // -- pace: each tier against a real crew the same size ------------------------------------------------
