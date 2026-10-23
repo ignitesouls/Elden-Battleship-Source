@@ -837,7 +837,12 @@ export function playerSceneParts({
   parts.push({
     name: "EB Player Frame",
     entry: {
-      source: castSource("player-frame", "frame", "EB Player Frame", CAST_CANVAS.w, CAST_CANVAS.h),
+      // Labelled for the setup page, which lists it beside the player's own elements.
+      source: {
+        ...castSource("player-frame", "frame", "EB Player Frame", CAST_CANVAS.w, CAST_CANVAS.h),
+        label: "Player frame",
+        note: "the frame art, with see-through boxes for everything else",
+      },
       url: `${base}#/stream/frame?token=${token}&layout=player`,
     },
     at: { x: 0, y: 0, scale: 1 },

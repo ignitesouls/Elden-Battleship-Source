@@ -9,9 +9,9 @@ import { OverlayTokenBox, OverlayTokenError, OverlayTokenStart, useMyOverlayToke
 import { MIN_OPACITY, MIN_ALERT_SECS, MAX_ALERT_SECS, DEFAULT_ALERT_SECS } from "../lib/overlayCast";
 import { MIN_TEXT_SIZE, MAX_TEXT_SIZE } from "../lib/overlayText";
 import { sourcesFor, streamSourceUrl, type SceneKind, type SceneSettings } from "../lib/streamOverlay";
-import { SCENE_CANVAS, buildObsScene, previewBox, sceneFilename } from "../lib/obsScene";
+import { playerSceneParts } from "../lib/obsScene";
 import { CasterSceneSetup } from "../components/CasterSceneSetup";
-import { PlayerSceneSetup } from "../components/PlayerSceneSetup";
+import { PlayerFramePieces, PlayerSceneSetup } from "../components/PlayerSceneSetup";
 import type { DeepMark } from "../lib/deepWater";
 import { useT } from "../lib/language";
 import "./Streaming.css";
@@ -31,14 +31,10 @@ import "./Streaming.css";
  *
  * -- What the overlay half is doing --------------------------------------------------------------
  *
- * The old way still works and is still offered, at the bottom, under ADVANCED: copy seven URLs into
- * seven Browser Sources, once per match, forever. This is the other way. The token names the player
- * rather than the room, so one downloaded scene follows them from match to match and the URLs inside
- * it never go stale. See lib/streamOverlay.
- *
- * The scene is an INITIAL arrangement, and the page says so more than once, because the single worst
- * outcome here is somebody spending an evening laying out their scene and then losing it to a
- * re-import. Elden Battleship owns the data; OBS owns the layout.
+ * The token names the player rather than the room, so a downloaded scene or a pasted URL follows
+ * them from match to match and never goes stale. See lib/streamOverlay. A player gets the frame as
+ * one file (PlayerSceneSetup) or "Just the pieces": every element's URL and the frame taken apart,
+ * with no file to import.
  */
 
 const DEFAULTS: SceneSettings = {
@@ -48,49 +44,6 @@ const DEFAULTS: SceneSettings = {
   alertSecs: DEFAULT_ALERT_SECS,
 };
 
-/** What OBS will call the scene. One name per audience, so a caster can import both without a clash. */
-function sceneName(kind: SceneKind): string {
-  return kind === "caster" ? "Elden Battleship (Caster)" : "Elden Battleship";
-}
-
-/**
- * A map of the scene, at the proportions it will actually import at.
- *
- * Not a picture of the overlays - the sample above it already is one. This answers the other
- * question, the one a streamer cannot otherwise answer until after they have imported: how much of
- * my screen does all of this cover, and what is left for the game? Every box is drawn at the share of
- * a 1080p canvas its source occupies, from the same placements the generated file is built from, so
- * it cannot drift from what lands in OBS.
- */
-function SceneMap({ kind, chosen }: { kind: SceneKind; chosen: Set<string> }) {
-  const t = useT();
-  const sources = sourcesFor(kind).filter((s) => chosen.has(s.id));
-  return (
-    <div className="obs-map" role="img" aria-label={t("Where each source lands in the scene", "Où chaque source se place dans la scène")}>
-      {sources.map((source) => {
-        const box = previewBox(kind, source);
-        return (
-          <div
-            key={source.id}
-            className="obs-map-box"
-            style={{
-              left: `${box.left * 100}%`,
-              top: `${box.top * 100}%`,
-              width: `${box.width * 100}%`,
-              height: `${box.height * 100}%`,
-            }}
-          >
-            <span>{source.label}</span>
-          </div>
-        );
-      })}
-      <span className="obs-map-note">
-        {SCENE_CANVAS.w} x {SCENE_CANVAS.h} {t("- where each source lands.", "- où chaque source se place.")}
-      </span>
-    </div>
-  );
-}
-
 export function Streaming() {
   const t = useT();
   /** A Twitch account and its token, or nothing - see components/OverlayToken. */
@@ -98,13 +51,8 @@ export function Streaming() {
   const { token } = mine;
 
   const [kind, setKind] = useState<SceneKind>("player");
-  /** A player's two ways in: the finished frame scene, or every element loose to arrange themselves. */
+  /** A player's two ways in: the finished frame scene as one file, or every piece's URL on its own. */
   const [playerWay, setPlayerWay] = useState<"frame" | "loose">("frame");
-  /** Which sources are ticked. Seeded from each list's own defaults the first time it is shown. */
-  const [chosen, setChosen] = useState<Record<SceneKind, Set<string>>>(() => ({
-    player: new Set(sourcesFor("player").filter((s) => s.on).map((s) => s.id)),
-    caster: new Set(sourcesFor("caster").filter((s) => s.on).map((s) => s.id)),
-  }));
 
   const [opacity, setOpacity] = useState(DEFAULTS.opacity);
   const [emptyFade, setEmptyFade] = useState(DEFAULTS.emptyFade);
@@ -120,52 +68,29 @@ export function Streaming() {
 
   const scene: SceneSettings = { opacity, textSize, emptyFade, alertSecs };
   const isCaster = kind === "caster";
-  const picked = chosen[kind];
 
   // Built from window.location so the URLs stay right on localhost, on GitHub Pages under its
   // /Elden-Battleship/ base, and anywhere else this is hosted. Hardcoding the deployed origin would
   // hand every local tester a scene pointing at production - same reasoning as OverlayLinkBox.
   const base = `${window.location.origin}${window.location.pathname}`;
 
+  // Every player element, nothing to tick: each is copied on its own, so offering one costs nothing.
   const entries = useMemo(
     () =>
       token
-        ? sourcesFor(kind)
-            .filter((s) => picked.has(s.id))
-            .map((source) => ({ source, url: streamSourceUrl(base, source, token, scene, DEFAULTS) }))
+        ? sourcesFor("player").map((source) => ({ source, url: streamSourceUrl(base, source, token, scene, DEFAULTS) }))
         : [],
     // The scene settings are spread rather than passed as an object so a slider actually invalidates
     // this - a fresh `scene` object every render would make the memo pointless in the other direction.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [token, kind, picked, base, opacity, textSize, emptyFade, alertSecs]
+    [token, base, opacity, textSize, emptyFade, alertSecs]
   );
 
-  function toggle(id: string) {
-    setChosen((prev) => {
-      const next = new Set(prev[kind]);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return { ...prev, [kind]: next };
-    });
-  }
-
-  /**
-   * The download.
-   *
-   * A Blob and an object URL rather than a data: URI, because a scene with seven long URLs in it is
-   * comfortably past the length some browsers will accept in an href, and a download that silently
-   * does nothing is the worst possible failure for a button like this.
-   */
-  function download() {
-    const collection = buildObsScene({ kind, entries, sceneName: sceneName(kind) });
-    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = sceneFilename(kind);
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  // The whole frame, every optional part included - the player leaves out whatever they don't paste.
+  const frameParts = useMemo(
+    () => (token ? playerSceneParts({ base, token, textSize, alertSecs, fleet: true, finds: true, sound: true }) : []),
+    [token, base, textSize, alertSecs]
+  );
 
   return (
     <div className="stack obs-page" style={{ gap: "0.9rem" }}>
@@ -195,8 +120,8 @@ export function Streaming() {
 
         <span className="muted" style={{ fontSize: "0.72rem", lineHeight: 1.45 }}>
           {t(
-            "One download, one import. Each element arrives as its own Browser Source, so you can place them separately. The URLs never change - join your next match and the overlay is already on it.",
-            "Un téléchargement, un import. Chaque élément arrive comme sa propre Browser Source, pour les placer séparément. Les URL ne changent jamais - rejoignez votre prochaine partie et l'overlay y est déjà."
+            "Set it up once. The URLs never change - join your next match and the overlay is already on it.",
+            "Configurez-le une fois. Les URL ne changent jamais - rejoignez votre prochaine partie et l'overlay y est déjà."
           )}
         </span>
 
@@ -256,8 +181,8 @@ export function Streaming() {
                         "Une mise en page finie : votre jeu, votre webcam, votre plateau de tir et votre flotte dans le cadre Elden Battleship."
                       )
                     : t(
-                        "No frame. Pick the elements you want and arrange them over your own layout.",
-                        "Sans cadre. Choisissez les éléments voulus et disposez-les sur votre propre mise en page."
+                        "Every element as its own URL, to arrange over your own layout - or build the frame yourself from its sources and PNGs at the bottom.",
+                        "Chaque élément comme sa propre URL, à disposer sur votre propre mise en page - ou montez le cadre vous-même à partir de ses sources et PNG en bas."
                       )}
                 </span>
               </div>
@@ -352,80 +277,38 @@ export function Streaming() {
               {playing ? t("Stop", "Arrêter") : t("Play a sample find", "Jouer une découverte d'exemple")}
             </button>
 
-            {/* -- what goes in it ------------------------------------------------------------ */}
-            <div className="stack" style={{ gap: "0.3rem" }}>
-              <span style={{ fontSize: "0.78rem" }}>{t("Elements", "Éléments")}</span>
-              {sourcesFor(kind).map((source) => (
-                <label key={source.id} className="obs-pick">
-                  <input type="checkbox" checked={picked.has(source.id)} onChange={() => toggle(source.id)} />
-                  <span className="stack" style={{ gap: "0.1rem" }}>
-                    <span style={{ fontSize: "0.76rem" }}>
-                      {source.label}{" "}
-                      <span className="muted" style={{ fontSize: "0.68rem" }}>
-                        {source.width} x {source.height}
-                      </span>
+            {/* -- every piece --------------------------------------------------------------- */}
+            <div className="stack" style={{ gap: "0.4rem" }}>
+              <span style={{ fontSize: "0.78rem" }}>{t("Browser Sources", "Sources navigateur")}</span>
+              <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
+                {t(
+                  "In OBS, add a Browser Source, paste the URL and give it the size shown. Take only the ones you want. Paste one in and it never needs changing.",
+                  "Dans OBS, ajoutez une Browser Source, collez l'URL et donnez-lui la taille indiquée. Prenez seulement celles que vous voulez. Collez-en une et elle n'a plus jamais besoin de changer."
+                )}
+              </span>
+              {[...entries, ...frameParts.flatMap((p) => (p.entry?.source.element === "frame" ? [p.entry] : []))].map(({ source, url }) => (
+                <div key={source.id} className="stack" style={{ gap: "0.15rem" }}>
+                  <SourceRow label={source.label} url={url} size={`${source.width} x ${source.height}`} note={source.note} />
+                  {source.spoiler && (
+                    <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
+                      <strong>
+                        {t(
+                          "This one draws your ships. Put it on stream only if you want viewers to see where your hulls are.",
+                          "Celle-ci dessine vos navires. Ne la mettez en stream que si vous voulez que les spectateurs voient où sont vos coques."
+                        )}
+                      </strong>
                     </span>
-                    <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.35 }}>
-                      {source.note}
-                    </span>
-                    {/* On the row, not on a toggle elsewhere: the decision is made at the moment the
-                        box is ticked, and that is the moment it has to be readable. */}
-                    {source.spoiler && picked.has(source.id) && (
-                      <span style={{ fontSize: "0.68rem", lineHeight: 1.35, color: "var(--hit)" }}>
-                        <strong>
-                          {t(
-                            "This one draws your ships. Put it on stream only if you want viewers to see where your hulls are.",
-                            "Celle-ci dessine vos navires. Ne la mettez en stream que si vous voulez que les spectateurs voient où sont vos coques."
-                          )}
-                        </strong>
-                      </span>
-                    )}
-                  </span>
-                </label>
+                  )}
+                </div>
               ))}
             </div>
 
-            <SceneMap kind={kind} chosen={picked} />
-
-            <button onClick={download} disabled={picked.size === 0} style={{ fontSize: "0.82rem" }}>
-              {t("Download OBS scene", "Télécharger la scène OBS")}
-            </button>
-
-            <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-              {t("In OBS:", "Dans OBS :")} <strong>{t("Scene Collection - Import", "Collection de scènes - Importer")}</strong>
-              {t(", pick the file, then switch to it.", ", choisissez le fichier, puis basculez dessus.")}
-            </span>
-
-            {/* The one warning on this page that is worth red. Losing an evening's layout to a
-                re-import is the worst thing that can happen to somebody using this. */}
-            <span style={{ fontSize: "0.68rem", lineHeight: 1.4, color: "var(--hit)" }}>
-              <strong>{t("Arrange it after you import, not before.", "Disposez-la après l'import, pas avant.")}</strong>{" "}
-              {t(
-                "Downloading again builds a new scene, not an update - whatever you moved in OBS is gone.",
-                "Télécharger à nouveau crée une nouvelle scène, pas une mise à jour - tout ce que vous avez déplacé dans OBS est perdu."
-              )}
-            </span>
-
-            {/* -- the advanced half ---------------------------------------------------------- */}
+            {/* The player frame taken apart - its URL is the last row of the list above. */}
             <details className="stack" style={{ gap: "0.4rem" }}>
               <summary style={{ fontSize: "0.78rem", cursor: "pointer" }}>
-                {t("Advanced - individual Browser Sources", "Avancé - sources navigateur individuelles")}
+                {t("Build the frame yourself", "Monter le cadre vous-même")}
               </summary>
-              <span className="muted" style={{ fontSize: "0.68rem", lineHeight: 1.4 }}>
-                {t(
-                  "The same URLs the scene file holds. Use them to build the scene yourself, or to add one element to a scene you already have. Paste one in and it never needs changing.",
-                  "Les mêmes URL que contient le fichier de scène. Utilisez-les pour construire la scène vous-même, ou pour ajouter un élément à une scène que vous avez déjà. Collez-en une et elle n'a plus jamais besoin de changer."
-                )}
-              </span>
-              {entries.map(({ source, url }) => (
-                <SourceRow
-                  key={source.id}
-                  label={source.label}
-                  url={url}
-                  size={`${source.width} x ${source.height}`}
-                  note={source.note}
-                />
-              ))}
+              <PlayerFramePieces parts={frameParts} />
             </details>
             </>
             )}

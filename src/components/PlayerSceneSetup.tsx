@@ -1,39 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PlayerScenePreview } from "./PlayerScenePreview";
 import { OverlaySetting as Setting, textReadout } from "./OverlaySetting";
-import { SourceRow } from "./SourceRow";
 import { PLAYER_ART } from "../lib/castSceneLayout";
-import { buildPlayerCollection, playerSceneFilename, playerSceneParts, PLAYER_SCENE, type PlayerPart } from "../lib/obsScene";
+import { buildPlayerCollection, playerSceneFilename, PLAYER_SCENE, type PlayerPart } from "../lib/obsScene";
 import { DEFAULT_ALERT_SECS, MAX_ALERT_SECS, MIN_ALERT_SECS } from "../lib/overlayCast";
 import { MAX_TEXT_SIZE, MIN_TEXT_SIZE } from "../lib/overlayText";
-import { sourcesFor, streamSourceUrl, type SceneSettings } from "../lib/streamOverlay";
 import { useT } from "../lib/language";
 import type { DeepMark } from "../lib/deepWater";
 import "./CasterSceneSetup.css";
 
-const DEFAULTS: SceneSettings = { opacity: 1, textSize: 1, emptyFade: 1, alertSecs: DEFAULT_ALERT_SECS };
-
-/** The player sources that have no hole in the frame, offered as extras. */
-const EXTRA_IDS = ["timer", "key", "fire-mini"];
-
-/**
- * "...place at 600, 0, bounding box 1319 x 742" - what to type into OBS for one part. Browser
- * sources are already their box's size (see playerSceneParts), so they only need the position.
- */
-function whereItGoes(part: PlayerPart, t: ReturnType<typeof useT>): string {
-  // Sound only - a position would be a number nobody needs to type.
-  if (part.capture === "mic" || part.capture === "game-audio") return part.what;
-  const { x, y } = part.at;
-  const shown = part.fit
-    ? t(`, bounding box ${part.fit.w} x ${part.fit.h} (Ctrl+E)`, `, boîte englobante ${part.fit.w} x ${part.fit.h} (Ctrl+E)`)
-    : "";
-  return `${part.what} - ${t("place at", "placez à")} ${x}, ${y}${shown}`;
-}
-
 /**
  * The player's finished scene: their gameplay, webcam, fire board and fleet inside the Elden
- * Battleship player frame. The other way in - every element as its own source, arranged by hand - is
- * still the page's other option; see pages/Streaming.
+ * Battleship player frame, as one file. Everything handed over one piece at a time - each element as
+ * its own source, and this frame taken apart (PlayerFramePieces) - is the page's other option; see
+ * pages/Streaming.
  *
  * Laid out like CasterSceneSetup and wearing its classes: see it, tune it, get it into OBS, then the
  * two things a file can't do for you.
@@ -55,18 +35,6 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
   }, [playing, alertSecs]);
 
   const options = { base, token, textSize, fleet, finds, alertSecs, sound };
-  const parts = useMemo(
-    () => playerSceneParts(options),
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [base, token, textSize, fleet, finds, alertSecs, sound]
-  );
-
-  const extras = useMemo(() => {
-    const scene: SceneSettings = { ...DEFAULTS, textSize, alertSecs };
-    return sourcesFor("player")
-      .filter((s) => EXTRA_IDS.includes(s.id))
-      .map((source) => ({ source, url: streamSourceUrl(base, source, token, scene, DEFAULTS) }));
-  }, [base, token, textSize, alertSecs]);
 
   function download() {
     const collection = buildPlayerCollection(options);
@@ -78,8 +46,6 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
     a.click();
     URL.revokeObjectURL(url);
   }
-
-  const art = (file: string) => `${import.meta.env.BASE_URL}${file}`;
 
   return (
     <div className="stack cst" style={{ gap: "1rem" }}>
@@ -210,56 +176,6 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
               </li>
             </ol>
           </div>
-
-          <div className="stack cst-way">
-            <strong>{t("Piece by piece", "Pièce par pièce")}</strong>
-            <span className="muted cst-small">
-              {t(
-                "For adding to a scene you already have, on a 1920x1080 canvas. Stack them in this order, first in the list at the bottom. Browser Sources take the size shown; for the game and camera, set the bounding box in Edit Transform (Ctrl+E).",
-                "Pour compléter une scène existante, sur un canevas 1920x1080. Empilez-les dans cet ordre, la première de la liste en bas. Les Browser Sources prennent la taille indiquée ; pour le jeu et la caméra, réglez la boîte englobante dans Modifier la transformation (Ctrl+E)."
-              )}
-            </span>
-            <details className="cst-details">
-              <summary>{t("Scene sources", "Sources de la scène")}</summary>
-              <div className="stack" style={{ gap: "0.5rem" }}>
-                {parts.map((p) =>
-                  p.entry ? (
-                    <SourceRow
-                      key={p.name}
-                      label={p.name}
-                      url={p.entry.url}
-                      size={`${p.entry.source.width} x ${p.entry.source.height}`}
-                      note={whereItGoes(p, t)}
-                    />
-                  ) : (
-                    <div key={p.name} className="stack" style={{ gap: "0.1rem" }}>
-                      <span style={{ fontSize: "0.76rem" }}>{p.name}</span>
-                      <span className="muted cst-small">{whereItGoes(p, t)}</span>
-                    </div>
-                  )
-                )}
-              </div>
-            </details>
-            <details className="cst-details">
-              <summary>{t("Frame images (PNG)", "Images du cadre (PNG)")}</summary>
-              <span className="muted cst-small">
-                {t(
-                  "The frame on its own, 1920 x 1080 with see-through boxes, and a map of which source goes in which box.",
-                  "Le cadre seul, 1920 x 1080 avec des cadres transparents, et un plan indiquant quelle source va dans quel cadre."
-                )}
-              </span>
-              <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
-                <a className="cst-file" href={art(PLAYER_ART.frame)} download="B_Ship_Player_Overlay.png">
-                  <img src={art(PLAYER_ART.frame)} alt="" />
-                  {t("Frame", "Cadre")}
-                </a>
-                <a className="cst-file" href={art(PLAYER_ART.guide)} download="B_Ship_Player_Overlay_Map.png">
-                  <img src={art(PLAYER_ART.guide)} alt="" />
-                  {t("What goes where", "Quoi va où")}
-                </a>
-              </div>
-            </details>
-          </div>
         </div>
 
         <span className="cst-small" style={{ color: "var(--hit)" }}>
@@ -318,8 +234,8 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
             <li>
               <strong>{t("You'd rather keep your own game capture and camera", "Vous préférez garder votre capture de jeu et votre caméra")}</strong>{" "}
               {t(
-                "(with their filters): scene collections don't share sources, so don't import. Use Piece by piece inside the collection you already stream from.",
-                "(avec leurs filtres) : les collections de scènes ne partagent pas leurs sources, donc n'importez pas. Utilisez Pièce par pièce dans la collection depuis laquelle vous diffusez déjà."
+                "(with their filters): scene collections don't share sources, so don't import. Switch to Just the pieces and build the frame inside the collection you already stream from.",
+                "(avec leurs filtres) : les collections de scènes ne partagent pas leurs sources, donc n'importez pas. Passez à Juste les éléments et montez le cadre dans la collection depuis laquelle vous diffusez déjà."
               )}
             </li>
             <li>
@@ -333,21 +249,62 @@ export function PlayerSceneSetup({ base, token }: { base: string; token: string 
         </details>
       </section>
 
-      {/* -- extras ------------------------------------------------------------------------------- */}
-      <details className="cst-details">
-        <summary>{t("More sources (optional)", "Plus de sources (optionnel)")}</summary>
-        <span className="muted cst-small">
-          {t(
-            "Not in the frame - it has no box for them. Add them yourself if you want them on top.",
-            "Absentes du cadre - il n'a pas de place pour elles. Ajoutez-les vous-même si vous les voulez par-dessus."
-          )}
-        </span>
-        <div className="stack" style={{ gap: "0.5rem" }}>
-          {extras.map(({ source, url }) => (
-            <SourceRow key={source.id} label={source.obsName} url={url} size={`${source.width} x ${source.height}`} note={source.note} />
-          ))}
-        </div>
-      </details>
+    </div>
+  );
+}
+
+/**
+ * The player frame taken apart: where each piece goes, and the frame art as PNGs. No URLs - those are
+ * all in the Browser Sources list right above it on the "Just the pieces" side of pages/Streaming, and
+ * printing them twice is what made this section a wall. Sound-only parts are left out: they have no
+ * place on the canvas.
+ */
+export function PlayerFramePieces({ parts }: { parts: PlayerPart[] }) {
+  const t = useT();
+  const art = (file: string) => `${import.meta.env.BASE_URL}${file}`;
+  // Captures are sized by a bounding box; browser sources by their own width and height.
+  const placed = parts.flatMap((p) => {
+    if (p.fit) return [{ name: p.name, w: p.fit.w, h: p.fit.h, at: p.at, box: true }];
+    if (p.entry && p.entry.source.element !== "audio")
+      return [{ name: p.entry.source.label, w: p.entry.source.width, h: p.entry.source.height, at: p.at, box: false }];
+    return [];
+  });
+
+  return (
+    <div className="stack cst" style={{ gap: "0.5rem" }}>
+      <span className="muted cst-small">
+        {t(
+          "On a 1920x1080 canvas. Keep Player frame above everything except Finds. For the game and camera, set the size as the bounding box in Edit Transform (Ctrl+E).",
+          "Sur un canevas 1920x1080. Gardez Player frame au-dessus de tout sauf Finds. Pour le jeu et la caméra, réglez la taille comme boîte englobante dans Modifier la transformation (Ctrl+E)."
+        )}
+      </span>
+      <div
+        className="cst-small"
+        style={{ display: "grid", gridTemplateColumns: "auto auto auto", gap: "0.2rem 1rem", justifyContent: "start" }}
+      >
+        {placed.map((p) => (
+          <div key={p.name} style={{ display: "contents" }}>
+            <span>{p.name}</span>
+            <span className="muted">
+              {p.w} x {p.h}
+              {p.box && " (Ctrl+E)"}
+            </span>
+            <span className="muted">
+              {t("at", "à")} {p.at.x}, {p.at.y}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+        <a className="cst-file" href={art(PLAYER_ART.frame)} download="B_Ship_Player_Overlay.png">
+          <img src={art(PLAYER_ART.frame)} alt="" />
+          {t("Frame (PNG)", "Cadre (PNG)")}
+        </a>
+        <a className="cst-file" href={art(PLAYER_ART.guide)} download="B_Ship_Player_Overlay_Map.png">
+          <img src={art(PLAYER_ART.guide)} alt="" />
+          {t("What goes where (PNG)", "Quoi va où (PNG)")}
+        </a>
+      </div>
     </div>
   );
 }
