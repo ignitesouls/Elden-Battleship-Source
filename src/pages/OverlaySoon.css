@@ -28,7 +28,7 @@
 .ovn-shade {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 28% 48% at 19% 56%, rgba(2, 8, 14, 0.55), rgba(2, 8, 14, 0) 72%);
+  background: radial-gradient(ellipse 28% 56% at 19% 60%, rgba(2, 8, 14, 0.55), rgba(2, 8, 14, 0) 72%);
 }
 
 /* The left part of the frame. The boat sails just right of centre in the video - and at the start of
@@ -65,11 +65,12 @@
   text-shadow: 0 calc(0.15 * var(--u)) calc(0.8 * var(--u)) rgba(0, 0, 0, 0.85);
 }
 
+/* Stacked - name, "vs.", name - so each crew name gets the whole column width instead of half. */
 .ovn-matchup {
   display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: calc(1.4 * var(--u));
+  flex-direction: column;
+  align-items: center;
+  gap: calc(0.3 * var(--u));
   max-width: 90%;
   font-family: var(--font-display);
   color: #f2f7fa;
@@ -79,11 +80,10 @@
 .ovn-side {
   font-size: calc(2.6 * var(--u));
   font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* Half the left column each, so two long crew names still fit beside "vs." without reaching the boat. */
-  max-width: calc(15 * var(--u));
+  /* A long crew name wraps onto a second line rather than being cut short. */
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+  max-width: 100%;
 }
 
 .ovn-vs {

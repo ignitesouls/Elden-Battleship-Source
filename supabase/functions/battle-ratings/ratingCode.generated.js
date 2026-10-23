@@ -9020,6 +9020,56 @@ function rateBoard(parts, events, set) {
 		ratings: rateBattles(boardParts, boardEvents, weights)
 	};
 }
+/** Holders kept per square: the record, and the two names chasing it. */
+const SQUARE_RECORD_DEPTH = 3;
+/** Fastest fights kept per square, anybody's, for "3rd fastest all time". Past this, no rank is said. */
+const SQUARE_TOP_DEPTH = 10;
+/**
+* Every square's standing times on one tab, for the caster desk's talking points.
+*
+* Timed by fastestKills, so a square's record is exactly what the Almanac's record board would say
+* about it - same fire-on-kill gap, same auto-only rule, same duo-fight floor. Ties go to whoever got
+* there first, as everywhere in the record book, and each player holds at most one place among the
+* holders: a runner-up list that is the holder again twice is not something to chase. `top` is the
+* other question - "how fast is this kill, all time" - and counts every fight, whoever had it.
+*
+* Built here rather than on the desk because it is a scan of the whole shot log - the biggest read on
+* the site - and the Edge Function already has that log in hand every time it rates.
+*/
+function squareRecords(events, set) {
+	const bySquare = /* @__PURE__ */ new Map();
+	const timed = fastestKills(events.filter((e) => rowSquareSet(e) === set), Number.POSITIVE_INFINITY).sort((a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt));
+	for (const k of timed) {
+		if (!k.challenge) continue;
+		const list = bySquare.get(k.challenge);
+		if (list) list.push(k);
+		else bySquare.set(k.challenge, [k]);
+	}
+	const out = {};
+	for (const [square, kills] of bySquare) {
+		const holders = [];
+		for (const k of kills) {
+			if (holders.length >= 3) break;
+			if (holders.some((r) => r.key === k.key)) continue;
+			holders.push({
+				key: k.key,
+				nickname: k.nickname,
+				seconds: k.seconds,
+				matchKey: k.matchKey,
+				finishedAt: k.finishedAt
+			});
+		}
+		const mid = Math.floor(kills.length / 2);
+		const median = kills.length % 2 === 1 ? kills[mid].seconds : (kills[mid - 1].seconds + kills[mid].seconds) / 2;
+		out[square] = {
+			holders,
+			top: kills.slice(0, 10).map((k) => k.seconds),
+			median,
+			fights: kills.length
+		};
+	}
+	return out;
+}
 /** rateBoard for every tab the archive holds a game on. What the Edge Function stores. */
 function rateEveryBoard(parts, events) {
 	const sets = /* @__PURE__ */ new Set([...parts.map(rowSquareSet), ...events.map(rowSquareSet)]);
@@ -9148,5 +9198,5 @@ function playerPower(elo, battles, params = POWER_PARAMS) {
 }
 
 //#endregion
-export { POWER_PARAMS, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo };
-export const RATING_CODE_VERSION = "12a77705b9c64c88";
+export { POWER_PARAMS, SQUARE_RECORD_DEPTH, SQUARE_TOP_DEPTH, boardResolver, playerPower, prepareEvents, prepareParticipants, rateBoard, rateEveryBoard, replayElo, squareRecords };
+export const RATING_CODE_VERSION = "4ea248dfe2837450";

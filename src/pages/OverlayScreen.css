@@ -45,6 +45,112 @@
   transform: translate(var(--ovs-crop-x), var(--ovs-crop-y));
 }
 
+/**
+ * A talking point over the box: a barnacle pops up from the bottom-left corner and says it in a speech
+ * bubble, which wears a ring in the player's crew colour.
+ *
+ * Sized in vw because the box IS the source, so 1vw is a hundredth of the box whatever OBS makes it -
+ * the card reads the same on a big box and a small one. The text wraps rather than ellipsing: a
+ * talking point cut short on stream is a sentence nobody can finish.
+ *
+ * The whole card sinks back down over its last 400ms, timed off CARD_MS (lib/castAux) - the source
+ * drops it from the page exactly when that ends, so leaving needs no state of its own.
+ */
+.ovs-card {
+  --ovs-ink: #1d1611;
+  --ovs-paper: #fffaf0;
+  position: absolute;
+  left: 1.5vw;
+  right: 3vw;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+  animation: ovs-card-out 400ms ease-in calc(var(--ovs-card-ms, 8000ms) - 400ms) forwards;
+}
+
+/* Its base just under the bottom edge, so it reads as climbing up into the box - the mouth stays clear. */
+.ovs-card-barnacle {
+  width: 22vw;
+  height: auto;
+  flex-shrink: 0;
+  margin-bottom: -0.8vw;
+  filter: drop-shadow(0 0.6vw 1.2vw rgba(0, 0, 0, 0.55));
+  transform-origin: 50% 100%;
+  animation: ovs-barnacle-pop 560ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Beside the barnacle's head, so the tail points at its mouth. */
+.ovs-card-bubble {
+  position: relative;
+  margin: 0 0 5.5vw 1.6vw;
+  padding: 1.8vw 2.6vw;
+  background: var(--ovs-paper);
+  color: var(--ovs-ink);
+  border: 0.55vw solid var(--ovs-ink);
+  border-radius: 3vw;
+  box-shadow:
+    0 0 0 0.6vw var(--ovs-card-team),
+    0 0.8vw 2vw rgba(0, 0, 0, 0.55);
+  font-family: var(--font-display);
+  font-size: 3.4vw;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  transform-origin: 0% 100%;
+  animation: ovs-bubble-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) 240ms both;
+}
+
+/* The tail: an ink triangle with a paper one inside it, pointing back down at the barnacle. */
+.ovs-card-bubble::before,
+.ovs-card-bubble::after {
+  content: "";
+  position: absolute;
+  border-style: solid;
+  border-color: transparent;
+}
+
+.ovs-card-bubble::before {
+  left: -3.4vw;
+  bottom: 1.6vw;
+  border-width: 1.7vw 3.4vw 1.7vw 0;
+  border-right-color: var(--ovs-ink);
+}
+
+.ovs-card-bubble::after {
+  left: -2.5vw;
+  bottom: 2.1vw;
+  border-width: 1.2vw 2.6vw 1.2vw 0;
+  border-right-color: var(--ovs-paper);
+}
+
+@keyframes ovs-barnacle-pop {
+  from {
+    transform: translateY(110%) scale(0.9);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes ovs-bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ovs-card-out {
+  to {
+    opacity: 0;
+    transform: translateY(40%);
+  }
+}
+
 /* A seat filled by an account with no linked Twitch: a quiet panel so the box is not a hole. */
 .ovs-stream-empty {
   background: rgba(6, 16, 24, 0.82);

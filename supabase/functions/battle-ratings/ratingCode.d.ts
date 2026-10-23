@@ -26,6 +26,11 @@ type Row = Record<string, any>
 export function prepareParticipants(rows: Row[]): Row[]
 export function prepareEvents(rows: Row[], sources: Map<string, BoardSource>): Row[]
 export function rateEveryBoard(parts: Row[], events: Row[]): Map<string, BoardRatings>
+
+// A type rather than an interface, so postgres.js's tx.json accepts it as a JSON value.
+export type SquareRecord = { key: string; nickname: string; seconds: number; matchKey: string; finishedAt: string }
+export type SquareBoard = { holders: SquareRecord[]; top: number[]; median: number; fights: number }
+export function squareRecords(events: Row[], set: string): Record<string, SquareBoard>
 export const RATING_CODE_VERSION: string
 
 // Team power - src/lib/tournament/teamPower.ts.

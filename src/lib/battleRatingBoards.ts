@@ -1,4 +1,4 @@
-import { bossFrequency, type MatchEventRow } from "./almanac";
+import { bossFrequency, fastestKills, type MatchEventRow } from "./almanac";
 import { squareWeights, rateBattles, type BattleRating } from "./battleRating";
 import type { ParticipantRow } from "./careerStats";
 import { challengesForRoom, rowSquareSet, squareSetVariants, type SquareSetId } from "./challenges";
@@ -94,6 +94,75 @@ export function rateBoard(parts: ParticipantRow[], events: MatchEventRow[], set:
   const weights = squareWeights(boardEvents, bossFrequency(boardEvents, boardResolver(set)));
   return { weights, ratings: rateBattles(boardParts, boardEvents, weights) };
 }
+
+/** One place on a square's record board: the fight's length, and whose it was. */
+export interface SquareRecord {
+  key: string;
+  nickname: string;
+  seconds: number;
+  matchKey: string;
+  finishedAt: string;
+}
+
+/** Holders kept per square: the record, and the two names chasing it. */
+export const SQUARE_RECORD_DEPTH = 3;
+/** Fastest fights kept per square, anybody's, for "3rd fastest all time". Past this, no rank is said. */
+export const SQUARE_TOP_DEPTH = 10;
+
+/** One square's standing times, as the caster desk reads them. */
+export interface SquareBoard {
+  /** The record and its chasers, one place per player, fastest first. */
+  holders: SquareRecord[];
+  /** The fastest fights ever on it, in seconds, whoever had them - repeats by one player included. */
+  top: number[];
+  /** The middle fight, in seconds - the house "typical", as squarePace reads a captain's. */
+  median: number;
+  /** Every timed fight on it. */
+  fights: number;
+}
+
+/**
+ * Every square's standing times on one tab, for the caster desk's talking points.
+ *
+ * Timed by fastestKills, so a square's record is exactly what the Almanac's record board would say
+ * about it - same fire-on-kill gap, same auto-only rule, same duo-fight floor. Ties go to whoever got
+ * there first, as everywhere in the record book, and each player holds at most one place among the
+ * holders: a runner-up list that is the holder again twice is not something to chase. `top` is the
+ * other question - "how fast is this kill, all time" - and counts every fight, whoever had it.
+ *
+ * Built here rather than on the desk because it is a scan of the whole shot log - the biggest read on
+ * the site - and the Edge Function already has that log in hand every time it rates.
+ */
+export function squareRecords(events: MatchEventRow[], set: SquareSetId): Record<string, SquareBoard> {
+  const bySquare = new Map<string, QuickKill[]>();
+  const timed = fastestKills(
+    events.filter((e) => rowSquareSet(e) === set),
+    Number.POSITIVE_INFINITY
+  ).sort((a, b) => a.seconds - b.seconds || a.finishedAt.localeCompare(b.finishedAt));
+  for (const k of timed) {
+    if (!k.challenge) continue;
+    const list = bySquare.get(k.challenge);
+    if (list) list.push(k);
+    else bySquare.set(k.challenge, [k]);
+  }
+
+  const out: Record<string, SquareBoard> = {};
+  for (const [square, kills] of bySquare) {
+    const holders: SquareRecord[] = [];
+    for (const k of kills) {
+      if (holders.length >= SQUARE_RECORD_DEPTH) break;
+      if (holders.some((r) => r.key === k.key)) continue;
+      holders.push({ key: k.key, nickname: k.nickname, seconds: k.seconds, matchKey: k.matchKey, finishedAt: k.finishedAt });
+    }
+    // Already fastest first, so the middle one is the median.
+    const mid = Math.floor(kills.length / 2);
+    const median = kills.length % 2 === 1 ? kills[mid].seconds : (kills[mid - 1].seconds + kills[mid].seconds) / 2;
+    out[square] = { holders, top: kills.slice(0, SQUARE_TOP_DEPTH).map((k) => k.seconds), median, fights: kills.length };
+  }
+  return out;
+}
+
+type QuickKill = ReturnType<typeof fastestKills>[number];
 
 /** rateBoard for every tab the archive holds a game on. What the Edge Function stores. */
 export function rateEveryBoard(parts: ParticipantRow[], events: MatchEventRow[]): Map<SquareSetId, BoardRatings> {

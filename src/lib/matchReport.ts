@@ -230,7 +230,7 @@ export function buildMatchReport(
 }
 
 /** An instant on the match clock: wall time with any stopped clock before it taken off. */
-function matchMs(at: string, pause?: PauseFields | null): number {
+export function matchMs(at: string, pause?: PauseFields | null): number {
   const ms = new Date(at).getTime();
   return ms - pausedMsAt(pause, ms);
 }

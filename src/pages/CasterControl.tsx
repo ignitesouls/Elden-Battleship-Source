@@ -12,6 +12,9 @@ import { buildPlayerStats } from "../lib/matchReport";
 import { buildRecordBook, type RecordEntry } from "../lib/recordBook";
 import { recordChases, liveTallies } from "../lib/recordChase";
 import { RecordChases } from "../components/RecordChases";
+import { TalkingPoints } from "../components/TalkingPoints";
+import { useTalkingPoints } from "../hooks/useTalkingPoints";
+import type { TalkingPoint } from "../lib/talkingPoints";
 import { fetchParticipants } from "../lib/profiles";
 import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
@@ -37,7 +40,7 @@ import {
   type CastFleet,
   type CastView,
 } from "../lib/overlayCast";
-import { useCasterAux } from "../lib/castAux";
+import { useCasterAux, CARD_MS } from "../lib/castAux";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
 import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
@@ -458,6 +461,25 @@ export function CasterControl({
     const userIdFor = (id: string | null) => state.players.find((p) => p.id === id)?.user_id ?? null;
     return recordChases(book, liveTallies(buildPlayerStats(state.players, shots), shots, userIdFor));
   }, [room, book, state.attacks, state.players]);
+
+  /**
+   * Head-to-heads, habits and the moments as they happen - see lib/talkingPoints. Desk only, until the
+   * caster sends one over its player's box (lib/castAux's CARD).
+   */
+  const talking = useTalkingPoints(room, state.players, state.attacks);
+  const slotFor = useCallback(
+    (p: TalkingPoint) => (p.playerId ? (screens.find((s) => s.playerId === p.playerId)?.slot ?? null) : null),
+    [screens]
+  );
+  const showPoint = useCallback(
+    (p: TalkingPoint) => {
+      const slot = slotFor(p);
+      if (slot === null) return;
+      // The barnacle's line, not the desk's crib - see TalkingPoint.line.
+      aux.showCard({ id: p.id, slot, emoji: p.emoji, mood: p.mood, text: p.line, team: p.team, shotAt: p.shotAt ?? null, ms: CARD_MS });
+    },
+    [slotFor, aux]
+  );
 
   /**
    * The fleets that go down the wire - only the ones actually being shown.
@@ -1967,6 +1989,11 @@ export function CasterControl({
               <RecordChases chases={chases} showTeams title="" />
             </section>
           )}
+
+          <section>
+            <h3>{t("Talking points", "Points à aborder")}</h3>
+            <TalkingPoints {...talking} slotFor={slotFor} onShow={showPoint} />
+          </section>
 
           <section>
             <h3>{t("Board", "Plateau")}</h3>

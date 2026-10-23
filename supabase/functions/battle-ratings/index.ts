@@ -2,7 +2,8 @@
  * One archived match's battle ratings, from a stored snapshot that follows the archive - and, from the
  * same snapshot, team power for a list of players (body `{ players: [...] }`; see storePowers and
  * src/lib/tournament/teamPower.ts), which the tournament pages put lines on matches with - and every
- * player's Elo and battle rating at once (body `{ board: true }`) for the home page's ratings board.
+ * player's Elo and battle rating at once (body `{ board: true }`) for the home page's ratings board, and
+ * every square's world record on one tab (body `{ records: set }`) for the caster desk's talking points.
  *
  * -- Why this exists -------------------------------------------------------------------------------
  *
@@ -40,6 +41,7 @@ import {
   prepareParticipants,
   rateEveryBoard,
   replayElo,
+  squareRecords,
   RATING_CODE_VERSION,
   type BattleRating,
   type BoardSource,
@@ -141,18 +143,18 @@ async function recompute(tx: postgres.TransactionSql, fp: string): Promise<void>
                         from public.match_board_sources`,
   ])
 
-  const boards = rateEveryBoard(
-    prepareParticipants(parts.rows),
-    prepareEvents(events.rows, new Map(sources.map((s) => [s.match_key, s])))
-  )
+  const prepared = prepareEvents(events.rows, new Map(sources.map((s) => [s.match_key, s])))
+  const boards = rateEveryBoard(prepareParticipants(parts.rows), prepared)
 
   await tx`delete from public.battle_rating_snapshots`
   for (const [set, board] of boards) {
     const byMatch: Record<string, BattleRating[]> = {}
     for (const r of board.ratings) (byMatch[r.matchKey] ??= []).push(r)
+    // Each square's world record rides along - the caster desk's talking points, see squareRecords.
     await tx`
-      insert into public.battle_rating_snapshots (square_set, fingerprint, weights, ratings)
-      values (${set}, ${fp}, ${tx.json(Object.fromEntries(board.weights))}, ${tx.json(byMatch)})`
+      insert into public.battle_rating_snapshots (square_set, fingerprint, weights, ratings, records)
+      values (${set}, ${fp}, ${tx.json(Object.fromEntries(board.weights))}, ${tx.json(byMatch)},
+              ${tx.json(squareRecords(prepared, set))})`
   }
 
   await storePowers(tx, fp, parts.rows, boards)
@@ -223,7 +225,21 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const body = (await req.json().catch(() => ({}))) as { matchKey?: unknown; set?: unknown; players?: unknown; board?: unknown }
+    const body = (await req.json().catch(() => ({}))) as {
+      matchKey?: unknown
+      set?: unknown
+      players?: unknown
+      board?: unknown
+      records?: unknown
+    }
+
+    // Every square's world record on one tab, for the caster desk: { records: set } -> { records: {...} }.
+    // An empty object is an answer - a tab nobody has timed a square on - not a failure.
+    if (typeof body.records === 'string') {
+      await ensureFresh()
+      const [row] = await sql`select records from public.battle_rating_snapshots where square_set = ${body.records}::text`
+      return jsonResponse({ records: row?.records ?? {} })
+    }
 
     // Every rated player, for the home page's ratings board: { board: true } -> { players: [...] }. The
     // name and avatar are joined in here so the page needs no second request: a profile's chosen name,
