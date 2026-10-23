@@ -5,7 +5,6 @@ import { useCastScreens } from "../hooks/useCastScreens";
 import { useScreenAux } from "../lib/castAux";
 import { CAST_CANVAS, playerGameRect } from "../lib/castSceneLayout";
 import { useFramesOnAir } from "../lib/frameBeacon";
-import { teamHex } from "../lib/teamColors";
 import "./OverlayScreen.css";
 
 /**
@@ -18,8 +17,9 @@ import "./OverlayScreen.css";
  * source (pages/OverlayFrame), which draws all six tags itself: one source means one size for every
  * tag, where six sources each scaled differently by OBS gave six different sizes.
  *
- * The one exception is a caster's talking point, which the desk sends to a single box for a few
- * seconds (lib/castAux's CARD). It belongs on this box and no other, so this source draws it.
+ * That includes a caster's talking point (lib/castAux's CARD): the frame draws it over this box's hole.
+ * Never here - anything drawn in this page over the Twitch player makes Twitch pause the stream, and
+ * the box stays frozen. See useFrameCards.
  *
  * -- Cropping to the gameplay ------------------------------------------------------------------
  *
@@ -146,13 +146,6 @@ const CROP_STYLE = {
   ["--ovs-crop-y" as string]: `${(-GAME.y / CAST_CANVAS.h) * 100}%`,
 };
 
-/** The barnacle that says a talking point, by mood. Unknown moods (an older desk) get the smug one. */
-const BARNACLE_MOODS = ["happy", "smug", "grim", "angry"] as const;
-function barnacleSrc(mood: string | undefined): string {
-  const known = (BARNACLE_MOODS as readonly string[]).includes(mood ?? "") ? mood : "smug";
-  return `${import.meta.env.BASE_URL}media/barnacles/barnacle-${known}.png`;
-}
-
 /** Twitch's delay when the box can't read it yet - near the low end of what a player's stream runs. */
 const DEFAULT_DELAY_MS = 4000;
 
@@ -276,16 +269,11 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
 
   /** This box's own latency to its broadcaster, in ms, published to the desk by useScreenAux. */
   const latencyRef = useRef<number | null>(null);
-  const { resyncNonce, card } = useScreenAux(code, owner, slotKey, () => latencyRef.current);
+  const { resyncNonce } = useScreenAux(code, owner, slotKey, () => latencyRef.current);
 
   // Only a box with a stream to crop listens for frames.
   const framesOnAir = useFramesOnAir(!!screen?.twitchLogin);
   const cropped = useDelayedCrop(!!screen && framesOnAir.has(screen.userId), latencyRef);
-
-  // Fetched up front, so the first card does not pop up as a speech bubble with nobody saying it.
-  useEffect(() => {
-    for (const mood of BARNACLE_MOODS) new Image().src = barnacleSrc(mood);
-  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -314,22 +302,6 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
         />
       ) : (
         <div className="ovs-stream ovs-stream-empty" />
-      )}
-      {/* The caster's talking point, sent from the desk - see lib/castAux: a barnacle pops up from
-          the bottom edge and says it. Keyed on the point, so a new card replays the entrance rather
-          than swapping words under one already up. */}
-      {card && (
-        <div
-          key={card.id}
-          className="ovs-card"
-          style={{
-            ["--ovs-card-team" as string]: card.team === null ? "#d9a441" : teamHex(card.team),
-            ["--ovs-card-ms" as string]: `${card.ms}ms`,
-          }}
-        >
-          <img className="ovs-card-barnacle" src={barnacleSrc(card.mood)} alt="" />
-          <div className="ovs-card-bubble">{card.text}</div>
-        </div>
       )}
     </div>
   );

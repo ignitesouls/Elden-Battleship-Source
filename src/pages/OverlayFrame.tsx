@@ -2,8 +2,10 @@ import { useEffect, useMemo } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
+import { useFrameCards, type StatCard } from "../lib/castAux";
 import {
   CAST_ART,
+  CAST_CANVAS,
   CAST_SEATS,
   PLAYER_ART,
   bannerSliceStyle,
@@ -63,6 +65,12 @@ import "./OverlayFrame.css";
  * art. The numbers are buildPlayerStats over the room's public attack log - the same function the
  * recap uses, so the tag and the recap can never disagree.
  *
+ * -- And the talking points ------------------------------------------------------------------------
+ *
+ * A caster's talking point sent to one player's box (lib/castAux's CARD) is drawn over that box's
+ * hole here, not by the box: anything in the box's own page over the Twitch player makes Twitch pause
+ * the stream. See useFrameCards.
+ *
  * -- And the casters' names -------------------------------------------------------------------------
  *
  * Under each cam hole, a plate on a slice of the art's own water banner carrying that caster's name,
@@ -94,6 +102,37 @@ function PlayerTag({ rect, name, color, hits, misses, accuracy }: { rect: Rect; 
   );
 }
 
+/** The barnacle that says a talking point, by mood. Unknown moods (an older desk) get the smug one. */
+const BARNACLE_MOODS = ["happy", "smug", "grim", "angry"] as const;
+function barnacleSrc(mood: string | undefined): string {
+  const known = (BARNACLE_MOODS as readonly string[]).includes(mood ?? "") ? mood : "smug";
+  return `${import.meta.env.BASE_URL}media/barnacles/barnacle-${known}.png`;
+}
+
+/**
+ * A caster's talking point over one player's hole: a barnacle climbs up from the bottom edge and says
+ * it. Drawn here and not by the box - see useFrameCards for why. `--ovf-box` is the hole's share of the
+ * canvas width, so the card is sized off the box exactly as it was when the box drew it.
+ */
+function SeatCard({ rect, card }: { rect: Rect; card: StatCard }) {
+  return (
+    <div className="ovf-seat" style={{ ...place(rect), ["--ovf-box" as string]: rect.w / CAST_CANVAS.w }}>
+      {/* Keyed on the point, so a new card replays the entrance rather than swapping words under one already up. */}
+      <div
+        key={card.id}
+        className="ovf-card"
+        style={{
+          ["--ovf-card-team" as string]: card.team === null ? "#d9a441" : teamHex(card.team),
+          ["--ovf-card-ms" as string]: `${card.ms}ms`,
+        }}
+      >
+        <img className="ovf-card-barnacle" src={barnacleSrc(card.mood)} alt="" />
+        <div className="ovf-card-bubble">{card.text}</div>
+      </div>
+    </div>
+  );
+}
+
 function CasterPlate({ rect, name, art }: { rect: Rect; name: string; art: string }) {
   return (
     <div className="ovf-plate" style={{ ...place(rect), backgroundImage: `url(${art})`, ...bannerSliceStyle(rect) }}>
@@ -116,6 +155,8 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
   }, [state.players]);
   const { message } = useCastReceiver(layout === "cast" ? code : undefined, owner);
   const casters = message?.view.casters ?? [];
+  // The talking points the desk puts over a player's box - drawn here, over the hole, never in the box.
+  const cards = useFrameCards(layout === "cast" ? code : undefined, owner);
 
   // The players in their boxes, with names off their profiles, and each one's running tally.
   const screens = useCastScreens(state.players);
@@ -124,6 +165,12 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
     [state.players, state.attacks]
   );
   const holes = screenRects();
+
+  // Fetched up front, so the first card does not pop up as a speech bubble with nobody saying it.
+  useEffect(() => {
+    if (layout !== "cast") return;
+    for (const mood of BARNACLE_MOODS) new Image().src = barnacleSrc(mood);
+  }, [layout]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -164,6 +211,8 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
               />
             );
           })}
+      {layout === "cast" &&
+        [...cards].filter(([slot]) => slot >= 0 && slot < holes.length).map(([slot, card]) => <SeatCard key={slot} rect={holes[slot]} card={card} />)}
       {layout === "cast" &&
         casterPlateRects().map((r, i) => {
           const name = (casters[i] ?? "").trim();

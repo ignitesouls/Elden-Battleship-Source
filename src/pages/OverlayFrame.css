@@ -114,3 +114,113 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/**
+ * A talking point over a player's hole: a barnacle pops up from the bottom-left corner and says it in
+ * a speech bubble, which wears a ring in the player's crew colour.
+ *
+ * Drawn by this source rather than the box's own - see useFrameCards in lib/castAux: Twitch pauses a
+ * stream with anything drawn over it in its own page.
+ *
+ * Sized in `--ovf-u`, a hundredth of the HOLE's width (`--ovf-box` is the hole's share of the canvas),
+ * so a card reads the same as when the box drew it in its own vw. The text wraps rather than ellipsing:
+ * a talking point cut short on stream is a sentence nobody can finish.
+ *
+ * The whole card sinks back down over its last 400ms, timed off CARD_MS (lib/castAux) - the source
+ * drops it from the page exactly when that ends, so leaving needs no state of its own.
+ */
+.ovf-card {
+  --ovf-u: calc(var(--ovf-box, 0.3) * 1vw);
+  --ovf-ink: #1d1611;
+  --ovf-paper: #fffaf0;
+  position: absolute;
+  left: calc(1.5 * var(--ovf-u));
+  right: calc(3 * var(--ovf-u));
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+  animation: ovf-card-out 400ms ease-in calc(var(--ovf-card-ms, 8000ms) - 400ms) forwards;
+}
+
+/* Its base just under the bottom edge, so it reads as climbing up into the box - the mouth stays clear. */
+.ovf-card-barnacle {
+  width: calc(22 * var(--ovf-u));
+  height: auto;
+  flex-shrink: 0;
+  margin-bottom: calc(-0.8 * var(--ovf-u));
+  filter: drop-shadow(0 calc(0.6 * var(--ovf-u)) calc(1.2 * var(--ovf-u)) rgba(0, 0, 0, 0.55));
+  transform-origin: 50% 100%;
+  animation: ovf-barnacle-pop 560ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Beside the barnacle's head, so the tail points at its mouth. */
+.ovf-card-bubble {
+  position: relative;
+  margin: 0 0 calc(5.5 * var(--ovf-u)) calc(1.6 * var(--ovf-u));
+  padding: calc(1.8 * var(--ovf-u)) calc(2.6 * var(--ovf-u));
+  background: var(--ovf-paper);
+  color: var(--ovf-ink);
+  border: calc(0.55 * var(--ovf-u)) solid var(--ovf-ink);
+  border-radius: calc(3 * var(--ovf-u));
+  box-shadow:
+    0 0 0 calc(0.6 * var(--ovf-u)) var(--ovf-card-team),
+    0 calc(0.8 * var(--ovf-u)) calc(2 * var(--ovf-u)) rgba(0, 0, 0, 0.55);
+  font-family: var(--font-display);
+  font-size: calc(3.4 * var(--ovf-u));
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  transform-origin: 0% 100%;
+  animation: ovf-bubble-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) 240ms both;
+}
+
+/* The tail: an ink triangle with a paper one inside it, pointing back down at the barnacle. */
+.ovf-card-bubble::before,
+.ovf-card-bubble::after {
+  content: "";
+  position: absolute;
+  border-style: solid;
+  border-color: transparent;
+}
+
+.ovf-card-bubble::before {
+  left: calc(-3.4 * var(--ovf-u));
+  bottom: calc(1.6 * var(--ovf-u));
+  border-width: calc(1.7 * var(--ovf-u)) calc(3.4 * var(--ovf-u)) calc(1.7 * var(--ovf-u)) 0;
+  border-right-color: var(--ovf-ink);
+}
+
+.ovf-card-bubble::after {
+  left: calc(-2.5 * var(--ovf-u));
+  bottom: calc(2.1 * var(--ovf-u));
+  border-width: calc(1.2 * var(--ovf-u)) calc(2.6 * var(--ovf-u)) calc(1.2 * var(--ovf-u)) 0;
+  border-right-color: var(--ovf-paper);
+}
+
+@keyframes ovf-barnacle-pop {
+  from {
+    transform: translateY(110%) scale(0.9);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes ovf-bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ovf-card-out {
+  to {
+    opacity: 0;
+    transform: translateY(40%);
+  }
+}

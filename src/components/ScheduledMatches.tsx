@@ -1,10 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { fetchScheduledMatches, multitwitchUrl, requestCast, teamLogoUrl, withdrawCast, type ScheduledMatch } from "../lib/tournament/api";
+import { Link, useNavigate } from "react-router-dom";
+import { fetchScheduledMatches, linkCastRoom, multitwitchUrl, requestCast, teamLogoUrl, withdrawCast, type ScheduledMatch } from "../lib/tournament/api";
+import { createRoom } from "../lib/rooms";
+import { getLastNickname } from "../lib/playerSession";
+import { BOARD_SIZE, fleetFor } from "../types/battleship";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useLanguage, useT } from "../lib/language";
 import { groupLabel } from "../lib/tournament/groupNames";
-import { useAuthProfile } from "../hooks/useAuthProfile";
+import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import { CasterLinks } from "./event/CasterLinks";
 import { PlayerName, TeamLabel } from "./event/TeamLogo";
 import "./Tournament.css";
@@ -25,7 +28,8 @@ const REFRESH_MS = 120_000;
  *   Tale of the tape  opens under the card - the event's data is read only then, and only while open.
  *
  * Anyone signed in with Twitch can ask to cast a match from its card; an administrator approves it on the
- * event desk. The card says where their request stands and lets them withdraw it.
+ * event desk. The card says where their request stands and lets them withdraw it - and, once approved,
+ * open the match's lobby themselves before either team has.
  *
  * One request (scheduled_official_matches) per look, and nothing at all while the tab is hidden. Renders
  * nothing when there is nothing scheduled - most days, between events.
@@ -34,6 +38,7 @@ export function ScheduledMatches() {
   const t = useT();
   const lang = useLanguage();
   const me = useAuthProfile();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<ScheduledMatch[]>([]);
   // One card open at a time: each open tape re-reads its event every minute.
   const [open, setOpen] = useState<string | null>(null);
@@ -70,6 +75,31 @@ export function ScheduledMatches() {
       setCastError({ match: m.match_id, message: e instanceof Error ? e.message : String(e) });
     } finally {
       await read();
+      setBusy(null);
+    }
+  }
+
+  /**
+   * An approved caster opens the match's lobby: an ordinary room with them as its host, watching from
+   * spectators, made that match's lobby with no code (link_cast_room). The captains then confirm in it
+   * with their own codes. Same steps as the desk's Open lobby (components/DeskCasts).
+   */
+  async function openLobby(m: ScheduledMatch) {
+    setBusy(m.match_id);
+    setCastError(null);
+    try {
+      const nickname = accountName(me) || getLastNickname() || "Caster";
+      const { room } = await createRoom(nickname, BOARD_SIZE, fleetFor(BOARD_SIZE), { prepSeconds: 240 });
+      const linked = await linkCastRoom(room.id, m.match_id);
+      if (!linked.ok) {
+        setCastError({ match: m.match_id, message: linked.error ?? t("That didn't work.", "Ça n'a pas fonctionné.") });
+        await read();
+        return;
+      }
+      navigate(`/room/${room.code}`);
+    } catch (e) {
+      setCastError({ match: m.match_id, message: e instanceof Error ? e.message : String(e) });
+    } finally {
       setBusy(null);
     }
   }
@@ -154,6 +184,12 @@ export function ScheduledMatches() {
                           ? t("You asked to cast this - waiting for an administrator.", "Vous avez demandé à commenter ce match - en attente d'un administrateur.")
                           : t("You're an official caster for this match.", "Vous êtes commentateur officiel de ce match.")}
                       </span>
+                      {/* The caster makes the match's room, no code - the captains confirm in it with theirs. */}
+                      {m.my_cast === "approved" && !live && (
+                        <button type="button" className="primary" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void openLobby(m)}>
+                          {t("Open the lobby", "Ouvrir le lobby")}
+                        </button>
+                      )}
                       <button type="button" className="link-button" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, withdrawCast)}>
                         {t("Withdraw", "Retirer")}
                       </button>

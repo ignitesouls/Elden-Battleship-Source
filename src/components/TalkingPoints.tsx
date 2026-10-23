@@ -8,6 +8,8 @@ interface Props {
   before: TalkingPoint[];
   live: TalkingPoint[];
   loading: boolean;
+  /** Live points that just arrived, lit for a moment - see hooks/useNewPoints. */
+  flashing?: ReadonlySet<string>;
   /** Which player box a point would go over, or null when it has none (a crew-wide point, an empty seat). */
   slotFor: (p: TalkingPoint) => number | null;
   /** Put a point over its player's box. */
@@ -31,10 +33,28 @@ function readOffer(): boolean {
   }
 }
 
-function Point({ p, onAir, show }: { p: TalkingPoint; onAir: boolean; show: (() => void) | null }) {
+function Point({
+  p,
+  onAir,
+  show,
+  flash = false,
+}: {
+  p: TalkingPoint;
+  onAir: boolean;
+  show: (() => void) | null;
+  flash?: boolean;
+}) {
   const t = useT();
   return (
-    <div className="row" style={{ gap: "0.45rem", alignItems: "baseline", fontSize: "0.78rem" }}>
+    <div
+      className={`row${flash ? " tp-flash" : ""}`}
+      style={{
+        gap: "0.45rem",
+        alignItems: "baseline",
+        fontSize: "0.78rem",
+        ["--tp-color" as string]: p.team === null ? "var(--accent)" : teamHex(p.team),
+      }}
+    >
       <span aria-hidden style={{ flexShrink: 0 }}>{p.emoji}</span>
       <span
         style={{
@@ -83,9 +103,16 @@ function Point({ p, onAir, show }: { p: TalkingPoint; onAir: boolean; show: (() 
  * few seconds - still the caster's click, never automatic: something on stream the caster did not
  * choose is something they then have to explain.
  */
-export function TalkingPoints({ before, live, loading, slotFor, onShow }: Props) {
+export function TalkingPoints({ before, live, loading, flashing, slotFor, onShow }: Props) {
   const t = useT();
   const label = { fontSize: "0.7rem", letterSpacing: "0.06em", textTransform: "uppercase" as const };
+
+  // A new point lands at the top: take the list back there, wherever the caster had scrolled it.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const newest = live[0]?.id;
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [newest]);
 
   const [onAir, setOnAir] = useState<string | null>(null);
   const airTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -176,9 +203,9 @@ export function TalkingPoints({ before, live, loading, slotFor, onShow }: Props)
               {t("Nothing yet - points appear here as squares fall.", "Rien pour l'instant - les points apparaissent ici à chaque case prise.")}
             </span>
           ) : (
-            <div className="stack" style={{ gap: "0.3rem", maxHeight: LIVE_HEIGHT, overflowY: "auto" }}>
+            <div ref={listRef} className="stack" style={{ gap: "0.3rem", maxHeight: LIVE_HEIGHT, overflowY: "auto" }}>
               {live.map((p) => (
-                <Point key={p.id} p={p} onAir={onAir === p.id} show={showFor(p)} />
+                <Point key={p.id} p={p} onAir={onAir === p.id} show={showFor(p)} flash={flashing?.has(p.id)} />
               ))}
             </div>
           )}

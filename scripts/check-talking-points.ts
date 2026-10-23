@@ -210,7 +210,7 @@ const live = (attacks: Attack[], pause?: Parameters<typeof livePoints>[5]) =>
   check('a live point knows its player and its shot time', card?.playerId === 'p1' && card?.shotAt === new Date(start + 230_000).toISOString(), `${card?.playerId} ${card?.shotAt}`)
 
   const tie = live([fire(0, 0, 40), fire(0, 1, 240)]) // 200: equals the record
-  check('equalling a record is not breaking it', !tie.some((p) => p.id.endsWith(':wr')) && tie.some((p) => p.text.includes('ties their own world record')), tie.map((p) => p.text).join(' | '))
+  check('equalling a record is not breaking it', !tie.some((p) => p.id.endsWith(':wr')) && tie.some((p) => p.text.includes("ties Ada's own world record")), tie.map((p) => p.text).join(' | '))
 
   const manual = live([fire(0, 0, 40), fire(0, 1, 230, false)])
   check('a manual click is never timed', !manual.some((p) => /:(wr|pb|near-wr|pace)$/.test(p.id)), manual.map((p) => p.id).join(','))
@@ -245,20 +245,24 @@ const live = (attacks: Attack[], pause?: Parameters<typeof livePoints>[5]) =>
   const line = (points: ReturnType<typeof livePoints>, kind: string) => points.find((p) => p.id.endsWith(`:${kind}`))?.line ?? ''
 
   const opener = line(live([fire(0, 0, 40)]), 'opener')
-  check('opener line', opener === "Ada loves to open with Margit - that's the 3rd time they've done it (all time)!", opener)
+  check('opener line', opener === 'Ada opens with Margit again - the 3rd time ever!', opener)
 
   // Malenia's record is somebody else's 2:30 here, so Ada's 3:10 is a personal best and not a record.
   const others = { ...records, Malenia: { holders: [{ key: 'u9', nickname: 'Cy', seconds: 150, matchKey: '9', finishedAt: '' }], top: [150, 200, 240, 260, 300], median: 240, fights: 5 } }
   const pbPoints = livePoints(roster, groupIntoShots([fire(0, 0, 40), fire(0, 1, 230)], players), squareAt, histories, others)
   const pb = line(pbPoints, 'pb')
-  check('personal best line', pb === "That's the fastest Ada has ever killed Malenia! 3:10 (2nd fastest all time)!", pb)
+  // The time says what it is measured from, so nobody on stream reads 3:10 as the whole fight.
+  check('personal best line', pb === "Ada's fastest Malenia ever: 3:10 after the previous kill (2nd fastest all time)!", pb)
 
   // Mohg: never timed by Ada, so nothing personal to say - but 4:10 beats the field's 5:00.
   const field = line(live([fire(0, 0, 40), fire(0, 4, 290)]), 'field')
-  check('global average line', field === "Ada's kill of Mohg in 4:10 - faster than the global average! (3rd fastest all time)", field)
-
+  check('global average line', field === 'Ada takes Mohg 4:10 after the previous kill - faster than the average player (3rd fastest all time)!', field)
   const every = [...live([fire(0, 0, 40), fire(0, 1, 230), fire(0, 3, 500)]), ...matchupPoints(roster, parts, histories, records, new Set(board), label)]
   check('every point has a line', every.every((p) => p.line.length > 0), every.filter((p) => !p.line).map((p) => p.id).join(','))
+
+  // Built around names: the barnacle never has to guess anyone's pronouns.
+  const spoken = every.flatMap((p) => [p.text, p.line]).filter((s) => /\b(their|they|they've|them|his|her|he|she)\b/i.test(s))
+  check('no line uses a pronoun for a player', spoken.length === 0, spoken.join(' | '))
 }
 
 // -- 6. en français --------------------------------------------------------------------------------
@@ -269,14 +273,14 @@ const live = (attacks: Attack[], pause?: Parameters<typeof livePoints>[5]) =>
   const line = (points: ReturnType<typeof livePoints>, kind: string) => points.find((p) => p.id.endsWith(`:${kind}`))?.line ?? ''
 
   const opener = line(liveFr([fire(0, 0, 40)]), 'opener')
-  check('French opener line, French square name', opener === "Ada adore ouvrir avec Margit, le Présage déchu - c'est la 3e fois (au total) !", opener)
+  check('French opener line, French square name', opener === 'Ada ouvre encore avec Margit, le Présage déchu - la 3e fois au total !', opener)
 
   const others = { ...records, Malenia: { holders: [{ key: 'u9', nickname: 'Cy', seconds: 150, matchKey: '9', finishedAt: '' }], top: [150, 200, 240, 260, 300], median: 240, fights: 5 } }
   const pb = line(liveFr([fire(0, 0, 40), fire(0, 1, 230)], others), 'pb')
-  check('French personal best line', pb === "Jamais Ada n'avait vaincu Malenia aussi vite ! 3:10 (2e plus rapide de tous les temps) !", pb)
+  check('French personal best line', pb === 'Record personnel pour Ada sur Malenia : 3:10 après le boss précédent (2e plus rapide de tous les temps) !', pb)
 
   const field = line(liveFr([fire(0, 0, 40), fire(0, 4, 290)]), 'field')
-  check('French global average line', field === 'Ada vient à bout de Mohg en 4:10 - plus vite que la moyenne mondiale ! (3e plus rapide de tous les temps)', field)
+  check('French global average line', field === 'Ada vient à bout de Mohg 4:10 après le boss précédent - plus vite que la moyenne des joueurs (3e plus rapide de tous les temps) !', field)
 
   // Every French line and desk text: a space before ! and ? - the site's French typography (see "Copié !").
   const all = [

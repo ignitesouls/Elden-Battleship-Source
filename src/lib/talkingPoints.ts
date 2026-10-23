@@ -35,6 +35,10 @@ import type { Language } from "./language";
  * fastest Ada has ever killed Malenia!" The voice is deliberate and lives only in the `line`s below, so a
  * change of tone is an edit to those strings and nothing else.
  *
+ * Every time read out says what it is measured from - "3:29 after the previous kill" - because a bare
+ * "3:29" on a stream reads as the whole fight and invites a question the caster then has to answer. And
+ * no line needs a pronoun: they are built around names, so nothing has to guess anyone's.
+ *
  * Both are written in the desk's language (Voice), English and French side by side the way `t()` puts
  * them everywhere else - so a French cast gets a French barnacle. The French never guesses a player's
  * gender: lines are built around the name, the boss, or a possessive that agrees with the thing owned.
@@ -141,6 +145,8 @@ function phrasebook(voice: Voice) {
     },
     times: (n: number) => (fr ? (n === 1 ? "une fois" : `${n} fois`) : n === 1 ? "once" : `${n} times`),
     matches: (n: number) => (fr ? `${n} ${n === 1 ? "match" : "matchs"}` : `${n} ${n === 1 ? "match" : "matches"}`),
+    /** A fight's time, saying what it is measured from - see the header. */
+    after: (time: string) => (fr ? `${time} après le boss précédent` : `${time} after the previous kill`),
   };
 }
 
@@ -223,7 +229,7 @@ export function matchupPoints(
   teamLabel: (team: number) => string,
   voice: Voice = ENGLISH
 ): TalkingPoint[] {
-  const { tr, times, matches } = phrasebook(voice);
+  const { tr, times, matches, after } = phrasebook(voice);
   const sq = voice.square;
   const out: TalkingPoint[] = [];
   const teams = [...new Set(roster.map((r) => r.team))].sort((a, b) => a - b);
@@ -400,8 +406,8 @@ export function matchupPoints(
         `${who} : ${matches(mine.length)} sur ce plateau, ${rec}${pace ? `, ${pace} par case` : ""}`
       ),
       line: tr(
-        `${who} has sailed ${matches(mine.length)} here and won ${wins}${pace ? ` - ${pace} a square!` : "!"}`,
-        `${who} a disputé ${matches(mine.length)} ici et en a gagné ${wins}${pace ? ` - ${pace} par case !` : " !"}`
+        `${who} has sailed ${matches(mine.length)} here and won ${wins}${pace ? ` - usually ${pace} per square!` : "!"}`,
+        `${who} a disputé ${matches(mine.length)} ici et en a gagné ${wins}${pace ? ` - en général ${pace} par case !` : " !"}`
       ),
     });
 
@@ -416,8 +422,8 @@ export function matchupPoints(
         team: r.team,
         text: tr(`${who}'s go-to squares here tonight: ${list}`, `Cases fétiches de ${who} ce soir : ${list}`),
         line: tr(
-          `${who} LOVES ${sq(fav)} - killed it ${times(n)} all time, and it's on the board tonight!`,
-          `${who} ADORE ${sq(fav)} - déjà ${times(n)} au total, et c'est au programme ce soir !`
+          `${who} has killed ${sq(fav)} ${times(n)} - and it's on the board tonight!`,
+          `${who} a déjà vaincu ${sq(fav)} ${times(n)} - et c'est au programme ce soir !`
         ),
       });
     }
@@ -437,12 +443,12 @@ export function matchupPoints(
         ),
         line: here
           ? tr(
-              `${who} loves to open with ${op} - ${times(opener[1])} all time, and it's right there tonight!`,
-              `${who} adore ouvrir avec ${op} - ${times(opener[1])} au total, et c'est au programme ce soir !`
+              `${who} has opened with ${op} ${times(opener[1])} - and it's on the board tonight!`,
+              `${who} a ouvert avec ${op} ${times(opener[1])} - et c'est au programme ce soir !`
             )
           : tr(
-              `${who} loves to open with ${op} - but it's not on the board tonight!`,
-              `${who} adore ouvrir avec ${op} - mais pas de chance, absent du plateau ce soir !`
+              `${who} usually opens with ${op} - but it's not on the board tonight!`,
+              `${who} ouvre souvent avec ${op} - mais pas de chance, absent du plateau ce soir !`
             ),
       });
     }
@@ -460,10 +466,13 @@ export function matchupPoints(
         emoji: "⏱️",
         mood: "smug",
         team: r.team,
-        text: tr(`${who}'s quickest square on this board: ${qs} in ${qt}`, `Case la plus rapide de ${who} sur ce plateau : ${qs} en ${qt}`),
+        text: tr(
+          `${who}'s quickest square on this board: ${qs}, ${after(qt)}`,
+          `Case la plus rapide de ${who} sur ce plateau : ${qs}, ${after(qt)}`
+        ),
         line: tr(
-          `Watch ${who} on ${qs} - a ${qt} kill, their fastest on tonight's board!`,
-          `Attention à ${who} sur ${qs} - ${qt}, son meilleur temps sur le plateau de ce soir !`
+          `Watch ${who} on ${qs} - best time ${after(qt)}, the quickest of any square tonight!`,
+          `Attention à ${who} sur ${qs} - meilleur temps ${after(qt)}, la case la plus rapide ce soir !`
         ),
       });
     }
@@ -505,7 +514,7 @@ export function livePoints(
   pause?: PauseFields | null,
   voice: Voice = ENGLISH
 ): TalkingPoint[] {
-  const { tr, ordinal } = phrasebook(voice);
+  const { tr, ordinal, after } = phrasebook(voice);
   /** " (3rd fastest all time)", or nothing when it is not a top-ten fight - or is the outright fastest. */
   const rankTag = (rank: number | null) =>
     rank === null || rank === 1 ? "" : tr(` (${ordinal(rank)} fastest all time)`, ` (${ordinal(rank)} plus rapide de tous les temps)`);
@@ -551,8 +560,8 @@ export function livePoints(
               `${name} ouvre sur ${sq} - l'ouverture habituelle (${usual[1]} sur ${h.matches})`
             ),
             tr(
-              `${name} loves to open with ${sq} - that's the ${ordinal(usual[1] + 1)} time they've done it (all time)!`,
-              `${name} adore ouvrir avec ${sq} - c'est la ${ordinal(usual[1] + 1, true)} fois (au total) !`
+              `${name} opens with ${sq} again - the ${ordinal(usual[1] + 1)} time ever!`,
+              `${name} ouvre encore avec ${sq} - la ${ordinal(usual[1] + 1, true)} fois au total !`
             )
           );
         } else {
@@ -565,7 +574,7 @@ export function livePoints(
               `${name} ouvre sur ${sq}, et non sur ${usualSq} comme d'habitude (${usual[1]} sur ${h.matches})`
             ),
             tr(
-              `${name} opens with ${sq}?! They usually go straight for ${usualSq}!`,
+              `${name} opens with ${sq}?! The usual opener is ${usualSq}!`,
               `${name} ouvre avec ${sq} ?! D'habitude, c'est direct sur ${usualSq} !`
             )
           );
@@ -591,7 +600,7 @@ export function livePoints(
         "🔢",
         "happy",
         tr(`${name}'s ${ordinal(career)} ${sq}`, `${name} : ${ordinal(career, true)} victoire sur ${sq}`),
-        tr(`That's ${name}'s ${ordinal(career)} ${sq} kill (all time)!`, `C'est la ${ordinal(career, true)} victoire de ${name} sur ${sq} (au total) !`)
+        tr(`${name}'s ${ordinal(career)} ${sq} kill ever!`, `C'est la ${ordinal(career, true)} victoire de ${name} sur ${sq}, au total !`)
       );
     }
 
@@ -606,8 +615,8 @@ export function livePoints(
     const fights = h.gaps.get(square) ?? [];
     const pb = fights.length > 0 ? Math.min(...fights) : null;
     const t = clock(gap);
-    const took = tr(`${name}: ${sq} in ${t}`, `${name} : ${sq} en ${t}`);
-    const kill = tr(`${name}'s kill of ${sq} in ${t}`, `${name} vient à bout de ${sq} en ${t}`);
+    const took = tr(`${name}: ${sq}, ${after(t)}`, `${name} : ${sq}, ${after(t)}`);
+    const kill = tr(`${name} takes ${sq} ${after(t)}`, `${name} vient à bout de ${sq} ${after(t)}`);
 
     if (wr && gap < wr.seconds) {
       const own = wr.key === who.key;
@@ -616,16 +625,19 @@ export function livePoints(
         "🌍",
         "happy",
         own
-          ? tr(`${took} - beats their own world record (${clock(wr.seconds)})`, `${took} - bat son propre record du monde (${clock(wr.seconds)})`)
+          ? tr(`${took} - beats ${name}'s own world record (${clock(wr.seconds)})`, `${took} - bat son propre record du monde (${clock(wr.seconds)})`)
           : tr(
               `${took} - under the world record (${clock(wr.seconds)}, ${wr.nickname})`,
               `${took} - sous le record du monde (${clock(wr.seconds)}, ${wr.nickname})`
             ),
         own
-          ? tr(`NEW WORLD RECORD! ${name} just beat their OWN best on ${sq} - ${t}!`, `NOUVEAU RECORD DU MONDE ! ${name} bat son PROPRE record sur ${sq} - ${t} !`)
+          ? tr(
+              `NEW WORLD RECORD! ${kill} - beating ${name}'s own ${clock(wr.seconds)}!`,
+              `NOUVEAU RECORD DU MONDE ! ${kill} - et bat son propre record (${clock(wr.seconds)}) !`
+            )
           : tr(
-              `NEW WORLD RECORD! ${name} kills ${sq} in ${t} - beating ${wr.nickname}'s ${clock(wr.seconds)}!`,
-              `NOUVEAU RECORD DU MONDE ! ${name} vient à bout de ${sq} en ${t} - et bat les ${clock(wr.seconds)} de ${wr.nickname} !`
+              `NEW WORLD RECORD! ${kill} - beating ${wr.nickname}'s ${clock(wr.seconds)}!`,
+              `NOUVEAU RECORD DU MONDE ! ${kill} - et bat les ${clock(wr.seconds)} de ${wr.nickname} !`
             ),
         true
       );
@@ -636,8 +648,8 @@ export function livePoints(
         "happy",
         tr(`${took} - personal best (was ${clock(pb)})${rankTag(rank)}`, `${took} - record personnel (avant : ${clock(pb)})${rankTag(rank)}`),
         tr(
-          `That's the fastest ${name} has ever killed ${sq}! ${t}${rankTag(rank)}!`,
-          `Jamais ${name} n'avait vaincu ${sq} aussi vite ! ${t}${rankTag(rank)} !`
+          `${name}'s fastest ${sq} ever: ${after(t)}${rankTag(rank)}!`,
+          `Record personnel pour ${name} sur ${sq} : ${after(t)}${rankTag(rank)} !`
         ),
         true
       );
@@ -652,7 +664,7 @@ export function livePoints(
         tie && own ? "smug" : "angry",
         tie
           ? own
-            ? tr(`${took} - ties their own world record`, `${took} - égale son propre record du monde`)
+            ? tr(`${took} - ties ${name}'s own world record`, `${took} - égale son propre record du monde`)
             : tr(
                 `${took} - ties the world record (${wr.nickname} keeps it, first to get there)`,
                 `${took} - égale le record du monde (${wr.nickname} le garde, l'ayant établi en premier)`
@@ -663,10 +675,10 @@ export function livePoints(
             ),
         tie
           ? own
-            ? tr(`${name} matches their OWN world record on ${sq} - ${t}!`, `${name} égale son PROPRE record du monde sur ${sq} - ${t} !`)
+            ? tr(`${kill} - tying ${name}'s own world record!`, `${kill} - égale son propre record du monde !`)
             : tr(
-                `${name} TIES the world record on ${sq} - but ${wr.nickname} got there first!`,
-                `${name} ÉGALE le record du monde sur ${sq} - mais ${wr.nickname} l'a établi en premier !`
+                `${kill} - TYING the world record! ${wr.nickname} got there first, so it stays with ${wr.nickname}.`,
+                `${kill} - ÉGALE le record du monde ! ${wr.nickname} l'a établi en premier et le garde.`
               )
           : tr(
               `SO CLOSE! ${kill} - just ${off} off the world record${rankTag(rank)}!`,
@@ -686,7 +698,7 @@ export function livePoints(
           : tr(`${took} - ${by} slower than usual (${clock(usual)} over ${fights.length})`, `${took} - ${by} plus lent que d'habitude (${clock(usual)} sur ${fights.length})`),
         off < 0
           ? tr(`${kill} - ${by} faster than usual${rankTag(rank)}!`, `${kill} - ${by} plus vite que d'habitude${rankTag(rank)} !`)
-          : tr(`Uh oh! ${name} needed ${t} for ${sq} - ${by} slower than usual!`, `Aïe ! ${name} a mis ${t} sur ${sq} - ${by} de plus que d'habitude !`)
+          : tr(`Uh oh! ${kill} - ${by} slower than usual!`, `Aïe ! ${kill} - ${by} de plus que d'habitude !`)
       );
     } else if (board && board.fights >= GLOBAL_AFTER_FIGHTS && gap < board.median) {
       // The field's typical time is the median, as everywhere a "usual" is read on this site.
@@ -698,7 +710,7 @@ export function livePoints(
           `${took} - under the global average (${clock(board.median)} over ${board.fights})${rankTag(rank)}`,
           `${took} - sous la moyenne mondiale (${clock(board.median)} sur ${board.fights})${rankTag(rank)}`
         ),
-        tr(`${kill} - faster than the global average!${rankTag(rank)}`, `${kill} - plus vite que la moyenne mondiale !${rankTag(rank)}`)
+        tr(`${kill} - faster than the average player${rankTag(rank)}!`, `${kill} - plus vite que la moyenne des joueurs${rankTag(rank)} !`)
       );
     }
   }

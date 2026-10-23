@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import {
   confirmOfficialTeam,
   fetchLiveEvents,
+  fetchMyCasts,
   fetchOfficialMatch,
+  linkCastRoom,
   linkOfficialRoom,
   unlinkOfficialRoom,
+  type MyCastMatch,
   type OfficialMatchInfo,
 } from "../lib/tournament/api";
 import { isSupabaseConfigured } from "../lib/supabase";
+import { useAuthProfile } from "../hooks/useAuthProfile";
 import { useT } from "../lib/language";
 import type { Room } from "../types/battleship";
 import { OfficialMatchLine } from "./event/OfficialMatchLine";
@@ -28,7 +32,8 @@ interface Props {
  * team has entered its entry code yet.
  *
  * A room is official when its host enters their team's entry code, and the match cannot start until the
- * other team has entered theirs from inside the room. Nothing here decides any of that: the database
+ * other team has entered theirs from inside the room. A host who is an approved caster for a match can
+ * instead make the room that match's lobby with one click, and then BOTH captains enter their codes. Nothing here decides any of that: the database
  * checks the codes, counts wrong guesses, and refuses to let a room start, seat the wrong players or
  * change its settings while it is official. This panel is the way in, not the lock.
  */
@@ -58,6 +63,25 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
       cancelled = true;
     };
   }, [linked, isHost, room.status]);
+
+  /**
+   * The matches this host is an approved caster for, still waiting for a lobby - so a caster who opened
+   * an ordinary room can make it the match's lobby right here, with no code (link_cast_room). Asked only
+   * once there is a live event and only by a Twitch account, the only kind that can be a caster.
+   */
+  const profile = useAuthProfile();
+  const twitch = !!profile?.isTwitch;
+  const [casts, setCasts] = useState<MyCastMatch[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured || linked || !isHost || room.status !== "lobby" || events.length === 0 || !twitch) return;
+    let cancelled = false;
+    fetchMyCasts()
+      .then((rows) => !cancelled && setCasts(rows.filter((m) => !m.room_code)))
+      .catch(() => undefined); // best effort, like the events read above
+    return () => {
+      cancelled = true;
+    };
+  }, [linked, isHost, room.status, events.length, twitch]);
 
   // Who is playing whom, once the room is official.
   useEffect(() => {
@@ -95,6 +119,30 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
     return (
       <div className="panel stack" style={{ gap: "0.6rem", borderColor: "rgba(217, 164, 65, 0.55)" }}>
         <strong>{t("Official tournament match", "Match officiel de tournoi")}</strong>
+        {/* An approved caster: one click, no code. The captains confirm with their own codes after. */}
+        {casts.length > 0 && (
+          <div className="stack" style={{ gap: "0.4rem" }}>
+            <span style={{ fontSize: "0.85rem" }}>
+              {t("You're casting:", "Vous commentez :")}
+            </span>
+            {casts.map((m) => (
+              <div key={m.match_id} className="row" style={{ gap: "0.6rem", flexWrap: "wrap" }}>
+                <span>
+                  <strong>{m.team_a_name}</strong> <span className="muted">vs.</span> <strong>{m.team_b_name}</strong>
+                </span>
+                <button className="primary" disabled={busy} onClick={() => void run(() => linkCastRoom(room.id, m.match_id))}>
+                  {t("Make this room their match", "Faire de cette partie leur match")}
+                </button>
+              </div>
+            ))}
+            <span className="muted" style={{ fontSize: "0.75rem" }}>
+              {t(
+                "No code needed from you. Each team's captain enters their own entry code here before the match can start.",
+                "Aucun code à saisir pour vous. Le capitaine de chaque équipe saisit ici son propre code d'entrée avant que le match puisse commencer."
+              )}
+            </span>
+          </div>
+        )}
         <span className="muted" style={{ fontSize: "0.8rem" }}>
           {t(
             "Playing a bracket match? Enter your team's entry code and this room plays it. The other team confirms with theirs, and the result goes straight into the bracket.",

@@ -23,12 +23,14 @@ import type { BarnacleMood } from "./talkingPoints";
  * screen decides what "reload" means (it rebuilds the Twitch embed - see pages/OverlayScreen); this
  * only says when.
  *
- * LATENCY, screen -> desk: "I am this many milliseconds behind the broadcaster right now". The desk
- * shows it per box and offers to set the whole-overlay delay to the slowest of them, so the board
- * and the clock can be pulled back to where the cams actually are.
+ * LATENCY, screen -> desk and frame: "I am this many milliseconds behind the broadcaster right now".
+ * The desk shows it per box and offers to set the whole-overlay delay to the slowest of them, so the
+ * board and the clock can be pulled back to where the cams actually are. The frame holds each box's
+ * card by it.
  *
- * CARD, desk -> one screen: a talking point to put over that player's box (see lib/talkingPoints).
- * Not a frame either - it is a caster's one-off call, gone in seconds. CARD_CLEAR takes it down early.
+ * CARD, desk -> frame: a talking point to put over one player's box (see lib/talkingPoints), drawn by
+ * the frame source over that box's hole - never by the box itself, see useFrameCards. Not a frame
+ * either - it is a caster's one-off call, gone in seconds. CARD_CLEAR takes it down early.
  */
 
 const RESYNC_EVENT = "resync";
@@ -86,30 +88,21 @@ interface ResyncMsg {
  * channel on a slow interval, read through `getLatencyMs` so this hook never has to know what a
  * Twitch player is.
  *
- * And the card on this box, if one is up: held until the stream shows the shot it is about, shown for
- * its time, then gone. A new card replaces the one showing - the caster's latest call wins.
+ * The talking-point cards are NOT drawn here - see useFrameCards.
  */
 export function useScreenAux(
   code: string | undefined,
   owner: string | null | undefined,
   slot: number,
   getLatencyMs: () => number | null
-): { resyncNonce: number; card: StatCard | null } {
+): { resyncNonce: number } {
   const [resyncNonce, setResyncNonce] = useState(0);
-  const [card, setCard] = useState<StatCard | null>(null);
   const latencyRef = useRef(getLatencyMs);
   latencyRef.current = getLatencyMs;
 
   useEffect(() => {
     if (!code) return;
     const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
-    // One card at a time, so one pair of timers: the hold before it shows, and its time on screen.
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const drop = () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      setCard(null);
-    };
 
     channel
       .on("broadcast", { event: RESYNC_EVENT }, ({ payload }) => {
@@ -117,23 +110,6 @@ export function useScreenAux(
         if (target === null || target === undefined || target === slot) {
           setResyncNonce((n) => n + 1);
         }
-      })
-      .on("broadcast", { event: CARD_EVENT }, ({ payload }) => {
-        const next = payload as StatCard;
-        if (next?.slot !== slot || typeof next.text !== "string") return;
-        drop();
-        const shotMs = next.shotAt ? Date.parse(next.shotAt) : NaN;
-        const behind = latencyRef.current() ?? 0;
-        const hold = Number.isNaN(shotMs) ? 0 : Math.max(0, Math.min(behind - (Date.now() - shotMs), 30000));
-        // Clamped here, once, so the box's exit animation (timed off `ms`) ends exactly as it is dropped.
-        const shown = { ...next, ms: Math.max(1000, Math.min(next.ms, 30000)) };
-        timer = setTimeout(() => {
-          setCard(shown);
-          timer = setTimeout(drop, shown.ms);
-        }, hold);
-      })
-      .on("broadcast", { event: CARD_CLEAR_EVENT }, ({ payload }) => {
-        if ((payload as { slot?: number })?.slot === slot) drop();
       })
       .subscribe();
 
@@ -150,13 +126,87 @@ export function useScreenAux(
 
     return () => {
       clearInterval(beat);
-      if (timer) clearTimeout(timer);
-      setCard(null);
       void supabase.removeChannel(channel);
     };
   }, [code, owner, slot]);
 
-  return { resyncNonce, card };
+  return { resyncNonce };
+}
+
+/**
+ * The frame source's end of the cards: every box's talking point, by slot.
+ *
+ * -- Why the frame draws them, not the box -------------------------------------------------------
+ *
+ * They used to be drawn by each screen source, over its own Twitch embed - and the moment one went up
+ * that stream froze, for good. Twitch's player pauses itself when something in its own page covers it.
+ * The frame (pages/OverlayFrame) is a separate Browser Source stacked over every box in the scene, so a
+ * card drawn there sits over the stream in OBS's picture and never inside the player's page.
+ *
+ * -- Timing ----------------------------------------------------------------------------------------
+ *
+ * A card is held until its box's stream shows the shot it is about, shown for its time, then gone. The
+ * frame has no player to ask how far behind a box runs, so it listens to the latency the boxes already
+ * report to the desk (LATENCY) and holds each card by its own box's reading. One card per box; a new
+ * card for a box replaces the one showing there - the caster's latest call wins.
+ */
+export function useFrameCards(code: string | undefined, owner: string | null | undefined): Map<number, StatCard> {
+  const [cards, setCards] = useState<Map<number, StatCard>>(() => new Map());
+
+  useEffect(() => {
+    if (!code) return;
+    const channel = supabase.channel(channelName(code, owner), { config: { broadcast: { self: false } } });
+    const latency = new Map<number, number>();
+    // Per box: the hold before its card shows, then its time on screen.
+    const timers = new Map<number, ReturnType<typeof setTimeout>>();
+    const drop = (slot: number) => {
+      clearTimeout(timers.get(slot));
+      timers.delete(slot);
+      setCards((prev) => {
+        if (!prev.has(slot)) return prev;
+        const next = new Map(prev);
+        next.delete(slot);
+        return next;
+      });
+    };
+
+    channel
+      .on("broadcast", { event: LATENCY_EVENT }, ({ payload }) => {
+        const msg = payload as LatencyMsg;
+        if (typeof msg?.slot === "number" && typeof msg?.ms === "number") latency.set(msg.slot, msg.ms);
+      })
+      .on("broadcast", { event: CARD_EVENT }, ({ payload }) => {
+        const next = payload as StatCard;
+        if (typeof next?.slot !== "number" || typeof next.text !== "string") return;
+        const slot = next.slot;
+        drop(slot);
+        const shotMs = next.shotAt ? Date.parse(next.shotAt) : NaN;
+        const behind = latency.get(slot) ?? 0;
+        const hold = Number.isNaN(shotMs) ? 0 : Math.max(0, Math.min(behind - (Date.now() - shotMs), 30000));
+        // Clamped here, once, so the card's exit animation (timed off `ms`) ends exactly as it is dropped.
+        const shown = { ...next, ms: Math.max(1000, Math.min(next.ms, 30000)) };
+        timers.set(
+          slot,
+          setTimeout(() => {
+            setCards((prev) => new Map(prev).set(slot, shown));
+            timers.set(slot, setTimeout(() => drop(slot), shown.ms));
+          }, hold)
+        );
+      })
+      .on("broadcast", { event: CARD_CLEAR_EVENT }, ({ payload }) => {
+        const slot = (payload as { slot?: number })?.slot;
+        if (typeof slot === "number") drop(slot);
+      })
+      .subscribe();
+
+    return () => {
+      timers.forEach(clearTimeout);
+      setCards(new Map());
+      void supabase.removeChannel(channel);
+    };
+  }, [code, owner]);
+
+  return cards;
 }
 
 export interface CasterAux {

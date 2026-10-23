@@ -13,6 +13,7 @@ import { buildRecordBook, type RecordEntry } from "../lib/recordBook";
 import { recordChases, liveTallies } from "../lib/recordChase";
 import { RecordChases } from "../components/RecordChases";
 import { TalkingPoints } from "../components/TalkingPoints";
+import { useNewPoints } from "../hooks/useNewPoints";
 import { useTalkingPoints } from "../hooks/useTalkingPoints";
 import type { TalkingPoint } from "../lib/talkingPoints";
 import { fetchParticipants } from "../lib/profiles";
@@ -467,6 +468,9 @@ export function CasterControl({
    * caster sends one over its player's box (lib/castAux's CARD).
    */
   const talking = useTalkingPoints(room, state.players, state.attacks);
+  /** New live points: lit in the list, and the newest pinned to the top of the panel - see useNewPoints. */
+  const newPoints = useNewPoints(talking.live, talking.loading);
+  const talkingRef = useRef<HTMLElement | null>(null);
   const slotFor = useCallback(
     (p: TalkingPoint) => (p.playerId ? (screens.find((s) => s.playerId === p.playerId)?.slot ?? null) : null),
     [screens]
@@ -1456,6 +1460,35 @@ export function CasterControl({
         </div>
 
         <div className="cast-panel">
+          {/*
+            The newest talking point, pinned over the top of the panel however far down it is scrolled,
+            so the caster never has to go looking for what just happened. Click the line to jump to the
+            full list.
+          */}
+          {newPoints.latest && (
+            // Keyed on the point, so each new one remounts the bar and lights it up again.
+            <div key={newPoints.latest.id} className="tp-pinned tp-flash" style={{ ["--tp-color" as string]: newPoints.latest.team === null ? "var(--accent)" : teamHex(newPoints.latest.team) }}>
+              <button
+                className="tp-pinned-text"
+                onClick={() => talkingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                title={t("Go to the talking points", "Aller aux points à aborder")}
+              >
+                <span className="cast-status">{t("New talking point", "Nouveau point à aborder")}</span>
+                <span>
+                  {newPoints.latest.emoji} {newPoints.latest.text}
+                </span>
+              </button>
+              {slotFor(newPoints.latest) !== null && (
+                <button className="primary" onClick={() => showPoint(newPoints.latest!)} title={`${t("The barnacle says:", "Le bernacle dira :")} "${newPoints.latest.line}"`}>
+                  {t("Show", "Afficher")}
+                </button>
+              )}
+              <button onClick={newPoints.dismiss} aria-label={t("Dismiss", "Ignorer")}>
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Everything that aims or dresses the board belongs to whoever holds it. */}
           <div className="cast-board-controls" inert={!driving}>
           <section>
@@ -1982,7 +2015,9 @@ export function CasterControl({
               </p>
             )}
           </section>
+          </div>
 
+          {/* Commentary rather than the board, so every caster at the desk can use it, holding it or not. */}
           {chases.length > 0 && (
             <section>
               <h3>{t("Records in play", "Records en jeu")}</h3>
@@ -1990,11 +2025,12 @@ export function CasterControl({
             </section>
           )}
 
-          <section>
+          <section ref={talkingRef}>
             <h3>{t("Talking points", "Points à aborder")}</h3>
-            <TalkingPoints {...talking} slotFor={slotFor} onShow={showPoint} />
+            <TalkingPoints {...talking} flashing={newPoints.flashing} slotFor={slotFor} onShow={showPoint} />
           </section>
 
+          <div className="cast-board-controls" inert={!driving}>
           <section>
             <h3>{t("Board", "Plateau")}</h3>
             <div className="cast-buttons">
