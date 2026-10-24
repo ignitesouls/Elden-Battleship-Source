@@ -3,6 +3,7 @@ import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySo
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { BOARD_SLOT, useFrameCards, type StatCard } from "../lib/castAux";
+import { BARNACLE_MOODS, barnacleSrc } from "../lib/barnacles";
 import {
   boardRect,
   CAST_ART,
@@ -101,13 +102,6 @@ function PlayerTag({ rect, name, color, hits, misses, accuracy }: { rect: Rect; 
       </div>
     </div>
   );
-}
-
-/** The barnacle that says a talking point, by mood. Unknown moods (an older desk) get the smug one. */
-const BARNACLE_MOODS = ["happy", "smug", "grim", "angry"] as const;
-function barnacleSrc(mood: string | undefined): string {
-  const known = (BARNACLE_MOODS as readonly string[]).includes(mood ?? "") ? mood : "smug";
-  return `${import.meta.env.BASE_URL}media/barnacles/barnacle-${known}.png`;
 }
 
 /**

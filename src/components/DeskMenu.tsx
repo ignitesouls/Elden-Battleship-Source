@@ -33,6 +33,9 @@ function writeOpen(id: string, open: boolean): void {
  *
  * `openSignal` opens the group from outside - the pinned talking point's jump to the full list. Any
  * change to it opens; the caster closing it again is their call.
+ *
+ * `lazy` keeps the contents unmounted until the group is first opened - for one that reads something
+ * from the server, so a desk that never opens it never asks.
  */
 export function DeskMenu({
   id,
@@ -41,6 +44,7 @@ export function DeskMenu({
   locked = false,
   lockedNote,
   openSignal,
+  lazy = false,
   children,
 }: {
   id: string;
@@ -49,9 +53,15 @@ export function DeskMenu({
   locked?: boolean;
   lockedNote?: string;
   openSignal?: number;
+  lazy?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(() => readOpen()[id] ?? defaultOpen);
+  // Once opened, kept: shutting the group again must not throw away what it already read.
+  const [everOpen, setEverOpen] = useState(open);
+  useEffect(() => {
+    if (open) setEverOpen(true);
+  }, [open]);
 
   useEffect(() => {
     if (openSignal) setOpen(true);
@@ -73,7 +83,7 @@ export function DeskMenu({
         {locked && lockedNote && <span className="cast-status">{lockedNote}</span>}
       </summary>
       <div className="cast-menu-body" inert={locked}>
-        {children}
+        {lazy && !everOpen ? null : children}
       </div>
     </details>
   );

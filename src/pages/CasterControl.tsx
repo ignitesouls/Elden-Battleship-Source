@@ -15,7 +15,7 @@ import { RecordChases } from "../components/RecordChases";
 import { TalkingPoints } from "../components/TalkingPoints";
 import { useNewPoints } from "../hooks/useNewPoints";
 import { useTalkingPoints } from "../hooks/useTalkingPoints";
-import type { TalkingPoint } from "../lib/talkingPoints";
+import type { BarnacleMood, TalkingPoint } from "../lib/talkingPoints";
 import { fetchParticipants } from "../lib/profiles";
 import { teamName, teamHex } from "../lib/teamColors";
 import { formatRoomCode } from "../lib/roomCode";
@@ -46,6 +46,9 @@ import { useCastScreens } from "../hooks/useCastScreens";
 import { useLanguage, useT } from "../lib/language";
 import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
 import { DeskMenu } from "../components/DeskMenu";
+import { DeskAnnounce } from "../components/DeskAnnounce";
+import { DeskCopypastas } from "../components/DeskCopypastas";
+import { fillTeams, readingMs } from "../lib/copypastas";
 import { fetchOfficialMatch } from "../lib/tournament/api";
 import { useCastDesks } from "../lib/castDesks";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
@@ -420,6 +423,13 @@ export function CasterControl({
   // Drives the reveal gate below: names hold until the board has finished being dealt.
   const battlePhase = useBattlePhaseName(state.attacks, room);
   const teams = useMemo(() => activeTeams(state.players), [state.players]);
+  /**
+   * Tonight's two sides by name, for a copypasta's <Team 1> / <Team 2> (fillTeams): the official
+   * match's team names when there is one, else the first two fleets' colours.
+   */
+  const matchTeams: [string | null, string | null] = officialTeams
+    ? officialTeams.names
+    : [teams[0] !== undefined ? teamName(teams[0]) : null, teams[1] !== undefined ? teamName(teams[1]) : null];
 
   /**
    * Everything in the water, the moment somebody finds it (see lib/deepWater.ts).
@@ -492,6 +502,16 @@ export function CasterControl({
       aux.showCard({ id: p.id, slot, emoji: p.emoji, mood: p.mood, text: p.line, team: p.team, shotAt: p.shotAt ?? null, ms: CARD_MS });
     },
     [slotFor, aux]
+  );
+  /**
+   * A line said over the board by a barnacle: an announcement, or a copypasta. Held up for as long as
+   * it takes to read (readingMs), and never waiting on a shot - it is about the room, not a kill.
+   */
+  const sayOverBoard = useCallback(
+    (id: string, emoji: string, text: string, mood: BarnacleMood) => {
+      aux.showCard({ id, slot: BOARD_SLOT, emoji, mood, text, team: null, shotAt: null, ms: readingMs(text, CARD_MS) });
+    },
+    [aux]
   );
 
   /**
@@ -1518,6 +1538,13 @@ export function CasterControl({
             <section ref={talkingRef}>
               <TalkingPoints {...talking} flashing={newPoints.flashing} slotFor={slotFor} onShow={showPoint} />
             </section>
+            {/* The caster's own words, for whatever no talking point covers. */}
+            <DeskAnnounce onSay={(text, mood) => sayOverBoard(`say:${Date.now()}`, "📣", text, mood)} />
+          </DeskMenu>
+
+          {/* The community's copypastas - read only once this is first opened. */}
+          <DeskMenu id="copypastas" title={t("Copypastas", "Copypastas")} lazy>
+            <DeskCopypastas onShow={(c) => sayOverBoard(`pasta:${c.id}:${Date.now()}`, "📜", fillTeams(c.body, matchTeams), c.mood)} />
           </DeskMenu>
 
           {/* Everything that aims or dresses the board belongs to whoever holds it: the next three groups

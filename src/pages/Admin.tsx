@@ -4,6 +4,7 @@ import { AdminPanel } from "../components/AdminPanel";
 import { AdminTournaments } from "../components/AdminTournaments";
 import { BalanceStats } from "../components/BalanceStats";
 import { SquareHolds } from "../components/admin/SquareHolds";
+import { CopypastaEditor } from "../components/admin/CopypastaEditor";
 import { LoadingScreen } from "../components/BrandMark";
 import { useAdminStatus } from "../lib/admin";
 import { fetchRecentMatchReports, countMatchReports } from "../lib/rooms";
@@ -119,6 +120,8 @@ export function Admin() {
       />
 
       <SquareHolds />
+
+      <CopypastaEditor />
 
       <BalanceStats />
     </div>
