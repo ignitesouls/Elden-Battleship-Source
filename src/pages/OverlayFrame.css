@@ -136,19 +136,22 @@
   position: absolute;
   left: calc(1.5 * var(--ovf-u));
   right: calc(3 * var(--ovf-u));
-  bottom: 0;
+  /* Clear of the hole's bottom edge: on a real scene the divider strips and the boxes below overlap
+     that edge, and they cut the barnacle off at the cheeks when it sat flush against it. */
+  bottom: calc(3 * var(--ovf-u));
   display: flex;
   align-items: flex-end;
   pointer-events: none;
   animation: ovf-card-out 400ms ease-in calc(var(--ovf-card-ms, 8000ms) - 400ms) forwards;
 }
 
-/* Its base just under the bottom edge, so it reads as climbing up into the box - the mouth stays clear. */
+/* The whole barnacle shows, base and all - see the note on .ovf-card for why it no longer tucks under
+   the edge. */
 .ovf-card-barnacle {
   width: calc(22 * var(--ovf-u));
   height: auto;
   flex-shrink: 0;
-  margin-bottom: calc(-0.8 * var(--ovf-u));
+  margin-bottom: 0;
   filter: drop-shadow(0 calc(0.6 * var(--ovf-u)) calc(1.2 * var(--ovf-u)) rgba(0, 0, 0, 0.55));
   transform-origin: 50% 100%;
   animation: ovf-barnacle-pop 560ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
