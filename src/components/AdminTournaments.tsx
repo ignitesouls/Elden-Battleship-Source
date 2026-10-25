@@ -225,8 +225,8 @@ function EventForm({ event, busy, act, onClose }: { event?: AdminEventRow; busy:
             setDropLogo(true);
           }}
           hint={t(
-            "Square pictures look best. It's shrunk to 512 px and shown on the front-page banner and at the top of the event's page. Without one, nothing is shown.",
-            "Les images carrées rendent le mieux. Elle est réduite à 512 px et affichée sur la bannière de la page d'accueil et en haut de la page de l'événement. Sans logo, rien n'est affiché.",
+            "Square pictures look best. It's shrunk to 1024 px and shown across the front-page banner and at the top of the event's page - upload the biggest version you have. Without one, nothing is shown.",
+            "Les images carrées rendent le mieux. Elle est réduite à 1024 px et affichée sur toute la bannière de la page d'accueil et en haut de la page de l'événement - envoyez la plus grande version que vous avez. Sans logo, rien n'est affiché.",
           )}
         />
       </div>

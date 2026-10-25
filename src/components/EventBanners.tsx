@@ -126,11 +126,12 @@ function ClockMark() {
   );
 }
 
-/** A banner's headline and the line under it, with the event's logo (if it has one) to their left. */
+/** A banner's headline and the line under it, with the event's logo (if it has one) big above them. */
 function BannerHead({ event, children }: { event: EventSummary; children: ReactNode }) {
   return (
     <div className="event-banner__head">
-      <EventLogo path={event.logoPath} size={3.5} />
+      {/* The banner's full width - its height follows the picture's own shape (see .event-banner__head). */}
+      <EventLogo path={event.logoPath} size="100%" />
       <div className="event-banner__text">{children}</div>
     </div>
   );
@@ -186,7 +187,7 @@ function EventBanner({ banner }: { banner: Banner }) {
           <h3 style={{ margin: 0 }}>{event.name}</h3>
           <span className="muted">{t("Signup has closed - starting soon.", "Les inscriptions sont closes - début imminent.")}</span>
         </BannerHead>
-        <div>
+        <div style={{ textAlign: "center" }}>
           <Link to={to} className="link-button">
             {t("See who's in", "Voir les inscrits")}
           </Link>
@@ -219,7 +220,7 @@ function EventBanner({ banner }: { banner: Banner }) {
             : t(`${event.name} has finished`, `${event.name} est terminé`)}
         </h3>
       </BannerHead>
-      <div>
+      <div style={{ textAlign: "center" }}>
         <Link to={to} className="link-button">
           {t("See the results", "Voir les résultats")}
         </Link>

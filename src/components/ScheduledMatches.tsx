@@ -9,7 +9,7 @@ import { useLanguage, useT } from "../lib/language";
 import { groupLabel } from "../lib/tournament/groupNames";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
 import { CasterLinks, CastLanguageName } from "./event/CasterLinks";
-import { PlayerName, TeamLabel } from "./event/TeamLogo";
+import { PlayerName, TeamLogo } from "./event/TeamLogo";
 import "./Tournament.css";
 
 // The tale of the tape lives with its own page; the front page only fetches that code when a card is opened.
@@ -133,7 +133,7 @@ export function ScheduledMatches() {
 
   return (
     <div className="panel stack" style={{ gap: "0.5rem" }}>
-      <h3 style={{ margin: 0 }}>{t("Tournament matches", "Matchs de tournoi")}</h3>
+      <h3 style={{ margin: 0, textAlign: "center" }}>{t("Tournament matches", "Matchs de tournoi")}</h3>
       <div className="t-list">
         {rows.map((m) => {
           const live = !!m.room_code;
@@ -143,14 +143,22 @@ export function ScheduledMatches() {
               <Link to={`/event/${m.tournament_id}`} className="muted" style={{ alignSelf: "center", fontSize: "0.8rem" }}>
                 {m.event_name} · {stage(m)} · {t("Round", "Tour")} {m.phase}
               </Link>
-              <div className="row" style={{ justifyContent: "center", alignItems: "flex-start", gap: "0.6rem", flexWrap: "wrap" }}>
-                <div className="stack" style={{ alignItems: "center", gap: "0.1rem" }}>
-                  <TeamLabel name={<strong><PlayerName name={m.team_a_name} login={solo(m, "a")} /></strong>} logo={logo(m, "a")} size={1.5} />
+              {/* Each team's logo fills its half of the card - see .sched-teams. */}
+              <div className="sched-teams">
+                <div className="sched-logo">
+                  <TeamLogo url={logo(m, "a")} size="fill" />
+                </div>
+                <span className="muted">{live && m.best_of > 1 ? `${m.score_a} - ${m.score_b}` : t("vs", "contre")}</span>
+                <div className="sched-logo">
+                  <TeamLogo url={logo(m, "b")} size="fill" />
+                </div>
+                <div className="sched-name">
+                  <strong><PlayerName name={m.team_a_name} login={solo(m, "a")} /></strong>
                   {record(m.won_a, m.lost_a)}
                 </div>
-                <span className="muted" style={{ lineHeight: "1.5rem" }}>{live && m.best_of > 1 ? `${m.score_a} - ${m.score_b}` : t("vs", "contre")}</span>
-                <div className="stack" style={{ alignItems: "center", gap: "0.1rem" }}>
-                  <TeamLabel name={<strong><PlayerName name={m.team_b_name} login={solo(m, "b")} /></strong>} logo={logo(m, "b")} size={1.5} />
+                <span />
+                <div className="sched-name">
+                  <strong><PlayerName name={m.team_b_name} login={solo(m, "b")} /></strong>
                   {record(m.won_b, m.lost_b)}
                 </div>
               </div>

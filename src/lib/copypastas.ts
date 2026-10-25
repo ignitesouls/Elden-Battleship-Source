@@ -48,10 +48,11 @@ export async function deleteCopypasta(id: string): Promise<void> {
 /**
  * A copypasta's text with tonight's teams put in: `<Team 1>` and `<Team 2>` become the two names, so the
  * barnacle says "better for Alpha" rather than reading the placeholder out. Case and spacing inside the
- * brackets are forgiven. A team that isn't known yet leaves its placeholder as it was.
+ * brackets are forgiven. A team that isn't known yet - nobody seated on a fleet, no official match - is
+ * said as plain "Team 1", never with the brackets, which read as a broken overlay on stream.
  */
 export function fillTeams(text: string, teams: [string | null, string | null]): string {
-  return text.replace(/<\s*team\s*([12])\s*>/gi, (whole, n: string) => teams[Number(n) - 1] ?? whole);
+  return text.replace(/<\s*team\s*([12])\s*>/gi, (_whole, n: string) => teams[Number(n) - 1] ?? `Team ${n}`);
 }
 
 /**
