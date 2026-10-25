@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from "../lib/supabase";
 import { useLanguage, useT } from "../lib/language";
 import { groupLabel } from "../lib/tournament/groupNames";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
-import { CasterLinks } from "./event/CasterLinks";
+import { CasterLinks, CastLanguageName } from "./event/CasterLinks";
 import { PlayerName, TeamLabel } from "./event/TeamLogo";
 import "./Tournament.css";
 
@@ -44,6 +44,8 @@ export function ScheduledMatches() {
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [castError, setCastError] = useState<{ match: string; message: string } | null>(null);
+  /** The match whose "Ask to cast" is showing its language choice, if any. */
+  const [asking, setAsking] = useState<string | null>(null);
 
   const read = useCallback(() => {
     if (!isSupabaseConfigured || document.visibilityState !== "visible") return Promise.resolve();
@@ -66,11 +68,12 @@ export function ScheduledMatches() {
   }, [read, me?.userId]);
 
   /** Asks to cast, or withdraws; the server's refusal is shown under the card in its own words. */
-  async function cast(m: ScheduledMatch, action: (matchId: string) => Promise<void>) {
+  async function cast(m: ScheduledMatch, action: (matchId: string) => Promise<void>, done?: () => void) {
     setBusy(m.match_id);
     setCastError(null);
     try {
       await action(m.match_id);
+      done?.();
     } catch (e) {
       setCastError({ match: m.match_id, message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -158,7 +161,7 @@ export function ScheduledMatches() {
                   m.agreed_at && <strong>{when(m.agreed_at)}</strong>
                 )}
               </div>
-              {(live || streams || m.casters?.length > 0) && (
+              {(live || streams) && (
                 <div className="row" style={{ justifyContent: "center", gap: "0.5rem" }}>
                   {live && (
                     // ?spectate=1, like the front page's "Current battles" and the lobby's spectator link: the
@@ -172,32 +175,51 @@ export function ScheduledMatches() {
                       {t("Players' streams (Multitwitch)", "Streams des joueurs (Multitwitch)")}
                     </a>
                   )}
-                  <CasterLinks casters={m.casters ?? []} style={{ fontSize: "0.82rem" }} />
+                </div>
+              )}
+              {/* Every approved caster on one line - language and name - rather than a button each. */}
+              {m.casters?.length > 0 && (
+                <div className="row" style={{ justifyContent: "center" }}>
+                  <CasterLinks casters={m.casters} />
                 </div>
               )}
               {me?.isTwitch && !plays(m) && (
-                <div className="row" style={{ justifyContent: "center", gap: "0.5rem", fontSize: "0.78rem" }}>
+                <div className="cast-mine">
                   {m.my_cast === "pending" || m.my_cast === "approved" ? (
                     <>
                       <span className="muted">
                         {m.my_cast === "pending"
-                          ? t("You asked to cast this - waiting for an administrator.", "Vous avez demandé à commenter ce match - en attente d'un administrateur.")
-                          : t("You're an official caster for this match.", "Vous êtes commentateur officiel de ce match.")}
+                          ? t("Your cast is waiting for an administrator.", "Votre cast attend un administrateur.")
+                          : t("You're casting this match.", "Vous commentez ce match.")}
                       </span>
                       {/* The caster makes the match's room, no code - the captains confirm in it with theirs. */}
                       {m.my_cast === "approved" && !live && (
-                        <button type="button" className="primary" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void openLobby(m)}>
+                        <button type="button" className="primary" style={{ fontSize: "0.76rem", padding: "0.2rem 0.6rem" }} disabled={busy === m.match_id} onClick={() => void openLobby(m)}>
                           {t("Open the lobby", "Ouvrir le lobby")}
                         </button>
                       )}
-                      <button type="button" className="link-button" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, withdrawCast)}>
+                      <button type="button" className="cast-quiet" disabled={busy === m.match_id} onClick={() => void cast(m, withdrawCast)}>
                         {t("Withdraw", "Retirer")}
                       </button>
                     </>
                   ) : m.my_cast === "declined" ? (
                     <span className="muted">{t("An administrator turned down your cast for this match.", "Un administrateur a refusé votre commentaire pour ce match.")}</span>
+                  ) : asking === m.match_id ? (
+                    // Which language - a match can carry a cast in each.
+                    <>
+                      <span className="muted">{t("Cast it in:", "Commenter en :")}</span>
+                      <button type="button" style={{ fontSize: "0.76rem", padding: "0.2rem 0.6rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, (id) => requestCast(id, "en"), () => setAsking(null))}>
+                        <CastLanguageName lang="en" />
+                      </button>
+                      <button type="button" style={{ fontSize: "0.76rem", padding: "0.2rem 0.6rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, (id) => requestCast(id, "fr"), () => setAsking(null))}>
+                        <CastLanguageName lang="fr" />
+                      </button>
+                      <button type="button" className="cast-quiet" onClick={() => setAsking(null)}>
+                        {t("Cancel", "Annuler")}
+                      </button>
+                    </>
                   ) : (
-                    <button type="button" className="link-button" style={{ fontSize: "0.78rem" }} disabled={busy === m.match_id} onClick={() => void cast(m, requestCast)}>
+                    <button type="button" className="cast-quiet" disabled={busy === m.match_id} onClick={() => setAsking(m.match_id)}>
                       🎙 {t("Ask to cast this match", "Demander à commenter ce match")}
                     </button>
                   )}

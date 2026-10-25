@@ -142,23 +142,32 @@ export interface MatchRow {
   casts?: CastRow[];
 }
 
+/** The language a cast is in - see the cast_language migration. */
+export type CastLanguage = "en" | "fr";
+
 export interface CastRow {
   id: string;
   caster_user_id: string;
   twitch_login: string;
   display_name: string;
   status: "pending" | "approved" | "declined" | "withdrawn";
+  /** Absent on a row read before the column existed - English, as every cast then was. */
+  language?: CastLanguage;
 }
 
 /** The official casters of a match, earliest asked first, as the front page's RPC returns them. */
 export interface Caster {
   login: string;
   name: string;
+  /** Absent from a server older than the cast_language migration - read as English. */
+  lang?: CastLanguage;
 }
 
 /** A match's approved casters, from the casts fetchMatches embedded. */
 export function approvedCasters(match: Pick<MatchRow, "casts">): Caster[] {
-  return (match.casts ?? []).filter((c) => c.status === "approved").map((c) => ({ login: c.twitch_login, name: c.display_name }));
+  return (match.casts ?? [])
+    .filter((c) => c.status === "approved")
+    .map((c) => ({ login: c.twitch_login, name: c.display_name, lang: c.language ?? "en" }));
 }
 
 // ===========================================================================
@@ -302,7 +311,7 @@ export async function fetchMatches(eventId: string): Promise<MatchRow[]> {
   const { data, error } = await supabase
     .from("tournament_matches")
     .select(
-      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at, agreed_by, casts:official_casts(id, caster_user_id, twitch_login, display_name, status)",
+      "id, key, stage, bracket, grp, round, phase, idx, entrant_a, entrant_b, best_of, score_a, score_b, status, winner, result_kind, opens_at, due_at, agreed_at, agreed_by, casts:official_casts(id, caster_user_id, twitch_login, display_name, status, language)",
     )
     .eq("tournament_id", eventId)
     .order("phase", { ascending: true })
@@ -558,9 +567,9 @@ export async function fetchScheduledMatches(limit = 12): Promise<ScheduledMatch[
 
 // -- Official casters ----------------------------------------------------------------------------------
 
-/** Asks to cast an official match. The database refuses players in it and anyone without Twitch. */
-export async function requestCast(matchId: string): Promise<void> {
-  const { error } = await supabase.rpc("request_cast", { p_match: matchId });
+/** Asks to cast an official match, in a language. The database refuses players in it and anyone without Twitch. */
+export async function requestCast(matchId: string, language: CastLanguage): Promise<void> {
+  const { error } = await supabase.rpc("request_cast", { p_match: matchId, p_language: language });
   if (error) fail(error);
 }
 
@@ -585,7 +594,7 @@ export interface EventCastRow extends CastRow {
 export async function fetchEventCasts(eventId: string): Promise<EventCastRow[]> {
   const { data, error } = await supabase
     .from("official_casts")
-    .select("id, match_id, caster_user_id, twitch_login, display_name, status, created_at")
+    .select("id, match_id, caster_user_id, twitch_login, display_name, status, created_at, language")
     .eq("tournament_id", eventId)
     .in("status", ["pending", "approved", "declined"])
     .order("created_at", { ascending: true });

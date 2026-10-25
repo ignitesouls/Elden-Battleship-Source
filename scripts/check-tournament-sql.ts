@@ -1477,6 +1477,16 @@ async function officialCasts(admin: Person, visitor: Person) {
   refused('...once', (await ask(caster)).error, /^You have already asked to cast this match - an administrator will get to it$/)
   allowed('a second caster can ask for the same match', (await ask(cohost)).error)
 
+  // The cast's language: English unless asked otherwise, French on request, nothing else.
+  const lang = async (p: Person) => (await svc.from('official_casts').select('language').eq('match_id', m).eq('caster_user_id', p.id).maybeSingle()).data?.language
+  check('a cast asked for without a language is English', (await lang(caster)) === 'en', String(await lang(caster)))
+  const french = await person('oc_french')
+  allowed('a caster can ask to cast in French', (await french.client.rpc('request_cast', { p_match: m, p_language: 'fr' })).error)
+  check('...and the request says so', (await lang(french)) === 'fr', String(await lang(french)))
+  const klingon = await person('oc_klingon')
+  refused('any other language is refused', (await klingon.client.rpc('request_cast', { p_match: m, p_language: 'tlh' })).error, /^A cast is in English or French$/)
+  await svc.from('official_casts').delete().eq('match_id', m).eq('caster_user_id', french.id)
+
   const direct = await caster.client.from('official_casts').update({ status: 'approved' }).eq('match_id', m).select('id')
   check('a caster cannot approve themselves by writing the row', (direct.data ?? []).length === 0 && (await castRow(caster))?.status === 'pending', JSON.stringify(direct))
   const inserted = await visitor.client.from('official_casts').insert({ tournament_id: ev.id, match_id: m, caster_user_id: visitor.id, twitch_login: visitor.login, display_name: 'x', status: 'approved' })
@@ -1495,8 +1505,9 @@ async function officialCasts(admin: Person, visitor: Person) {
   allowed('an administrator approves', (await admin.client.rpc('decide_cast', { p_cast: pending.id, p_approve: true })).error)
   allowed('...and a second caster on the same match', (await admin.client.rpc('decide_cast', { p_cast: (await castRow(cohost))!.id, p_approve: true })).error)
 
-  let shown = (await card(visitor))?.casters as Array<{ login: string; name: string }> | undefined
+  let shown = (await card(visitor))?.casters as Array<{ login: string; name: string; lang?: string }> | undefined
   check('approved casters reach the front page, earliest asked first, with their Twitch', shown?.length === 2 && shown[0].login === caster.login && shown[1].login === cohost.login, JSON.stringify(shown))
+  check('...each with the language they cast in', shown?.every((c) => c.lang === 'en') === true, JSON.stringify(shown))
   const embedded = (await visitor.client.from('tournament_matches').select('id, casts:official_casts(twitch_login, status)').eq('id', m).single()).data as { casts: Array<{ twitch_login: string; status: string }> } | null
   check('...and the event page\'s match read (fetchMatches\' embed) carries them for anyone', embedded?.casts.length === 2 && embedded.casts.every((c) => c.status === 'approved'), JSON.stringify(embedded))
 

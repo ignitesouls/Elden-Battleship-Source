@@ -400,7 +400,9 @@ function OrderCard({ event, match, mine, userId, isCaptain, data }: { event: Eve
     if (streams) lines.push(`${t("Streams", "Streams")}: <${streams}>`);
     for (const c of casters) {
       const url = twitchUrl(c.login);
-      if (url) lines.push(`${t("Official cast", "Cast officiel")}: <${url}>`);
+      // Whose cast, and in which language - a match can have one in each.
+      const lang = c.lang === "fr" ? `🥖 ${t("French", "français")}` : `🍔 ${t("English", "anglais")}`;
+      if (url) lines.push(`${t("Official cast", "Cast officiel")} (${lang}, ${c.name}): <${url}>`);
     }
     return lines.join("\n");
   }, [mine.name, them.name, event.name, round, bestOf, match.agreed_at, streams, casters, t]);

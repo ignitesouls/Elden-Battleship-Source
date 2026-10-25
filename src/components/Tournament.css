@@ -300,3 +300,70 @@ a.player-name:hover {
   align-items: center;
   justify-content: center;
 }
+
+/* -- Official casts (components/event/CasterLinks) ------------------------------------------------
+   One group per match: a label, then a pill per caster - their language, then their name - instead of
+   a full-size button each, which with two casters took two rows of the card. */
+.cast-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.cast-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem 0.15rem 0.25rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel-raised);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.cast-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+.cast-lang {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(217, 164, 65, 0.18);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* A small text-only action - Withdraw, Ask to cast - so it doesn't weigh as much as the card's buttons. */
+.cast-quiet {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.2rem;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.cast-quiet:hover:not(:disabled) {
+  color: var(--accent-bright);
+}
+
+/* The reader's own cast, under the card: one quiet line, its actions small. */
+.cast-mine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}

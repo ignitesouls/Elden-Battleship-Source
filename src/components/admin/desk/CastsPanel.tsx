@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { decideCast, fetchEventCasts, type EventCastRow } from "../../../lib/tournament/api";
 import { useLanguage, useT } from "../../../lib/language";
 import { PlayerName } from "../../event/TeamLogo";
+import { CastLanguageTag } from "../../event/CasterLinks";
 import type { DeskAct } from "./OverduePanel";
 import type { DeskData } from "./useDeskData";
 
@@ -62,7 +63,8 @@ export function CastsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
     return (
       <div className="stack" style={{ gap: "0.1rem", flex: 1, minWidth: "14rem" }}>
         <span>
-          <strong><PlayerName name={row.display_name} login={row.twitch_login} /></strong>
+          <strong><PlayerName name={row.display_name} login={row.twitch_login} /></strong>{" "}
+          <CastLanguageTag lang={row.language} />
           <span className="muted"> {t("to cast", "pour commenter")} </span>
           <strong>{a}</strong> <span className="muted">{t("vs", "contre")}</span> <strong>{b}</strong>
         </span>
