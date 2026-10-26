@@ -28,6 +28,12 @@
  *
  *   node --experimental-strip-types scripts/check-auto-fire.ts
  *   node --experimental-strip-types scripts/check-auto-fire.ts http://localhost:54321/functions/v1/auto-fire
+ *
+ * Against the Supabase stack on this machine instead of the cloud project - the room, the users and
+ * the endpoint all local, so nothing a player can see is touched. Needs `supabase start`, then
+ * `supabase functions serve auto-fire --no-verify-jwt` running, then `npm run local:env`:
+ *
+ *   $env:EB_ENV_FILE='../.env.localdb'; node --experimental-strip-types scripts/check-auto-fire.ts
  */
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
@@ -43,7 +49,9 @@ function loadEnv(path: string): Record<string, string> {
   return env
 }
 
-const env = loadEnv('../.env.local')
+// .env.local is the cloud project. EB_ENV_FILE points the whole run - client, keys and the default
+// endpoint together - somewhere else, so a "local" run can never half-talk to production.
+const env = loadEnv(process.env.EB_ENV_FILE ?? '../.env.local')
 const url = env.VITE_SUPABASE_URL
 const anon = env.VITE_SUPABASE_ANON_KEY
 const endpoint = process.argv[2] ?? `${url}/functions/v1/auto-fire`
@@ -99,18 +107,18 @@ function boardFor(roomId: string, seed: string | null): Challenge[] {
   return buildFlatBoard(dealtPool(bossData, new Date().toISOString()), BOARD * BOARD, next)
 }
 
-async function post(body: unknown) {
+async function post(body: unknown, extraHeaders: Record<string, string> = {}) {
   // Deliberately no Authorization or apikey header: the game mod has neither, so sending them here
   // would let the endpoint pass this script while still rejecting the real client. If this 401s, the
   // function was deployed with JWT verification left on - see its README.
   const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     body: JSON.stringify(body),
   })
   const text = await res.text()
   try {
-    return { status: res.status, body: JSON.parse(text) }
+    return { status: res.status, body: JSON.parse(text), region: res.headers.get('x-sb-edge-region') }
   } catch {
     throw new Error(
       `Endpoint returned non-JSON (${res.status}). Is it deployed / served?\n` +
@@ -379,6 +387,46 @@ try {
       after?.accuracy === owed,
       `${after?.accuracy}% from ${after?.hits}/${after?.shots}, owed ${owed}%`
     )
+  }
+
+  /* --- a burst of identical reports ---------------------------------------------------------- */
+
+  // The mod resends its whole kill set on every poll, and a slow reply means the next poll can go out
+  // while the last is still being answered - so the same kill arriving several times at once is the
+  // normal case under load, not a contrived one. All of them racing into one function with a single
+  // database connection must still come out as exactly one shot.
+  const usedCells = new Set([cell, cell2, ...fleetRows(2).placements.flatMap((p, i) =>
+    Array.from({ length: SHIPS[i].size }, (_, c) => p.startRow * BOARD + p.startCol + c))])
+  const burstCell = board.findIndex(
+    (sq, i) => !usedCells.has(i) && sq?.tooltip && bossFlags[sq.tooltip] !== undefined &&
+      board.filter((other) => other?.tooltip === sq.tooltip).length === 1
+  )
+  const burstFlag = bossFlags[board[burstCell].tooltip!]
+  const burst = await Promise.all(Array.from({ length: 5 }, () => post({ token, kills: [{ flag: burstFlag }] })))
+  check('every report in a burst is answered ok', burst.every((r) => r.body.ok === true), burst.map((r) => r.status).join(', '))
+  check(
+    'exactly one of them fires',
+    burst.filter((r) => r.body.fired?.length === 1).length === 1,
+    `fired counts ${burst.map((r) => r.body.fired?.length).join(', ')}`
+  )
+  const { count: burstRows } = await alpha.client
+    .from('attacks')
+    .select('*', { count: 'exact', head: true })
+    .eq('room_id', roomId)
+    .eq('cell_index', burstCell)
+  check('and exactly one shot lands', burstRows === 1, `${burstRows} rows at cell ${burstCell}`)
+
+  /* --- asking for the database's region ------------------------------------------------------ */
+
+  // The overlay's first attempt at every report carries this header. The reply has to be the same
+  // reply, and on the cloud it has to have been answered in Singapore - the whole point of sending it.
+  // The local runner has no regions, so there only the first half can be asked.
+  const pinned = await post({ token, kills: [{ flag: burstFlag }] }, { 'x-region': 'ap-southeast-1' })
+  check('a pinned report is answered like any other', pinned.body.ok === true && pinned.body.fired?.length === 0)
+  if (endpoint.includes('.supabase.co/')) {
+    check('and was run beside the database', pinned.region === 'ap-southeast-1', `region=${pinned.region}`)
+  } else {
+    console.log('  --   region not checked: local runner has no regions')
   }
 
   /* --- refusals ------------------------------------------------------------------------------ */

@@ -69,11 +69,24 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-// Module scope, so a warm instance reuses its connections across polls. `prepare: false` keeps it
-// working through the transaction pooler as well as on a direct connection. Two rather than one so a
-// captain's first-poll PB read (a career's worth of rows) can't hold up another player's poll queued
-// behind it on the same instance; queries sent together are pipelined either way.
-const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 2, idle_timeout: 30 })
+// Module scope, so a warm instance reuses its connection across polls - but in practice there is
+// rarely a warm instance to reuse. The platform drops each copy as soon as it has answered (an
+// October 2026 sample: 4,249 boots for 5,118 polls), so nearly every poll opens a fresh connection,
+// and every round trip of that handshake crosses to wherever the database lives. Everything below is
+// shaped by that:
+//
+//   - One connection, not two. A second only opened when three reads went out together, and paid a
+//     whole extra handshake to save nothing: queries sent together are pipelined on one connection.
+//   - `fetch_types: false` skips the array-type lookup postgres.js runs on every new connection - a
+//     full extra round trip per poll. Nothing here needs it: every read comes back through rows()
+//     as JSON, or as a single scalar (an id, a verdict, a jsonb column), never as a Postgres array.
+//   - `prepare: false` keeps it working through the transaction pooler as well as on a direct one.
+const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, {
+  prepare: false,
+  fetch_types: false,
+  max: 1,
+  idle_timeout: 30,
+})
 
 /** A query's rows exactly as PostgREST would have returned them - see the header. */
 async function rows<T>(query: postgres.PendingQuery<postgres.Row[]>): Promise<T[]> {
