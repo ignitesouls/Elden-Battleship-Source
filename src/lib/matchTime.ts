@@ -1,4 +1,4 @@
-import { pausedMsAt, RUNNING, type PauseFields, type PauseInfo } from "./matchPause.ts";
+import { pausedMsAt, pausedMsBefore, pauseWindows, RUNNING, type PauseFields, type PauseInfo } from "./matchPause.ts";
 import type { Attack } from "../types/battleship.ts";
 
 /**
@@ -130,4 +130,30 @@ export function battlePhaseAt(
     return { phase: "preparation", countdown: timings.matchBeginsAt - elapsed, matchElapsed: 0 };
   }
   return { phase: "match", countdown: 0, matchElapsed: elapsed - timings.matchBeginsAt };
+}
+
+/**
+ * The instant firing opens, on the server's clock, as far as the room's pauses let anyone know it.
+ *
+ * For booking something AT that instant ahead of time (see scheduleSfx) rather than noticing it
+ * afterwards. battlePhaseAt is the opposite question - where are we now - and can only be asked by
+ * something that is awake to ask it, which a browser sitting behind a fullscreen game is not.
+ *
+ * Every closed window comes off in full: a closed window is in the past, so if it fell before the
+ * opening it all counts, and if it fell after, the opening has already happened and nobody is
+ * booking anything. An open pause that takes hold BEFORE the opening pushes it back by the window -
+ * which is only known once a resume is scheduled, so a pause with no resume_at yet returns null
+ * (nobody can say when firing opens, and the room's next write will ask again). One that takes hold
+ * after the opening is irrelevant to it. Same arithmetic pauseInfoAt does, run forwards.
+ */
+export function matchOpensAtMs(startedAt: string, matchBeginsAt: number, pause?: PauseFields | null): number | null {
+  let opensAt = new Date(startedAt).getTime() + matchBeginsAt * 1000 + pausedMsBefore(pauseWindows(pause), Infinity);
+
+  const pauseAt = pause?.pause_at ? Date.parse(pause.pause_at) : NaN;
+  if (Number.isNaN(pauseAt) || pauseAt >= opensAt) return opensAt;
+
+  const resumeAt = pause?.resume_at ? Date.parse(pause.resume_at) : NaN;
+  if (Number.isNaN(resumeAt)) return null;
+  opensAt += Math.max(0, resumeAt - pauseAt);
+  return opensAt;
 }

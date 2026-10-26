@@ -36,7 +36,8 @@ import { OddsPanel } from "../components/OddsPanel";
 import { useVictoryOdds } from "../hooks/useVictoryOdds";
 import type { OddsPoint, OddsSnapshot } from "../lib/victoryOdds";
 import { useStoredToggle } from "../hooks/useStoredToggle";
-import { formatDuration } from "../lib/matchTime";
+import { formatDuration, matchOpensAtMs, matchStartedAt, matchTimings } from "../lib/matchTime";
+import { serverNow, syncServerClock } from "../lib/serverTime";
 import { LoadingScreen } from "../components/BrandMark";
 import { BoardLegend } from "../components/BoardLegend";
 import { useSpectatorCounts, countChips } from "../hooks/useSquareCounts";
@@ -45,7 +46,7 @@ import type { Challenge } from "../lib/challenges";
 import { undealtOffered, undealtSquares } from "../lib/undealt";
 import { UndealtCard, UndealtToggle } from "../components/UndealtCard";
 import { squaresRevealed } from "../lib/overlayReveal";
-import { playSfx } from "../lib/sfx";
+import { playSfx, scheduleSfx, type ScheduledSfx } from "../lib/sfx";
 import { useSpectatorSfx } from "../hooks/useSpectatorSfx";
 import { MatchClock } from "../components/MatchClock";
 import { EndMatchButton } from "../components/EndMatchButton";
@@ -113,12 +114,55 @@ export function Room() {
     prevStatusForResult.current = status;
   }, [state.room?.status, state.room?.winner_team, state.myPlayer?.team]);
 
-  // Horn #2: preparation is over and the match clock starts counting up. Gated on having seen a
-  // previous phase, so loading the page into an already-running match doesn't blast the horn at
-  // someone who just arrived.
+  // Horn #2: preparation is over and the match clock starts counting up.
+  //
+  // Booked on the audio clock for the instant firing opens, as soon as that instant is known, rather
+  // than played when this page notices the phase change. Players wait for this horn in game, with the
+  // site behind or beside a fullscreen window - which is exactly when a browser stops painting and
+  // throttles its timers, so the clock on screen froze and the horn came late with it, and crews went
+  // late. The audio thread is not throttled, so a horn handed to it plays on time regardless.
+  //
+  // Re-booked whenever a pause moves the opening, and withdrawn while one is open with no resume yet
+  // (see matchOpensAtMs). Waits for the server clock sync first: booking on an unsynced offset would
+  // put the horn wherever this PC's clock is wrong by.
+  const startedAt = matchStartedAt(state.attacks);
+  const { matchBeginsAt } = matchTimings(state.room);
+  const roomStatus = state.room?.status;
+  const pauseAt = state.room?.pause_at ?? null;
+  const resumeAt = state.room?.resume_at ?? null;
+  // Stringified: every room write arrives as a fresh array, and re-booking on each of those would
+  // withdraw a horn that had just started playing.
+  const pauseLogKey = JSON.stringify(state.room?.pause_log ?? null);
+  const bookedHorn = useRef<ScheduledSfx | null>(null);
+  useEffect(() => {
+    if (roomStatus !== "battle" || !startedAt) return;
+    let cancelled = false;
+    let horn: ScheduledSfx | null = null;
+    void syncServerClock().then(() => {
+      if (cancelled) return;
+      const pause = { pause_at: pauseAt, resume_at: resumeAt, pause_log: JSON.parse(pauseLogKey) };
+      const opensAt = matchOpensAtMs(startedAt, matchBeginsAt, pause);
+      if (opensAt === null) return;
+      const delay = opensAt - serverNow();
+      // Already open: nothing to book. If this page saw it open, the fallback below has it.
+      if (delay <= 0) return;
+      horn = scheduleSfx("prepare", delay);
+      bookedHorn.current = horn;
+    });
+    return () => {
+      cancelled = true;
+      horn?.cancel();
+      if (bookedHorn.current === horn) bookedHorn.current = null;
+    };
+  }, [roomStatus, startedAt, matchBeginsAt, pauseAt, resumeAt, pauseLogKey]);
+
+  // The fallback, and what this used to be: play it on noticing the phase change, for a browser that
+  // could not book it (audio still locked after a reload with no click, or a fetch that failed).
+  // Gated on having seen a previous phase, so loading the page into an already-running match doesn't
+  // blast the horn at someone who just arrived.
   useEffect(() => {
     if (battlePhase === "match" && prevPhase.current !== null && prevPhase.current !== "match") {
-      playSfx("prepare");
+      if (!bookedHorn.current?.booked) playSfx("prepare");
     }
     prevPhase.current = battlePhase;
   }, [battlePhase]);

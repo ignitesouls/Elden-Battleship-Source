@@ -176,7 +176,9 @@ export function setVolume(v: number): void {
   const clamped = Math.min(1, Math.max(0, v));
   localStorage.setItem(VOLUME_KEY, String(clamped));
   // Nothing to update on the cached elements: they are only ever templates now, and every clone
-  // reads the level at the moment it plays.
+  // reads the level at the moment it plays. A sound booked ahead (scheduleSfx) is the exception -
+  // it was handed its level minutes ago - so those are moved here, mute included.
+  for (const { gain, name } of waiting) gain.gain.value = getVolume() * (TRIM[name] ?? 1);
 }
 
 /**
@@ -316,6 +318,122 @@ export function playSfx(name: SfxName): void {
     // browser source nobody is going to click, which is what the handler below is for.
     blockedHandler?.();
   });
+}
+
+/**
+ * A sound booked ahead of time - see scheduleSfx.
+ *
+ * `booked` turns true once the sound is actually on the audio clock, which happens a moment after
+ * scheduleSfx returns (the file has to be fetched and decoded first). Until it does - and for good if
+ * it never does - the caller should assume nothing will play and make the noise the old way.
+ */
+export interface ScheduledSfx {
+  /**
+   * Booked, and the audio clock it was booked on is still running. A context the browser has since
+   * suspended (an output device unplugged or switched, say) stops its clock, and a sound booked on
+   * it will not play on time or at all - so this reads false again and the caller's fallback plays.
+   */
+  readonly booked: boolean;
+  /** Withdraws it if it hasn't started. A sound already playing is left to finish. */
+  cancel(): void;
+}
+
+let audioCtx: AudioContext | null = null;
+/** Sounds on the audio clock that have not finished, so the volume slider can still reach them. */
+const waiting = new Set<{ gain: GainNode; name: SfxName }>();
+const buffers = new Map<SfxName, Promise<AudioBuffer>>();
+
+function loadBuffer(ctx: AudioContext, name: SfxName): Promise<AudioBuffer> {
+  let buffer = buffers.get(name);
+  if (!buffer) {
+    buffer = fetch(base + FILES[name])
+      .then((res) => res.arrayBuffer())
+      .then((data) => ctx.decodeAudioData(data));
+    // A failed fetch must not stay cached as the answer for the rest of the session.
+    buffer.catch(() => buffers.delete(name));
+    buffers.set(name, buffer);
+  }
+  return buffer;
+}
+
+/**
+ * Plays a sound `delayMs` from now, on the browser's audio clock rather than its timers.
+ *
+ * For a moment that is known in advance and has to land on time whatever the page is doing - the
+ * match opening fire, which players wait for in game, with this tab behind or beside a fullscreen
+ * window. A browser in that state stops painting and throttles its timers (to once a MINUTE for a tab
+ * hidden long enough), so anything that waits to notice the moment and then plays is late by however
+ * long it slept. A sound already handed to the audio thread is not: that thread renders on its own
+ * schedule and nothing the page's main thread is doing can hold it back.
+ *
+ * Web Audio rather than the cloned elements playSfx uses, because an element can only be told to
+ * play now. That also means a second, separate path for volume: the level is set when the sound is
+ * booked, and setVolume moves it for every sound still waiting, so a player who mutes during
+ * preparation is not then sounded at. The finds toggle is honoured the same way playSfx honours it.
+ *
+ * Only books on a RUNNING audio context. One the browser is holding suspended (no click on this page
+ * yet) does not advance its clock, so a time booked on it would play late by however long it stayed
+ * suspended - in that case nothing is booked and the caller's fallback plays instead.
+ */
+export function scheduleSfx(name: SfxName, delayMs: number): ScheduledSfx {
+  let cancelled = false;
+  let source: AudioBufferSourceNode | null = null;
+  let entry: { gain: GainNode; name: SfxName } | null = null;
+  let startsAt = 0;
+  const handle = {
+    get booked() {
+      return entry !== null && audioCtx?.state === "running";
+    },
+    cancel() {
+      cancelled = true;
+      if (!source || !audioCtx || audioCtx.currentTime >= startsAt) return;
+      try {
+        source.stop();
+      } catch {
+        // Already stopped - nothing to withdraw.
+      }
+      source.disconnect();
+      if (entry) waiting.delete(entry);
+    },
+  };
+
+  const volume = getVolume();
+  if (volume === 0 || (DEEP.has(name) && !isDeepSfx())) return handle;
+
+  try {
+    audioCtx ??= new AudioContext();
+  } catch {
+    return handle;
+  }
+  const ctx = audioCtx;
+  // Not awaited: without a gesture on this page the promise just sits there, and the state check
+  // below is the real answer.
+  if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+
+  const requestedAt = performance.now();
+  void loadBuffer(ctx, name)
+    .then((buffer) => {
+      if (cancelled || ctx.state !== "running") return;
+      const remaining = delayMs - (performance.now() - requestedAt);
+      // Took longer to load than there was time left - the caller's fallback is the right noise now.
+      if (remaining <= 0) return;
+      const gain = ctx.createGain();
+      gain.gain.value = volume * (TRIM[name] ?? 1);
+      source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(gain).connect(ctx.destination);
+      startsAt = ctx.currentTime + remaining / 1000;
+      source.start(startsAt);
+      const mine = { gain, name };
+      entry = mine;
+      waiting.add(mine);
+      source.onended = () => waiting.delete(mine);
+    })
+    .catch(() => {
+      // Undecodable or unreachable: stays unbooked, and the caller plays it the old way.
+    });
+
+  return handle;
 }
 
 /**

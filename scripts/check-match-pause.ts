@@ -30,7 +30,7 @@ registerHooks({
 
 const { pauseInfoAt, pausedMsBefore, pausedMsAt, pauseWindows, closedWindow, readyToResume } =
   await import('../src/lib/matchPause.ts')
-const { battlePhaseAt, matchTimeAt, matchTimings } = await import('../src/lib/matchTime.ts')
+const { battlePhaseAt, matchTimeAt, matchTimings, matchOpensAtMs } = await import('../src/lib/matchTime.ts')
 
 let failures = 0
 function check(label: string, ok: boolean, detail = '') {
@@ -260,6 +260,35 @@ const near = (a: number, b: number, tol = 0.001) => Math.abs(a - b) <= tol
   const stamped = matchTimeAt(iso(0), iso(200), TIMINGS, open)
   check('so the kill is stamped with the frozen clock', stamped === '01:45', stamped)
   check('which is exactly what the clock is showing', near(clock(open, 200), 105), String(clock(open, 200)) + 's')
+}
+
+// -- 15. booking the opening horn ahead of time ----------------------------
+// matchOpensAtMs is the forward question the booked horn asks (see Room.tsx). Whatever it answers has
+// to be the very instant battlePhaseAt flips to MATCH, or the horn and the clock disagree on screen.
+{
+  const running = { pause_at: null, resume_at: null, pause_log: [] }
+  check('an unpaused match opens at T+30', matchOpensAtMs(iso(0), BEGINS, running) === at(30))
+
+  // A pause in prep, already closed: the opening moves back by the whole window.
+  const closed = { pause_at: null, resume_at: null, pause_log: [{ at: iso(15), until: iso(40) }] }
+  const closedOpens = matchOpensAtMs(iso(0), BEGINS, closed)
+  check('a closed prep pause pushes it back by its length', closedOpens === at(55), String(closedOpens))
+  check('to the instant the clock flips', clock(closed, 54.999) < 0 && near(clock(closed, 55), 0))
+
+  // Open and resume booked, not yet logged - the state between the host's resume and the settle.
+  const resuming = { pause_at: iso(20), resume_at: iso(50), pause_log: [] }
+  const resumingOpens = matchOpensAtMs(iso(0), BEGINS, resuming)
+  check('a booked resume is counted before it is logged', resumingOpens === at(60), String(resumingOpens))
+  check('and agrees with the clock', clock(resuming, 59.999) < 0 && near(clock(resuming, 60), 0))
+
+  check(
+    'an open pause with no resume yet cannot say',
+    matchOpensAtMs(iso(0), BEGINS, { pause_at: iso(20), resume_at: null, pause_log: [] }) === null
+  )
+  check(
+    'a pause that takes hold after the opening changes nothing',
+    matchOpensAtMs(iso(0), BEGINS, { pause_at: iso(45), resume_at: null, pause_log: [] }) === at(30)
+  )
 }
 
 console.log(failures === 0 ? '\nall match pause checks passed' : `\n${failures} match pause check(s) failed`)
