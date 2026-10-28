@@ -109,9 +109,18 @@ for (const set of Object.values(BOSS_SETS)) {
   }
 }
 
+/**
+ * The live tests, but the FIRST passer rather than the fairest of BEST_OF.
+ *
+ * This redraws every archived board inside one call's CPU allowance, and the fairest of ten is ten
+ * times the draws - which live boards spread over several calls and a sweep cannot. So `rebalanced`
+ * here is what passing alone would deal, the floor of what a live board now gets; a match played
+ * since best-of carries its real numbers in its own balance record.
+ */
 function rulesFor(setId: string, boardSize: number) {
   return {
     ...DEFAULT_RULES,
+    bestOf: 1,
     regionFloor: setId === 'bosses-2v2' ? smallCrewFloor('dlc', boardSize) : null,
   }
 }

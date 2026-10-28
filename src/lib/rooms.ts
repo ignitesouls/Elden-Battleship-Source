@@ -10,6 +10,7 @@ import { serverNow } from "./serverTime";
 import { initialHitsRemaining, emptyGrid } from "./battleshipLogic";
 import { teamName } from "./teamColors";
 import { generateRoomCode, normalizeRoomCode, formatRoomCode, generateRejoinCode, generateSeed } from "./roomCode";
+import { seedPasses, vettedSeed } from "./vettedSeed";
 import { storePlayerId } from "./playerSession";
 import type { BotTier } from "./bot";
 import type { CLASSIC_SHIPS } from "../types/battleship";
@@ -33,11 +34,15 @@ export async function createRoom(
   for (let attempt = 0; attempt < 5 && !room; attempt++) {
     // Pass the attempt so repeated collisions escalate to a numeric-suffixed code.
     const code = generateRoomCode(attempt);
+    // The id is chosen here rather than by the database because the boss pool is a function of the
+    // room id and the seed together, and the seed has to be vetted against both - see vettedSeed.
+    const id = crypto.randomUUID();
     const payload: Record<string, unknown> = {
+      id,
       code,
       board_size: boardSize,
       ship_defs: shipDefs,
-      seed: generateSeed(),
+      seed: vettedSeed(id, null, boardSize),
     };
     if (options.startingSeconds !== undefined) payload.starting_seconds = options.startingSeconds;
     if (options.prepSeconds !== undefined) payload.prep_seconds = options.prepSeconds;
@@ -214,9 +219,17 @@ export async function setTeamName(roomId: string, team: number, name: string): P
  * previous match's seed means replaying the same randomized world, which nobody wanted. This button
  * stays for rolling again within a lobby: the host reads the number out, somebody doesn't like it,
  * or a late joiner needs one before anyone has set their game up.
+ *
+ * Vetted for the room's set and board like every boss seed - see vettedSeed.
  */
 export async function rerollSeed(roomId: string): Promise<string> {
-  const seed = generateSeed();
+  const { data: room, error: readErr } = await supabase
+    .from("rooms")
+    .select("board_size, square_set")
+    .eq("id", roomId)
+    .single();
+  if (readErr) throw readErr;
+  const seed = vettedSeed(roomId, room.square_set, room.board_size);
   const { error } = await supabase.from("rooms").update({ seed }).eq("id", roomId);
   if (error) throw error;
   return seed;
@@ -297,7 +310,26 @@ export interface RoomSettings {
  * anyone else's. Each client notices the mismatch and resets its own (see useRoom's self-heal).
  */
 export async function updateRoomSettings(roomId: string, settings: RoomSettings): Promise<void> {
-  const { error } = await supabase.from("rooms").update(settings).eq("id", roomId);
+  // A new board size or square set is a new pool from the same seed, and that pool is almost never
+  // under the new board's cutoff. So the seed is rerolled with it, in the same write - unless it
+  // happens to pass already, which keeps the world anyone has set up. Official rooms are left to
+  // official-seed: their settings are fixed, and their seed is the server's to draw.
+  let patch: RoomSettings & { seed?: string } = settings;
+  if (settings.board_size !== undefined || settings.square_set !== undefined) {
+    const { data: room } = await supabase
+      .from("rooms")
+      .select("seed, board_size, square_set, tournament_match_id")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (room && !room.tournament_match_id) {
+      const size = settings.board_size ?? room.board_size;
+      const set = settings.square_set !== undefined ? settings.square_set : room.square_set;
+      if (!room.seed || !seedPasses(roomId, set, size, room.seed)) {
+        patch = { ...settings, seed: vettedSeed(roomId, set, size) };
+      }
+    }
+  }
+  const { error } = await supabase.from("rooms").update(patch).eq("id", roomId);
   if (!error) return;
 
   // The square_set column arrives with a migration; say so plainly rather than surfacing a raw
@@ -498,20 +530,28 @@ export async function confirmPlacement(roomId: string, team: number, confirmed: 
 export { MATCH_START_MARKER };
 
 /**
- * How long the board balancer gets before the room starts without it.
+ * How long one call to the board balancer gets before it is given up on.
  *
- * Was 3s, on the reasoning that the work is a fraction of a millisecond and the rest is just
- * network. That stopped being true: the tests now bind on most boards, so the function draws up to
- * 300 layouts and declumps each one, which is 413ms of compute in the worst case. On top of that
- * sits a cold function boot - measured at 871ms - and half a dozen sequential queries inside it.
- * Three seconds was close enough to that total to be a coin toss, and losing the toss is silent.
- *
- * Ten seconds is long to watch, but the thing being waited for is the entire fairness of the match,
- * and a room that starts unbalanced cannot be fixed afterwards. balance-board also refuses to write
- * a layout once the room has left placement, so overshooting this timeout is now safe rather than
- * merely unlikely - see the `too_late` guard there.
+ * A call draws for 1.2s (DRAW_BUDGET_MS there) on top of a cold boot - measured at 871ms - and half a
+ * dozen sequential queries. Ten seconds is a hung call, not a slow one. balance-board refuses to
+ * write a layout once the room has left placement, so a call that overshoots this is dropped safely -
+ * see the `too_late` guard there.
  */
 const BALANCE_TIMEOUT_MS = 10000;
+
+/**
+ * How long the search for the fairest board may run before the fairest found so far is dealt.
+ *
+ * The balancer now collects BEST_OF passing layouts and plays the fairest (see boardBalance.ts), which
+ * is more draws than one call can make, so it is called again - two at a time - for as long as it
+ * answers `searching`. Most two-team boards finish in the first pair of calls; a board whose fleets
+ * leave few fair layouts can take several rounds. Long by design: the user would rather wait than
+ * play a board on the line, and the thing being waited for is the entire fairness of the match.
+ */
+const BALANCE_SEARCH_MS = 40000;
+
+/** Calls made side by side each round. Each call is a separate CPU allowance. */
+const BALANCE_PARALLEL = 2;
 
 /**
  * Finishes dealing the board against the fleets now standing on it.
@@ -537,12 +577,28 @@ export interface BalanceOutcome {
 }
 
 async function balanceBoardFor(roomId: string): Promise<BalanceOutcome> {
+  const giveUpAt = Date.now() + BALANCE_SEARCH_MS;
+  for (;;) {
+    const final = Date.now() >= giveUpAt;
+    const round = await Promise.all(
+      Array.from({ length: final ? 1 : BALANCE_PARALLEL }, () => balanceCall(roomId, final))
+    );
+    // Any call that dealt the board ends it. Its sibling usually comes back `too_late` or
+    // `already_balanced`, which is the same news.
+    if (round.some((o) => o.balanced)) return { balanced: true };
+    if (!final && round.some((o) => o.reason === "searching")) continue;
+    return round.find((o) => o.reason !== "searching") ?? round[0];
+  }
+}
+
+/** One call to balance-board. See balanceBoardFor. */
+async function balanceCall(roomId: string, final: boolean): Promise<BalanceOutcome> {
   try {
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("timed out")), BALANCE_TIMEOUT_MS)
     );
     const { data, error } = await Promise.race([
-      supabase.functions.invoke("balance-board", { body: { roomId } }),
+      supabase.functions.invoke("balance-board", { body: { roomId, final, pool: true } }),
       timeout,
     ]);
     // A non-2xx refusal - not_host, not_signed_in - arrives as an error rather than as data, so the
@@ -1086,10 +1142,16 @@ export async function resetRoomToLobby(roomId: string): Promise<void> {
   // Written even if the columns don't exist yet on an un-migrated project? No: that would fail the
   // whole reset. Retry without them instead, because getting everyone back to the lobby matters more
   // than the seed.
+  // Vetted against the board the next match will be dealt on - see vettedSeed.
+  const { data: board } = await supabase
+    .from("rooms")
+    .select("board_size, square_set")
+    .eq("id", roomId)
+    .maybeSingle();
   const patch = {
     status: "lobby",
     winner_team: null,
-    seed: generateSeed(),
+    seed: board ? vettedSeed(roomId, board.square_set, board.board_size) : generateSeed(),
     board_perm: null,
     balance_report: null,
   };

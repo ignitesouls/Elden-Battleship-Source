@@ -43,14 +43,31 @@ import type { Attack, ShipDefinition } from "../types/battleship";
  *
  * -- How well it actually does ----------------------------------------------------------------
  *
- * Graded against every duel in the books that has a winner, at twenty moments each - about 4,300
+ * Graded against the 64 duels in the books that ended in a sinking, at twenty moments each - 2,744
  * predictions. Scored by Brier, against the only baseline that matters, which is refusing to
  * guess at all (always say 50%, which scores 0.250):
  *
- *     all moments        0.186     25% better than saying 50%
- *     first third        0.247      1% better
- *     middle third       0.182     27% better
- *     final third        0.121     52% better
+ *     all moments        0.164     34% better than saying 50%
+ *     first third        0.228      9% better
+ *     middle third       0.164     35% better
+ *     final third        0.077     69% better
+ *
+ * Only matches that ended in a sinking, because that is the question the bar answers. Most matches
+ * with a recorded winner did NOT end that way - a crew conceded, left, or the room was abandoned -
+ * and no model of shots can see that coming. The figures this note used to carry were graded
+ * against exactly those, through a replay bug that skipped every real sinking as already decided
+ * (see the note on `eliminated` in fleetStates), so they described forfeits rather than the bar.
+ *
+ * The same replay, shot by shot, is how the pace settings were chosen - the bar should be right AND
+ * read as sane on a stream, and both were measured:
+ *
+ *                               Brier   moves >25pts   hits that cost   misses that paid
+ *     PACE_PRIOR_WEIGHT 6,
+ *       no gap cap (old)        0.173        96             7.2%             25.4%
+ *     24, GAP_CAP 2 (here)      0.164         2             6.1%             20.7%
+ *
+ * "Hits that cost" will never reach zero, and should not: a fleet that took twenty minutes over the
+ * kill behind a hit has told you something bad about the next hour, as well as something good.
  *
  * The shape of that is the honest headline, and anyone reading this number on a stream should
  * know it: THE OPENING OF A MATCH IS VERY NEARLY A COIN FLIP, and no amount of modelling makes it
@@ -117,8 +134,24 @@ export const PRIOR_SQUARE_SECONDS = 150;
  * A shrink rather than a threshold, because a hard cutoff makes the number jump the moment it is
  * crossed - and a stream watching a percentage snap sideways on a shot that changed nothing reads
  * it as a bug.
+ *
+ * 24 rather than the original 6, together with GAP_CAP below. Replayed through every duel that
+ * ended in a sinking, the pair took the bar's moves of more than 25 points on a single shot from 96
+ * to 2, and was MORE accurate for it, not less - see the table under "How well it actually does".
+ * At 6, a fleet's pace after a dozen kills was mostly whatever its last two or three bosses had
+ * been, and that was most of what made the bar look as though it ignored hits.
  */
-const PACE_PRIOR_WEIGHT = 6;
+const PACE_PRIOR_WEIGHT = 24;
+
+/**
+ * The longest any one gap may count for, as a multiple of the fleet's pace.
+ *
+ * Kill-to-kill times are heavy-tailed: mostly ordinary bosses, now and then a wall. Averaged raw, a
+ * single wall boss once dragged a fleet's pace from 77s to 220s in one shot and its odds from 74% to
+ * 19% - on a shot that HIT, which on a stream reads as the bar being broken. Capped, that gap still
+ * counts as a slow kill, just not as several bosses' worth of evidence about the hour ahead.
+ */
+const GAP_CAP = 2;
 
 /**
  * How uncertain a fleet's pace is, and why the model rolls it rather than trusting it.
@@ -164,6 +197,9 @@ const PACE_PRIOR_WEIGHT = 6;
  * Widening it goes on helping the opening and goes on hurting everything after it, because a
  * looser floor is just a slower march toward saying 50% about everything. 0.30 is the last value
  * that buys an honest opening without spending the rest of the match to get it.
+ *
+ * Caveat: that sweep predates the replay fix noted at the top, so it was graded mostly on forfeits.
+ * 0.30 has not been re-swept against matches that ended in a sinking.
  */
 const PACE_CV = 1.0;
 const PACE_FLOOR = 0.30;
@@ -256,19 +292,24 @@ export function totalHullCells(shipDefs: ShipDefinition[]): number {
  *
  * Stopped clock comes off the measurement, so a fleet does not read as slow because the match was
  * paused for ten minutes between two of its kills - the same rule matchTimeAt applies to the log.
+ *
+ * Each gap is capped at GAP_CAP times the uncapped estimate before it is averaged in, so one wall
+ * boss moves the number by a slow kill's worth rather than an evening's.
  */
 function paceFor(shotTimes: number[], crew: number, pause: PauseFields | null | undefined): number {
   const prior = PRIOR_SQUARE_SECONDS / Math.max(1, crew);
   if (shotTimes.length < 2) return prior;
 
   const windows = pauseWindows(pause);
-  const first = shotTimes[0];
-  const last = shotTimes[shotTimes.length - 1];
-  const stopped = pausedMsBefore(windows, last) - pausedMsBefore(windows, first);
-  const seconds = Math.max(0, last - first - stopped) / 1000;
-  const gaps = shotTimes.length - 1;
+  const gaps: number[] = [];
+  for (let i = 1; i < shotTimes.length; i++) {
+    const stopped = pausedMsBefore(windows, shotTimes[i]) - pausedMsBefore(windows, shotTimes[i - 1]);
+    gaps.push(Math.max(0, shotTimes[i] - shotTimes[i - 1] - stopped) / 1000);
+  }
+  const shrunk = (total: number) => (total + PACE_PRIOR_WEIGHT * prior) / (gaps.length + PACE_PRIOR_WEIGHT);
 
-  return (seconds + PACE_PRIOR_WEIGHT * prior) / (gaps + PACE_PRIOR_WEIGHT);
+  const cap = GAP_CAP * shrunk(gaps.reduce((s, g) => s + g, 0));
+  return shrunk(gaps.reduce((s, g) => s + Math.min(g, cap), 0));
 }
 
 /**
@@ -291,7 +332,13 @@ export function fleetStates(
   upto?: number
 ): FleetState[] {
   const totalHull = totalHullCells(shipDefs);
-  const eliminated = eliminatedTeamsFromAttacks(attacks, shipDefs.length);
+  // Read off the same slice of the log as everything else. Read off the whole of it, a replay of a
+  // finished match had the loser dead from the first shot: every point of the history line said
+  // 100%, and calibration skipped every match that ended in a sinking as already decided.
+  const eliminated = eliminatedTeamsFromAttacks(
+    upto === undefined ? attacks : attacks.filter((a) => new Date(a.created_at).getTime() <= upto),
+    shipDefs.length
+  );
 
   const crew = new Map<number, number>();
   for (const p of players) {

@@ -177,6 +177,12 @@ const crewOf = (counts: number[]) =>
   check('one shot rides entirely on the prior', Math.abs(lone.pace - 150) < 1e-9, `${lone.pace}s`)
   const [trio] = fleetStates(shot(0, [1], 3, 60, ['miss']), [0, 1], CLASSIC, crewOf([3, 3]))
   check('and a bigger crew starts out faster', trio.pace < lone.pace, `${trio.pace}s vs ${lone.pace}s`)
+
+  // Ten one-minute kills, then a twenty-minute wall. Uncapped, the shrunk average is ~86s; the wall
+  // has to count as a slow kill, not as a fleet that has lost a third of its speed.
+  const times = [0, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 1800]
+  const [walled] = fleetStates(times.flatMap((t, i) => shot(0, [1], i + 1, t, ['miss'])), [0, 1], CLASSIC, crewOf([3, 3]))
+  check('one wall boss does not take over the pace', walled.pace < 70, `${walled.pace.toFixed(1)}s`)
 }
 
 // -- 6. the same moment always prints the same number ---------------------
@@ -203,6 +209,19 @@ const crewOf = (counts: number[]) =>
   // wherever the stride happened to stop.
   const last = line[line.length - 1]
   check('the line ends at the last shot', Math.abs(last.seconds - 119 * 30) < 1, `${last.seconds}s`)
+
+  // A match that ENDS in a sinking was not decided all along. Replayed, every moment before the
+  // last ship went down has to read the fleets as still alive - the line used to say 100% from the
+  // first point, and calibration skipped every such match as already over.
+  const sinks = CLASSIC.map((s, i) => ({
+    ...shot(0, [1], 90 + i, 4000 + i * 30, ['sunk'])[0],
+    sunk_ship_name: s.name, sunk_ship_size: s.size, sunk_start_row: i, sunk_start_col: 0, sunk_horizontal: true,
+  }))
+  const ended = [...attacks, ...sinks]
+  const early = fleetStates(ended, [0, 1], CLASSIC, crewOf([3, 3]), null, START + 600 * 1000)
+  check('a replay does not know who sinks later', early.every((f) => !f.eliminated))
+  const late = fleetStates(ended, [0, 1], CLASSIC, crewOf([3, 3]))
+  check('but does once they have', late[1].eliminated)
 
   check('no shots means no line', oddsTimeline([], [0, 1], CLASSIC, crewOf([3, 3]), 10, new Date(START).toISOString()).length === 0)
   check('no start marker means no line', oddsTimeline(attacks, [0, 1], CLASSIC, crewOf([3, 3]), 10, null).length === 0)

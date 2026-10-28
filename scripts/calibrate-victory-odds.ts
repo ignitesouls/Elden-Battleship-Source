@@ -22,7 +22,7 @@
 import { registerHooks } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
-import type { Attack, ShipDefinition } from '../src/types/battleship.ts'
+import type { Attack, ShipDefinition, ShipPlacement } from '../src/types/battleship.ts'
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -70,19 +70,14 @@ interface FleetRow {
   team: number
   board_size: number
   ship_defs: ShipDefinition[]
+  placements: ShipPlacement[]
 }
-interface ReportRow {
-  match_key: string
-  winner_team: number | null
-}
-
 console.log('reading the archive...')
-const [events, fleets, reports] = await Promise.all([
+const [events, fleets] = await Promise.all([
   all<EventRow>('match_events', 'match_key,nickname,team,cell_index,result,match_seconds,board_size'),
-  all<FleetRow>('match_fleets', 'match_key,team,board_size,ship_defs'),
-  all<ReportRow>('match_reports', 'match_key,winner_team'),
+  all<FleetRow>('match_fleets', 'match_key,team,board_size,ship_defs,placements'),
 ])
-console.log(`  ${reports.length} matches, ${fleets.length} fleets, ${events.length} shots\n`)
+console.log(`  ${fleets.length} fleets, ${events.length} shots\n`)
 
 const fleetsByMatch = new Map<string, FleetRow[]>()
 for (const f of fleets) {
@@ -90,7 +85,6 @@ for (const f of fleets) {
   list.push(f)
   fleetsByMatch.set(f.match_key, list)
 }
-const winnerOf = new Map(reports.map((r) => [r.match_key, r.winner_team]))
 
 const eventsByMatch = new Map<string, EventRow[]>()
 for (const e of events) {
@@ -99,43 +93,94 @@ for (const e of events) {
   eventsByMatch.set(e.match_key, list)
 }
 
+/** Each hull cell of a fleet, mapped to the index of the ship on it. */
+function shipCells(f: FleetRow): Map<number, number> {
+  const cells = new Map<number, number>()
+  for (const p of f.placements ?? []) {
+    const size = f.ship_defs?.[p.shipIndex]?.size ?? 0
+    for (let i = 0; i < size; i++) {
+      cells.set((p.startRow + (p.isHorizontal ? 0 : i)) * f.board_size + p.startCol + (p.isHorizontal ? i : 0), p.shipIndex)
+    }
+  }
+  return cells
+}
+
 /**
- * Duels with a winner, which is the sample the archive can actually grade.
+ * The fleet that sank every hull cell of the other, or null if neither did.
+ *
+ * Read off the board rather than the report, for two reasons. Most reported winners did NOT sink
+ * anything - the other crew conceded or left, which no model of shots can predict and which
+ * swamped the grading while it counted them. And reports are pruned after 30 days while shots and
+ * placements stay, so the board is also what keeps the whole archive gradable.
+ */
+function winnerFor(key: string, fl: FleetRow[]): number | null {
+  for (const f of fl) {
+    const enemy = fl.find((g) => g.team !== f.team)
+    if (!enemy) continue
+    const hull = shipCells(enemy)
+    const struck = new Set(
+      (eventsByMatch.get(key) ?? []).filter((e) => e.team === f.team && hull.has(e.cell_index)).map((e) => e.cell_index)
+    )
+    if (hull.size > 0 && struck.size >= hull.size) return f.team
+  }
+  return null
+}
+
+/**
+ * Duels that ended in a sinking, with placements on file - the sample the archive can grade.
  *
  * Two-fleet only, because match_events records ONE result per trigger-pull: in a three-way match
  * that single value cannot say which of the two opposing boards it landed on, so the damage cannot
- * be attributed and the state cannot be replayed. Matches with no winner (voided, abandoned, drawn)
- * have no outcome to score against.
+ * be attributed and the state cannot be replayed. Placements are what say who sank whom - see
+ * winnerFor and attacksFor.
  */
 const gradable = [...fleetsByMatch.entries()].filter(([key, fl]) => {
-  const winner = winnerOf.get(key)
-  return fl.length === 2 && winner !== null && winner !== undefined && fl.some((f) => f.team === winner)
+  if (fl.length !== 2 || fl.some((f) => shipCells(f).size === 0)) return false
+  const winner = winnerFor(key, fl)
+  return winner !== null && fl.some((f) => f.team === winner)
 })
 console.log(`gradable duels: ${gradable.length}\n`)
 
 const START = Date.parse('2026-08-01T12:00:00.000Z')
 
-/** Rebuilds the public attack log for one archived duel, from its shot rows. */
-function attacksFor(rows: EventRow[], teams: number[]): Attack[] {
+/**
+ * Rebuilds the public attack log for one archived duel, from its shot rows.
+ *
+ * The live log's 'sunk' rows carry the wreck's geometry, which is how a fleet is known to be
+ * eliminated; match_events does not keep it, so it is put back from the defender's placements.
+ * Without it a replay could never see a fleet go down.
+ */
+function attacksFor(rows: EventRow[], fl: FleetRow[]): Attack[] {
+  const damage = new Map<string, number>()
   return rows
     .filter((e) => e.cell_index >= 0 && e.match_seconds !== null)
     .sort((a, b) => (a.match_seconds ?? 0) - (b.match_seconds ?? 0))
-    .map((e) => ({
-      id: `${e.team}-${e.cell_index}-${e.nickname}`,
-      room_id: 'archived',
-      cell_index: e.cell_index,
-      attacker_team: e.team,
-      defender_team: teams.find((t) => t !== e.team) ?? e.team,
-      attacker_player_id: null,
-      result: e.result as Attack['result'],
-      sunk_ship_name: null,
-      sunk_ship_size: null,
-      sunk_start_row: null,
-      sunk_start_col: null,
-      sunk_horizontal: null,
-      created_at: new Date(START + (e.match_seconds ?? 0) * 1000).toISOString(),
-      resolved_at: null,
-    }))
+    .map((e) => {
+      const enemy = fl.find((f) => f.team !== e.team) ?? fl[0]
+      const ship = shipCells(enemy).get(e.cell_index)
+      let wreck: ShipPlacement | null = null
+      if (ship !== undefined) {
+        const k = `${enemy.team}:${ship}`
+        damage.set(k, (damage.get(k) ?? 0) + 1)
+        if (damage.get(k) === enemy.ship_defs[ship]?.size) wreck = enemy.placements.find((p) => p.shipIndex === ship) ?? null
+      }
+      return {
+        id: `${e.team}-${e.cell_index}-${e.nickname}`,
+        room_id: 'archived',
+        cell_index: e.cell_index,
+        attacker_team: e.team,
+        defender_team: enemy.team,
+        attacker_player_id: null,
+        result: (wreck ? 'sunk' : ship !== undefined ? 'hit' : 'miss') as Attack['result'],
+        sunk_ship_name: wreck ? enemy.ship_defs[ship!].name : null,
+        sunk_ship_size: wreck ? enemy.ship_defs[ship!].size : null,
+        sunk_start_row: wreck?.startRow ?? null,
+        sunk_start_col: wreck?.startCol ?? null,
+        sunk_horizontal: wreck?.isHorizontal ?? null,
+        created_at: new Date(START + (e.match_seconds ?? 0) * 1000).toISOString(),
+        resolved_at: null,
+      }
+    })
 }
 
 // -- the calibration sweep -------------------------------------------------
@@ -153,9 +198,9 @@ for (const [key, fl] of gradable) {
   const boardSize = fl[0].board_size
   if (shipDefs.length === 0) continue
 
-  const log = attacksFor(rows, teams)
+  const log = attacksFor(rows, fl)
   if (log.length < 10) continue
-  const winner = winnerOf.get(key)
+  const winner = winnerFor(key, fl)
 
   // Crews, as the shot log reveals them - the archive keeps no roster, but every captain who
   // fired is a captain who was there, which is what pace actually depends on.

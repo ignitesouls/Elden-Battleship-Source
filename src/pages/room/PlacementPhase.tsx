@@ -332,7 +332,7 @@ export function PlacementPhase({
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {myFleet.placement_confirmed
                 ? allReady
-                  ? t("Every fleet is ready. Battle starting...", "Toutes les flottes sont prêtes. La bataille commence...")
+                  ? t("Every fleet is ready. Dealing the fairest board for these fleets - this can take a little while...", "Toutes les flottes sont prêtes. Tirage du plateau le plus équitable pour ces flottes - cela peut prendre un moment...")
                   : `${t("Confirmed. Waiting on:", "Confirmé. En attente de :")} ${notReadyTeams
                       .map((t) => teamName(t))
                       .join(", ")}`
@@ -369,7 +369,7 @@ export function PlacementPhase({
           <h2>{t("Fleet confirmed", "Flotte confirmée")}</h2>
           <p className="muted">
             {allReady
-              ? t("Every fleet is ready. Battle starting...", "Toutes les flottes sont prêtes. La bataille commence...")
+              ? t("Every fleet is ready. Dealing the fairest board for these fleets - this can take a little while...", "Toutes les flottes sont prêtes. Tirage du plateau le plus équitable pour ces flottes - cela peut prendre un moment...")
               : `${t("Waiting on:", "En attente de :")} ${notReadyTeams.map((t) => teamName(t)).join(", ")}`}
           </p>
           {error && <div className="error-text">{error}</div>}

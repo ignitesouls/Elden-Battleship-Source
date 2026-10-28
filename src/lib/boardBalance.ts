@@ -256,6 +256,36 @@ export const LONG_GAP = 1;
 const MAX_ATTEMPTS = 900;
 
 /**
+ * How many layouts that pass every test to collect before playing the fairest of them.
+ *
+ * Passing is a floor, not a standard. A layout that scrapes under all three limits counts exactly as
+ * much as one that sits nowhere near any of them, so the first passer is often a board on the line:
+ * of the first eight official matches, five sat on the long-square limit and one was 9:51 against a
+ * 10:00 find limit. The fairest of ten passers is, on average, in the fairest tenth of what passes.
+ *
+ * -- Why the fairest of N and not a tighter limit -----------------------------------------------
+ *
+ * A tighter fixed limit was simulated first and it cannot be had. How fair a board can be is decided
+ * by the fleets as much as by the draw: over sixty vetted 11x11 boards, 4:00 / 8:00 left 15% of them
+ * with no passing layout in 900 draws, and 3:00 / 6:00 with no long-square edge left 90%. The bar has
+ * to move with the board, and the fairest of N moves with it by construction - it asks for the
+ * fairest tenth of whatever this board and these fleets can do, never for a number they cannot reach.
+ *
+ * -- Why it is still not a search ----------------------------------------------------------------
+ *
+ * Every candidate is a whole fresh draw that passed on its own; nothing is repaired or walked toward a
+ * target. Taking the lowest score of N independent passers is the same as rejection sampling against a
+ * threshold that is itself random, so what is played is a uniform draw from the layouts under some
+ * line nobody chose - the property the header exists to keep. The leak it adds is the one a tighter
+ * limit would add, and no more: the fleets are known to be even, symmetrically, and no cell is named.
+ *
+ * It costs N times the draws, which is more than one call of the edge function's CPU allowance on
+ * most boards. balance-board therefore spreads the search over several calls and keeps the fairest
+ * passer between them - see balance_candidates.
+ */
+export const BEST_OF = 10;
+
+/**
  * How far apart two fleets' ships may be at the same rank, in seconds.
  *
  * The first of the two fairness numbers, and the one that speaks in time. Ships are sorted
@@ -411,6 +441,8 @@ export interface BalanceRules {
   longGap: number;
   /** How many layouts to draw before playing the best one seen. */
   maxAttempts: number;
+  /** How many passing layouts to collect before playing the fairest. One is the first passer. See BEST_OF. */
+  bestOf: number;
   /**
    * A region every fleet must hold at least  squares of, or null for no such requirement.
    *
@@ -429,6 +461,7 @@ export const DEFAULT_RULES: BalanceRules = {
   longSquareSeconds: LONG_SQUARE_SECONDS,
   longGap: LONG_GAP,
   maxAttempts: MAX_ATTEMPTS,
+  bestOf: BEST_OF,
   regionFloor: null,
 };
 
@@ -486,6 +519,14 @@ export interface BalanceInput {
   next: () => number;
   /** Which profile of tests to hold this board to. Omit for the original, loose ones. */
   rules?: BalanceRules;
+  /**
+   * Asked after every draw; true ends the search there, as if maxAttempts had been reached.
+   *
+   * A clock, in practice. The edge function is stopped at a CPU allowance rather than at a draw
+   * count, and a draw costs a different amount on every board size, so it stops on time and carries
+   * on in another call - see BEST_OF.
+   */
+  stop?: () => boolean;
 }
 
 export interface BalanceResult {
@@ -533,6 +574,10 @@ export interface BalanceResult {
   attempts: number;
   /** Whether the layout being returned passes all three tests. False only if MAX_ATTEMPTS ran out. */
   accepted: boolean;
+  /** How many of the draws passed every test. The layout returned is the fairest of them. See BEST_OF. */
+  passers: number;
+  /** The returned layout's score - see fairnessScore. Lower is fairer. */
+  fairness: number;
   /** False when there was nothing to balance - one fleet, or no fleet with any ships. */
   balanced: boolean;
   /**
@@ -556,6 +601,30 @@ export function limitsFor(
   rules: BalanceRules = DEFAULT_RULES
 ): { rankGap: number; findGap: number; longGap: number } {
   return { rankGap: rules.rankGapSeconds, findGap: rules.findGapSeconds, longGap: rules.longGap };
+}
+
+/**
+ * How far a layout is from perfectly even, as one number: each test's gap as a fraction of its own
+ * limit, summed. Lower is fairer; a layout that passes every test scores at most three.
+ *
+ * Summed rather than ranked lexicographically, for the reason the fallback gives: no test outranks
+ * another, and a fraction of the limit is the only unit the three share. The same score ranks the
+ * fallback when nothing passes and the passers when several do, so "fairest" means one thing here.
+ *
+ * Each term falls back to the raw measure when its limit is zero, which is only reachable through a
+ * hand-built profile but would otherwise divide by it and rank every candidate equally infinite.
+ */
+export function fairnessScore(
+  rankGap: number,
+  findGap: number,
+  longGap: number,
+  limits: { rankGap: number; findGap: number; longGap: number }
+): number {
+  return (
+    (limits.rankGap > 0 ? rankGap / limits.rankGap : rankGap) +
+    (limits.findGap > 0 ? findGap / limits.findGap : findGap) +
+    (limits.longGap > 0 ? longGap / limits.longGap : longGap)
+  );
 }
 
 /** Widest minus narrowest. Fewer than two values means there is no gap to speak of. */
@@ -827,7 +896,8 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     return out;
   };
 
-  const { rankGap: rankLimit, findGap: findLimit, longGap: longLimit } = limitsFor(rules);
+  const limits = limitsFor(rules);
+  const { rankGap: rankLimit, findGap: findLimit, longGap: longLimit } = limits;
 
   /** See shipCostProfile. Read through `perm`, which the redraw loop is still changing. */
   const profileOf = (ships: number[][]) => shipCostProfile(ships, (c) => cost[perm[c]]);
@@ -964,6 +1034,8 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
       regionLow: before.regionLow,
       attempts: 0,
       accepted: true,
+      passers: 0,
+      fairness: fairnessScore(before.rankGap, before.findGap, before.longGap, limits),
       balanced: false,
       clumpBefore,
       clumpAfter: clumpBefore,
@@ -1049,10 +1121,12 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     }
   };
 
-  // -- draw until one passes ----------------------------------------------------------------------
+  // -- draw until enough pass ---------------------------------------------------------------------
   // A fresh uniform layout every time, declumped, then tested. Nothing carries over between
   // attempts: a rejected layout is discarded whole rather than repaired, which is what keeps the
   // accepted one an unbiased draw from the layouts that pass rather than a walk toward the line.
+  // Passers are collected the same way, each one a whole independent draw, and the fairest of them
+  // is played - see BEST_OF for why that is still not a search.
   let best: number[] | null = null;
   let bestGap = Infinity;
   let bestFind = Infinity;
@@ -1061,6 +1135,16 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
   let bestClump = clumpBefore;
   let attempts = 0;
   let accepted = false;
+  let passers = 0;
+
+  const take = (now: ReturnType<typeof measure>) => {
+    best = perm.slice();
+    bestGap = now.rankGap;
+    bestFind = now.findGap;
+    bestLong = now.longGap;
+    bestLow = now.regionLow;
+    bestClump = declumping ? crowding : null;
+  };
 
   while (attempts < rules.maxAttempts) {
     attempts++;
@@ -1074,56 +1158,39 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
 
     const now = measure();
     const floorMet = !floor || (now.regionLow ?? 0) >= floor.min;
-    if (
-      !canBalance ||
-      (now.rankGap <= rankLimit &&
-        now.findGap <= findLimit &&
-        now.longGap <= longLimit &&
-        floorMet)
-    ) {
-      best = perm.slice();
-      bestGap = now.rankGap;
-      bestFind = now.findGap;
-      bestLong = now.longGap;
-      bestLow = now.regionLow;
-      bestClump = declumping ? crowding : null;
+    if (!canBalance) {
+      // Nothing to compare the fleets on, so the first declumped draw is as good as any.
+      take(now);
       accepted = true;
       break;
     }
-    // Keep the fairest layout seen, in case every attempt is spent. Ranked by the region floor
-    // first, then by how far the layout misses all three tests COMBINED.
-    //
-    // The floor leads because a board dealt too few DLC squares can never satisfy it by any
-    // permutation, so the fallback should at least hand each fleet as many as exist before arguing
-    // about anything else.
-    //
-    // The three fairness measures are then summed as fractions of their own limits, rather than one
-    // being consulted before the others. Ordering them lexicographically was the first thing tried
-    // and it is wrong at exactly the moment this code runs: with the long-square count leading, a
-    // four-team board fell back to a layout that was one square better on a test it had already
-    // failed and eighteen minutes worse on the other. No measure outranks another once all are
-    // already blown - what matters is total distance from playable, and a fraction of the limit is
-    // the only unit the three share.
-    const low = now.regionLow ?? 0;
-    // Every term falls back to the raw measure when its limit is zero, which is only reachable
-    // through a hand-built profile but would otherwise divide by it and rank every candidate equally
-    // infinite - leaving the fallback as whichever layout happened to be drawn first.
-    const missOf = (rank: number, find: number, long: number) =>
-      (rankLimit > 0 ? rank / rankLimit : rank) +
-      (findLimit > 0 ? find / findLimit : find) +
-      (longLimit > 0 ? long / longLimit : long);
-    const better =
-      floor && low !== (bestLow ?? 0)
-        ? low > (bestLow ?? 0)
-        : missOf(now.rankGap, now.findGap, now.longGap) < missOf(bestGap, bestFind, bestLong);
-    if (better) {
-      best = perm.slice();
-      bestGap = now.rankGap;
-      bestFind = now.findGap;
-      bestLong = now.longGap;
-      bestLow = now.regionLow;
-      bestClump = declumping ? crowding : null;
+    const score = fairnessScore(now.rankGap, now.findGap, now.longGap, limits);
+    if (now.rankGap <= rankLimit && now.findGap <= findLimit && now.longGap <= longLimit && floorMet) {
+      passers++;
+      if (!accepted || score < fairnessScore(bestGap, bestFind, bestLong, limits)) take(now);
+      accepted = true;
+      if (passers >= rules.bestOf) break;
+    } else if (!accepted) {
+      // Nothing has passed yet: keep the fairest layout seen, in case every attempt is spent. Ranked
+      // by the region floor first, then by how far the layout misses all three tests COMBINED - see
+      // fairnessScore.
+      //
+      // The floor leads because a board dealt too few DLC squares can never satisfy it by any
+      // permutation, so the fallback should at least hand each fleet as many as exist before arguing
+      // about anything else.
+      //
+      // Lexicographic ordering of the three measures was the first thing tried and it is wrong at
+      // exactly the moment this code runs: with the long-square count leading, a four-team board fell
+      // back to a layout that was one square better on a test it had already failed and eighteen
+      // minutes worse on the other.
+      const low = now.regionLow ?? 0;
+      const better =
+        floor && low !== (bestLow ?? 0)
+          ? low > (bestLow ?? 0)
+          : score < fairnessScore(bestGap, bestFind, bestLong, limits);
+      if (better) take(now);
     }
+    if (input.stop?.()) break;
   }
 
   const chosen = best ?? perm;
@@ -1143,6 +1210,8 @@ export function balanceBoard(input: BalanceInput): BalanceResult {
     regionLow: bestLow === -1 ? null : bestLow,
     attempts,
     accepted,
+    passers,
+    fairness: fairnessScore(bestGap, bestFind, bestLong, limits),
     balanced: canBalance,
     clumpBefore,
     clumpAfter: bestClump,

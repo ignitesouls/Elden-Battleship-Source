@@ -30,10 +30,13 @@ import {
   rankGapOf,
   rankGapDetail,
   scoreLayout,
+  fairnessScore,
+  BEST_OF,
   RANK_GAP_SECONDS,
   FIND_GAP_SECONDS,
   LONG_GAP,
   LONG_SQUARE_SECONDS,
+  type BalanceInput,
 } from '../src/lib/boardBalance.ts'
 import { buildFlatBoard, dealtPool, type Challenge } from '../src/lib/squareSetFormat.ts'
 import { BOARD_SIZES, FLEET_PRESETS, fleetFor } from '../src/types/battleship.ts'
@@ -228,6 +231,18 @@ function findFairness(cost: number[], perm: number[], fleets: Array<{ ships: num
   return { gap, profiles }
 }
 
+/**
+ * The live tests, playing the first layout that passes them.
+ *
+ * Most of this file is about the TESTS and the SAMPLER - what each test catches, that a passer is a
+ * uniform draw from the layouts that pass, that nothing about it is readable. None of that depends
+ * on how many passers are collected, and collecting BEST_OF of them is ten times the draws across
+ * hundreds of boards. So everything runs on the first passer except section 5b, which checks what
+ * collecting more of them adds - and that it adds no tell.
+ */
+const FIRST_PASSER = { ...DEFAULT_RULES, bestOf: 1 }
+const balance = (input: BalanceInput) => balanceBoard({ rules: FIRST_PASSER, ...input })
+
 const identity = (n: number) => Array.from({ length: n }, (_, i) => i)
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1)
 
@@ -254,7 +269,7 @@ for (const boardSize of BOARD_SIZES) {
 
     for (let trial = 0; trial < 5; trial++) {
       const fleets = makeFleets(boardSize, preset)
-      const res = balanceBoard({
+      const res = balance({
         cost,
         regions,
         boardSize,
@@ -382,7 +397,7 @@ console.log()
 console.log('the long-square test (second test, on cells the rank gap discards)')
 {
   const TRIALS = 150
-  const rankOnly = { ...DEFAULT_RULES, longGap: Number.POSITIVE_INFINITY }
+  const rankOnly = { ...FIRST_PASSER, longGap: Number.POSITIVE_INFINITY }
   for (const boardSize of [8, 10, 12]) {
     const cells = boardSize * boardSize
     let wouldHaveShippedAndFails = 0
@@ -399,10 +414,10 @@ console.log('the long-square test (second test, on cells the rank gap discards)'
       // Same salt for both runs, so the two differ by the rule and not by the draw.
       const salt = () => rng(seedFrom(`long-${boardSize}-${trial}:salt`))
 
-      const before = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: rankOnly })
+      const before = balance({ cost, regions, boardSize, fleets, next: salt(), rules: rankOnly })
       if (before.accepted && gapOf(before.perm) > LONG_GAP) wouldHaveShippedAndFails++
 
-      const res = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: DEFAULT_RULES })
+      const res = balance({ cost, regions, boardSize, fleets, next: salt(), rules: FIRST_PASSER })
       const gap = gapOf(res.perm)
       acceptedLongGap += gap
       if (res.accepted) {
@@ -441,7 +456,7 @@ console.log('the long-square test (second test, on cells the rank gap discards)'
 console.log('the find test (third test, on the cheapest square of each hull)')
 {
   const TRIALS = 120
-  const rankLongOnly = { ...DEFAULT_RULES, findGapSeconds: Number.POSITIVE_INFINITY }
+  const rankLongOnly = { ...FIRST_PASSER, findGapSeconds: Number.POSITIVE_INFINITY }
   for (const boardSize of [8, 10, 12]) {
     const cells = boardSize * boardSize
     let wouldHaveShippedAndFails = 0
@@ -461,12 +476,12 @@ console.log('the find test (third test, on the cheapest square of each hull)')
       // Same salt for both runs, so the two differ by the rule and not by the draw.
       const salt = () => rng(seedFrom(`find-${boardSize}-${trial}:salt`))
 
-      const before = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: rankLongOnly })
+      const before = balance({ cost, regions, boardSize, fleets, next: salt(), rules: rankLongOnly })
       if (before.accepted && findFairness(cost, before.perm, fleets).gap > FIND_GAP_SECONDS) {
         wouldHaveShippedAndFails++
       }
 
-      const res = balanceBoard({ cost, regions, boardSize, fleets, next: salt(), rules: DEFAULT_RULES })
+      const res = balance({ cost, regions, boardSize, fleets, next: salt(), rules: FIRST_PASSER })
       worstDraws = Math.max(worstDraws, res.attempts)
       if (res.accepted) {
         accepted++
@@ -567,9 +582,9 @@ console.log('find profile vs cost profile')
   const cost = boardCost('variety', cells)
   const regions = boardRegions('variety', cells)
   const fleets = makeFleets(10, 'Classic')
-  const a = balanceBoard({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-a')) })
-  const b = balanceBoard({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-b')) })
-  const again = balanceBoard({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-a')) })
+  const a = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-a')) })
+  const b = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-b')) })
+  const again = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom('salt-a')) })
   check(a.perm.some((v, i) => v !== b.perm[i]), 'two salts give two different layouts')
   check(a.perm.every((v, i) => v === again.perm[i]), 'the same salt is reproducible')
   console.log('variety   two salts differ, one salt repeats\n')
@@ -598,7 +613,7 @@ console.log('edge-pinning (accepted gaps vs the natural distribution, truncated)
     const cost = boardCost(`pin-${trial}`, cells)
     const regions = boardRegions(`pin-${trial}`, cells)
     const fleets = makeFleets(10, 'Classic')
-    const res = balanceBoard({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom(`pin-${trial}:salt`)) })
+    const res = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom(`pin-${trial}:salt`)) })
     if (res.accepted && res.balanced) accepted.push(res.rankGapAfter / res.rankLimit)
 
     // The same question asked of layouts nobody balanced: draw at random, keep the ones that would
@@ -651,7 +666,7 @@ console.log('positional tell (hard squares under a hull vs on open water)')
     const cost = boardCost(`tell-${trial}`, cells)
     const regions = boardRegions(`tell-${trial}`, cells)
     const fleets = makeFleets(10, 'Classic')
-    const res = balanceBoard({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom(`tell-${trial}:salt`)) })
+    const res = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom(`tell-${trial}:salt`)) })
     const occupied = new Set(fleets.flatMap((f) => fleetCells(f)))
     for (let c = 0; c < cells; c++) {
       const hard = cost[res.perm[c]] > LONG_SQUARE
@@ -673,6 +688,93 @@ console.log('positional tell (hard squares under a hull vs on open water)')
   console.log()
 }
 
+// -- 5b. The fairest of BEST_OF ------------------------------------------------------------------
+// What the live balancer plays: the fairest of several passers rather than the first. Four promises.
+//
+//   - it is fairer, on average, by a margin worth the draws. Otherwise it is cost and nothing else.
+//   - what it reports is true: the score is the score of the layout returned, and every layout it
+//     returns still passes all three tests.
+//   - it still leaves no positional tell. Selecting on fairness is a tighter version of the same
+//     symmetric comparison, so hard squares must sit under hulls as often as on water - the check
+//     that killed the previous design, asked again of this one.
+//   - it stops when told to, which is how balance-board spreads one search over several calls.
+console.log(`fairest of ${BEST_OF}`)
+{
+  const cells = 100
+  const TRIALS = 60
+  let firstTotal = 0
+  let bestTotal = 0
+  let hardOnShips = 0
+  let shipCells = 0
+  let hardOnWater = 0
+  let waterCells = 0
+  let compared = 0
+  for (let trial = 0; trial < TRIALS; trial++) {
+    const cost = boardCost(`best-${trial}`, cells)
+    const regions = boardRegions(`best-${trial}`, cells)
+    const fleets = makeFleets(10, 'Classic')
+    const first = balance({ cost, regions, boardSize: 10, fleets, next: rng(seedFrom(`best-${trial}:first`)) })
+    const best = balanceBoard({
+      cost, regions, boardSize: 10, fleets,
+      next: rng(seedFrom(`best-${trial}:best`)),
+      rules: { ...DEFAULT_RULES, maxAttempts: 20000 },
+    })
+    check(best.accepted, `board ${trial}: the fairest of ${BEST_OF} found passers`, `${best.passers} in ${best.attempts} draws`)
+    check(best.passers <= BEST_OF, `board ${trial}: it stops at ${BEST_OF} passers`, String(best.passers))
+
+    const actual = fairness(cost, best.perm, fleets).gap
+    const actualFind = findFairness(cost, best.perm, fleets).gap
+    check(actual <= best.rankLimit + 1e-9 && actualFind <= best.findLimit + 1e-9 && best.longGapAfter <= best.longLimit,
+      `board ${trial}: the fairest passer is inside every limit`)
+    check(Math.abs(best.fairness - fairnessScore(actual, actualFind, best.longGapAfter, limitsFor())) < 1e-9,
+      `board ${trial}: the score reported is the score of the layout returned`)
+
+    if (first.accepted && best.accepted) {
+      compared++
+      firstTotal += first.fairness
+      bestTotal += best.fairness
+    }
+    const occupied = new Set(fleets.flatMap((f) => fleetCells(f)))
+    for (let c = 0; c < cells; c++) {
+      const hard = cost[best.perm[c]] > LONG_SQUARE
+      if (occupied.has(c)) {
+        shipCells++
+        if (hard) hardOnShips++
+      } else {
+        waterCells++
+        if (hard) hardOnWater++
+      }
+    }
+  }
+  const firstMean = firstTotal / compared
+  const bestMean = bestTotal / compared
+  console.log(`  mean score: first passer ${firstMean.toFixed(3)}, fairest of ${BEST_OF} ${bestMean.toFixed(3)} (lower is fairer, ${compared} boards)`)
+  // A third better is a conservative floor: order statistics put the fairest of ten well inside the
+  // bottom fifth of the passers' scores.
+  check(bestMean < firstMean * 0.67, `the fairest of ${BEST_OF} is markedly fairer than the first passer`,
+    `${bestMean.toFixed(3)} vs ${firstMean.toFixed(3)}`)
+
+  const onShips = hardOnShips / shipCells
+  const onWater = hardOnWater / waterCells
+  console.log(`  under a hull  ${(onShips * 100).toFixed(1)}%   open water  ${(onWater * 100).toFixed(1)}%   over ${TRIALS} boards`)
+  // Looser than section 5's two points because it is a third of the boards: the sampling error on
+  // the difference is about one and a half points here.
+  check(Math.abs(onShips - onWater) < 0.03,
+    `the fairest of ${BEST_OF} puts hard squares under a hull no more or less than anywhere else`,
+    `${(onShips * 100).toFixed(1)}% vs ${(onWater * 100).toFixed(1)}%`)
+
+  // Told to stop, it stops - and still hands back the fairest thing it saw.
+  let draws = 0
+  const stopped = balanceBoard({
+    cost: boardCost('best-stop', cells), regions: boardRegions('best-stop', cells), boardSize: 10,
+    fleets: makeFleets(10, 'Classic'), next: rng(seedFrom('best-stop')),
+    stop: () => ++draws >= 5,
+  })
+  check(stopped.attempts === 5, 'a search told to stop after five draws makes five', String(stopped.attempts))
+  check(new Set(stopped.perm).size === cells, 'and still returns a whole board')
+  console.log()
+}
+
 // -- 6. Declumping ------------------------------------------------------------------------------
 // Always on, and exempt from the anti-tell reasoning above because crowding is a property of the
 // board everyone is about to look at - it does not know where a ship is, so conditioning on it
@@ -691,7 +793,7 @@ console.log('region declumping')
       const cost = boardCost(`clump-${boardSize}-${trial}`, cells)
       const regions = boardRegions(`clump-${boardSize}-${trial}`, cells)
       const fleets = makeFleets(boardSize, 'Classic')
-      const res = balanceBoard({ cost, regions, boardSize, fleets, next: rng(seedFrom(`clump-${boardSize}-${trial}:salt`)) })
+      const res = balance({ cost, regions, boardSize, fleets, next: rng(seedFrom(`clump-${boardSize}-${trial}:salt`)) })
       ratioSum += (res.clumpAfter ?? 0) / (res.clumpBefore ?? 1)
       beforeWorst3 += worstWindow(regions, identity(cells), boardSize, 3)
       afterWorst3 += worstWindow(regions, res.perm, boardSize, 3)
@@ -739,7 +841,7 @@ console.log('three and four teams')
       const cost = boardCost(`multi-${teams}-${trial}`, cells)
       const regions = boardRegions(`multi-${teams}-${trial}`, cells)
       const fleets = makeFleets(12, 'Classic', teams)
-      const res = balanceBoard({ cost, regions, boardSize: 12, fleets, next: rng(seedFrom(`multi-${teams}-${trial}:salt`)) })
+      const res = balance({ cost, regions, boardSize: 12, fleets, next: rng(seedFrom(`multi-${teams}-${trial}:salt`)) })
       worst = Math.max(worst, res.attempts)
       if (!res.accepted) unaccepted++
       const actual = fairness(cost, res.perm, fleets)
@@ -904,7 +1006,7 @@ console.log('thresholds')
 console.log('small-crew profile')
 {
   const dlcRules = (boardSize: number) => ({
-    ...DEFAULT_RULES,
+    ...FIRST_PASSER,
     regionFloor: smallCrewFloor('dlc', boardSize),
   })
 
@@ -944,8 +1046,8 @@ console.log('small-crew profile')
       const regions = deal.map((c) => c.region ?? null)
       const fleets = makeFleets(boardSize, 'Classic')
 
-      const strict = balanceBoard({ cost, regions, boardSize, fleets, next, rules })
-      const loose = balanceBoard({ cost, regions, boardSize, fleets, next: rng(seedFrom(`loose-${boardSize}-${trial}`)) })
+      const strict = balance({ cost, regions, boardSize, fleets, next, rules })
+      const loose = balance({ cost, regions, boardSize, fleets, next: rng(seedFrom(`loose-${boardSize}-${trial}`)) })
 
       // The floor holds whenever it CAN. A board dealt fewer dlc squares than the fleets need
       // together is unsatisfiable by any permutation, and the fallback is the honest answer there.

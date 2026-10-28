@@ -36,7 +36,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
 import { buildFlatBoard, dealtPool } from '../../../src/lib/squareSetFormat.ts'
-import { balanceBoard, scoreLayout, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
+import { balanceBoard, scoreLayout, BEST_OF, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
 import { activeTeams } from '../../../src/lib/battleshipLogic.ts'
 import bossData from '../../../src/data/battleshipChallenges.json' with { type: 'json' }
 import bossData2v2 from '../../../src/data/battleshipChallenges2v2.json' with { type: 'json' }
@@ -93,6 +93,36 @@ function rulesFor(setId: string, boardSize: number) {
     ...DEFAULT_RULES,
     regionFloor: setId === 'bosses-2v2' ? smallCrewFloor('dlc', boardSize) : null,
   }
+}
+
+/**
+ * How long one call spends drawing layouts, in milliseconds.
+ *
+ * An edge function is stopped at about two seconds of CPU, and a draw costs anywhere from about one
+ * millisecond on a small board to two on a 14x14 there, so a draw count that fits one board size
+ * overruns another. A clock fits them all. 1200 leaves the rest of the allowance for the boot, the
+ * deal and the report; the search carries on in the next call - see BEST_OF.
+ */
+const DRAW_BUDGET_MS = 1200
+
+/** A ceiling on draws per call, should the clock ever misbehave. Far above what the budget allows. */
+const CALL_MAX_ATTEMPTS = 5000
+
+/**
+ * Which deal a pooled candidate belongs to: everything the layouts were scored against.
+ *
+ * The same seed on the same room is the same squares, and the same fleets are the same ships, so a
+ * passer from any call with this key is a passer for this deal. A different key - the next match, a
+ * re-placed fleet - starts the pool over. See balance_candidates.
+ */
+async function dealKey(
+  room: { seed: string | null; seed_set_at: string | null; board_size: number },
+  setId: string,
+  fleets: Array<{ team: number; ships: number[][] }>
+): Promise<string> {
+  const text = JSON.stringify([room.seed, room.seed_set_at, setId, room.board_size, fleets])
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /** tooltip -> expected seconds of a match before that square is done. See build-time-cost.mjs. */
@@ -168,10 +198,18 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { roomId } = await req.json().catch(() => ({ roomId: null }))
+    // `final` is the caller giving up on the pool: deal the fairest passer found so far, however
+    // few. It cannot choose WHICH layout is dealt - only stop the search early - so a host sending
+    // it at once gains nothing but a less fair board for everyone.
+    //
+    // `pool` is the caller saying it will call again on `searching`. A tab still running the site
+    // from before the pool existed calls once and would read `searching` as a failure and start the
+    // match unbalanced, so without it every call is the last one - the old single-call deal.
+    const { roomId, final: finalAsked, pool: poolAsked } = await req.json().catch(() => ({ roomId: null }))
     if (!roomId || typeof roomId !== 'string') {
       return jsonResponse({ balanced: false, reason: 'no_room' }, 400)
     }
+    const final = finalAsked === true || poolAsked !== true
 
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -286,20 +324,24 @@ Deno.serve(async (req) => {
     // A fresh random salt, never stored and never derived from anything public. If it came from the
     // room id or the seed, both of which any player can read, a team could compute the balanced
     // board for themselves during placement - which is the exact thing this exists to prevent.
+    //
+    // Stopped on the clock rather than on a draw count - see DRAW_BUDGET_MS.
+    const drawStart = performance.now()
     const result = balanceBoard({
       cost: deal.cost,
       regions: deal.regions,
       boardSize: room.board_size,
       fleets: occupied,
       next: rng(seedFrom(crypto.randomUUID())),
-      rules: rulesFor(setId, room.board_size),
+      rules: { ...rulesFor(setId, room.board_size), maxAttempts: CALL_MAX_ATTEMPTS },
+      stop: () => performance.now() - drawStart > DRAW_BUDGET_MS,
     })
 
     // Two conditions, and the second one matters more than it looks.
     //
     // `board_perm is null` is the last word on two hosts racing, decided by the database rather
     // than by us. `status = placement` is the last word on the CLOCK: startBattle gives up waiting
-    // after BALANCE_TIMEOUT_MS and flips the room to battle, and without this guard a slow run
+    // eventually (see BALANCE_SEARCH_MS) and flips the room to battle, and without this guard a slow run
     // could land its permutation after that - re-dealing every square under players who were
     // already looking at the board, and invalidating any shot already taken. The room having moved
     // on is a perfectly ordinary outcome and the right response is to drop the layout on the floor.
@@ -357,6 +399,11 @@ Deno.serve(async (req) => {
       longLimit: result.longLimit,
       attempts: result.attempts,
       accepted: result.accepted,
+      // How many passing layouts the board was chosen from, and how fair the chosen one is - see
+      // BEST_OF. Overwritten with the pooled totals below when the search ran over several calls.
+      passers: result.passers,
+      bestOf: BEST_OF,
+      fairness: Math.round(result.fairness * 1000) / 1000,
       teams: occupied.length,
       clumpBefore: result.clumpBefore,
       clumpAfter: result.clumpAfter,
@@ -365,9 +412,51 @@ Deno.serve(async (req) => {
       at: new Date().toISOString(),
     }
 
+    // -- the pool ------------------------------------------------------------------------------
+    // Two-team boards collect BEST_OF passers before one is played, and that is more draws than one
+    // call can afford, so every call adds what it found to the room's pool and the call that brings
+    // the pool to BEST_OF deals the fairest passer in it. startBattle keeps calling - two at a time -
+    // while this answers `searching`. See balance_candidates.
+    //
+    // Boards with three or four fleets rarely find even one passer (see balancing.md), so they keep
+    // the old single call: the fairest passer this call found, or the fairest miss if none passed.
+    // So does the caller's last call (`final`), which plays the fairest passer pooled so far.
+    //
+    // If the pool cannot be reached - the migration not yet applied, say - this call's own result is
+    // played, which is exactly how a board was dealt before the pool existed.
+    let perm = result.perm
+    let report: Record<string, unknown> = balanceReport
+    if (occupied.length === 2) {
+      const { data: pool, error: poolErr } = await admin.rpc('merge_balance_candidate', {
+        p_room: room.id,
+        p_key: await dealKey(room, setId, occupied),
+        p_perm: result.perm,
+        p_score: result.fairness,
+        p_report: balanceReport,
+        p_passers: result.accepted ? result.passers : 0,
+        p_attempts: result.attempts,
+      })
+      if (poolErr) {
+        console.warn('balance-board: pool unavailable, dealing this call alone', poolErr.message)
+      } else {
+        if (pool.passers < BEST_OF && !final) {
+          return jsonResponse({ balanced: false, reason: 'searching', passers: pool.passers, attempts: pool.attempts })
+        }
+        const totals = { passers: pool.passers, attempts: pool.attempts, calls: pool.calls }
+        if (pool.perm) {
+          perm = pool.perm
+          report = { ...pool.report, ...totals }
+        } else {
+          // The last call, and nothing passed in any of them: the fairest miss this one saw.
+          report = { ...balanceReport, ...totals }
+        }
+      }
+    }
+
+    // Two conditions, and the second one matters more than it looks - see the note above the record.
     const { data: written, error } = await admin
       .from('rooms')
-      .update({ board_perm: result.perm, balance_report: balanceReport })
+      .update({ board_perm: perm, balance_report: report })
       .eq('id', roomId)
       .eq('status', 'placement')
       .is('board_perm', null)
@@ -375,35 +464,13 @@ Deno.serve(async (req) => {
     if (error) return jsonResponse({ balanced: false, reason: 'write_failed' }, 500)
     if (!written?.length) return jsonResponse({ balanced: false, reason: 'too_late' })
 
-    return jsonResponse({
-      balanced: result.balanced,
-      // On the default profile `attempts: 1` is the ordinary answer and means the fairness test
-      // never bound - the layout being played was chosen without reference to anyone's ships, and
-      // anything higher is a board that would have been lopsided. On the small-crew profile the
-      // tests bind on nearly every board and the median is around thirty, so what is worth watching
-      // there is `accepted` and `regionLow` instead: accepted false means no layout in the whole budget
-      // met the rules and this is the fairest of them.
-      attempts: result.attempts,
-      accepted: result.accepted,
-      // Seconds. The widest same-rank gap between two fleets' ship profiles, before and after.
-      rankGapBefore: Math.round(result.rankGapBefore),
-      rankGapAfter: Math.round(result.rankGapAfter),
-      rankLimit: result.rankLimit,
-      // Seconds. The same comparison on when each fleet gets FOUND. See FIND_GAP_SECONDS.
-      findGapBefore: Math.round(result.findGapBefore),
-      findGapAfter: Math.round(result.findGapAfter),
-      findLimit: result.findLimit,
-      // Whole squares, not seconds. See LONG_GAP in boardBalance.ts.
-      longGapBefore: result.longGapBefore,
-      longGapAfter: result.longGapAfter,
-      longLimit: result.longLimit,
-      // Null on the default profile. Otherwise the fewest dlc squares any one fleet holds - below
-      // the floor means the board could not carry it, which is the honest way that reads.
-      regionLow: result.regionLow,
-      clumpBefore: result.clumpBefore,
-      clumpAfter: result.clumpAfter,
-      teams: occupied.length,
-    })
+    // Dealt: the pool has done its job. Best-effort - a row left behind is started over by the next
+    // deal (its key will not match) and goes with the room either way.
+    if (occupied.length === 2) await admin.from('balance_candidates').delete().eq('room_id', room.id)
+
+    // The record as stored. `accepted` false means nothing in the whole search met the rules and
+    // this is the fairest miss; `passers` is how many layouts the board was chosen from.
+    return jsonResponse({ balanced: result.balanced, ...report })
   } catch (err) {
     console.error('balance-board', err)
     // Still a 200-shaped refusal rather than a throw: the caller awaits this inside a room start.

@@ -159,10 +159,50 @@ about how much of a ship the first two tests were missing, not about the thresho
    legend, for either team or spectators.
 3. The server draws a complete random layout, spreads the regions out, and measures both fleets.
 4. If any test fails, **it throws the whole layout away and draws another.**
-5. The first layout that passes all three is the one you play.
+5. It keeps drawing until **ten** layouts have passed all three, and you play the fairest of them.
 6. The board is revealed and `PREPARATION` begins.
 
 Step 4 is the whole design. It does not *fix* a bad board — it discards it and tries again.
+
+## The fairest of ten, not the first that passes
+
+Passing is a floor. A layout that scrapes under all three limits counts exactly as much as one
+nowhere near any of them, and playing the first passer meant playing a lot of boards on the line: of
+the first eight official matches, five sat exactly on the long-square limit and one had a find gap
+of 9:51 against a 10:00 limit.
+
+So the balancer now collects ten passing layouts and plays the fairest, scoring each by how much of
+every limit it uses (each gap as a fraction of its limit, summed). On average that is a board in the
+fairest tenth of what passes. Over 60 simulated 10×10 boards the score fell from 2.12 for the first
+passer to 1.18.
+
+**Why not just tighten the limits?** That was simulated first, and it cannot be had. How fair a
+board can be depends on the fleets as much as on the draw. Over sixty 11×11 boards, limits of 4:00
+and 8:00 left 15% of them with no passing layout in 900 draws, and 3:00 and 6:00 with no long-square
+edge left 90%. The fairest of ten moves with the board instead. It asks for the fairest tenth of what
+these fleets allow, never for a number they cannot reach.
+
+**Why it is still not a search.** Every candidate is a whole, independent draw that passed on its
+own, and nothing is repaired or nudged toward a target. Taking the lowest score of ten independent
+passers is the same as rejection sampling against a threshold that is itself random. The board you
+play is still a uniform draw from the layouts under some line nobody chose. The positional-tell
+check below is run on the fairest of ten as well as on the first passer.
+
+**What it costs: time.** Ten passers is about ten times the draws, more than one call to the
+server function can make before its CPU allowance runs out. So the search is spread over several
+calls, two at a time, and the calls pool what they find in a table no player can read. The board
+usually arrives in a few seconds. On fleets that leave few fair layouts it can take much longer, up
+to forty seconds, after which the fairest passer found so far is dealt. Boards with three or four
+fleets, which rarely find even one passer, are dealt in a single call as before.
+
+## Every boss match draws from an even pool
+
+The seed decides which bosses are in play, and nothing the balancer does can change that. Every boss
+match, official or not, is now dealt only from pools whose time costs are tightly spread: fewer
+evening-long squares at one end and fewer free ones at the other. A tight pool is not fairer between
+the teams, because both teams share it. It is a pool the balancer can always find fair layouts in,
+and it reaches its ten passers in fewer draws. The host's browser rolls these seeds. Changing the
+board size or square set in the lobby rolls a new one, unless the current seed already qualifies.
 
 ## Why it isn't gameable
 
