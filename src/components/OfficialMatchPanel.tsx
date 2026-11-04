@@ -9,10 +9,12 @@ import {
   unlinkOfficialRoom,
   type MyCastMatch,
   type OfficialMatchInfo,
+  type WaitingMatch,
 } from "../lib/tournament/api";
+import { groupLabel } from "../lib/tournament/groupNames";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useAuthProfile } from "../hooks/useAuthProfile";
-import { useT } from "../lib/language";
+import { useLanguage, useT } from "../lib/language";
 import type { Room } from "../types/battleship";
 import { OfficialMatchLine } from "./event/OfficialMatchLine";
 import "./Tournament.css";
@@ -46,6 +48,10 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<OfficialMatchInfo | null>(null);
+  const lang = useLanguage();
+  // The host's team has several matches waiting: the code was right, and the host picks one of these.
+  const [choice, setChoice] = useState<{ matches: WaitingMatch[]; groupNames: string[] } | null>(null);
+  const [pickedId, setPickedId] = useState("");
 
   // Is a tournament running at all? Asked once, and only by a host with an ordinary room: nobody else
   // can act on the answer, so nobody else needs to ask.
@@ -113,6 +119,33 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
     }
   }
 
+  /** The host's code: links the room, or - with several matches waiting - asks which one. */
+  async function linkWithCode(matchId?: string) {
+    setChoice(null);
+    let picking = false;
+    await run(
+      async () => {
+        const answer = await linkOfficialRoom(room.id, eventId, code, matchId);
+        if (answer.choose && answer.matches) {
+          // Not a refusal: keep the code, it is sent again with the pick.
+          picking = true;
+          setChoice({ matches: answer.matches, groupNames: answer.group_names ?? [] });
+          setPickedId("");
+          return { ok: true };
+        }
+        return answer;
+      },
+      () => !picking && setCode(""),
+    );
+  }
+
+  const stageLabel = (m: WaitingMatch) =>
+    m.stage === "group"
+      ? `${m.grp !== null ? groupLabel(choice?.groupNames, m.grp, lang) : t("Groups", "Poules")}, ${t("round", "tour")} ${m.round}`
+      : m.stage === "swiss"
+        ? `${t("Swiss", "Suisse")}, ${t("round", "tour")} ${m.round}`
+        : t("Knockout", "Élimination");
+
   // -- an ordinary room ---------------------------------------------------------------------------------
   if (!linked) {
     if (!isHost || room.status !== "lobby" || events.length === 0) return null;
@@ -151,7 +184,7 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
         </span>
         <div className="row">
           {events.length > 1 && (
-            <select value={eventId} onChange={(e) => setEventId(e.target.value)}>
+            <select value={eventId} onChange={(e) => { setEventId(e.target.value); setChoice(null); }}>
               {events.map((ev) => (
                 <option key={ev.id} value={ev.id}>{ev.name}</option>
               ))}
@@ -160,16 +193,48 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
           {events.length === 1 && <span className="muted">{events[0].name}</span>}
           <input
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onChange={(e) => { setCode(e.target.value.toUpperCase()); setChoice(null); }}
             maxLength={8}
             placeholder={t("Entry code", "Code d'entrée")}
             style={{ width: "9rem", textTransform: "uppercase", letterSpacing: "0.15em" }}
             aria-label={t("Your team's entry code", "Le code d'entrée de votre équipe")}
           />
-          <button className="primary" disabled={busy || code.trim().length < 4 || !eventId} onClick={() => void run(() => linkOfficialRoom(room.id, eventId, code), () => setCode(""))}>
+          <button className="primary" disabled={busy || code.trim().length < 4 || !eventId} onClick={() => void linkWithCode()}>
             {t("Make this an official match", "Faire de ceci un match officiel")}
           </button>
         </div>
+        {/* Several of the team's matches are waiting - in a group stage, all of them are from day one. */}
+        {choice && (
+          <div className="stack" style={{ gap: "0.4rem" }}>
+            <span style={{ fontSize: "0.85rem" }}>
+              {t("Your team has more than one match waiting. Which one is this room playing?", "Votre équipe a plusieurs matchs en attente. Lequel cette partie joue-t-elle ?")}
+            </span>
+            <div className="row" style={{ gap: "0.6rem", flexWrap: "wrap" }}>
+              {/* Starts on nothing, so the host has to choose - never a match played by default. */}
+              <select
+                value={pickedId}
+                onChange={(e) => setPickedId(e.target.value)}
+                aria-label={t("The match this room plays", "Le match que joue cette partie")}
+              >
+                <option value="" disabled>
+                  {t("Choose a match…", "Choisissez un match…")}
+                </option>
+                {choice.matches.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {`${t("vs.", "contre")} ${m.opponent} · ${stageLabel(m)}${
+                      m.agreed_at
+                        ? ` · ${new Date(m.agreed_at).toLocaleString(lang === "fr" ? "fr-FR" : undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                        : ""
+                    }`}
+                  </option>
+                ))}
+              </select>
+              <button className="primary" disabled={busy || !pickedId} onClick={() => void linkWithCode(pickedId)}>
+                {t("Play this match", "Jouer ce match")}
+              </button>
+            </div>
+          </div>
+        )}
         {message && <span className="error-text">{message}</span>}
         <span className="muted" style={{ fontSize: "0.72rem" }}>
           {t("Once official, the room takes the tournament's settings, only the two teams' players can take a seat, and it can't be a practice match.", "Une fois officielle, la partie adopte les réglages du tournoi, seuls les joueurs des deux équipes peuvent prendre une place, et elle ne peut pas être un entraînement.")}

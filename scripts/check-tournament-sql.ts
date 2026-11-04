@@ -2276,6 +2276,48 @@ async function officialMatches(admin: Person) {
     const seatedWrong = await link(host, strangerSeat.id, e8, e8.codeA)
     check('a room whose host is not the caller cannot be linked by someone else', !seatedWrong.ok && /Only the host/.test(seatedWrong.error ?? ''))
 
+    console.log('  -- several matches waiting: the host picks')
+    // A three-team group: every match is ready from the start, so each team has two waiting at once.
+    const pickT = await newTournament({ status: 'signup', team_size: 1, name: `Pick ${run}` })
+    const pickMade = await svc.from('tournament_entrants').insert(
+      ['P1', 'P2', 'P3'].map((n) => ({ tournament_id: pickT.id, name: n, captain_user_id: admin.id, status: 'pending' })),
+    ).select('id, name')
+    if (pickMade.error) throw new Error(pickMade.error.message)
+    const pickEv: LiveEvent = { id: pickT.id, team: new Map((pickMade.data ?? []).map((e) => [e.name, e.id as string])) }
+    await svc.from('tournament_entrants').update({ status: 'approved' }).in('id', [...pickEv.team.values()])
+    await svc.from('tournaments').update({ status: 'live' }).eq('id', pickT.id)
+    await addMatches(pickEv, buildGroupStage([['P1', 'P2', 'P3']], 1, 1))
+    const pickCode = async (n: string) =>
+      (await svc.from('tournament_entrant_secrets').select('entry_code').eq('entrant_id', pickEv.team.get(n)!).single()).data!.entry_code as string
+    const pickRows = (await svc.from('tournament_matches').select('id, entrant_a, entrant_b, phase, idx').eq('tournament_id', pickT.id).order('phase').order('idx')).data ?? []
+    const p1 = pickEv.team.get('P1')!
+    const p1Matches = pickRows.filter((m) => m.entrant_a === p1 || m.entrant_b === p1)
+    const notP1 = pickRows.find((m) => m.entrant_a !== p1 && m.entrant_b !== p1)!
+    const later = p1Matches[p1Matches.length - 1]
+    const laterOpp = [...pickEv.team].find(([, id]) => id === (later.entrant_a === p1 ? later.entrant_b : later.entrant_a))![0]
+
+    const rp = await room(host, 'PK')
+    const attempts = async () => (await svc.from('official_code_attempts').select('user_id', { count: 'exact', head: true }).eq('user_id', host.id)).count ?? 0
+    const attemptsBefore = await attempts()
+    type Pick = { ok: boolean; error?: string; choose?: boolean; matches?: Array<{ id: string; opponent: string }> }
+    const pick = async (matchId?: string) =>
+      (await host.client.rpc('link_official_room', { p_room: rp.id, p_tournament: pickT.id, p_code: await pickCode('P1'), ...(matchId ? { p_match: matchId } : {}) })).data as Pick
+    const asked = await pick()
+    check('(setup) the team has two matches waiting', p1Matches.length === 2, String(p1Matches.length))
+    check('with several matches waiting and none picked, nothing is linked and they are listed, in bracket order',
+      !asked.ok && asked.choose === true && JSON.stringify(asked.matches?.map((m) => m.id)) === JSON.stringify(p1Matches.map((m) => m.id)), JSON.stringify(asked))
+    check('...each with the opponent named', asked.matches?.[1]?.opponent === laterOpp, JSON.stringify(asked.matches))
+    check('...the room is untouched', (await state(rp.id)).tournament_match_id === null)
+    check('...and a right code with a choice to make is not counted as a wrong guess', (await attempts()) === attemptsBefore)
+    const notTheirs = await pick(notP1.id)
+    check('a match the team is not playing in cannot be picked',
+      !notTheirs.ok && notTheirs.error === "That match is not one of your team's matches waiting to be played", notTheirs.error)
+    const picked = await pick(later.id)
+    check('the host can pick the LATER match, out of order', picked.ok && (await state(rp.id)).tournament_match_id === later.id, JSON.stringify(picked))
+    await join(admin, rp.id)
+    const oppConfirm = await confirm(admin, rp.id, await pickCode(laterOpp))
+    check('...and that opponent confirms with their own code', oppConfirm.ok === true, JSON.stringify(oppConfirm))
+
     console.log('  -- rooms: the sweeper and the cap')
     // An official room outlives the hour of silence; an ordinary one does not.
     const oldAt = new Date(Date.now() - 5 * 3_600_000).toISOString()

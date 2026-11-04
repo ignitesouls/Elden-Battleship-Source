@@ -984,6 +984,20 @@ export interface OfficialAnswer {
   team_b?: string;
   you_are?: "a" | "b";
   already?: boolean;
+  /** link_official_room: the team has several matches waiting and the host has to pick one. */
+  choose?: boolean;
+  matches?: WaitingMatch[];
+  group_names?: string[];
+}
+
+/** One of the host's team's matches waiting to be played, as link_official_room lists them to pick from. */
+export interface WaitingMatch {
+  id: string;
+  stage: string;
+  grp: number | null;
+  round: number;
+  opponent: string;
+  agreed_at: string | null;
 }
 
 /**
@@ -997,9 +1011,12 @@ async function officialCall(fn: string, args: Record<string, unknown>): Promise<
   return (data ?? { ok: false, error: "No answer" }) as OfficialAnswer;
 }
 
-/** Host: make this room the official match of the team whose entry code this is. */
-export const linkOfficialRoom = (roomId: string, eventId: string, code: string) =>
-  officialCall("link_official_room", { p_room: roomId, p_tournament: eventId, p_code: code });
+/**
+ * Host: make this room an official match of the team whose entry code this is. With several of the
+ * team's matches waiting and no `matchId`, nothing is linked and the answer lists them (`choose`).
+ */
+export const linkOfficialRoom = (roomId: string, eventId: string, code: string, matchId?: string) =>
+  officialCall("link_official_room", { p_room: roomId, p_tournament: eventId, p_code: code, p_match: matchId ?? null });
 
 /**
  * An approved caster's host: make this room that match's lobby, no code typed. Neither team starts
