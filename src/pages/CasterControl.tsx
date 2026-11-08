@@ -48,6 +48,8 @@ import { DeskMatchup, type DeskTeams } from "../components/DeskMatchup";
 import { DeskMenu } from "../components/DeskMenu";
 import { DeskAnnounce } from "../components/DeskAnnounce";
 import { DeskCopypastas } from "../components/DeskCopypastas";
+import { DeskHeading, DeskHelp } from "../components/DeskHelp";
+import { DeskShotLog } from "../components/DeskShotLog";
 import { fillTeams, readingMs } from "../lib/copypastas";
 import { fetchOfficialMatch } from "../lib/tournament/api";
 import { useCastDesks } from "../lib/castDesks";
@@ -167,16 +169,19 @@ function FindAlertsSwitch({ roomId, off }: { roomId: string; off: boolean }) {
 
   return (
     <div className="stack" style={{ gap: "0.2rem", marginTop: "0.5rem" }}>
-      <label className="cast-row" style={{ gap: "0.4rem" }}>
-        <input type="checkbox" checked={off} disabled={busy} onChange={() => void flip()} />
-        <span>{t("No find alerts on player streams", "Pas d'alertes de découverte sur les flux des joueurs")}</span>
-      </label>
-      <p className="cast-note muted">
+      <DeskHeading
+        title={t("Find alerts", "Alertes de découverte")}
+        help={<>
         {t(
           "Blanks every player's own find card in this lobby, so it doesn't pop up inside their box on your cast. Your alert over the board keeps working.",
           "Masque la carte de découverte de chaque joueur dans ce salon, pour qu'elle n'apparaisse pas dans sa boîte sur votre cast. Votre alerte sur le plateau continue de fonctionner."
         )}
-      </p>
+        </>}
+      />
+      <label className="cast-row" style={{ gap: "0.4rem" }}>
+        <input type="checkbox" checked={off} disabled={busy} onChange={() => void flip()} />
+        <span>{t("No find alerts on player streams", "Pas d'alertes de découverte sur les flux des joueurs")}</span>
+      </label>
       {error && <p className="cast-note" style={{ color: "var(--hit)" }}>{error}</p>}
     </div>
   );
@@ -459,13 +464,12 @@ export function CasterControl({
    * only way any of it can land as the moment it is. A caster mid-sentence is not going to reach for a
    * button, and a reveal that has to be armed in advance isn't a reveal.
    */
-  const deepCells = useMemo(
-    () =>
-      room
-        ? deepMarks(deepWater(room, groupIntoShots(state.attacks, state.players), state.deepHides, igonAnchor(room)))
-        : undefined,
-    [room, state.attacks, state.players, state.deepHides]
+  const shots = useMemo(() => groupIntoShots(state.attacks, state.players), [state.attacks, state.players]);
+  const deep = useMemo(
+    () => (room ? deepWater(room, shots, state.deepHides, igonAnchor(room)) : null),
+    [room, shots, state.deepHides]
   );
+  const deepCells = useMemo(() => (deep ? deepMarks(deep) : undefined), [deep]);
 
   /**
    * Records in play, across every fleet (see lib/recordChase).
@@ -490,10 +494,9 @@ export function CasterControl({
 
   const chases = useMemo(() => {
     if (!room || book.length === 0) return [];
-    const shots = groupIntoShots(state.attacks, state.players);
     const userIdFor = (id: string | null) => state.players.find((p) => p.id === id)?.user_id ?? null;
     return recordChases(book, liveTallies(buildPlayerStats(state.players, shots), shots, userIdFor));
-  }, [room, book, state.attacks, state.players]);
+  }, [room, book, shots, state.players]);
 
   /**
    * Head-to-heads, habits and the moments as they happen - see lib/talkingPoints. Desk only, until the
@@ -1223,6 +1226,7 @@ export function CasterControl({
   const framed = (c: number) => Math.min(boardSize - 1, Math.max(0, Math.floor(c * boardSize)));
   const centreCell = framed(view.cy) * boardSize + framed(view.cx);
   const zoomed = view.zoom > 1;
+  const boardHidden = !view.visible || view.opacity <= 0;
 
   return (
     <div className="cast">
@@ -1232,11 +1236,6 @@ export function CasterControl({
         </h2>
         <span className={`cast-status${ready ? " cast-status-live" : ""}`}>
           {ready ? t("connected", "connecté") : t("connecting...", "connexion...")}
-        </span>
-        {/* The monitor below is a true 1:1 of a 1000x1000 source, so there is nothing left to
-            report back and nothing to be out of step with. */}
-        <span className="cast-status">
-          {t("monitor", "moniteur")} {SOURCE_SIZE}x{SOURCE_SIZE}
         </span>
         <Link to={`/room/${room.code}`} style={{ fontSize: "0.85rem" }}>
           {t("Back to the room", "Retour à la partie")}
@@ -1281,7 +1280,8 @@ export function CasterControl({
           ) : (
             <span className="cast-desk-holder">{t("joining...", "connexion...")}</span>
           )}
-          <span className="cast-note muted">
+          <DeskHelp
+            help={<>
             {driving
               ? t(
                   "Co-casters on this stream pick it from their own Desk list. Anyone at it can edit the names; the board is yours until someone takes it.",
@@ -1291,7 +1291,8 @@ export function CasterControl({
                   "You're watching this stream's board as it goes out. You can still edit the names.",
                   "Vous voyez le plateau de ce stream tel qu'il est diffusé. Vous pouvez toujours modifier les noms."
                 )}
-          </span>
+            </>}
+          />
         </div>
       )}
 
@@ -1476,41 +1477,89 @@ export function CasterControl({
         </div>
 
         {/*
-          The readout, beside the board rather than under it.
+          The middle column: what viewers are getting right now, and who just did what.
 
-          It used to sit below the monitor with 3.3em of height reserved for it, because it ends in
-          the full name of whatever square is under the crosshair - which changes on every frame of
-          a pan, and ran from "Rick" to "Lurnia Crystalian (Ringblade)". Reserving that space was
-          what stopped the column breathing in and out during a drag.
-
-          A square board in a wider column leaves slack at the sides anyway, so the readout goes
-          THERE and the height it used to reserve goes back to the board - about 47px, which is the
-          difference between 43px squares and 40px ones on a 20x20 room. The twitch it was reserving
-          against is gone structurally rather than by arithmetic: this is a column of its own with a
-          bounded width, so text growing from one line to five pushes on nothing.
+          Both are read at a glance while talking, so neither is behind a menu. The board is square and
+          bound by the window's height, so this column costs it nothing. The shot log is desk-only: it
+          is drawn here and never goes on the cast frame.
         */}
         <div className="cast-rail">
-          <span className="muted cast-hint">
-            {t("Drag to slide · wheel to zoom · ", "Glisser pour déplacer · molette pour zoomer · ")}
-            <strong>1-9</strong>
-            {t(
-              " (numpad or top row) step in 8 directions, 4 presses edge to edge, 5 recentres · arrows nudge. On stream:",
-              " (pavé numérique ou rangée du haut) avance dans 8 directions, 4 appuis d'un bord à l'autre, 5 recentre · les flèches ajustent. À l'écran :"
-            )}{" "}
-            <strong>
-              {/* While the auto-pilot has the wheel, cx/cy are only where the board RESTS - naming
-                  a square off them would be the readout describing a framing nobody is looking at.
-                  What is true either way is that the desk is not the thing aiming. */}
-              {camera.running
-                ? t("the board is aiming itself", "le plateau s'oriente seul")
-                : zoomed
-                  ? `${view.zoom.toFixed(1)}x ${t("around", "autour de")} ${cellLabel(centreCell, boardSize)}`
-                  : t("the whole board", "tout le plateau")}
-            </strong>
-            {/* The square under the crosshair, named in full - a caster reads this out, and the
-                board itself only ever shows the shortened form. */}
-            {!camera.running && zoomed && challenges[centreCell] && <> - {challenges[centreCell].name}</>}
-          </span>
+          <div className="cast-air">
+            <DeskHeading
+              title={t("On stream now", "À l'écran maintenant")}
+              helpLabel={t("Keys", "Touches")}
+              help={<>
+                {t("Drag to slide · wheel to zoom · ", "Glisser pour déplacer · molette pour zoomer · ")}
+                <strong>1-9</strong>
+                {t(
+                  " (numpad or top row) step in 8 directions, 4 presses edge to edge, 5 recentres · arrows nudge · ",
+                  " (pavé numérique ou rangée du haut) avance dans 8 directions, 4 appuis d'un bord à l'autre, 5 recentre · les flèches ajustent · "
+                )}
+                <strong>Shift+1-4</strong>
+                {t(" recalls a framing.", " rappelle un cadrage.")}
+              </>}
+            />
+            <dl className="cast-air-list">
+              <dt>{t("Board", "Plateau")}</dt>
+              <dd className={boardHidden ? "cast-air-bad" : view.opacity < 1 ? "cast-air-warn" : "cast-status-live"}>
+                {boardHidden
+                  ? t("HIDDEN", "MASQUÉ")
+                  : view.opacity < 1
+                    ? t(`Faded to ${Math.round(view.opacity * 100)}%`, `Estompé à ${Math.round(view.opacity * 100)} %`)
+                    : t("Up", "Affiché")}
+              </dd>
+              <dt>{t("Showing", "Affiche")}</dt>
+              <dd>
+                {view.mode === "results" ? (
+                  t("Results only, no ships", "Résultats seulement, sans navires")
+                ) : view.mode === "all" ? (
+                  <span className="cast-air-warn">{t("All fleets' ships", "Navires de toutes les flottes")}</span>
+                ) : (
+                  <span style={{ color: teamHex(view.mode) }}>
+                    <TeamGlyph team={view.mode} /> {teamName(view.mode)}
+                    {t("'s ships", "")}
+                  </span>
+                )}
+                {rotate && ` (${t("rotating", "en rotation")})`}
+              </dd>
+              <dt>{t("Camera", "Caméra")}</dt>
+              <dd>
+                {/* While the auto-pilot has the wheel, cx/cy are only where the board RESTS, so naming a
+                    square off them would describe a framing nobody is looking at. */}
+                {camera.running ? (
+                  t("Auto-pilot", "Pilote automatique")
+                ) : follow ? (
+                  t("Following shots", "Suit les tirs")
+                ) : zoomed ? (
+                  <>
+                    {view.zoom.toFixed(1)}x {t("around", "autour de")} {cellLabel(centreCell, boardSize)}
+                    {challenges[centreCell] && <> - {challenges[centreCell].name}</>}
+                  </>
+                ) : (
+                  t("Whole board", "Tout le plateau")
+                )}
+              </dd>
+              {!camera.running && Boolean(view.spot?.length) && (
+                <>
+                  <dt>{t("Spotlight", "Projecteur")}</dt>
+                  <dd>
+                    {view.spot?.length === 1 && challenges[view.spot[0]]
+                      ? `${cellLabel(view.spot[0], boardSize)} - ${challenges[view.spot[0]].name}`
+                      : t(`${view.spot?.length} squares`, `${view.spot?.length} cases`)}
+                  </dd>
+                </>
+              )}
+            </dl>
+            <button
+              className={view.visible ? "" : "danger"}
+              disabled={!driving}
+              onClick={() => set({ visible: !view.visible })}
+              title={driving ? t("Blank the board source without removing it from the scene", "Vider la source du plateau sans la retirer de la scène") : lockedNote}
+            >
+              {view.visible ? t("Hide board", "Masquer le plateau") : t("Show board", "Afficher le plateau")}
+            </button>
+          </div>
+          <DeskShotLog shots={shots} attacks={state.attacks} room={room} deepCells={deepCells} igon={deep?.igon} />
         </div>
 
         <div className="cast-panel">
@@ -1543,6 +1592,8 @@ export function CasterControl({
             </div>
           )}
 
+          <h3 className="cast-band">{t("During the show", "Pendant le direct")}</h3>
+
           {/*
             The controls, in collapsible groups (components/DeskMenu) - the talking points first and
             open, since they are what a caster reaches for mid-sentence.
@@ -1559,18 +1610,21 @@ export function CasterControl({
             <section ref={talkingRef}>
               <TalkingPoints {...talking} flashing={newPoints.flashing} slotFor={slotFor} onShow={showPoint} />
             </section>
+          </DeskMenu>
+
+          {/* Everything that makes the barnacle speak, apart from a talking point's own Show button. */}
+          <DeskMenu id="barnie" title={t("Barnie says", "Barnie dit")} defaultOpen>
             {/* The caster's own words, for whatever no talking point covers. */}
             <DeskAnnounce onSay={(text, mood) => sayOverBoard(`say:${Date.now()}`, "📣", text, mood)} />
-          </DeskMenu>
-
           {/* The community's copypastas - read only once this is first opened. */}
-          <DeskMenu id="copypastas" title={t("Copypastas", "Copypastas")} lazy>
-            <DeskCopypastas onShow={(c) => sayOverBoard(`pasta:${c.id}:${Date.now()}`, "📜", fillTeams(c.body, matchTeams), c.mood)} />
+            <DeskMenu id="copypastas" sub title={t("Copypastas", "Copypastas")} lazy>
+              <DeskCopypastas onShow={(c) => sayOverBoard(`pasta:${c.id}:${Date.now()}`, "📜", fillTeams(c.body, matchTeams), c.mood)} />
+            </DeskMenu>
           </DeskMenu>
 
-          {/* Everything that aims or dresses the board belongs to whoever holds it: the next three groups
-              lock, still openable, for a caster watching another's hands. */}
-          <DeskMenu id="view" title={t("Board view", "Vue du plateau")} locked={!driving} lockedNote={lockedNote}>
+          {/* Everything that aims or dresses the board belongs to whoever holds it: these groups lock,
+              still openable, for a caster watching another's hands. */}
+          <DeskMenu id="view" title={t("On stream", "À l'écran")} locked={!driving} lockedNote={lockedNote}>
           <section>
             <h3>{t("View", "Vue")}</h3>
             <div className="cast-buttons">
@@ -1659,6 +1713,46 @@ export function CasterControl({
             )}
           </section>
 
+          {/*
+            Fading the board is the middle setting between "up" and "gone", and it is the one that
+            gets used: a caster wants to leave the board on screen through a boss fight rather than
+            pulling it in and out every thirty seconds, and at half strength the squares still read
+            while the fight underneath stays watchable. Hiding it outright is still there for the
+            moments that need the screen back completely.
+          */}
+          <section>
+            <DeskHeading
+              title={t("Transparency", "Transparence")}
+              help={<>
+              {t(
+                "Fades the water. Square names and shots hold back about halfway to solid, and the frame and grid lines barely move, so a faint board still reads as a board. The monitor shows the same fade, over this page's background rather than gameplay - real footage is busier than this.",
+                "Estompe l'eau. Les noms des cases et les tirs restent visibles jusqu'à environ mi-chemin de l'opacité maximale, et le cadre et les lignes de grille bougent à peine, donc un plateau pâle reste lisible comme un plateau. Le moniteur montre le même estompage, sur le fond de cette page plutôt que sur le gameplay - les images réelles sont plus chargées que ça."
+              )}
+              </>}
+            />
+            <div className="cast-row">
+              <input
+                type="range"
+                min={MIN_OPACITY}
+                max={1}
+                step={0.05}
+                value={view.opacity}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: view.opacity }}
+                onChange={(e) => set({ opacity: Number(e.target.value) })}
+                title={t("How solid the board is on stream", "À quel point le plateau est opaque à l'écran")}
+              />
+              <span className="cast-zoom-value">
+                {view.opacity <= 0 ? t("hidden", "masqué") : `${Math.round(view.opacity * 100)}%`}
+              </span>
+              <button onClick={() => set({ opacity: 1 })} title={t("Back to a solid board", "Revenir à un plateau opaque")}>
+                {t("Solid", "Opaque")}
+              </button>
+            </div>
+          </section>
+          </DeskMenu>
+
+          <DeskMenu id="camera" title={t("Aim & camera", "Visée et caméra")} locked={!driving} lockedNote={lockedNote}>
           <section>
             <h3>{t("Zoom", "Zoom")}</h3>
             <div className="cast-row">
@@ -1707,61 +1801,19 @@ export function CasterControl({
           </section>
 
           {/*
-            Square names and coordinates used to be toggles here and are now simply always on.
-            Neither was a decision anybody wanted to make mid-match: the names are the entire reason
-            the zoom exists, and the coordinates are how a caster says where something is. Turning
-            either off leaves a board that can only be talked about by pointing at it, which is the
-            one thing a stream cannot do. (Both remain as ?names=0 / ?coords=0 on a pinned source,
-            for a player running the board very small - see pinnedView.)
-          */}
-          {/* Every fleet's chases, with no team passed to recordChases - a caster is told everything,
-              the same as with the things hiding in the water. This is the panel that gives them a
-              reason to look up: "Aljex is two hits from the record" is a call they can build on. */}
-          {/*
-            Text size, as a fraction of what each square will hold.
-
-            The default is now "as large as it fits", per square - so the size varies with the name,
-            which is the point: "Dane" gets a big one and "Consecrated Death Rite Bird" gets a small
-            one, and neither leaves the square mostly empty. This slider only comes DOWN from that,
-            because there is nothing above filling the square. See lib/textFit.
-          */}
-          <section>
-            <h3>{t("Text size", "Taille du texte")}</h3>
-            <div className="cast-row">
-              <input
-                type="range"
-                min={MIN_TEXT_SIZE}
-                max={1}
-                step={0.05}
-                value={view.text ?? 1}
-                className="eb-slider"
-                style={{ ["--eb-fill" as string]: ((view.text ?? 1) - MIN_TEXT_SIZE) / (1 - MIN_TEXT_SIZE) }}
-                onChange={(e) => set({ text: Number(e.target.value) })}
-                title={t("How much of each square the name fills", "Quelle part de chaque case le nom remplit")}
-              />
-              <span className="cast-zoom-value">{Math.round((view.text ?? 1) * 100)}%</span>
-              <button onClick={() => set({ text: 1 })} title={t("Fill every square", "Remplir chaque case")}>
-                {t("Fill", "Remplir")}
-              </button>
-            </div>
-            <p className="cast-note muted">
-              {t(
-                "Every square is sized to its own name, so short names come out large. This trims the whole board together.",
-                "Chaque case est dimensionnée selon son propre nom, donc les noms courts ressortent en grand. Ce curseur réduit tout le plateau ensemble."
-              )}
-            </p>
-          </section>
-          </DeskMenu>
-
-          <DeskMenu id="camera" title={t("Camera", "Caméra")} locked={!driving} lockedNote={lockedNote}>
-          {/*
             Framing slots. Save is a separate small button rather than a long-press or a shift-click,
             because the two actions have very different costs: recalling the wrong slot is a
             keypress you undo by pressing the right one, and OVERWRITING the wrong slot loses a
             framing you set up before the match and cannot get back.
           */}
           <section>
-            <h3>{t("Framing presets", "Préréglages de cadrage")}</h3>
+            <DeskHeading
+              title={t("Framing presets", "Préréglages de cadrage")}
+              help={<>
+              {t("Saves the zoom and centre together.", "Sauvegarde le zoom et le centre ensemble.")} <strong>Shift+1-4</strong>{" "}
+              {t("recalls without reaching for the mouse.", "rappelle sans avoir à toucher la souris.")}
+              </>}
+            />
             <div className="cast-presets">
               {presets.map((p, i) => (
                 <div className="cast-preset" key={i}>
@@ -1788,10 +1840,6 @@ export function CasterControl({
                 </div>
               ))}
             </div>
-            <p className="cast-note muted">
-              {t("Saves the zoom and centre together.", "Sauvegarde le zoom et le centre ensemble.")} <strong>Shift+1-4</strong>{" "}
-              {t("recalls without reaching for the mouse.", "rappelle sans avoir à toucher la souris.")}
-            </p>
           </section>
 
           {/*
@@ -1808,7 +1856,25 @@ export function CasterControl({
             Every other aim control takes the wheel straight back - see dropMotion.
           */}
           <section>
-            <h3>{t("Auto-pilot", "Pilote automatique")}</h3>
+            <DeskHeading
+              title={t("Auto-pilot", "Pilote automatique")}
+              help={<>
+                  {t(
+                    "2x on each quadrant in turn, holding still long enough to read it before moving on.",
+                    "2x sur chaque quadrant à tour de rôle, en s'y tenant assez longtemps pour le lire avant de continuer."
+                  )}{" "}
+                  {punchOn
+                    ? t(
+                        `Each new shot pulls it to that square's quadrant for ${punchSecs}s, then the lap carries on from there.`,
+                        `Chaque nouveau tir l'amène sur le quadrant de cette case pendant ${punchSecs}s, puis le tour reprend à partir de là.`
+                      )
+                    : t("Punch in is off, so shots don't interrupt it.", "Le zoom-éclair est désactivé, donc les tirs ne l'interrompent pas.")}{" "}
+                  {t(
+                    "Touching the aim, the zoom or a preset takes the wheel back where it stands.",
+                    "Toucher la visée, le zoom ou un préréglage reprend la main là où elle se trouve."
+                  )}
+              </>}
+            />
             <label className="cast-check">
               <input
                 type="checkbox"
@@ -1846,22 +1912,6 @@ export function CasterControl({
                     {Math.floor(lapSecs / 60)}:{String(lapSecs % 60).padStart(2, "0")}
                   </span>
                 </div>
-                <p className="cast-note muted">
-                  {t(
-                    "2x on each quadrant in turn, holding still long enough to read it before moving on.",
-                    "2x sur chaque quadrant à tour de rôle, en s'y tenant assez longtemps pour le lire avant de continuer."
-                  )}{" "}
-                  {punchOn
-                    ? t(
-                        `Each new shot pulls it to that square's quadrant for ${punchSecs}s, then the lap carries on from there.`,
-                        `Chaque nouveau tir l'amène sur le quadrant de cette case pendant ${punchSecs}s, puis le tour reprend à partir de là.`
-                      )
-                    : t("Punch in is off, so shots don't interrupt it.", "Le zoom-éclair est désactivé, donc les tirs ne l'interrompent pas.")}{" "}
-                  {t(
-                    "Touching the aim, the zoom or a preset takes the wheel back where it stands.",
-                    "Toucher la visée, le zoom ou un préréglage reprend la main là où elle se trouve."
-                  )}
-                </p>
               </>
             )}
           </section>
@@ -1870,19 +1920,9 @@ export function CasterControl({
             Follow the action. Off by default and it yields to the hand - see the note on `follow`.
           */}
           <section>
-            <h3>{t("Follow the action", "Suivre l'action")}</h3>
-            <label className="cast-check">
-              <input
-                type="checkbox"
-                checked={follow}
-                // The lap already follows the action, in its own way and without the twitch. Two
-                // things steering one camera is the failure this whole handover is shaped around.
-                disabled={Boolean(view.motion)}
-                onChange={(e) => setFollow(e.target.checked)}
-              />
-              <span>{t("Swing to the newest shot", "Se déplacer vers le dernier tir")}</span>
-            </label>
-            <p className="cast-note muted">
+            <DeskHeading
+              title={t("Follow the action", "Suivre l'action")}
+              help={<>
               {view.motion
                 ? t(
                     "The auto-pilot is doing the following. Switch it off to swing the camera yourself.",
@@ -1902,7 +1942,19 @@ export function CasterControl({
                       `Slides the frame to each new shot without changing the zoom, lit with the rest dimmed for ${punchSecs}s.`,
                       `Déplace le cadre vers chaque nouveau tir sans changer le zoom, éclairé avec le reste assombri pendant ${punchSecs}s.`
                     )}
-            </p>
+              </>}
+            />
+            <label className="cast-check">
+              <input
+                type="checkbox"
+                checked={follow}
+                // The lap already follows the action, in its own way and without the twitch. Two
+                // things steering one camera is the failure this whole handover is shaped around.
+                disabled={Boolean(view.motion)}
+                onChange={(e) => setFollow(e.target.checked)}
+              />
+              <span>{t("Swing to the newest shot", "Se déplacer vers le dernier tir")}</span>
+            </label>
           </section>
 
           {/*
@@ -1917,7 +1969,15 @@ export function CasterControl({
             camera out from under them and then moving it back would be the opposite of helpful.
           */}
           <section>
-            <h3>{t("Punch in", "Zoom-éclair")}</h3>
+            <DeskHeading
+              title={t("Punch in", "Zoom-éclair")}
+              help={<>
+                  {t(
+                    "Returns to exactly the framing you were on. Touching the aim yourself cancels the return and leaves the square lit.",
+                    "Revient exactement au cadrage où vous étiez. Toucher la visée vous-même annule le retour et laisse la case éclairée."
+                  )}
+              </>}
+            />
             <label className="cast-check">
               <input type="checkbox" checked={punchOn} onChange={(e) => setPunchOn(e.target.checked)} />
               <span>{t("Zoom to a highlight, then come back", "Zoomer sur un moment fort, puis revenir")}</span>
@@ -1952,22 +2012,26 @@ export function CasterControl({
                   />
                   <span className="cast-zoom-value">{punchSecs}s</span>
                 </div>
-                <p className="cast-note muted">
-                  {t(
-                    "Returns to exactly the framing you were on. Touching the aim yourself cancels the return and leaves the square lit.",
-                    "Revient exactement au cadrage où vous étiez. Toucher la visée vous-même annule le retour et laisse la case éclairée."
-                  )}
-                </p>
               </>
             )}
           </section>
+          </DeskMenu>
 
+          <DeskMenu id="spot" title={t("Spotlight & ships", "Projecteur et navires")} locked={!driving} lockedNote={lockedNote}>
           {/*
             The spotlight: what the caster is pointing at. A stream viewer cannot follow a finger on
             a monitor, so "the one at D7" otherwise has no picture attached to it.
           */}
           <section>
-            <h3>{t("Spotlight", "Projecteur")}</h3>
+            <DeskHeading
+              title={t("Spotlight", "Projecteur")}
+              help={<>
+              {t(
+                "With this on, a click points and a drag still pans. Click the lit square again to clear it.",
+                "Une fois activé, un clic pointe et un glissement déplace toujours la vue. Recliquez sur la case éclairée pour l'effacer."
+              )}
+              </>}
+            />
             <label className="cast-check">
               <input type="checkbox" checked={spotting} onChange={(e) => setSpotting(e.target.checked)} />
               <span>{t("Click the board to point at a square", "Cliquez sur le plateau pour pointer une case")}</span>
@@ -1989,12 +2053,6 @@ export function CasterControl({
                 </span>
               )}
             </div>
-            <p className="cast-note muted">
-              {t(
-                "With this on, a click points and a drag still pans. Click the lit square again to clear it.",
-                "Une fois activé, un clic pointe et un glissement déplace toujours la vue. Recliquez sur la case éclairée pour l'effacer."
-              )}
-            </p>
 
             {hulls.length > 0 && (
               <>
@@ -2041,114 +2099,6 @@ export function CasterControl({
           </section>
           </DeskMenu>
 
-          <DeskMenu id="look" title={t("Board look", "Apparence du plateau")} locked={!driving} lockedNote={lockedNote}>
-          {/*
-            Result markers. One switch for the sprite AND the cell fill together: turning off only
-            the sprite leaves a fully colour-coded board, which is not what anybody means by taking
-            the icons off. What survives either way is the attribution ring, so the board still says
-            which squares have been shot at and by whom - see lib/overlayMarkers.
-          */}
-          <section>
-            <h3>{t("Result markers", "Marqueurs de résultat")}</h3>
-            <label className="cast-check">
-              <input
-                type="checkbox"
-                checked={view.markers !== false}
-                onChange={(e) => set({ markers: e.target.checked })}
-              />
-              <span>{t("Show hits, misses and wrecks", "Afficher les touches, les ratés et les épaves")}</span>
-            </label>
-            {view.markers !== false && teams.length > 1 && (
-              <>
-                <div className="cast-buttons">
-                  <button
-                    className={!view.markerTeams?.length ? "primary" : ""}
-                    onClick={() => set({ markerTeams: null })}
-                    title={t("Every fleet's shots", "Les tirs de toutes les flottes")}
-                  >
-                    {t("All shots", "Tous les tirs")}
-                  </button>
-                  {teams.map((tm) => {
-                    const only = view.markerTeams?.length === 1 && view.markerTeams[0] === tm;
-                    return (
-                      <button
-                        key={tm}
-                        className={only ? "primary" : ""}
-                        onClick={() => set({ markerTeams: only ? null : [tm] })}
-                        style={{ color: teamHex(tm) }}
-                        title={`${t("Only", "Seuls les tirs de")} ${teamName(tm)}${t("'s shots get markers", " sont marqués")}`}
-                      >
-                        {/* The key to the shapes on the rings, in colourblind mode - see TeamGlyph. */}
-                        <TeamGlyph team={tm} /> {teamName(tm)}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="cast-note muted">
-                  {t("Whose", "Les")} <em>{t("shots", "tirs")}</em> {t("are marked - separate from whose board is on screen.", "de qui sont marqués - indépendant de la flotte affichée à l'écran.")}
-                </p>
-              </>
-            )}
-            {view.markers === false && (
-              <p className="cast-note muted">
-                {t(
-                  "Squares keep their coloured outline, so the board still shows who has fired where. The names get the whole square.",
-                  "Les cases gardent leur contour coloré, donc le plateau montre toujours qui a tiré où. Les noms occupent toute la case."
-                )}
-              </p>
-            )}
-          </section>
-
-          <section>
-            <h3>{t("Board", "Plateau")}</h3>
-            <div className="cast-buttons">
-              <button
-                className={view.visible ? "" : "danger"}
-                onClick={() => set({ visible: !view.visible })}
-                title={t("Blank the board source without removing it from the scene", "Vider la source du plateau sans la retirer de la scène")}
-              >
-                {view.visible ? t("Hide board", "Masquer le plateau") : t("Board hidden", "Plateau masqué")}
-              </button>
-            </div>
-          </section>
-
-          {/*
-            Fading the board is the middle setting between "up" and "gone", and it is the one that
-            gets used: a caster wants to leave the board on screen through a boss fight rather than
-            pulling it in and out every thirty seconds, and at half strength the squares still read
-            while the fight underneath stays watchable. Hiding it outright is still there for the
-            moments that need the screen back completely.
-          */}
-          <section>
-            <h3>{t("Transparency", "Transparence")}</h3>
-            <div className="cast-row">
-              <input
-                type="range"
-                min={MIN_OPACITY}
-                max={1}
-                step={0.05}
-                value={view.opacity}
-                className="eb-slider"
-                style={{ ["--eb-fill" as string]: view.opacity }}
-                onChange={(e) => set({ opacity: Number(e.target.value) })}
-                title={t("How solid the board is on stream", "À quel point le plateau est opaque à l'écran")}
-              />
-              <span className="cast-zoom-value">
-                {view.opacity <= 0 ? t("hidden", "masqué") : `${Math.round(view.opacity * 100)}%`}
-              </span>
-              <button onClick={() => set({ opacity: 1 })} title={t("Back to a solid board", "Revenir à un plateau opaque")}>
-                {t("Solid", "Opaque")}
-              </button>
-            </div>
-            <p className="cast-note muted">
-              {t(
-                "Fades the water. Square names and shots hold back about halfway to solid, and the frame and grid lines barely move, so a faint board still reads as a board. The monitor above shows the same fade, over this page's background rather than gameplay - real footage is busier than this.",
-                "Estompe l'eau. Les noms des cases et les tirs restent visibles jusqu'à environ mi-chemin de l'opacité maximale, et le cadre et les lignes de grille bougent à peine, donc un plateau pâle reste lisible comme un plateau. Le moniteur ci-dessus montre le même estompage, sur le fond de cette page plutôt que sur le gameplay - les images réelles sont plus chargées que ça."
-              )}
-            </p>
-          </section>
-          </DeskMenu>
-
           <DeskMenu id="streams" title={t("Player streams", "Flux des joueurs")}>
           {/*
             The player streams: how far the board is held back to meet them, and a way to kick a
@@ -2160,6 +2110,13 @@ export function CasterControl({
             Browser sources list. Only ADDS latency - a Twitch stream cannot be made earlier.
           */}
           <section>
+            <DeskHeading
+              title={t("Stream delay", "Retard des flux")}
+              help={<>
+              {t("Latency is read from each box every few seconds. If one stream drifts on its own, add a", "La latence est lue sur chaque boîte toutes les quelques secondes. Si un flux dérive de son côté, ajoutez un filtre")}{" "}
+              <strong>{t("Render Delay", "Render Delay")}</strong> {t("filter to that Screen source in OBS to nudge it back.", "à cette source Screen dans OBS pour le recaler.")}
+              </>}
+            />
             <div className="cast-row">
               <input
                 type="range"
@@ -2227,13 +2184,11 @@ export function CasterControl({
                 })}
               </div>
             )}
-            <p className="cast-note muted">
-              {t("Latency is read from each box every few seconds. If one stream drifts on its own, add a", "La latence est lue sur chaque boîte toutes les quelques secondes. Si un flux dérive de son côté, ajoutez un filtre")}{" "}
-              <strong>{t("Render Delay", "Render Delay")}</strong> {t("filter to that Screen source in OBS to nudge it back.", "à cette source Screen dans OBS pour le recaler.")}
-            </p>
             {room && <FindAlertsSwitch roomId={room.id} off={Boolean(room.find_alerts_off)} />}
           </section>
           </DeskMenu>
+
+          <h3 className="cast-band">{t("Before the show", "Avant le direct")}</h3>
 
           <DeskMenu id="names" title={t("Names on stream", "Noms à l'écran")}>
 
@@ -2243,7 +2198,15 @@ export function CasterControl({
             stream at once; remembered in this browser so a regular desk doesn't retype them.
           */}
           <section>
-            <h3>{t("Caster names", "Noms des commentateurs")}</h3>
+            <DeskHeading
+              title={t("Caster names", "Noms des commentateurs")}
+              help={<>
+              {t(
+                "Shown on a plate along the bottom of each cam box in the match scene. Leave one empty for no plate.",
+                "Affichés sur un bandeau en bas de chaque cadre caméra de la scène de match. Laissez-en un vide pour ne pas afficher de bandeau."
+              )}
+              </>}
+            />
             <div className="cast-row">
               {[t("Caster", "Commentateur"), t("Co-caster", "Co-commentateur")].map((label, i) => (
                 <input
@@ -2266,26 +2229,131 @@ export function CasterControl({
                 />
               ))}
             </div>
-            <p className="cast-note muted">
-              {t(
-                "Shown on a plate along the bottom of each cam box in the match scene. Leave one empty for no plate.",
-                "Affichés sur un bandeau en bas de chaque cadre caméra de la scène de match. Laissez-en un vide pour ne pas afficher de bandeau."
-              )}
-            </p>
           </section>
 
           {/* Only on a desk that knows whose stream it is - see DeskMatchup. */}
           {deskOwner && <DeskMatchup key={deskOwner} userId={deskOwner} own={ownDesk} teams={officialTeams} />}
           </DeskMenu>
 
+          <DeskMenu id="look" title={t("Board look", "Apparence du plateau")} locked={!driving} lockedNote={lockedNote}>
+          {/*
+            Square names and coordinates used to be toggles here and are now simply always on.
+            Neither was a decision anybody wanted to make mid-match: the names are the entire reason
+            the zoom exists, and the coordinates are how a caster says where something is. Turning
+            either off leaves a board that can only be talked about by pointing at it, which is the
+            one thing a stream cannot do. (Both remain as ?names=0 / ?coords=0 on a pinned source,
+            for a player running the board very small - see pinnedView.)
+          */}
+          {/* Every fleet's chases, with no team passed to recordChases - a caster is told everything,
+              the same as with the things hiding in the water. This is the panel that gives them a
+              reason to look up: "Aljex is two hits from the record" is a call they can build on. */}
+          {/*
+            Text size, as a fraction of what each square will hold.
+
+            The default is now "as large as it fits", per square - so the size varies with the name,
+            which is the point: "Dane" gets a big one and "Consecrated Death Rite Bird" gets a small
+            one, and neither leaves the square mostly empty. This slider only comes DOWN from that,
+            because there is nothing above filling the square. See lib/textFit.
+          */}
+          <section>
+            <DeskHeading
+              title={t("Text size", "Taille du texte")}
+              help={<>
+              {t(
+                "Every square is sized to its own name, so short names come out large. This trims the whole board together.",
+                "Chaque case est dimensionnée selon son propre nom, donc les noms courts ressortent en grand. Ce curseur réduit tout le plateau ensemble."
+              )}
+              </>}
+            />
+            <div className="cast-row">
+              <input
+                type="range"
+                min={MIN_TEXT_SIZE}
+                max={1}
+                step={0.05}
+                value={view.text ?? 1}
+                className="eb-slider"
+                style={{ ["--eb-fill" as string]: ((view.text ?? 1) - MIN_TEXT_SIZE) / (1 - MIN_TEXT_SIZE) }}
+                onChange={(e) => set({ text: Number(e.target.value) })}
+                title={t("How much of each square the name fills", "Quelle part de chaque case le nom remplit")}
+              />
+              <span className="cast-zoom-value">{Math.round((view.text ?? 1) * 100)}%</span>
+              <button onClick={() => set({ text: 1 })} title={t("Fill every square", "Remplir chaque case")}>
+                {t("Fill", "Remplir")}
+              </button>
+            </div>
+          </section>
+
+          {/*
+            Result markers. One switch for the sprite AND the cell fill together: turning off only
+            the sprite leaves a fully colour-coded board, which is not what anybody means by taking
+            the icons off. What survives either way is the attribution ring, so the board still says
+            which squares have been shot at and by whom - see lib/overlayMarkers.
+          */}
+          <section>
+            <DeskHeading
+              title={t("Result markers", "Marqueurs de résultat")}
+              help={
+                view.markers === false ? (<>
+                {t(
+                  "Squares keep their coloured outline, so the board still shows who has fired where. The names get the whole square.",
+                  "Les cases gardent leur contour coloré, donc le plateau montre toujours qui a tiré où. Les noms occupent toute la case."
+                )}
+                </>) : teams.length > 1 ? (<>
+                  {t("Whose", "Les")} <em>{t("shots", "tirs")}</em> {t("are marked - separate from whose board is on screen.", "de qui sont marqués - indépendant de la flotte affichée à l'écran.")}
+                </>) : undefined
+              }
+            />
+            <label className="cast-check">
+              <input
+                type="checkbox"
+                checked={view.markers !== false}
+                onChange={(e) => set({ markers: e.target.checked })}
+              />
+              <span>{t("Show hits, misses and wrecks", "Afficher les touches, les ratés et les épaves")}</span>
+            </label>
+            {view.markers !== false && teams.length > 1 && (
+              <>
+                <div className="cast-buttons">
+                  <button
+                    className={!view.markerTeams?.length ? "primary" : ""}
+                    onClick={() => set({ markerTeams: null })}
+                    title={t("Every fleet's shots", "Les tirs de toutes les flottes")}
+                  >
+                    {t("All shots", "Tous les tirs")}
+                  </button>
+                  {teams.map((tm) => {
+                    const only = view.markerTeams?.length === 1 && view.markerTeams[0] === tm;
+                    return (
+                      <button
+                        key={tm}
+                        className={only ? "primary" : ""}
+                        onClick={() => set({ markerTeams: only ? null : [tm] })}
+                        style={{ color: teamHex(tm) }}
+                        title={`${t("Only", "Seuls les tirs de")} ${teamName(tm)}${t("'s shots get markers", " sont marqués")}`}
+                      >
+                        {/* The key to the shapes on the rings, in colourblind mode - see TeamGlyph. */}
+                        <TeamGlyph team={tm} /> {teamName(tm)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+          </DeskMenu>
+
           <DeskMenu id="sources" title={t("Browser sources", "Sources navigateur")}>
           <section>
-            <p className="muted cast-note">
+            <DeskHeading
+              title={t("Add to OBS", "Ajouter à OBS")}
+              help={<>
               {t(
                 "Add each as a Browser Source in OBS. The board follows this page - its transparency, text size, zoom and framing all come from here, which is why none of them are baked into its URL. The clock and the colour key run on their own, so they take the transparency and text size as they stand right now - move a slider afterwards and the board follows by itself, while those two want copying again.",
                 "Ajoutez chacune comme une Browser Source dans OBS. Le plateau suit cette page - sa transparence, sa taille de texte, son zoom et son cadrage viennent tous d'ici, c'est pourquoi rien de tout cela n'est figé dans son URL. Le chronomètre et la clé de couleur tournent de leur côté, donc ils prennent la transparence et la taille de texte telles qu'elles sont en ce moment - déplacez un curseur ensuite et le plateau suit tout seul, alors que ces deux-là demandent d'être recopiés."
               )}
-            </p>
+              </>}
+            />
             <SourceRow label={t("Board", "Plateau")} url={boardUrl} size="1000 x 1000" note={t("square - the board fits the shorter side", "carré - le plateau s'ajuste au côté le plus court")} />
             {/* Taller than the player's 1200 x 200 because the odds band sits under the clock and
                 the whole bar scales to fit its source - give it 200 and the clock shrinks to make

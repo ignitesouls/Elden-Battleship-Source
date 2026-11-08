@@ -295,7 +295,8 @@
 .cast-rail {
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  /* The shot log inside it does the scrolling, so the on-air panel above it never moves. */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -457,7 +458,8 @@
   gap: 0.4rem;
 }
 
-.cast-panel h3 {
+.cast-panel h3,
+.cast-rail h3 {
   margin: 0;
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -766,4 +768,185 @@
   flex: none;
   font-size: 0.68rem;
   padding: 0.1rem 0.4rem;
+}
+
+/* -- Finding things on the desk ------------------------------------------------------------------ */
+
+/* The two halves of the control column. */
+.cast-panel h3.cast-band {
+  margin-top: 0.35rem;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* A fold inside a group: no card of its own, and quieter than the group's header. */
+.cast-menu-sub {
+  border: none;
+  background: none;
+}
+
+.cast-menu-sub > .cast-menu-head {
+  padding: 0.2rem 0;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.cast-menu-sub > .cast-menu-body {
+  padding: 0.25rem 0 0;
+  border-top: none;
+}
+
+/* Wraps, so an opened note drops onto its own line - see DeskHelp. */
+.cast-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cast-help-btn {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.66rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cast-help-btn-label {
+  width: auto;
+  height: auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.cast-help-note {
+  flex-basis: 100%;
+}
+
+/* On stream now. */
+.cast-air {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.cast-air-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.cast-air-list dt {
+  color: var(--text-dim);
+}
+
+.cast-air-list dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cast-air-bad {
+  color: var(--danger);
+}
+
+.cast-air-warn {
+  color: var(--accent);
+}
+
+/* The shot log takes whatever the on-air panel leaves, and scrolls by itself. */
+.cast-log {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.cast-log-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-right: 0.25rem;
+}
+
+.cast-log-row {
+  flex: none;
+  padding-left: 0.4rem;
+  border-left: 3px solid;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.cast-log-top {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.cast-log-time {
+  flex: none;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.cast-log-who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-log-result {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.cast-log-square,
+.cast-log-note {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.cast-log-square {
+  color: var(--text-dim);
+}
+
+/* Most shots miss: turned down so a hit stands out when skimming. */
+.cast-log-miss {
+  opacity: 0.6;
+}
+
+@media (max-width: 60rem) {
+  .cast-log-list {
+    max-height: 20rem;
+  }
 }

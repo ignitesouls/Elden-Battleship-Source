@@ -36,6 +36,8 @@ function writeOpen(id: string, open: boolean): void {
  *
  * `lazy` keeps the contents unmounted until the group is first opened - for one that reads something
  * from the server, so a desk that never opens it never asks.
+ *
+ * `sub` is a smaller fold inside another group, with no card of its own.
  */
 export function DeskMenu({
   id,
@@ -45,6 +47,7 @@ export function DeskMenu({
   lockedNote,
   openSignal,
   lazy = false,
+  sub = false,
   children,
 }: {
   id: string;
@@ -54,6 +57,7 @@ export function DeskMenu({
   lockedNote?: string;
   openSignal?: number;
   lazy?: boolean;
+  sub?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(() => readOpen()[id] ?? defaultOpen);
@@ -69,7 +73,7 @@ export function DeskMenu({
 
   return (
     <details
-      className="cast-menu"
+      className={`cast-menu${sub ? " cast-menu-sub" : ""}`}
       open={open}
       onToggle={(e) => {
         const now = e.currentTarget.open;

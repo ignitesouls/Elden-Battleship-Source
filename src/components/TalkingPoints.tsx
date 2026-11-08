@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { teamHex } from "../lib/teamColors";
 import type { TalkingPoint } from "../lib/talkingPoints";
 import { CARD_MS } from "../lib/castAux";
+import { DeskMenu } from "./DeskMenu";
 import { useT } from "../lib/language";
 
 interface Props {
@@ -210,11 +211,15 @@ export function TalkingPoints({ before, live, loading, flashing, slotFor, onShow
               ))}
             </div>
           )}
-          <span className="muted" style={{ ...label, marginTop: "0.3rem" }}>{t("Coming in", "Avant le match")}</span>
+          {/* The pre-show crib sheet: it never changes during the match, so it stays folded out of the way. */}
           {before.length === 0 ? (
             <span className="muted" style={{ fontSize: "0.75rem" }}>{t("No history on this board yet.", "Pas encore d'historique sur ce plateau.")}</span>
           ) : (
-            before.map((p) => <Point key={p.id} p={p} onAir={onAir === p.id} show={showFor(p)} />)
+            <DeskMenu id="talk-coming" sub title={`${t("Coming in", "Avant le match")} (${before.length})`}>
+              <div className="stack" style={{ gap: "0.3rem" }}>
+                {before.map((p) => <Point key={p.id} p={p} onAir={onAir === p.id} show={showFor(p)} />)}
+              </div>
+            </DeskMenu>
           )}
         </>
       )}
