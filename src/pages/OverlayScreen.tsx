@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useCastScreens } from "../hooks/useCastScreens";
 import { useScreenAux } from "../lib/castAux";
-import { CAST_CANVAS, playerGameRect } from "../lib/castSceneLayout";
-import { useFramesOnAir } from "../lib/frameBeacon";
+import { CAST_CANVAS, SEAT_SOURCE, playerGameRect, seatGameSourceRect } from "../lib/castSceneLayout";
+import { useCastReceiver } from "../lib/overlayCast";
+import { useFrameOnStream, useFramesOnAir } from "../lib/frameBeacon";
 import "./OverlayScreen.css";
 
 /**
@@ -29,6 +30,16 @@ import "./OverlayScreen.css";
  * gameplay hole only, edge to edge, and the stream is asked for 720p instead of 480p, so the crop
  * still has more pixels than the box. The switch waits out the stream's own delay, so the box
  * changes when the viewer's picture does rather than seconds before it.
+ *
+ * -- `?cams=1`: OBS does the cropping ------------------------------------------------------------
+ *
+ * The current casting scene places this source twice, one item cropped to the gameplay and one to
+ * the webcam (seatCamRects in lib/castSceneLayout), so with a cam to show the page draws the player's
+ * whole frame and leaves the cutting to OBS. Those crops are fixed, so when there is no cam - no
+ * player frame, or the caster switched it off (CastView.camsOff) - the stream is drawn only inside
+ * the gameplay item's rectangle. The rest of the page is transparent, so the cam item shows nothing.
+ *
+ * A scene imported before this has no `?cams=1`, and fills its box exactly as it always did.
  *
  * -- One source per box, driven by `?slot=` --------------------------------------------------
  *
@@ -146,38 +157,38 @@ const CROP_STYLE = {
   ["--ovs-crop-y" as string]: `${(-GAME.y / CAST_CANVAS.h) * 100}%`,
 };
 
-/** Twitch's delay when the box can't read it yet - near the low end of what a player's stream runs. */
-const DEFAULT_DELAY_MS = 4000;
-
 /** How often a box re-reads its own latency, for the desk's readout. Latency drifts slowly. */
 const LATENCY_POLL_MS = 4000;
 
 /**
  * The muted Twitch embed, filling its box - or, `cropped`, showing only the player frame's gameplay
  * hole. Rebuilt on a channel change or a resync (via `key`); cropping only restyles it and moves the
- * quality cap, so the stream never reloads when it flips.
+ * quality cap, so the stream never reloads when it flips. `framed` is whether the picture is the
+ * player's frame, which is what needs the extra pixels, whoever is doing the cropping.
  */
 function TwitchStream({
   channel,
   cropped,
+  framed,
   onLatency,
 }: {
   channel: string;
   cropped: boolean;
+  framed: boolean;
   onLatency: (ms: number | null) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
   const onLatencyRef = useRef(onLatency);
   onLatencyRef.current = onLatency;
   const playerRef = useRef<TwitchPlayer | null>(null);
-  const capRef = useRef(cropped ? CAP_CROPPED : CAP_WHOLE);
-  capRef.current = cropped ? CAP_CROPPED : CAP_WHOLE;
+  const capRef = useRef(framed ? CAP_CROPPED : CAP_WHOLE);
+  capRef.current = framed ? CAP_CROPPED : CAP_WHOLE;
   /** The rung this player was last asked for - see capQuality. Reset with each new player. */
   const appliedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (playerRef.current) capQuality(playerRef.current, capRef.current, appliedRef);
-  }, [cropped]);
+  }, [framed]);
 
   useEffect(() => {
     const holder = holderRef.current;
@@ -241,19 +252,15 @@ function TwitchStream({
   return <div className={cropped ? "ovs-stream ovs-stream--game" : "ovs-stream"} style={cropped ? CROP_STYLE : undefined} ref={holderRef} />;
 }
 
-/**
- * Whether the box should be cropped now: the frame's showing, as the VIEWER sees it. Presence moves
- * the instant a player switches scene, but their stream shows the switch only after its delay, so a
- * change is held back by that delay - the box's own measured latency, or a typical one until known.
- */
-function useDelayedCrop(onAir: boolean, latencyRef: React.RefObject<number | null>): boolean {
-  const [cropped, setCropped] = useState(onAir);
-  useEffect(() => {
-    if (onAir === cropped) return;
-    const timer = setTimeout(() => setCropped(onAir), latencyRef.current ?? DEFAULT_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [onAir, cropped, latencyRef]);
-  return cropped;
+/** The screen source's gameplay item, as CSS for this page. */
+function gameRegionStyle(slot: number) {
+  const r = seatGameSourceRect(slot);
+  return {
+    left: `${(r.x / SEAT_SOURCE.w) * 100}%`,
+    top: `${(r.y / SEAT_SOURCE.h) * 100}%`,
+    width: `${(r.w / SEAT_SOURCE.w) * 100}%`,
+    height: `${(r.h / SEAT_SOURCE.h) * 100}%`,
+  };
 }
 
 export function OverlayScreen(props: OverlaySourceProps = {}) {
@@ -273,7 +280,13 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
 
   // Only a box with a stream to crop listens for frames.
   const framesOnAir = useFramesOnAir(!!screen?.twitchLogin);
-  const cropped = useDelayedCrop(!!screen && framesOnAir.has(screen.userId), latencyRef);
+  const framed = useFrameOnStream(!!screen && framesOnAir.has(screen.userId), latencyRef);
+
+  const cams = params.get("cams") === "1";
+  const { message } = useCastReceiver(cams ? code : undefined, owner);
+  const camOff = !!screen && (message?.view.camsOff ?? []).includes(screen.userId);
+  // The whole frame goes to OBS only when there is a cam in it to cut out.
+  const wholeFrame = cams && framed && !camOff;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -291,18 +304,21 @@ export function OverlayScreen(props: OverlaySourceProps = {}) {
 
   return (
     <div className="ovs">
-      {screen.twitchLogin ? (
-        <TwitchStream
-          key={`${screen.twitchLogin}:${resyncNonce}`}
-          channel={screen.twitchLogin}
-          cropped={cropped}
-          onLatency={(ms) => {
-            latencyRef.current = ms;
-          }}
-        />
-      ) : (
-        <div className="ovs-stream ovs-stream-empty" />
-      )}
+      <div className="ovs-region" style={cams && !wholeFrame ? gameRegionStyle(slot) : undefined}>
+        {screen.twitchLogin ? (
+          <TwitchStream
+            key={`${screen.twitchLogin}:${resyncNonce}`}
+            channel={screen.twitchLogin}
+            cropped={framed && !wholeFrame}
+            framed={framed}
+            onLatency={(ms) => {
+              latencyRef.current = ms;
+            }}
+          />
+        ) : (
+          <div className="ovs-stream ovs-stream-empty" />
+        )}
+      </div>
     </div>
   );
 }

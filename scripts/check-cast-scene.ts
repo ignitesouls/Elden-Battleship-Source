@@ -20,9 +20,14 @@ import {
   playerGameRect,
   playerFireRect,
   playerFleetRect,
+  playerCamRect,
   fleetStripRects,
+  seatCamRects,
+  seatCamSourceRect,
+  seatGameSourceRect,
   CAST_CANVAS,
   CAST_SEATS,
+  SEAT_SOURCE,
   type Rect,
 } from "../src/lib/castSceneLayout.ts";
 import {
@@ -261,6 +266,77 @@ console.log("\ncollection - the caster's settings");
       return Math.abs(cx - (b.x + b.w / 2)) <= 1 && Math.abs(cy - (b.y + b.h / 2)) <= 1;
     })()
   );
+}
+
+console.log("\ncollection - player cams");
+{
+  const file = buildCastCollection({ base: BASE, token: TOKEN, newId: counter() });
+  const main = file.sources.find((s) => s.name === CAST_SCENE_MAIN)!;
+  type Item = {
+    name: string;
+    source_uuid: string;
+    pos: { x: number; y: number };
+    scale: { x: number; y: number };
+    crop_left: number;
+    crop_top: number;
+    crop_right: number;
+    crop_bottom: number;
+  };
+  const items = (main.settings as unknown as { items: Item[] }).items;
+  const screens = file.sources.filter((s) => s.name.startsWith("EB Screen"));
+  const shown = (i: Item) => ({
+    x: i.pos.x,
+    y: i.pos.y,
+    w: (SEAT_SOURCE.w - i.crop_left - i.crop_right) * i.scale.x,
+    h: (SEAT_SOURCE.h - i.crop_top - i.crop_bottom) * i.scale.y,
+  });
+  const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
+  const boxes = screenRects();
+  const cams = seatCamRects();
+
+  ok("six Twitch players, however many times each is placed", screens.length === CAST_SEATS);
+  ok("every screen source is rendered at the cropping size", screens.every((s) => {
+    const set = s.settings as { width: number; height: number; url: string };
+    return set.width === SEAT_SOURCE.w && set.height === SEAT_SOURCE.h && /[?&]cams=1(&|$)/.test(set.url);
+  }));
+  ok("the match frame draws the cam borders", file.sources.some((s) => /layout=cast&cams=1/.test(String((s.settings as { url?: string }).url))));
+
+  const per = screens.map((s) => items.filter((i) => i.source_uuid === s.uuid));
+  ok("each screen stands in the scene exactly twice", per.every((two) => two.length === 2));
+  ok(
+    "the first item of each fills its box, unscaled",
+    per.every(([game], i) => {
+      const r = shown(game);
+      return game.scale.x === 1 && r.x === boxes[i].x && r.y === boxes[i].y && r.w === boxes[i].w && r.h === boxes[i].h;
+    })
+  );
+  ok(
+    "the second lands on its cam, at the cam's size and not stretched",
+    per.every(([, cam], i) => {
+      const r = shown(cam);
+      return r.x === cams[i].x && r.y === cams[i].y && near(r.w, cams[i].w) && near(r.h, cams[i].h) && cam.scale.x === cam.scale.y;
+    })
+  );
+  ok("every crop is whole pixels and none is negative", per.flat().every((i) =>
+    [i.crop_left, i.crop_top, i.crop_right, i.crop_bottom].every((c) => Number.isInteger(c) && c >= 0)
+  ));
+
+  // Rounded outward, a crop would put a line of the frame art round the picture.
+  const s = SEAT_SOURCE.w / CAST_CANVAS.w;
+  const inside = (r: Rect, hole: Rect) =>
+    r.x >= hole.x * s - 1e-6 && r.y >= hole.y * s - 1e-6 && r.x + r.w <= (hole.x + hole.w) * s + 1e-6 && r.y + r.h <= (hole.y + hole.h) * s + 1e-6;
+  ok("the cam crop stays inside the frame's webcam hole", inside(seatCamSourceRect(), playerCamRect()));
+  ok("the gameplay crop stays inside the frame's gameplay hole", boxes.every((_, i) => inside(seatGameSourceRect(i), playerGameRect())));
+
+  ok("every cam sits inside its own box", cams.every((c, i) => c.x >= boxes[i].x && c.y >= boxes[i].y && c.x + c.w <= boxes[i].x + boxes[i].w && c.y + c.h <= boxes[i].y + boxes[i].h));
+  ok("the left fleet's cams are on the left edge, the right fleet's on the right", cams.every((c, i) =>
+    i < CAST_SEATS / 2 ? c.x === boxes[i].x : c.x + c.w === boxes[i].x + boxes[i].w
+  ));
+  ok("every cam is vertically centred in its box", cams.every((c, i) => Math.abs(c.y + c.h / 2 - (boxes[i].y + boxes[i].h / 2)) <= 1));
+  ok("a cam covers under a tenth of its box", cams.every((c, i) => c.w * c.h < 0.1 * boxes[i].w * boxes[i].h));
+
+  const order = items.map((i) => i.name);
+  ok("every cam is stacked under the frame", order.lastIndexOf("EB Screen 6") < order.indexOf("EB Frame"));
 }
 
 console.log("\ncollection - deterministic");

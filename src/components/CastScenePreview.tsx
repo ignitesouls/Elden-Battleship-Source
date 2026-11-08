@@ -11,6 +11,7 @@ import {
   fleetStripRects,
   frac,
   screenRects,
+  seatCamRects,
   type Rect,
 } from "../lib/castSceneLayout";
 import { teamHex } from "../lib/teamColors";
@@ -83,6 +84,9 @@ export function CastScenePreview({
     <div className="csp" role="img" aria-label={t("Preview of the match scene", "Aperçu de la scène de match")}>
       {screenRects().map((r, i) => (
         <div key={i} className="csp-screen" style={{ ...place(r), backgroundImage: footage }} />
+      ))}
+      {seatCamRects().map((r, i) => (
+        <div key={`seatcam${i}`} className="csp-cam csp-seatcam" style={{ ...place(r), borderColor: teamHex(i < 3 ? 0 : 1) }} />
       ))}
 
       <div className="csp-board" style={place(board)}>

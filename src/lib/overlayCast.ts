@@ -201,6 +201,12 @@ export interface CastView {
    * draws no plate. Optional and defaulted to none by the reader, like the fields above.
    */
   casters?: string[] | null;
+  /**
+   * The accounts whose webcam the caster has switched off, because the player is on our frame with
+   * no camera in its hole. The site can't tell from a Twitch picture, so it is the caster's call.
+   * Here rather than a one-off message so a refreshed source hears it again. Absent means every cam.
+   */
+  camsOff?: string[] | null;
 }
 
 /** Ceiling on the overlay hold. Past this a "delay" is really "the board has stopped". */

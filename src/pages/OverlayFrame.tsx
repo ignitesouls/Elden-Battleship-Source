@@ -15,6 +15,7 @@ import {
   fleetStripRects,
   frac,
   screenRects,
+  seatCamRects,
   type Rect,
 } from "../lib/castSceneLayout";
 import { useCastReceiver } from "../lib/overlayCast";
@@ -22,7 +23,7 @@ import { screensFromRoster } from "../lib/castScreens";
 import { groupIntoShots } from "../lib/attackFeed";
 import { buildPlayerStats } from "../lib/matchReport";
 import { teamHex, teamName } from "../lib/teamColors";
-import { useFrameBeacon } from "../lib/frameBeacon";
+import { useFrameBeacon, useFrameOnStream, useFramesOnAir } from "../lib/frameBeacon";
 import "./OverlayFrame.css";
 
 /**
@@ -78,6 +79,12 @@ import "./OverlayFrame.css";
  * Under each cam hole, a plate on a slice of the art's own water banner carrying that caster's name,
  * typed on the caster desk and sent on the cast channel (CastView.casters) - so it changes live,
  * with nothing to re-import. No desk, or an empty name, and there is no plate.
+ *
+ * -- And a border round each player's cam -----------------------------------------------------------
+ *
+ * With `?cams=1`, a fleet-colour outline on each cam in the box (seatCamRects). It follows the same
+ * two facts the screen source uses to show the cam at all - the player's frame is up, and the caster
+ * hasn't switched that cam off - so a box with no cam has no border either.
  */
 
 function place(rect: Rect) {
@@ -128,6 +135,12 @@ function SeatCard({ rect, card, width = rect.w }: { rect: Rect; card: StatCard; 
   );
 }
 
+function SeatCamBorder({ rect, color, onAir, off }: { rect: Rect; color: string; onAir: boolean; off: boolean }) {
+  const shown = useFrameOnStream(onAir);
+  if (!shown || off) return null;
+  return <div className="ovf-seat-cam" style={{ ...place(rect), borderColor: color }} />;
+}
+
 function CasterPlate({ rect, name, art }: { rect: Rect; name: string; art: string }) {
   return (
     <div className="ovf-plate" style={{ ...place(rect), backgroundImage: `url(${art})`, ...bannerSliceStyle(rect) }}>
@@ -161,6 +174,11 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
   );
   const holes = screenRects();
 
+  const seatCams = layout === "cast" && params.get("cams") === "1";
+  const framesOnAir = useFramesOnAir(seatCams);
+  const camsOff = message?.view.camsOff ?? [];
+  const camHoles = seatCamRects();
+
   // Fetched up front, so the first card does not pop up as a speech bubble with nobody saying it.
   useEffect(() => {
     if (layout !== "cast") return;
@@ -189,6 +207,18 @@ export function OverlayFrame(props: OverlaySourceProps = {}) {
             ? null
             : fleetStripRects(side).map((r, i) => <Strip key={`${side}${i}`} rect={r} color={teamHex(sides[side] as number)} />)
         )}
+      {seatCams &&
+        screens
+          .filter((s) => s.slot < camHoles.length && s.twitchLogin)
+          .map((s) => (
+            <SeatCamBorder
+              key={`${s.slot}:${s.userId}`}
+              rect={camHoles[s.slot]}
+              color={teamHex(s.team)}
+              onAir={framesOnAir.has(s.userId)}
+              off={camsOff.includes(s.userId)}
+            />
+          ))}
       {layout === "cast" &&
         screens
           .filter((s) => s.slot < holes.length)

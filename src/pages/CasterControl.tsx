@@ -103,6 +103,26 @@ function writeCasterNames(names: string[]): void {
   }
 }
 
+const CAMS_OFF_KEY = "eb_caster_cams_off";
+
+/** Who this desk has switched off - remembered, since a player with no webcam has none next match either. */
+function readCamsOff(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CAMS_OFF_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCamsOff(ids: string[]): void {
+  try {
+    localStorage.setItem(CAMS_OFF_KEY, JSON.stringify(ids));
+  } catch {
+    /* the switch still works, it just won't be remembered next time */
+  }
+}
+
 /**
  * Which square is under a point on screen, asked of the DOM rather than computed.
  *
@@ -252,6 +272,7 @@ export function CasterControl({
     eggs: false,
     alerts: false,
     casters: readCasterNames(),
+    camsOff: readCamsOff(),
   });
   const [stageRef, stage] = useBoxSize<HTMLDivElement>();
   /**
@@ -2172,6 +2193,8 @@ export function CasterControl({
               <div className="cast-screens">
                 {screens.map((s) => {
                   const ms = aux.latencies.get(s.slot);
+                  const camsOff = view.camsOff ?? [];
+                  const camOff = camsOff.includes(s.userId);
                   return (
                     <div className="cast-screen-row" key={s.slot}>
                       <span className="cast-screen-name" style={{ color: teamHex(s.team) }}>
@@ -2180,6 +2203,22 @@ export function CasterControl({
                       <span className="cast-screen-lat">
                         {ms === undefined ? "-" : `${(ms / 1000).toFixed(1)}${t("s behind", "s de retard")}`}
                       </span>
+                      <button
+                        className="cast-screen-resync"
+                        disabled={!driving}
+                        aria-pressed={!camOff}
+                        onClick={() => {
+                          const next = camOff ? camsOff.filter((id) => id !== s.userId) : [...camsOff, s.userId];
+                          writeCamsOff(next);
+                          set({ camsOff: next });
+                        }}
+                        title={t(
+                          "Show or hide this player's webcam and its border. Turn it off for a player on the frame with no camera.",
+                          "Afficher ou masquer la webcam de ce joueur et sa bordure. À couper pour un joueur sur le cadre sans caméra."
+                        )}
+                      >
+                        {camOff ? t("cam off", "cam coupée") : t("cam on", "cam active")}
+                      </button>
                       <button className="cast-screen-resync" onClick={() => aux.resync(s.slot)} title={t("Reload just this stream", "Recharger uniquement ce flux")}>
                         {t("resync", "resynchroniser")}
                       </button>

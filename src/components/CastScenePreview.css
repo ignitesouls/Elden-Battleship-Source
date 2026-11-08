@@ -133,6 +133,12 @@
     #16232e;
 }
 
+/* A stand-in player cam - OverlayFrame.css's .ovf-seat-cam, restated in cqw. */
+.csp-seatcam {
+  box-sizing: border-box;
+  border: 0.16cqw solid;
+}
+
 .csp-cam span {
   position: absolute;
   /* Clear of the name plate along the bottom of a match-scene cam box. */

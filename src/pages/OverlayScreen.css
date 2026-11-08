@@ -12,6 +12,14 @@
   background: transparent;
 }
 
+/* The part of the source the stream is drawn in: all of it, unless OverlayScreen narrows it to the
+   gameplay item's rectangle. A style change only, so the stream never reloads when it moves. */
+.ovs-region {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
 /* The embed's host. Twitch's iframe is told width/height 100%, so this just has to be a box. */
 .ovs-stream {
   position: absolute;
@@ -29,7 +37,7 @@
  * Cropped to the player frame's gameplay hole (see OverlayScreen). The embed is made wider than the
  * box by the canvas-to-hole ratio, kept 16:9, and shifted by the hole's corner; translate's
  * percentages are of the embed's own size, so the hole lands exactly on the box at any box size.
- * What hangs outside is trimmed by .ovs's overflow: hidden. `max-width: none` because the crop only
+ * What hangs outside is trimmed by .ovs-region's overflow: hidden. `max-width: none` because the crop only
  * works if the embed may be wider than its box: a stray `max-width: 100%` from any stylesheet
  * shrinks it back to the box and leaves the webcam in shot with black down the side.
  */

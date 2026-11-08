@@ -12,7 +12,11 @@ import {
   playerGameRect,
   playerFleetRect,
   playerCamRect,
+  seatCamRects,
+  seatCamSourceRect,
+  seatGameSourceRect,
   CAST_CANVAS,
+  SEAT_SOURCE,
   type Rect,
 } from "./castSceneLayout.ts";
 
@@ -188,8 +192,11 @@ function browserSource(entry: SceneEntry, uuid: string) {
  * `fit` is for a source whose size the file cannot know - a game capture or a webcam, which are
  * whatever resolution the player's game and camera happen to be. It gives the item an OBS bounding
  * box the size of its hole instead of a scale, so it lands right whatever comes out of the capture.
+ *
+ * `crop` is per ITEM, not per source, which is what lets one source stand in a scene twice showing
+ * two different parts of itself - see seatCamRects in lib/castSceneLayout.
  */
-function sceneItem(name: string, uuid: string, at: SourcePlacement, id: number, fit?: SceneFit) {
+function sceneItem(name: string, uuid: string, at: SourcePlacement, id: number, fit?: SceneFit, crop?: ItemCrop) {
   const { w, h } = CANVAS;
   return {
     name,
@@ -222,10 +229,10 @@ function sceneItem(name: string, uuid: string, at: SourcePlacement, id: number, 
     // OBS 30.1+. Older versions ignore it, which is harmless here: the frame art sits over every
     // capture, so whatever spills past a hole is under opaque art either way.
     bounds_crop: Boolean(fit?.crop),
-    crop_left: 0,
-    crop_top: 0,
-    crop_right: 0,
-    crop_bottom: 0,
+    crop_left: crop?.left ?? 0,
+    crop_top: crop?.top ?? 0,
+    crop_right: crop?.right ?? 0,
+    crop_bottom: crop?.bottom ?? 0,
     id,
     group_item_backup: false,
     scale_filter: "disable",
@@ -246,6 +253,19 @@ export interface SceneFit {
   w: number;
   h: number;
   crop: boolean;
+}
+
+/** Pixels OBS trims off each side of a scene item, in its source's own pixels. */
+export interface ItemCrop {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** The crop that leaves only `r` of a screen source showing. */
+function seatCrop(r: Rect): ItemCrop {
+  return { left: r.x, top: r.y, right: SEAT_SOURCE.w - r.x - r.w, bottom: SEAT_SOURCE.h - r.y - r.h };
 }
 
 export interface BuildSceneOptions {
@@ -442,6 +462,8 @@ export interface CastPart {
   scene: "main" | "break" | "soon" | "trailer";
   entry: SceneEntry;
   at: SourcePlacement;
+  /** For an item showing only part of its source - the player boxes and cams. */
+  crop?: ItemCrop;
   /** What the setup page says it is, for a caster building the scene by hand. */
   what: string;
 }
@@ -454,8 +476,9 @@ export interface CastPart {
  * the sources, sizes and positions the file would have given them.
  *
  * The screen boxes are one Browser Source each - `EB Screen 1..6`, pinned by `?slot=` - because a
- * caster wants to refresh a hitched stream on its own (see lib/castAux). Native size is the box's
- * own pixels, so the Twitch embed inside renders at the size it is shown rather than being scaled.
+ * caster wants to refresh a hitched stream on its own (see lib/castAux). Each one is placed twice,
+ * cropped to the gameplay and to the webcam, so there are six streams and twelve scene items - see
+ * seatCamRects. A part naming a source already listed is another item of that source.
  */
 export function castSceneParts({
   base,
@@ -488,8 +511,8 @@ export function castSceneParts({
   const EGG = 600;
 
   const parts: CastPart[] = [];
-  const add = (scene: CastPart["scene"], source: StreamSource, path: string, at: SourcePlacement, what: string) =>
-    parts.push({ scene, entry: { source, url: url(path) }, at, what });
+  const add = (scene: CastPart["scene"], source: StreamSource, path: string, at: SourcePlacement, what: string, crop?: ItemCrop) =>
+    parts.push({ scene, entry: { source, url: url(path) }, at, what, crop });
 
   // -- EB Cast, bottom up: what shows through the holes, the frame art over it, then the two things
   // that sit on top of the art - the find alert and the clock on the banner. The clock is last on
@@ -503,13 +526,28 @@ export function castSceneParts({
       "the board's sound, no picture - its own fader in the OBS mixer"
     );
   }
+  const screen = (i: number) => castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, SEAT_SOURCE.w, SEAT_SOURCE.h);
+  const screenPath = (i: number) => `screen?token=${token}&slot=${i}&cams=1`;
   boxes.forEach((box, i) =>
     add(
       "main",
-      castSource(`screen-${i}`, "screen", `EB Screen ${i + 1}`, Math.round(box.w), Math.round(box.h)),
-      `screen?token=${token}&slot=${i}`,
+      screen(i),
+      screenPath(i),
       { x: Math.round(box.x), y: Math.round(box.y), scale: 1 },
-      `player ${i + 1}'s Twitch stream (${i < 3 ? "left" : "right"} column)`
+      `player ${i + 1}'s Twitch stream (${i < 3 ? "left" : "right"} column)`,
+      seatCrop(seatGameSourceRect(i))
+    )
+  );
+  // Above every box and below the frame, so the frame's name tags and talking points stay on top.
+  const camSource = seatCamSourceRect();
+  seatCamRects().forEach((cam, i) =>
+    add(
+      "main",
+      screen(i),
+      screenPath(i),
+      { x: cam.x, y: cam.y, scale: cam.w / camSource.w },
+      `player ${i + 1}'s webcam - a second copy of EB Screen ${i + 1}: Copy it, then Paste (Reference)`,
+      seatCrop(camSource)
     )
   );
   add(
@@ -522,7 +560,7 @@ export function castSceneParts({
   add(
     "main",
     castSource("cast-cams", "frame", "EB Frame", CAST_CANVAS.w, CAST_CANVAS.h),
-    `frame?token=${token}&layout=cast`,
+    `frame?token=${token}&layout=cast&cams=1`,
     { x: 0, y: 0, scale: 1 },
     "the match frame art, the fleet-colour strips and every player's name and tally - everything else shows through its holes"
   );
@@ -614,14 +652,21 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
    * already listed bottom-up, and here the order is load-bearing - the clock sits on the frame art's
    * opaque banner, so it has to be the last item or the art hides it.
    */
-  function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement }>) {
-    const withIds = parts.map((p) => ({ ...p, uuid: uuid() }));
+  function scene(name: string, parts: Array<{ entry: SceneEntry; at: SourcePlacement; crop?: ItemCrop }>) {
+    // One id per source name: a part naming a source already listed is a second item of that source.
+    const ids = new Map<string, string>();
+    const withIds = parts.map((p) => {
+      const known = ids.get(p.entry.source.obsName);
+      const id = known ?? uuid();
+      ids.set(p.entry.source.obsName, id);
+      return { ...p, uuid: id, repeat: known !== undefined };
+    });
     // The shared audio at the very bottom of each scene: sound only, so its place is arbitrary, and
     // the bottom keeps it out of the way of the stack that does matter.
     const items = [
-      ...audio.map((a) => ({ name: a.name, uuid: a.uuid, at: { x: 0, y: 0, scale: 1 } })),
-      ...withIds.map((p) => ({ name: p.entry.source.obsName, uuid: p.uuid, at: p.at })),
-    ].map((p, i) => sceneItem(p.name, p.uuid, p.at, i + 1));
+      ...audio.map((a) => ({ name: a.name, uuid: a.uuid, at: { x: 0, y: 0, scale: 1 }, crop: undefined })),
+      ...withIds.map((p) => ({ name: p.entry.source.obsName, uuid: p.uuid, at: p.at, crop: p.crop })),
+    ].map((p, i) => sceneItem(p.name, p.uuid, p.at, i + 1, undefined, p.crop));
     const sceneObj = {
       prev_ver: PREV_VER,
       name,
@@ -646,7 +691,7 @@ export function buildCastCollection({ newId, ...options }: CastCollectionOptions
       monitoring_type: 0,
       private_settings: { eb_scene_version: SCENE_VERSION, eb_scene_kind: "cast" },
     };
-    return { browsers: withIds.map((p) => browserSource(p.entry, p.uuid)), sceneObj };
+    return { browsers: withIds.filter((p) => !p.repeat).map((p) => browserSource(p.entry, p.uuid)), sceneObj };
   }
 
   const main = scene(CAST_SCENE_MAIN, mainParts);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase";
 
 /**
@@ -35,6 +35,24 @@ export function useFrameBeacon(userId: string | null | undefined): void {
       void supabase.removeChannel(channel);
     };
   }, [userId]);
+}
+
+/** Twitch's delay when it can't be read yet - near the low end of what a player's stream runs. */
+const DEFAULT_DELAY_MS = 4000;
+
+/**
+ * Whether the frame is showing as the VIEWER sees it. Presence moves the instant a player switches
+ * scene, but their stream shows the switch only after its delay, so a change is held back by that
+ * delay - the box's own measured latency when the caller has one, or a typical one otherwise.
+ */
+export function useFrameOnStream(onAir: boolean, latencyRef?: RefObject<number | null>): boolean {
+  const [shown, setShown] = useState(onAir);
+  useEffect(() => {
+    if (onAir === shown) return;
+    const timer = setTimeout(() => setShown(onAir), latencyRef?.current ?? DEFAULT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [onAir, shown, latencyRef]);
+  return shown;
 }
 
 /** The account ids whose player frame is showing right now. Empty until presence first reports. */

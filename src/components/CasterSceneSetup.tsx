@@ -31,14 +31,17 @@ const EXTRA_IDS = ["odds", "key", "all-fleets"];
 function whereItGoes(part: CastPart, t: ReturnType<typeof useT>): string {
   const { source } = part.entry;
   const { x, y, scale } = part.at;
-  const shown =
-    scale === 1
-      ? ""
-      : t(
-          `, resized to ${Math.round(source.width * scale)} x ${Math.round(source.height * scale)}`,
-          `, redimensionnée à ${Math.round(source.width * scale)} x ${Math.round(source.height * scale)}`
-        );
-  return `${part.what} - ${t("place at", "placez à")} ${x}, ${y}${shown}`;
+  const { crop } = part;
+  const width = Math.round((source.width - (crop ? crop.left + crop.right : 0)) * scale);
+  const height = Math.round((source.height - (crop ? crop.top + crop.bottom : 0)) * scale);
+  const shown = scale === 1 ? "" : t(`, resized to ${width} x ${height}`, `, redimensionnée à ${width} x ${height}`);
+  const cropped = crop
+    ? t(
+        `; in Edit Transform, crop left ${crop.left}, right ${crop.right}, top ${crop.top}, bottom ${crop.bottom}`,
+        `; dans Modifier la transformation, recadrez gauche ${crop.left}, droite ${crop.right}, haut ${crop.top}, bas ${crop.bottom}`
+      )
+    : "";
+  return `${part.what} - ${t("place at", "placez à")} ${x}, ${y}${shown}${cropped}`;
 }
 
 /**
@@ -98,9 +101,9 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
   const partRows = (scene: CastPart["scene"]) =>
     parts
       .filter((p) => p.scene === scene)
-      .map((p) => (
+      .map((p, i) => (
         <SourceRow
-          key={p.entry.source.obsName}
+          key={`${p.entry.source.obsName}:${i}`}
           label={p.entry.source.obsName}
           url={p.entry.url}
           size={`${p.entry.source.width} x ${p.entry.source.height}`}
@@ -167,8 +170,8 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
                 )
               : view === "match"
             ? t(
-                "Sample footage and a sample board. On stream, each box shows that player's live Twitch with their name and real hits, misses and accuracy, and the strips beside each column take that fleet's colour.",
-                "Images et plateau d'exemple. En direct, chaque cadre montre le Twitch du joueur avec son nom et ses vrais touchés, manqués et précision, et les bandes à côté de chaque colonne prennent la couleur de sa flotte."
+                "Sample footage and a sample board. On stream, each box shows that player's live Twitch with their name and real hits, misses and accuracy, and the strips beside each column take that fleet's colour. Players on the Elden Battleship player frame get their webcam in the small box.",
+                "Images et plateau d'exemple. En direct, chaque cadre montre le Twitch du joueur avec son nom et ses vrais touchés, manqués et précision, et les bandes à côté de chaque colonne prennent la couleur de sa flotte. Les joueurs sur le cadre joueur Elden Battleship ont leur webcam dans le petit cadre."
               )
             : t(
                 "For the parts of the show that aren't a match. It's just the frame: your webcams go in the two boxes.",
@@ -415,6 +418,13 @@ export function CasterSceneSetup({ base, token }: { base: string; token: string 
             {t(
               "in a normal browser window (not in OBS). It drives the board (zoom, pan, spotlight, markers, stream delay), sets the caster names on the plates under your cams, and the two team names on the Starting Soon screen.",
               "dans une fenêtre de navigateur normale (pas dans OBS). Il pilote le plateau (zoom, panoramique, projecteur, marqueurs, décalage du flux), règle les noms des commentateurs sur les bandeaux sous vos caméras, et les deux noms d'équipes sur l'écran « Bientôt »."
+            )}
+          </li>
+          <li>
+            <strong>{t("Check the player cams.", "Vérifiez les webcams des joueurs.")}</strong>{" "}
+            {t(
+              "They come up by themselves for anyone on the Elden Battleship player frame. If someone on the frame has no webcam, press their \"cam on\" button on the caster desk, and the empty box and its border go away.",
+              "Elles apparaissent toutes seules pour tout joueur sur le cadre joueur Elden Battleship. Si un joueur sur le cadre n'a pas de webcam, cliquez sur son bouton « cam active » au poste de commentaire : le cadre vide et sa bordure disparaissent."
             )}
           </li>
           <li>

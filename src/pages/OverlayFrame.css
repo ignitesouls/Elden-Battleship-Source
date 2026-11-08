@@ -25,6 +25,15 @@
   pointer-events: none;
 }
 
+/* The outline on a player's cam, in their fleet colour. Inside the cam's own rectangle, so it hides
+   the fraction of a pixel a whole-pixel crop can leave at the edge. */
+.ovf-seat-cam {
+  position: absolute;
+  box-sizing: border-box;
+  border: 0.16vw solid;
+  pointer-events: none;
+}
+
 /**
  * A player's tag: name in their fleet colour over the live tally, top-right of their box.
  *

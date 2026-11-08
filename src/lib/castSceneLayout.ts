@@ -166,6 +166,59 @@ export function playerCamRect(): Rect {
   return { x: 600, y: 778, w: 372, h: 276 };
 }
 
+/* ======================================================================================
+ *  The player cams in a casting scene - one Twitch stream, placed twice.
+ *
+ *  A player on our frame streams their webcam inside the same picture as their game, so a cam needs
+ *  no second stream: the screen source (`?cams=1`) renders the whole frame and OBS shows it twice,
+ *  one item cropped to the gameplay hole and one to the cam hole. One decode, and the two can't
+ *  drift apart. See pages/OverlayScreen for what the page draws when there is no cam to show.
+ *
+ *  928 wide because it puts the gameplay hole at the box's own 636 pixels and lands the hole's left
+ *  edge on a whole pixel, so the gameplay item needs no rescale. Crops are whole pixels in OBS and
+ *  are rounded inward, so a sliver of the frame art never shows along an edge.
+ * ==================================================================================== */
+
+/** The size a screen source is rendered at when OBS is doing the cropping. */
+export const SEAT_SOURCE = { w: 928, h: 522 };
+
+/** The cam's width in its box. Small on purpose: it sits on top of somebody's game. */
+const SEAT_CAM_W = 132;
+
+const toSeat = (canvasPx: number) => (canvasPx * SEAT_SOURCE.w) / CAST_CANVAS.w;
+
+/** Where the player frame's webcam hole lands in the screen source, in the source's pixels. */
+export function seatCamSourceRect(): Rect {
+  const cam = playerCamRect();
+  const x = Math.ceil(toSeat(cam.x));
+  const y = Math.ceil(toSeat(cam.y));
+  return { x, y, w: Math.floor(toSeat(cam.x + cam.w)) - x, h: Math.floor(toSeat(cam.y + cam.h)) - y };
+}
+
+/** The part of the screen source showing on the slot's box: the gameplay, at the box's own pixels. */
+export function seatGameSourceRect(slot: number): Rect {
+  const boxes = screenRects();
+  const box = boxes[slot] ?? boxes[0];
+  const game = playerGameRect();
+  return { x: Math.ceil(toSeat(game.x)), y: Math.ceil(toSeat(game.y)), w: box.w, h: box.h };
+}
+
+/**
+ * Each player's cam on the canvas, one per box: vertically centred, against the outer edge - the
+ * left fleet's on the left, the right fleet's on the right - which is clear of Elden Ring's HUD
+ * and of the name tag in the top-right corner.
+ */
+export function seatCamRects(): Rect[] {
+  const source = seatCamSourceRect();
+  const h = Math.round((SEAT_CAM_W * source.h) / source.w);
+  return screenRects().map((box, slot) => ({
+    x: slot < CAST_SEATS / 2 ? box.x : box.x + box.w - SEAT_CAM_W,
+    y: box.y + Math.round((box.h - h) / 2),
+    w: SEAT_CAM_W,
+    h,
+  }));
+}
+
 /** Every hole in the player frame, for the preview and for the "nothing off canvas" check. */
 export function playerSceneRects(): Rect[] {
   return [playerFireRect(), playerGameRect(), playerFleetRect(), playerCamRect()];
