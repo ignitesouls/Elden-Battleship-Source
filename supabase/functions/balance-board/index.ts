@@ -100,10 +100,20 @@ function rulesFor(setId: string, boardSize: number) {
  *
  * An edge function is stopped at about two seconds of CPU, and a draw costs anywhere from about one
  * millisecond on a small board to two on a 14x14 there, so a draw count that fits one board size
- * overruns another. A clock fits them all. 1200 leaves the rest of the allowance for the boot, the
- * deal and the report; the search carries on in the next call - see BEST_OF.
+ * overruns another. A clock fits them all; the search carries on in the next call - see BEST_OF.
+ *
+ * It was 1200, which looked like it left room for the boot, the deal and the report and did not. A
+ * cold boot of this function is most of a second of its own, and most calls are cold, so a call that
+ * drew for the full 1200 sat right at the limit and was killed whenever the runtime ran a little
+ * slow - often after pooling its passers but before writing the board. The platform answers that
+ * with an error of its own, not one of the reasons below, and from 29 Oct to 11 Nov 2026 it sent 9
+ * of about 33 boss matches out unbalanced, the last four in a row. Replayed locally on one of those
+ * boards, a call that did not find all its passers burned 1.1-1.2s of CPU on draws alone.
+ *
+ * 500 leaves over a second of headroom. Fairness does not change - the pool adds calls up, so a hard
+ * board simply takes more short calls instead of fewer long ones (startBattle keeps calling for 40s).
  */
-const DRAW_BUDGET_MS = 1200
+const DRAW_BUDGET_MS = 500
 
 /** A ceiling on draws per call, should the clock ever misbehave. Far above what the budget allows. */
 const CALL_MAX_ATTEMPTS = 5000

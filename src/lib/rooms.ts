@@ -532,7 +532,7 @@ export { MATCH_START_MARKER };
 /**
  * How long one call to the board balancer gets before it is given up on.
  *
- * A call draws for 1.2s (DRAW_BUDGET_MS there) on top of a cold boot - measured at 871ms - and half a
+ * A call draws for 0.5s (DRAW_BUDGET_MS there) on top of a cold boot - measured at 871ms - and half a
  * dozen sequential queries. Ten seconds is a hung call, not a slow one. balance-board refuses to
  * write a layout once the room has left placement, so a call that overshoots this is dropped safely -
  * see the `too_late` guard there.
@@ -574,20 +574,49 @@ export interface BalanceOutcome {
   balanced: boolean;
   /** Why not, when it isn't. `already_balanced` is the one benign case - see startBattle. */
   reason?: string;
+  /**
+   * The call failed rather than refused: the platform killed it, it hung, or it crashed. Worth
+   * calling again - nothing it found is lost, since passers are pooled as they are found, and the
+   * next call deals them. Internal to balanceBoardFor; never shown.
+   */
+  retry?: boolean;
 }
+
+/** Refusals from balance-board's own catch-all and its final write, which a second call can clear. */
+const RETRYABLE_REASONS = new Set(["error", "write_failed"]);
+
+/** How long to wait before calling again after a round in which every call failed outright. */
+const BALANCE_RETRY_PAUSE_MS = 1000;
+
+/** How many times the last call is made when it fails outright, before the match starts unbalanced. */
+const BALANCE_FINAL_TRIES = 2;
 
 async function balanceBoardFor(roomId: string): Promise<BalanceOutcome> {
   const giveUpAt = Date.now() + BALANCE_SEARCH_MS;
+  let finalTries = 0;
   for (;;) {
     const final = Date.now() >= giveUpAt;
+    if (final) finalTries++;
     const round = await Promise.all(
       Array.from({ length: final ? 1 : BALANCE_PARALLEL }, () => balanceCall(roomId, final))
     );
     // Any call that dealt the board ends it. Its sibling usually comes back `too_late` or
     // `already_balanced`, which is the same news.
     if (round.some((o) => o.balanced)) return { balanced: true };
-    if (!final && round.some((o) => o.reason === "searching")) continue;
-    return round.find((o) => o.reason !== "searching") ?? round[0];
+    // A real refusal - not_host, already_balanced, too_late - is an answer, and another call would
+    // get the same one.
+    const answer = round.find((o) => o.reason !== "searching" && !o.retry);
+    if (answer) return answer;
+    // Everything left is `searching` or a call that failed outright. Both mean call again: a failed
+    // call used to end the deal on the spot and start the match unbalanced with most of the 40s still
+    // unspent - which is how 9 boss matches went out unbalanced in two weeks (see DRAW_BUDGET_MS in
+    // balance-board). A short pause when every call failed, so a platform that is refusing instantly
+    // is not hammered for the whole window.
+    if (!final || finalTries < BALANCE_FINAL_TRIES) {
+      if (round.every((o) => o.retry)) await new Promise((r) => setTimeout(r, BALANCE_RETRY_PAUSE_MS));
+      continue;
+    }
+    return round[0];
   }
 }
 
@@ -604,16 +633,21 @@ async function balanceCall(roomId: string, final: boolean): Promise<BalanceOutco
     // A non-2xx refusal - not_host, not_signed_in - arrives as an error rather than as data, so the
     // reason has to be dug out of the response body before it is lost.
     if (error) {
-      const body = await (error as { context?: { json?: () => Promise<unknown> } }).context
-        ?.json?.()
-        .catch(() => null);
-      const reason = (body as { reason?: string } | null)?.reason;
-      return { balanced: false, reason: reason ?? (error as Error).message };
+      const context = (error as { context?: { status?: number; json?: () => Promise<unknown> } }).context;
+      const body = (await context?.json?.().catch(() => null)) as { reason?: string; code?: string } | null;
+      if (body?.reason) return { balanced: false, reason: body.reason, retry: RETRYABLE_REASONS.has(body.reason) };
+      // No reason means the function never answered for itself: the platform stopped it (CPU or
+      // memory limit, a failed boot) and replied in its own words. Name its code and status, so a
+      // report of this says which - "non-2xx status code" said nothing.
+      const named = [body?.code, context?.status ? `HTTP ${context.status}` : null].filter(Boolean).join(", ");
+      return { balanced: false, reason: named || (error as Error).message, retry: true };
     }
     if (data && !data.balanced) return { balanced: false, reason: data.reason };
     return { balanced: true };
   } catch (err) {
-    return { balanced: false, reason: err instanceof Error ? err.message : String(err) };
+    // Timed out, or the request never got there. The function refuses to write once the room has
+    // moved on (`too_late`), so a call that overshoots is harmless and another is safe to make.
+    return { balanced: false, reason: err instanceof Error ? err.message : String(err), retry: true };
   }
 }
 
