@@ -15,6 +15,7 @@ import type { DeskData } from "./useDeskData";
  * the button away again; a declined caster can't ask again for that match, but an administrator can
  * still approve them from Turned down while the match is waiting to be played.
  *
+ * Only matches still to be played are listed; once a match is played its casts drop off the desk.
  * Renders nothing when there's nothing to show.
  */
 export function CastsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
@@ -41,13 +42,15 @@ export function CastsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
     return (id: string) => byKey.get(keyOf.get(id) ?? "");
   }, [data.stored]);
 
-  const pending = rows.filter((r) => r.status === "pending");
-  const approved = rows.filter((r) => r.status === "approved");
-  // Only matches still to be played: decide_cast won't approve anything else, and old ones would pile up.
-  const declined = rows.filter((r) => {
-    const status = r.status === "declined" ? byId(r.match_id)?.status : undefined;
+  // Only matches still to be played: decide_cast won't approve anything else, the cast buttons only
+  // show on upcoming matches, and old ones would pile up.
+  const live = rows.filter((r) => {
+    const status = byId(r.match_id)?.status;
     return status === "ready" || status === "in_progress";
   });
+  const pending = live.filter((r) => r.status === "pending");
+  const approved = live.filter((r) => r.status === "approved");
+  const declined = live.filter((r) => r.status === "declined");
 
   if (pending.length + approved.length + declined.length === 0) return null;
 
@@ -59,7 +62,6 @@ export function CastsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
     const when = agreed
       ? new Date(agreed).toLocaleString(lang === "fr" ? "fr-FR" : undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
       : null;
-    const decided = m && m.status !== "ready" && m.status !== "in_progress";
     return (
       <div className="stack" style={{ gap: "0.1rem", flex: 1, minWidth: "14rem" }}>
         <span>
@@ -71,7 +73,6 @@ export function CastsPanel({ data, act, busy }: { data: DeskData; act: DeskAct; 
         <span className="muted" style={{ fontSize: "0.78rem" }}>
           {m && `${t("Round", "Tour")} ${m.phase}`}
           {when && ` · ${when}`}
-          {decided && ` · ${t("already played", "déjà joué")}`}
         </span>
       </div>
     );
