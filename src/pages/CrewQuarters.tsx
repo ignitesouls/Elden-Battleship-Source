@@ -198,7 +198,9 @@ function useStageLabel(event: EventDetail) {
         : t("Groups", "Poules")
       : m.stage === "swiss"
         ? t("Swiss", "Suisse")
-        : t("Knockout", "Élimination");
+        : m.stage === "tiebreak"
+          ? t("Tiebreaker", "Barrage")
+          : t("Knockout", "Élimination");
 }
 
 function opponentOf(m: MatchRow, mine: TeamRow, teams: TeamRow[]): TeamRow | undefined {
@@ -510,7 +512,7 @@ function Charts({ event, mine, data }: { event: EventDetail; mine: TeamRow; data
                 : standings.cuts.every((c) => c === standings.cuts![0])
                   ? t(`The top ${standings.cuts[0]} of each group go through to the knockout - above the line.`, `Les ${standings.cuts[0]} premiers de chaque poule passent en élimination - au-dessus de la ligne.`)
                   : t(`The top ${standings.cuts[ourTable]} of your group go through to the knockout - above the line.`, `Les ${standings.cuts[ourTable]} premiers de votre poule passent en élimination - au-dessus de la ligne.`)}{" "}
-              {t("A dot after a rank means the teams are level on every tiebreak.", "Un point après un rang signifie une égalité sur tous les critères.")}
+              {t("T before a rank means the teams are level on every tiebreak; where that decides who goes through, they play a tiebreaker match.", "= devant un rang signifie une égalité sur tous les critères ; si elle décide de la qualification, un match de barrage les départage.")}
             </span>
           )}
         </div>

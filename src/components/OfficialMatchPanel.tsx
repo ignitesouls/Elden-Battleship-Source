@@ -144,7 +144,9 @@ export function OfficialMatchPanel({ room, isHost, onError }: Props) {
       ? `${m.grp !== null ? groupLabel(choice?.groupNames, m.grp, lang) : t("Groups", "Poules")}, ${t("round", "tour")} ${m.round}`
       : m.stage === "swiss"
         ? `${t("Swiss", "Suisse")}, ${t("round", "tour")} ${m.round}`
-        : t("Knockout", "Élimination");
+        : m.stage === "tiebreak"
+          ? t("Tiebreaker", "Barrage")
+          : t("Knockout", "Élimination");
 
   // -- an ordinary room ---------------------------------------------------------------------------------
   if (!linked) {

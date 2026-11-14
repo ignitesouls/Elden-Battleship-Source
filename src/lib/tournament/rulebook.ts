@@ -273,15 +273,27 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
             {
               ordered: [
                 tr("Wins (a bye counts as a win, but not as a game played)", "Victoires (une exemption compte comme une victoire, mais pas comme un match joué)"),
+                tr(
+                  "Head-to-head among only the tied entrants: wins, then game difference, in their matches against each other",
+                  "Confrontations directes entre les seuls participants à égalité : victoires, puis différence de manches dans leurs matchs entre eux",
+                ),
                 tr("Game difference (games won minus games lost across every series)", "Différence de manches (manches gagnées moins manches perdues, toutes séries confondues)"),
-                tr("Strength of schedule (the combined wins of every opponent you played)", "Force du calendrier (le total des victoires de tous vos adversaires)"),
-                tr("Head-to-head, only when exactly two entrants are level and have met", "Confrontation directe, seulement quand exactement deux participants sont à égalité et se sont affrontés"),
-                tr("Original seed", "Tête de série d'origine"),
+                ...(ctx.format?.qualifier.format !== "groups"
+                  ? [tr("Strength of schedule (the combined wins of every opponent you played)", "Force du calendrier (le total des victoires de tous vos adversaires)")]
+                  : []),
+                tr("Most sinks per game played", "Le plus de navires coulés par manche jouée"),
+                tr("Fewest shots fired per game played", "Le moins de tirs par manche jouée"),
+                tr("Fastest average time to win a game", "Le temps moyen le plus court pour gagner une manche"),
+                tr("A tiebreaker match", "Un match de barrage"),
               ],
             },
             tr(
-              "If the cut line falls between entrants tied on every tiebreak above seed, the organizers may order a playoff match instead.",
-              "Si la ligne de qualification sépare des participants à égalité sur tous les critères avant la tête de série, les organisateurs peuvent imposer un match de barrage.",
+              "Whenever a step separates some of the tied entrants but not all, the ones still level start again from the head-to-head step. The game stats count only games actually played; a forfeit or a result entered by the organizers has none, and a step a tied entrant has no games for is skipped. Original seed never separates entrants.",
+              "Dès qu'un critère départage une partie des participants à égalité, ceux qui restent à égalité recommencent à partir des confrontations directes. Les statistiques ne comptent que les manches réellement jouées ; un forfait ou un résultat saisi par les organisateurs n'en a aucune, et un critère pour lequel un participant n'a pas de manche est ignoré. La tête de série ne départage jamais.",
+            ),
+            tr(
+              "Entrants still level after all of that play a tiebreaker match - a single game against each other tied entrant - whenever the tie decides who advances or where they are seeded. A tie that decides nothing is shown as a shared place.",
+              "Les participants encore à égalité après tout cela jouent un match de barrage - une manche contre chacun des autres - dès que l'égalité décide de la qualification ou du placement. Une égalité sans conséquence est affichée comme une place partagée.",
             ),
           ],
         },

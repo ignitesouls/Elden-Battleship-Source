@@ -47,7 +47,7 @@ export function ResultsPanel({ data, act, busy }: { data: DeskData; act: DeskAct
   const playable = stored.matches.filter((m) => m.a && m.b && m.status !== "skipped");
   // Qualifier before knockout, then by round: each stage numbers its rounds from 1, so round alone would
   // interleave a Swiss round 1 with a knockout round 1.
-  const stageRank = { swiss: 0, group: 1, knockout: 2 } as const;
+  const stageRank = { swiss: 0, group: 1, tiebreak: 2, knockout: 3 } as const;
   const rows = playable
     .filter((m) => showDone || m.status !== "done")
     .sort((x, y) => stageRank[x.stage] - stageRank[y.stage] || x.phase - y.phase || x.index - y.index || (x.key < y.key ? -1 : 1));

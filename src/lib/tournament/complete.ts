@@ -26,14 +26,15 @@ export function tournamentComplete(format: TournamentFormat, matches: TMatch[]):
   }
 
   const q = format.qualifier;
+  const tiebreakOpen = ofStage("tiebreak").some(isOpen);
   if (q.format === "swiss") {
     const swiss = ofStage("swiss");
     const drawn = swiss.reduce((most, m) => Math.max(most, m.round), 0);
-    return q.rounds > 0 && drawn >= q.rounds && !swiss.some(isOpen);
+    return q.rounds > 0 && drawn >= q.rounds && !swiss.some(isOpen) && !tiebreakOpen;
   }
   if (q.format === "groups") {
     const groups = ofStage("group");
-    return groups.length > 0 && !groups.some(isOpen);
+    return groups.length > 0 && !groups.some(isOpen) && !tiebreakOpen;
   }
   return false;
 }

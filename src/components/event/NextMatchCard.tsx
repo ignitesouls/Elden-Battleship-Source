@@ -96,7 +96,9 @@ export function NextMatchCard({ event, teams, matches, userId, logos, powers, pr
         : t("Groups", "Poules")
       : next.stage === "swiss"
         ? t("Swiss", "Suisse")
-        : t("Knockout", "Élimination");
+        : next.stage === "tiebreak"
+          ? t("Tiebreaker", "Barrage")
+          : t("Knockout", "Élimination");
   const streams = multitwitchUrl(
     mine.roster.map((m) => profiles.get(m.user_id)?.twitch_login),
     (them?.roster ?? []).map((m) => profiles.get(m.user_id)?.twitch_login),

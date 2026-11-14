@@ -57,7 +57,7 @@ export function MatchList({ matches, names, groupNames, powers, logos, twitch, e
 
   // Qualifier before knockout, then round by round. Swiss, group and knockout rounds all count from 1, so
   // ordering by round alone would interleave them ("Swiss 1, Knockout 1, Swiss 2 ...").
-  const stageRank = { swiss: 0, group: 1, knockout: 2 } as const;
+  const stageRank = { swiss: 0, group: 1, tiebreak: 2, knockout: 3 } as const;
   const ordered = [...matches].sort(
     (x, y) => stageRank[x.stage] - stageRank[y.stage] || (x.phase ?? x.round) - (y.phase ?? y.round) || x.idx - y.idx,
   );
@@ -73,7 +73,9 @@ export function MatchList({ matches, names, groupNames, powers, logos, twitch, e
           ? t("Swiss", "Suisse")
           : match.stage === "group"
             ? t("Groups", "Poules")
-            : t("Knockout", "Élimination");
+            : match.stage === "tiebreak"
+              ? t("Tiebreakers", "Barrages")
+              : t("Knockout", "Élimination");
       groups.set(key, { label: `${stage} · ${t("Round", "Tour")} ${phase}`, rows: [] });
     }
     groups.get(key)!.rows.push(match);
@@ -118,7 +120,7 @@ export function MatchList({ matches, names, groupNames, powers, logos, twitch, e
                         · {t(bracket[0], bracket[1])}
                       </span>
                     )}
-                    {manyGroups && m.stage === "group" && m.grp !== null && (
+                    {manyGroups && (m.stage === "group" || m.stage === "tiebreak") && m.grp !== null && (
                       <span className="muted" style={{ fontSize: "0.72rem" }}>
                         {" "}
                         · {groupLabel(groupNames, m.grp, lang)}

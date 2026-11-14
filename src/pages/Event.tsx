@@ -170,7 +170,7 @@ export function Event() {
           ))}
           {standings.cuts !== undefined && (
             <span className="muted" style={{ fontSize: "0.75rem" }}>
-              {t("The line marks where the knockout starts. A dot after a rank means the teams are level on every tiebreak.", "La ligne marque le début de l'élimination. Un point après un rang signifie une égalité sur tous les critères.")}
+              {t("The line marks where the knockout starts. T before a rank means the teams are level on every tiebreak; where that decides who goes through, they play a tiebreaker match.", "La ligne marque le début de l'élimination. = devant un rang signifie une égalité sur tous les critères ; si elle décide de la qualification, un match de barrage les départage.")}
             </span>
           )}
         </div>

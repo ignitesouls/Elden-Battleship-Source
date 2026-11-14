@@ -33,13 +33,13 @@ const { buildKnockout, setScore, recordGame, revertMatch, knockoutChampion, forf
 const { assignPhases } = await import('../src/lib/tournament/phases.ts')
 const { tournamentComplete, eventChampion } = await import('../src/lib/tournament/complete.ts')
 const { planStart, toMatchRows, matchFromRow } = await import('../src/lib/tournament/start.ts')
-const { qualifierStatus, planNextSwissRound, planKnockout, groupsFromMatches } = await import('../src/lib/tournament/stages.ts')
+const { qualifierStatus, planNextSwissRound, planKnockout, planTiebreaks, groupsFromMatches } = await import('../src/lib/tournament/stages.ts')
 const { defaultQualifier, defaultKnockout } = await import('../src/lib/tournament/formatDefaults.ts')
 const { frontPageBanners, signupIsOpen, withinChampionWindow, CHAMPION_BANNER_DAYS, signupHeadline, displayName } =
   await import('../src/lib/tournament/frontPage.ts')
 const { applySchedule, windowFor, validateSchedule, suggestSchedule, scheduleShape, scheduleEnd, spreadGroupWeeks, assignGroupWeeks, assignFlexWeeks, pairingKey, overdueMatches, isOverdue } =
   await import('../src/lib/tournament/schedule.ts')
-const { computeStandings, cutLineTied } = await import('../src/lib/tournament/standings.ts')
+const { computeStandings, tiesNeedingPlayoff } = await import('../src/lib/tournament/standings.ts')
 const { pairSwissRound, recommendedSwissRounds, swissRoundComplete } = await import('../src/lib/tournament/swiss.ts')
 const { assignGroups, dealGroups, roundRobin, buildGroupStage } = await import('../src/lib/tournament/groups.ts')
 const { validateFormat, suggestFormat, estimateMatches, effectiveCut, groupPools, groupSizes, groupsFor, prunePlacement, tableCuts } =
@@ -376,10 +376,11 @@ console.log('\nStandings')
   // a beats b, b beats c, c beats a: a cycle, plus d beaten by everyone.
   const cyc = [mk('a', 'b', 2, 0, 'm1'), mk('b', 'c', 2, 0, 'm2'), mk('c', 'a', 2, 0, 'm3'), mk('a', 'd', 2, 0, 'm4'), mk('b', 'd', 2, 0, 'm5'), mk('c', 'd', 2, 0, 'm6')]
   const s = computeStandings(field, cyc)
-  check('a three-way cycle stays tied rather than being guessed', s.slice(0, 3).every((r) => r.tied), s.map((r) => `${r.id}:${r.tied}`).join(' '))
-  check('...and the last-placed entrant is not tied', s[3].id === 'd' && !s[3].tied)
-  check('cut line inside the cycle is flagged', cutLineTied(s, 2))
-  check('cut line below the cycle is not', !cutLineTied(s, 3))
+  check('a three-way cycle with no stats stays tied rather than being guessed', s.slice(0, 3).every((r) => r.tied), s.map((r) => `${r.id}:${r.tied}`).join(' '))
+  check('...and the tied teams share a place', s.slice(0, 3).every((r) => r.rank === 1), s.map((r) => r.rank).join(' '))
+  check('...and the last-placed entrant is not tied', s[3].id === 'd' && !s[3].tied && s[3].rank === 4)
+  check('a boundary inside the cycle needs a playoff', tiesNeedingPlayoff(s, [2]).length === 1 && tiesNeedingPlayoff(s, [2])[0].length === 3)
+  check('a boundary below the cycle does not', tiesNeedingPlayoff(s, [3]).length === 0)
 
   // Two level entrants who have met: head to head decides, and is not flagged.
   const h2h = computeStandings(['x', 'y', 'z'], [mk('x', 'y', 0, 2, 'h1'), mk('x', 'z', 2, 0, 'h2'), mk('y', 'z', 0, 2, 'h3')])
@@ -387,6 +388,60 @@ console.log('\nStandings')
   check('three level entrants are tied', h2h.every((r) => r.tied))
   const two = computeStandings(['p', 'q'], [mk('q', 'p', 2, 1, 'k1')])
   check('two entrants, one result: winner first, not tied', two[0].id === 'q' && !two[0].tied)
+
+  // Seed never decides: the worse seed comes first whenever anything separates them.
+  const gs = (games: number, sinks: number, shots: number, wonGames: number, wonSeconds: number) => ({ games, sinks, shots, wonGames, wonSeconds })
+  const statsOf = (entries: Array<[string, string, ReturnType<typeof gs>]>) => {
+    const out = new Map<string, Map<string, ReturnType<typeof gs>>>()
+    for (const [key, team, v] of entries) out.set(key, new Map([...(out.get(key) ?? new Map()), [team, v]]))
+    return out
+  }
+  // The cycle again, with every game an even 2-0 so game difference cannot help either.
+  const evenStats = (sinks: Record<string, number>, shots: Record<string, number>, secs: Record<string, number>) =>
+    statsOf(cyc.flatMap((m) => [
+      [m.key, m.a!, gs(2, sinks[m.a!] ?? 0, shots[m.a!] ?? 0, m.winner === m.a ? 2 : 0, m.winner === m.a ? 2 * (secs[m.a!] ?? 0) : 0)],
+      [m.key, m.b!, gs(2, sinks[m.b!] ?? 0, shots[m.b!] ?? 0, m.winner === m.b ? 2 : 0, m.winner === m.b ? 2 * (secs[m.b!] ?? 0) : 0)],
+    ] as Array<[string, string, ReturnType<typeof gs>]>))
+  const bySinks = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 6, c: 8 }, {}, {}) })
+  check('sinks per game separate a cycle, worst seed first', bySinks.slice(0, 3).map((r) => r.id).join('') === 'cba' && bySinks.every((r) => !r.tied),
+    bySinks.map((r) => r.id).join(''))
+  const byShots = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 4, c: 4 }, { a: 90, b: 70, c: 80 }, {}) })
+  check('equal sinks: FEWEST shots per game is better', byShots.slice(0, 3).map((r) => r.id).join('') === 'bca', byShots.map((r) => r.id).join(''))
+  const byTime = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 4, c: 4 }, { a: 80, b: 80, c: 80 }, { a: 900, b: 600, c: 700 }) })
+  check('equal sinks and shots: fastest winning game is better', byTime.slice(0, 3).map((r) => r.id).join('') === 'bca', byTime.map((r) => r.id).join(''))
+
+  // A split restarts from the mini-table: sinks lift c clear, and a v b (a won) then settles the pair.
+  const restart = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 4, c: 9 }, {}, {}) })
+  check('after a split, the pair left level is settled by its own meeting', restart.slice(0, 3).map((r) => r.id).join('') === 'cab', restart.map((r) => r.id).join(''))
+
+  // Per game, not totals: a forfeit win has no games, so it must not shrink a team's numbers.
+  const ff = (a: string, b: string, key: string): TMatch => ({ ...mk(a, b, 1, 0, key), bestOf: 1, resultKind: 'forfeit' } as TMatch)
+  const pg = [mk('p', 'r', 1, 0, 'p1'), ff('p', 's', 'p2'), mk('q', 'r', 1, 0, 'q1'), mk('q', 's', 1, 0, 'q2')].map((m) => ({ ...m, bestOf: 1 }))
+  const perGame = computeStandings(['p', 'q', 'r', 's'], pg, {
+    stats: statsOf([['p1', 'p', gs(1, 5, 60, 1, 600)], ['q1', 'q', gs(1, 5, 60, 1, 600)], ['q2', 'q', gs(1, 5, 60, 1, 600)]]),
+  })
+  check('a forfeit win neither helps nor hurts the per-game stats', perGame[0].tied && perGame[1].tied, perGame.map((r) => `${r.id}:${r.tied}`).join(' '))
+  check('a team with no game stats skips those steps instead of being guessed', (() => {
+    const t = computeStandings(field, cyc, { stats: statsOf([['m1', 'a', gs(2, 9, 10, 2, 100)]]) })
+    return t.slice(0, 3).every((r) => r.tied)
+  })())
+
+  // The last step: a tiebreaker match.
+  const tb = (a: string, b: string, winner: string | null, key: string): TMatch =>
+    ({ ...mk(a, b, winner === a ? 1 : 0, winner === b ? 1 : 0, key), stage: 'tiebreak', bestOf: 1, status: winner ? 'done' : 'ready', winner } as TMatch)
+  const settled = computeStandings(field, cyc, { tiebreaks: [tb('a', 'b', 'b', 't1'), tb('a', 'c', 'c', 't2'), tb('b', 'c', 'b', 't3')] })
+  check('a played tiebreaker round robin settles the cycle', settled.slice(0, 3).map((r) => r.id).join('') === 'bca' && settled.every((r) => !r.tied),
+    settled.map((r) => r.id).join(''))
+  check('...and tiebreaker wins never count in the table', settled.find((r) => r.id === 'b')!.wins === 2)
+  const half = computeStandings(field, cyc, { tiebreaks: [tb('a', 'b', 'b', 't1'), tb('a', 'c', null, 't2'), tb('b', 'c', null, 't3')] })
+  check('half a tiebreaker round decides nothing yet', half.slice(0, 3).every((r) => r.tied))
+  const again = computeStandings(field, cyc, { tiebreaks: [tb('a', 'b', 'a', 't1'), tb('b', 'c', 'b', 't2'), tb('c', 'a', 'c', 't3')] })
+  check('a tiebreaker round that cycles again leaves them tied (another round is drawn)', again.slice(0, 3).every((r) => r.tied))
+
+  // A departed team is never part of a tie.
+  const gone = computeStandings(field, cyc, { departed: new Set(['c']) })
+  check('a departed team drops to the bottom and leaves the tie', gone[3].id === 'c' && !gone[3].tied, gone.map((r) => `${r.id}:${r.tied}`).join(' '))
+  check('...and the two left are settled by their own meeting', gone[0].id === 'a' && !gone[0].tied)
   const byes = computeStandings(['p', 'q', 'r'], [
     { ...mk('r', 'r', 0, 0, 'bye'), b: null, isBye: true, winner: 'r' },
     mk('p', 'q', 2, 0, 'g'),
@@ -1364,6 +1419,7 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
     let ok = true
     const notes: string[] = []
     let events = 0
+    let tiebreakEvents = 0
     for (const n of spec.n) {
       for (let trial = 0; trial < 6; trial++) {
         events++
@@ -1407,8 +1463,27 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
           if (recovered.length !== format.qualifier.groupCount || recovered.flat().length !== n) { ok = false; notes.push(`${tag}: groups not recovered from the matches`) }
         }
 
+        // Ties that decide something are played off until nothing is left level where it matters.
+        for (let tbRound = 1; tbRound <= 10; tbRound++) {
+          const pending = qualifierStatus(format, seeded, matches, departed)
+          if (pending.playoffs.length === 0) break
+          tiebreakEvents++
+          if (format.knockout) {
+            const blocked = planKnockout(format, seeded, matches, departed, pending.advancing, schedule)
+            if (blocked.ok) { ok = false; notes.push(`${tag}: the knockout was built over an unplayed tiebreaker`) }
+          }
+          const tbPlan = planTiebreaks(format, seeded, matches, departed)
+          if (!tbPlan.ok) { ok = false; notes.push(`${tag}: cannot draw tiebreakers: ${tbPlan.problems.join('/')}`); break }
+          if (leaver && tbPlan.matches.some((m) => m.a === leaver || m.b === leaver)) { ok = false; notes.push(`${tag}: the departed team ${leaver} was drawn into a tiebreaker`) }
+          const tied = new Set(pending.playoffs.flatMap((p) => p.ids))
+          if (tbPlan.matches.some((m) => !tied.has(m.a!) || !tied.has(m.b!))) { ok = false; notes.push(`${tag}: a tiebreaker names a team that is not tied`) }
+          matches = playAll([...matches, ...tbPlan.matches], departed, rand)
+        }
+
         const status = qualifierStatus(format, seeded, matches, departed)
         if (!status.complete) { ok = false; notes.push(`${tag}: qualifier not complete: ${status.waitingOn.join('/')}`); continue }
+        // Within every table, first place (which always seeds the knockout) is no longer shared.
+        if (format.knockout && status.tables.some((table) => table[0]?.tied)) { ok = false; notes.push(`${tag}: first place is still shared after the tiebreakers`) }
 
         if (format.knockout) {
           const early = planKnockout(format, seeded, matches.map((m, i) => (i === 0 ? { ...m, status: 'ready' as const, winner: null } : m)), departed, status.advancing, schedule)
@@ -1430,7 +1505,7 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
         if (leaver && eventChampion(format, matches) === leaver) { ok = false; notes.push(`${tag}: the departed team ${leaver} won`) }
       }
     }
-    check(`${spec.label}: ${events} whole events (half losing a team) run start to finish through the planners, refusing at the wrong moment`,
+    check(`${spec.label}: ${events} whole events (half losing a team, ${tiebreakEvents} tiebreaker rounds) run start to finish through the planners, refusing at the wrong moment`,
       ok, notes.slice(0, 3).join('; '))
   }
 
@@ -1460,9 +1535,28 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
     { ...pairSwissRound(ids(4), [], 1, 1)[1], scoreA: 1, winner: 'e2', status: 'done' as const },
   ] as TMatch[]
   const cutOne = qualifierStatus(tieFormat, ids(4), tieMatches, new Set())
-  check('a tie exactly at the cut line is flagged, so an administrator looks at it', cutOne.complete && cutOne.cutTied, JSON.stringify(cutOne.advancing))
-  const cutTwo = qualifierStatus({ ...tieFormat, knockout: { ...opts(), cutTo: 2 } }, ids(4), tieMatches, new Set())
-  check('...and a tie that is NOT at the cut line is not', cutTwo.complete && !cutTwo.cutTied)
+  check('a tie at the cut line holds the qualifier open until a tiebreaker is played', !cutOne.complete && cutOne.playoffs.length === 1 && cutOne.playoffs[0].ids.join() === 'e1,e2',
+    JSON.stringify(cutOne.playoffs))
+  check('...and the knockout refuses to be built meanwhile', !planKnockout(tieFormat, ids(4), tieMatches, new Set(), cutOne.advancing, { startsAt, roundDays: 5, stageGapDays: 0, overrides: {} }).ok)
+  const cutFour = qualifierStatus({ ...tieFormat, knockout: { ...opts(), cutTo: 4 } }, ids(4), tieMatches, new Set())
+  check('a tie inside the cut still needs playing off, because it decides the seeding', cutFour.playoffs.length === 2, JSON.stringify(cutFour.playoffs))
+  const noKo = qualifierStatus({ qualifier: tieFormat.qualifier, knockout: null }, ids(4), tieMatches, new Set())
+  check('with no knockout nothing rides on a place: ties are shown shared, never played off or split by seed',
+    noKo.complete && noKo.playoffs.length === 0 && noKo.tables[0].every((r) => r.tied) && noKo.tables[0][1].rank === 1, JSON.stringify(noKo.playoffs))
+  const plan = planTiebreaks(tieFormat, ids(4), tieMatches, new Set())
+  check('planTiebreaks draws one single-game match for a tied pair', plan.ok && plan.matches.length === 1 && plan.matches[0].stage === 'tiebreak' && plan.matches[0].bestOf === 1 && plan.matches[0].status === 'ready',
+    plan.ok ? JSON.stringify(plan.matches.map((m) => m.key)) : plan.problems.join())
+  if (plan.ok) {
+    const drawnTb = plan.matches[0]
+    const open = qualifierStatus(tieFormat, ids(4), [...tieMatches, drawnTb], new Set())
+    check('an open tiebreaker keeps the qualifier open, and asks for nothing more', !open.complete && open.playoffs.length === 0 && open.waitingOn.some((w) => /tiebreaker/.test(w)))
+    const lowerSeedWins = { ...drawnTb, scoreB: 1, winner: drawnTb.b, status: 'done' as const }
+    const settledCut = qualifierStatus(tieFormat, ids(4), [...tieMatches, lowerSeedWins], new Set())
+    check('once played, the tiebreaker winner goes through - even the lower seed', settledCut.complete && settledCut.advancing.join() === 'e2', JSON.stringify(settledCut.advancing))
+    check('...and no second tiebreaker is offered', !planTiebreaks(tieFormat, ids(4), [...tieMatches, lowerSeedWins], new Set()).ok)
+  }
+  const tbRow = plan.ok ? toMatchRows([plan.matches[0]])[0] : null
+  check('a tiebreaker match survives being written as a row and read back', !!tbRow && JSON.stringify(matchFromRow(tbRow)) === JSON.stringify(matchFromRow(toMatchRows([matchFromRow(tbRow)])[0])))
   check('a qualifier that has not been played is not complete, and says why',
     (() => { const s = qualifierStatus(tieFormat, ids(4), pairSwissRound(ids(4), [], 1, 1), new Set()); return !s.complete && s.waitingOn.length > 0 })())
 }

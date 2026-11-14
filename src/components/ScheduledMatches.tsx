@@ -114,7 +114,7 @@ export function ScheduledMatches() {
   const stage = (m: ScheduledMatch) =>
     m.stage === "group"
       ? m.grp !== null && m.grp !== undefined ? m.group_name || groupLabel([], m.grp, lang) : t("Groups", "Poules")
-      : m.stage === "swiss" ? t("Swiss", "Suisse") : t("Knockout", "Élimination");
+      : m.stage === "swiss" ? t("Swiss", "Suisse") : m.stage === "tiebreak" ? t("Tiebreaker", "Barrage") : t("Knockout", "Élimination");
   // The team's series won - lost in the event so far, under its name.
   const record = (won: number | undefined, lost: number | undefined) =>
     typeof won === "number" && typeof lost === "number" ? (

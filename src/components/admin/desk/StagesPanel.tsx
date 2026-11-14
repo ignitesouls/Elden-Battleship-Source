@@ -3,7 +3,7 @@ import { drawStage, saveSchedule, teamLogos, type AdminTeamRow, type MatchRow } 
 import { tableCuts } from "../../../lib/tournament/format";
 import { scheduleShape } from "../../../lib/tournament/schedule";
 import type { Schedule } from "../../../lib/tournament/schedule";
-import { planKnockout, planNextSwissRound, qualifierStatus } from "../../../lib/tournament/stages";
+import { planKnockout, planNextSwissRound, planTiebreaks, qualifierStatus } from "../../../lib/tournament/stages";
 import type { TMatch } from "../../../lib/tournament/types";
 import { useLanguage, useT } from "../../../lib/language";
 import { groupLabel } from "../../../lib/tournament/groupNames";
@@ -37,7 +37,7 @@ function previewRow(m: TMatch): MatchRow {
 export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct; busy: boolean }) {
   const t = useT();
   const lang = useLanguage();
-  const { event, config, stored, seeded, departed } = data;
+  const { event, config, stored, seeded, departed, gameStats } = data;
   const [schedule, setSchedule] = useState<Schedule | null>(config?.schedule ?? null);
   const [advancing, setAdvancing] = useState<AdminTeamRow[] | null>(null);
   useEffect(() => setSchedule(config?.schedule ?? null), [config]);
@@ -47,8 +47,8 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
   const matches = stored?.matches ?? NO_MATCHES;
   const seededIds = useMemo(() => seeded.map((s) => s.id), [seeded]);
   const status = useMemo(
-    () => (format ? qualifierStatus(format, seededIds, matches, departed) : null),
-    [format, seededIds, matches, departed],
+    () => (format ? qualifierStatus(format, seededIds, matches, departed, gameStats) : null),
+    [format, seededIds, matches, departed, gameStats],
   );
 
   // The order the knockout will be seeded in starts from the standings; the administrator can change it.
@@ -68,12 +68,14 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
   const swissPlan = isSwiss ? planNextSwissRound(format, seededIds, matches, departed, schedule) : null;
   const koPlan =
     format.knockout && !koBuilt && advancing
-      ? planKnockout(format, seededIds, matches, departed, advancing.map((a) => a.id), schedule)
+      ? planKnockout(format, seededIds, matches, departed, advancing.map((a) => a.id), schedule, gameStats)
       : null;
+  const tiebreakPlan = !koBuilt && status.playoffs.length > 0 ? planTiebreaks(format, seededIds, matches, departed, gameStats) : null;
+  const openTiebreaks = matches.filter((m) => m.stage === "tiebreak" && (m.status === "ready" || m.status === "in_progress" || m.status === "pending")).length;
 
   const swissRoundsLeft = isSwiss && format.qualifier.format === "swiss" ? format.qualifier.rounds - swissDrawn : 0;
   // Is there any stage still to come? A Swiss round not yet drawn, or a knockout not yet built.
-  const stageToCome = swissRoundsLeft > 0 || (!!format.knockout && !koBuilt);
+  const stageToCome = swissRoundsLeft > 0 || (!!format.knockout && !koBuilt) || (!koBuilt && status.playoffs.length > 0);
   const shape = scheduleShape(format, seededIds.length);
 
   return (
@@ -122,6 +124,47 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
         </div>
       )}
 
+      {!koBuilt && (status.playoffs.length > 0 || openTiebreaks > 0) && (
+        <div className="panel stack" style={{ borderColor: "var(--accent)", padding: "0.7rem", gap: "0.5rem" }}>
+          <strong>{t("Tiebreakers", "Barrages")}</strong>
+          {openTiebreaks > 0 ? (
+            <span className="muted">
+              {t(
+                `${openTiebreaks} tiebreaker match${openTiebreaks === 1 ? " is" : "es are"} still to be played. Teams link them from their entry code like any official match.`,
+                `${openTiebreaks} match(s) de barrage reste(nt) à jouer. Les équipes les lancent avec leur code d'inscription, comme tout match officiel.`,
+              )}
+            </span>
+          ) : (
+            <>
+              <span className="muted">
+                {t(
+                  "These teams are level on every tiebreak, and the tie decides who goes through or where they are seeded. They have to play it off - original seed never decides it. Each tie is a single-game round robin among the tied teams.",
+                  "Ces équipes sont à égalité sur tous les critères, et cette égalité décide de la qualification ou du placement. Elles doivent se départager sur le terrain - la tête de série ne décide jamais. Chaque égalité se joue en poule unique, une manche par match.",
+                )}
+              </span>
+              {status.playoffs.map((p) => (
+                <div key={p.ids.join(",")}>
+                  {p.group !== null && <span className="muted">{groupLabel(event.group_names, p.group, lang)}: </span>}
+                  {p.ids.map((id) => data.names.get(id) ?? "?").join(", ")}
+                </div>
+              ))}
+              {tiebreakPlan?.ok ? (
+                <>
+                  <MatchList matches={tiebreakPlan.matches.map(previewRow)} names={data.names} groupNames={event.group_names} />
+                  <div>
+                    <button className="primary" disabled={busy} onClick={() => void act(() => drawStage(event.id, "tiebreak", tiebreakPlan.matches))}>
+                      {t("Draw the tiebreakers", "Tirer les barrages")}
+                    </button>
+                  </div>
+                </>
+              ) : tiebreakPlan ? (
+                <div className="error-text">{tiebreakPlan.problems.map((p) => <div key={p}>{p}</div>)}</div>
+              ) : null}
+            </>
+          )}
+        </div>
+      )}
+
       {format.knockout && !koBuilt && (
         <div className="stack" style={{ gap: "0.6rem", borderTop: "1px solid var(--panel-border)", paddingTop: "0.7rem" }}>
           <strong>{t("The knockout", "L'élimination")}</strong>
@@ -132,17 +175,6 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
             </span>
           ) : (
             <>
-              {status.cutTied && (
-                <div className="panel" style={{ borderColor: "var(--accent)", padding: "0.7rem" }}>
-                  <strong>{t("There is a tie at the cut line.", "Il y a une égalité à la limite de qualification.")}</strong>{" "}
-                  <span className="muted">
-                    {t(
-                      "The teams either side of the line are level on every tiebreak, so the order below was settled by original seed alone. Play it off if you'd rather, then re-check - or reorder the list to your decision.",
-                      "Les équipes de part et d'autre de la limite sont à égalité sur tous les critères ; l'ordre ci-dessous ne dépend que de la tête de série initiale. Départagez-les si vous le souhaitez, ou réordonnez la liste selon votre décision.",
-                    )}
-                  </span>
-                </div>
-              )}
               <span className="muted">{t("Seeding for the knockout, best first - move teams to change it:", "Têtes de série de l'élimination, la meilleure d'abord - déplacez les équipes pour la modifier :")}</span>
               {advancing && <SeedList teams={advancing} onChange={setAdvancing} signupOrder={seeded.filter((s) => status.advancing.includes(s.id))} />}
               {koPlan?.ok ? (

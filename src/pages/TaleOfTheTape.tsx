@@ -270,7 +270,7 @@ function useStageLabel(event: EventDetail) {
   const t = useT();
   const lang = useLanguage();
   return (m: MatchRow) =>
-    `${m.stage === "group" ? (m.grp !== null ? groupLabel(event.group_names, m.grp, lang) : t("Groups", "Poules")) : m.stage === "swiss" ? t("Swiss", "Suisse") : t("Knockout", "Élimination")} · ${t("Round", "Tour")} ${m.phase ?? m.round}`;
+    `${m.stage === "group" ? (m.grp !== null ? groupLabel(event.group_names, m.grp, lang) : t("Groups", "Poules")) : m.stage === "swiss" ? t("Swiss", "Suisse") : m.stage === "tiebreak" ? t("Tiebreaker", "Barrage") : t("Knockout", "Élimination")} · ${t("Round", "Tour")} ${m.phase ?? m.round}`;
 }
 
 // ---------------------------------------------------------------------------------------------------

@@ -3,9 +3,9 @@ import type { TournamentFormat } from "./format";
 import { effectiveCut, groupPools } from "./format";
 import { seedFromGroups, seedFromSwiss } from "./seeding";
 import { applySchedule, scheduleShape, validateSchedule, type Schedule } from "./schedule";
-import { computeStandings, cutLineTied, type StandingRow } from "./standings";
+import { computeStandings, tiesNeedingPlayoff, type MatchGameStats, type StandingRow } from "./standings";
 import { pairSwissRound } from "./swiss";
-import type { TMatch } from "./types";
+import { newMatch, type TMatch } from "./types";
 
 /**
  * The stages after the first: the next Swiss round, and the knockout that follows a qualifier.
@@ -28,16 +28,27 @@ export interface QualifierStatus {
   /** The teams going through, best seed first. Only meaningful once complete. */
   advancing: string[];
   /**
-   * The line between the last team in and the first team out is a genuine tie on every tiebreak, so the
-   * order was settled by original seed alone. The administrator should look at it (or play it off)
-   * rather than let a coin flip they didn't choose eliminate someone.
+   * Ties that every tiebreak has failed to separate AND that decide something - who advances to the
+   * knockout, or where they are seeded in it. Each needs a tiebreaker match, and the
+   * qualifier is not complete until it is played. `group` is null for Swiss. Only filled once every
+   * qualifier match is decided: before that the table is still moving.
    */
-  cutTied: boolean;
+  playoffs: Playoff[];
   /** The table(s), for showing. One for Swiss, one per group for groups. */
   tables: StandingRow[][];
 }
 
+export interface Playoff {
+  group: number | null;
+  /** The tied teams, in table order. */
+  ids: string[];
+}
+
 const isOpen = (m: TMatch) => m.status === "pending" || m.status === "ready" || m.status === "in_progress";
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** 1..n */
+const upTo = (n: number) => Array.from({ length: Math.max(0, n) }, (_, i) => i + 1);
 
 /** The groups, recovered from the group matches themselves: everyone who has a match in group g is in it. */
 export function groupsFromMatches(matches: TMatch[], seeded: string[]): string[][] {
@@ -52,17 +63,38 @@ export function groupsFromMatches(matches: TMatch[], seeded: string[]): string[]
   return [...members.keys()].sort((x, y) => x - y).map((g) => seeded.filter((id) => members.get(g)!.has(id)));
 }
 
+/**
+ * Where qualifier standings are read, and why: `stats` are the per-game numbers behind the sinks / shots
+ * / time tiebreaks (tournament_game_stats). Without them those steps are skipped - the table is still
+ * right, a tie just reaches the tiebreaker-match step sooner.
+ */
 export function qualifierStatus(
   format: TournamentFormat,
   seeded: string[],
   matches: TMatch[],
   departed: ReadonlySet<string> = new Set(),
+  stats?: MatchGameStats,
 ): QualifierStatus {
   const q = format.qualifier;
-  const empty: QualifierStatus = { complete: false, waitingOn: [], advancing: [], cutTied: false, tables: [] };
+  const empty: QualifierStatus = { complete: false, waitingOn: [], advancing: [], playoffs: [], tables: [] };
   if (q.format === "none") return { ...empty, complete: true };
 
   const cut = effectiveCut(format, seeded.length);
+  const tiebreaks = matches.filter((m) => m.stage === "tiebreak");
+  const openTiebreaks = tiebreaks.filter(isOpen).length;
+
+  // Ties that need playing off, but only once nothing else can move the table; and what is still
+  // holding the qualifier open, in words for the administrator.
+  const finish = (regularOpen: boolean, tables: StandingRow[][], boundaries: number[][], groupOf: (i: number) => number | null) => {
+    const waitingOn: string[] = [];
+    if (openTiebreaks > 0) waitingOn.push(`${plural(openTiebreaks, "tiebreaker match is", "tiebreaker matches are")} still open`);
+    const playoffs: Playoff[] =
+      regularOpen || openTiebreaks > 0
+        ? []
+        : tables.flatMap((table, i) => tiesNeedingPlayoff(table, boundaries[i] ?? []).map((ids) => ({ group: groupOf(i), ids })));
+    if (playoffs.length > 0) waitingOn.push(`${plural(playoffs.length, "tie needs", "ties need")} a tiebreaker match`);
+    return { waitingOn, playoffs };
+  };
 
   if (q.format === "swiss") {
     const swiss = matches.filter((m) => m.stage === "swiss");
@@ -72,12 +104,17 @@ export function qualifierStatus(
     const open = swiss.filter(isOpen).length;
     if (open > 0) waitingOn.push(`${open} match${open === 1 ? " is" : "es are"} still open`);
 
-    const table = computeStandings(seeded, swiss).filter((row) => !departed.has(row.id));
+    const table = computeStandings(seeded, swiss, { stats, tiebreaks, departed }).filter((row) => !departed.has(row.id));
+    // Every place inside the cut seeds the knockout. With no knockout nothing rides on a place - the
+    // event records no champion and finishes on its own - so a tie there is simply shown shared.
+    const boundaries = format.knockout ? upTo(cut) : [];
+    const tie = finish(waitingOn.length > 0, [table], [boundaries], () => null);
+    waitingOn.push(...tie.waitingOn);
     return {
       complete: waitingOn.length === 0,
       waitingOn,
       advancing: seedFromSwiss(table, cut),
-      cutTied: cut > 0 && cutLineTied(table, cut),
+      playoffs: tie.playoffs,
       tables: [table],
     };
   }
@@ -87,17 +124,69 @@ export function qualifierStatus(
   const open = groupMatches.filter(isOpen).length;
   const groups = groupsFromMatches(groupMatches, seeded);
   const tables = groups.map((ids, g) =>
-    computeStandings(ids, groupMatches.filter((m) => m.group === g)).filter((row) => !departed.has(row.id)),
+    computeStandings(ids, groupMatches.filter((m) => m.group === g), {
+      buchholz: false,
+      stats,
+      tiebreaks: tiebreaks.filter((m) => m.group === g),
+      departed,
+    }).filter((row) => !departed.has(row.id)),
   );
   const pools = groupPools(q);
   const takes = pools.map((p) => p.advance);
+  // Each place a group sends is its own seeding tier, so every one of them matters, as does the cut.
+  const boundaries = tables.map((_, g) => (format.knockout ? upTo(takes[g] ?? 0) : []));
+  const waitingOn = open > 0 ? [`${open} match${open === 1 ? " is" : "es are"} still open`] : [];
+  const tie = finish(open > 0, tables, boundaries, (g) => g);
+  waitingOn.push(...tie.waitingOn);
   return {
-    complete: groupMatches.length > 0 && open === 0,
-    waitingOn: open > 0 ? [`${open} match${open === 1 ? " is" : "es are"} still open`] : [],
+    complete: groupMatches.length > 0 && waitingOn.length === 0,
+    waitingOn,
     advancing: seedFromGroups(tables, takes, pools.map((p) => p.challenger)),
-    cutTied: tables.some((table, g) => (takes[g] ?? 0) > 0 && cutLineTied(table, takes[g])),
+    playoffs: tie.playoffs,
     tables,
   };
+}
+
+/**
+ * Tiebreaker matches for every tie the qualifier needs played off (QualifierStatus.playoffs): a
+ * single-game round robin among each tied set - one match for a pair, three for three teams, and so on.
+ * If a round robin goes round in a circle again, the next call draws another.
+ *
+ * No deadline is set: a tiebreaker is played as soon as the teams can, and the administrator chases it.
+ */
+export function planTiebreaks(
+  format: TournamentFormat,
+  seeded: string[],
+  matches: TMatch[],
+  departed: ReadonlySet<string>,
+  stats?: MatchGameStats,
+): StagePlan {
+  if (format.qualifier.format === "none") return { ok: false, problems: ["This event has no qualifier standings."] };
+  if (matches.some((m) => m.stage === "knockout")) return { ok: false, problems: ["The knockout has already been built."] };
+  const status = qualifierStatus(format, seeded, matches, departed, stats);
+  if (status.playoffs.length === 0) return { ok: false, problems: ["No tie needs a tiebreaker match."] };
+
+  const round = matches.filter((m) => m.stage === "tiebreak").reduce((most, m) => Math.max(most, m.round), 0) + 1;
+  const out: TMatch[] = [];
+  for (const playoff of status.playoffs) {
+    for (let i = 0; i < playoff.ids.length; i++) {
+      for (let j = i + 1; j < playoff.ids.length; j++) {
+        out.push(
+          newMatch({
+            key: `TB${round}-${out.length}`,
+            stage: "tiebreak",
+            group: playoff.group,
+            round,
+            index: out.length,
+            a: playoff.ids[i],
+            b: playoff.ids[j],
+            bestOf: 1,
+          }),
+        );
+      }
+    }
+  }
+  return { ok: true, matches: out };
 }
 
 export type StagePlan = { ok: true; matches: TMatch[] } | { ok: false; problems: string[] };
@@ -140,12 +229,13 @@ export function planKnockout(
   departed: ReadonlySet<string>,
   advancing: string[],
   schedule: Schedule,
+  stats?: MatchGameStats,
 ): StagePlan {
   const problems = [...validateSchedule(schedule, scheduleShape(format, seeded.length).ctx)];
   if (!format.knockout) problems.push("This event has no knockout.");
   if (matches.some((m) => m.stage === "knockout")) problems.push("The knockout has already been built.");
 
-  const status = qualifierStatus(format, seeded, matches, departed);
+  const status = qualifierStatus(format, seeded, matches, departed, stats);
   if (!status.complete) problems.push(`The qualifier is not finished: ${status.waitingOn.join("; ")}.`);
   if (advancing.length < 2) problems.push("A knockout needs at least two teams.");
   if (new Set(advancing).size !== advancing.length) problems.push("A team is listed twice.");

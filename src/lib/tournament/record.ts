@@ -48,7 +48,7 @@ export function meetings(matches: MatchRow[], a: string, b: string): MatchRow[] 
 
 /** Qualifier before knockout, then phase by phase - the order the event was played in. */
 export function matchOrder(x: MatchRow, y: MatchRow): number {
-  const stageRank = { swiss: 0, group: 1, knockout: 2 } as const;
+  const stageRank = { swiss: 0, group: 1, tiebreak: 2, knockout: 3 } as const;
   return stageRank[x.stage] - stageRank[y.stage] || (x.phase ?? x.round) - (y.phase ?? y.round) || x.idx - y.idx;
 }
 

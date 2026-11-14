@@ -23,9 +23,9 @@ interface Props {
 /**
  * A qualifier table: rank, record, game difference, and Buchholz (how strong the opposition was).
  *
- * The rank is the strict order the tiebreaks produce. Where two rows are level on everything, the order
- * between them was decided by original seed alone and is marked with a dot, so nobody reads a coin flip
- * as a verdict - and so an administrator can see, before building the knockout, exactly where that is.
+ * The rank is the order the tiebreaks produce. Rows still level on everything - every number and any
+ * tiebreaker match played - share a place and show it as "T3", so nobody reads the order between them as
+ * a verdict. Where such a tie decides anything, a tiebreaker match has to settle it (see planTiebreaks).
  */
 export function StandingsTable({ rows, names, logos, twitch, cut, departed, title, highlight, eventId }: Props) {
   const t = useT();
@@ -57,8 +57,14 @@ export function StandingsTable({ rows, names, logos, twitch, cut, departed, titl
               }}
             >
               <td style={{ padding: "0.35rem 0.4rem", color: index < (cut ?? 0) ? "var(--accent-bright)" : undefined, fontWeight: 600 }}>
-                {row.rank}
-                {row.tied && <span title={t("Level on every tiebreak - ordered by seed", "À égalité sur tous les critères - classé selon la tête de série")}> ·</span>}
+                {row.tied ? (
+                  <span title={t("Level on every tiebreak - shares this place until a tiebreaker match settles it", "À égalité sur tous les critères - partage cette place jusqu'à un match de barrage")}>
+                    {t("T", "=")}
+                    {row.rank}
+                  </span>
+                ) : (
+                  row.rank
+                )}
               </td>
               <td>
                 <EntrantLabel eventId={eventId} teamId={row.id} name={names.get(row.id) ?? "?"} logo={logos?.get(row.id)} twitch={twitch?.get(row.id)} />

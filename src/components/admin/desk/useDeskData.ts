@@ -4,6 +4,7 @@ import {
   adminTeams,
   fetchEvent,
   fetchEventConfig,
+  fetchGameStats,
   fetchOverdue,
   fetchStoredMatches,
   type AdminTeamRow,
@@ -13,6 +14,7 @@ import {
   type OverdueRow,
   type StoredMatches,
 } from "../../../lib/tournament/api";
+import type { MatchGameStats } from "../../../lib/tournament/standings";
 
 export interface DeskData {
   loading: boolean;
@@ -29,6 +31,8 @@ export interface DeskData {
   stored: StoredMatches | null;
   agents: FreeAgentRow[];
   overdue: OverdueRow[];
+  /** Game stats per match, for the standings' tiebreaks. Undefined if they could not be read. */
+  gameStats: MatchGameStats | undefined;
   reload: () => void;
 }
 
@@ -50,6 +54,7 @@ export function useDeskData(eventId: string): DeskData {
     stored: null,
     agents: [],
     overdue: [],
+    gameStats: undefined,
   });
 
   useEffect(() => {
@@ -61,14 +66,16 @@ export function useDeskData(eventId: string): DeskData {
           if (!cancelled) setState((s) => ({ ...s, loading: false, event: null, error: null }));
           return;
         }
-        const [config, teams, stored, agents, overdue] = await Promise.all([
+        const [config, teams, stored, agents, overdue, gameStats] = await Promise.all([
           fetchEventConfig(eventId),
           adminTeams(eventId),
           fetchStoredMatches(eventId),
           adminFreeAgents(eventId),
           event.status === "live" ? fetchOverdue(eventId) : Promise.resolve([]),
+          // Losing these costs the game-stat tiebreaks (a tie reaches the tiebreaker match sooner), never the desk.
+          event.status === "live" ? fetchGameStats(eventId).catch(() => undefined) : Promise.resolve(undefined),
         ]);
-        if (!cancelled) setState({ loading: false, error: null, event, config, teams, stored, agents, overdue });
+        if (!cancelled) setState({ loading: false, error: null, event, config, teams, stored, agents, overdue, gameStats });
       } catch (e) {
         if (!cancelled) setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
       }

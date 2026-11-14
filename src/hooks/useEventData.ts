@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   entrantTwitch,
   fetchEventBundle,
+  fetchGameStats,
   fetchMatchGames,
   teamLogos,
   type EventConfig,
@@ -11,6 +12,7 @@ import {
 } from "../lib/tournament/api";
 import { tableCuts } from "../lib/tournament/format";
 import { qualifierStatus } from "../lib/tournament/stages";
+import type { MatchGameStats } from "../lib/tournament/standings";
 import type { TMatch } from "../lib/tournament/types";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { useTeamPowers } from "./useTeamPowers";
@@ -78,6 +80,25 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
     return () => clearInterval(timer);
   }, [live, reload]);
 
+  // The games behind each qualifier result (sinks, shots, time), for the standings' game-stat tiebreaks.
+  // Read again only when another game is recorded, like the recap links below - never on the minute's
+  // refresh, since every request is a metered log line. A failure costs those tiebreaks, never the page.
+  const gamesPlayedForStats = matches.reduce((n, m) => n + m.score_a + m.score_b, 0);
+  const hasQualifier = !!engine && engine.format.qualifier.format !== "none";
+  const [gameStats, setGameStats] = useState<MatchGameStats | undefined>(undefined);
+  useEffect(() => {
+    if (!isSupabaseConfigured || !hasQualifier || gamesPlayedForStats === 0) return;
+    let cancelled = false;
+    fetchGameStats(id)
+      .then((found) => {
+        if (!cancelled) setGameStats(found);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id, hasQualifier, gamesPlayedForStats]);
+
   // Standings for a Swiss or group qualifier, worked out by the same engine that decides who advances,
   // so the table a player reads is the table the knockout will be built from.
   const standings = useMemo(() => {
@@ -87,14 +108,15 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
       .sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity))
       .map((team) => team.id);
     const gone = new Set(teams.filter((team) => team.forfeited_at).map((team) => team.id));
-    const status = qualifierStatus(engine.format, seededIds, engine.matches, gone);
+    const status = qualifierStatus(engine.format, seededIds, engine.matches, gone, gameStats);
     return {
       tables: status.tables,
       grouped: engine.format.qualifier.format === "groups",
       // One per table: groups can send different numbers (a challenger group usually sends fewer).
       cuts: tableCuts(engine.format),
+      playoffs: status.playoffs,
     };
-  }, [engine, teams]);
+  }, [engine, teams, gameStats]);
 
   // Team power, for the team list and the lines on matches still to play. Approved teams only - the ones
   // in the event. Fetched again when a result comes in (the count of finished matches), not every refresh.

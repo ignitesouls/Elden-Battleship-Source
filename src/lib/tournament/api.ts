@@ -3,6 +3,7 @@ import type { TournamentFormat } from "./format";
 import { CHAMPION_BANNER_DAYS, type EventSummary } from "./frontPage";
 import { rulesFrom, type MatchRules } from "./matchRules";
 import type { Schedule } from "./schedule";
+import type { MatchGameStats, TeamGameStats } from "./standings";
 import type { PlayerPower } from "./teamPower";
 import { matchFromRow, toMatchRows } from "./start";
 import type { TMatch } from "./types";
@@ -116,7 +117,7 @@ export interface InboxInvite {
 export interface MatchRow {
   id: string;
   key: string;
-  stage: "swiss" | "group" | "knockout";
+  stage: "swiss" | "group" | "knockout" | "tiebreak";
   bracket: string | null;
   grp: number | null;
   round: number;
@@ -525,7 +526,7 @@ export interface ScheduledMatch {
   tournament_id: string;
   event_name: string;
   team_size: number;
-  stage: "swiss" | "group" | "knockout";
+  stage: "swiss" | "group" | "knockout" | "tiebreak";
   phase: number;
   /** A group-stage match's group (counting from 0), and the name an administrator gave it - null if unnamed. */
   grp: number | null;
@@ -1358,8 +1359,32 @@ export async function fetchMatchGames(matchIds: string[]): Promise<Map<string, s
   return out;
 }
 
-/** Draws the next Swiss round, or the knockout after a qualifier. Refused if it is the wrong moment. */
-export async function drawStage(eventId: string, stage: "swiss" | "knockout", matches: TMatch[]): Promise<number> {
+/**
+ * Each team's game stats per bracket match - sinks, shots, and won games with their length - for the
+ * standings' game-stat tiebreaks. Forfeits and administrator results have no games and no entry.
+ */
+export async function fetchGameStats(eventId: string): Promise<MatchGameStats> {
+  const { data, error } = await supabase.rpc("tournament_game_stats", { p_tournament: eventId });
+  if (error) fail(error);
+  const out = new Map<string, Map<string, TeamGameStats>>();
+  for (const r of (data ?? []) as Array<{
+    match_key: string;
+    entrant_id: string;
+    games: number;
+    sinks: number;
+    shots: number;
+    won_games: number;
+    won_seconds: number;
+  }>) {
+    const byTeam = out.get(r.match_key) ?? new Map<string, TeamGameStats>();
+    byTeam.set(r.entrant_id, { games: r.games, sinks: r.sinks, shots: r.shots, wonGames: r.won_games, wonSeconds: r.won_seconds });
+    out.set(r.match_key, byTeam);
+  }
+  return out;
+}
+
+/** Draws the next Swiss round, a round of tiebreakers, or the knockout. Refused if it is the wrong moment. */
+export async function drawStage(eventId: string, stage: "swiss" | "knockout" | "tiebreak", matches: TMatch[]): Promise<number> {
   const { data, error } = await supabase.rpc("add_tournament_matches", {
     p_tournament: eventId,
     p_stage: stage,

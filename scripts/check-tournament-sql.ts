@@ -39,7 +39,7 @@ const { applySchedule, suggestSchedule } = await import('../src/lib/tournament/s
 const { planStart, toMatchRows } = await import('../src/lib/tournament/start.ts')
 const { suggestFormat } = await import('../src/lib/tournament/format.ts')
 const { matchFromRow } = await import('../src/lib/tournament/start.ts')
-const { planNextSwissRound, planKnockout, qualifierStatus } = await import('../src/lib/tournament/stages.ts')
+const { planNextSwissRound, planKnockout, planTiebreaks, qualifierStatus } = await import('../src/lib/tournament/stages.ts')
 const { tournamentComplete, eventChampion } = await import('../src/lib/tournament/complete.ts')
 const { pairSwissRound } = await import('../src/lib/tournament/swiss.ts')
 const { buildGroupStage } = await import('../src/lib/tournament/groups.ts')
@@ -1837,9 +1837,71 @@ async function laterStages(admin: Person) {
   refused('there is no round 3 in a two-round event', (await draw(admin, ev.id, 'swiss', roundThree)).error, /All 2 Swiss rounds/)
   check('the event is not finished - the knockout has not been built', ((await svc.from('tournaments').select('status').eq('id', ev.id).single()).data?.status) === 'live')
 
+  // -- game stats behind the tiebreaks -------------------------------------------------------------------
+  // Round 1's T2 v T4, as if played in an official room - with the seats crossed (team A on fleet 2), so a
+  // stat that followed the fleet number instead of the seat would land on the wrong team.
+  const r1 = (await stored(ev.id))
+  const t2t4 = r1.matches.find((m) => m.stage === 'swiss' && m.round === 1 && m.a === ev.seeded[1])!
+  const statRoom = `TB ${run}`
+  const madeRoom = await svc.from('rooms').insert({ code: statRoom, status: 'finished', tournament_match_id: r1.ids.get(t2t4.key), official_team_a: 2, official_team_b: 1 })
+  check('(setup) an official room for the stats', !madeRoom.error, msg(madeRoom.error))
+  const gameKey = `tb-game-${run}`
+  const filed = await svc.from('match_reports').insert({ match_key: gameKey, room_code: statRoom, winner_team: 2, duration: '12:34', total_shots: 65 })
+  check('(setup) the recap is filed', !filed.error, msg(filed.error))
+  const seats = (await svc.from('match_reports').select('official, official_team_a, official_team_b').eq('match_key', gameKey).single()).data
+  check('an official recap records which fleet played as which team', seats?.official === true && seats.official_team_a === 2 && seats.official_team_b === 1, JSON.stringify(seats))
+  await svc.from('match_participants').insert([
+    { match_key: gameKey, nickname: 'a1', team: 2, won: true, shots: 20, sunk: 3 },
+    { match_key: gameKey, nickname: 'a2', team: 2, won: true, shots: 15, sunk: 2 },
+    { match_key: gameKey, nickname: 'b1', team: 1, won: false, shots: 30, sunk: 1 },
+  ])
+  // A voided game in the same match must not count.
+  const voidKey = `tb-void-${run}`
+  await svc.from('match_reports').insert({ match_key: voidKey, room_code: statRoom, winner_team: 1, duration: '05:00', voided: true })
+  await svc.from('match_participants').insert({ match_key: voidKey, nickname: 'b1', team: 1, won: true, shots: 99, sunk: 9 })
+  const statsRes = await createClient(API, ANON, clientOpts).rpc('tournament_game_stats', { p_tournament: ev.id })
+  const statOf = (team: string) => ((statsRes.data ?? []) as Array<Record<string, unknown>>).find((r) => r.match_key === t2t4.key && r.entrant_id === team)
+  check('game stats follow the seat: team A has its own sinks, shots and won-game time', JSON.stringify(statOf(ev.seeded[1])) ===
+    JSON.stringify({ match_key: t2t4.key, entrant_id: ev.seeded[1], games: 1, sinks: 5, shots: 35, won_games: 1, won_seconds: 754 }), JSON.stringify(statsRes.data ?? statsRes.error))
+  check('...team B has its own, with no won game, and the voided game counts for nobody', JSON.stringify(statOf(ev.seeded[3])) ===
+    JSON.stringify({ match_key: t2t4.key, entrant_id: ev.seeded[3], games: 1, sinks: 1, shots: 30, won_games: 0, won_seconds: 0 }))
+  check('a match with no recorded games has no stats', !((statsRes.data ?? []) as Array<Record<string, unknown>>).some((r) => r.match_key !== t2t4.key))
+  // Gone again, so nothing later (the room cap check, a rerun) trips over them. Filing a game into a match
+  // already decided is written down as a failure; that goes too.
+  for (const key of [gameKey, voidKey]) {
+    await svc.from('match_participants').delete().eq('match_key', key)
+    await svc.from('match_reports').delete().eq('match_key', key)
+    await svc.from('official_result_failures').delete().eq('match_key', key)
+  }
+  await svc.from('rooms').delete().eq('code', statRoom)
+
+  // -- a tie at the cut line, played off -----------------------------------------------------------------
+  // T1 won both, T4 lost both; T2 and T3 are 1-1 and never met, with level game difference and Buchholz,
+  // and T3 has no played games, so nothing separates them for the second place through.
+  const beforeTiebreak = (await stored(ev.id)).matches
+  const tiedUp = qualifierStatus(format, ev.seeded, beforeTiebreak, noDeparted)
+  check('the qualifier waits on a tiebreaker for the last place through', !tiedUp.complete && tiedUp.playoffs.length === 1 &&
+    tiedUp.playoffs[0].ids.slice().sort().join() === [ev.seeded[1], ev.seeded[2]].sort().join(), JSON.stringify(tiedUp.playoffs))
+  const tbPlan = planTiebreaks(format, ev.seeded, beforeTiebreak, noDeparted)
+  if (!tbPlan.ok) throw new Error(tbPlan.problems.join(', '))
+  refused('a captain cannot draw a tiebreaker', (await draw(captain, ev.id, 'tiebreak', tbPlan.matches)).error, ONLY_ADMINS)
+  refused('a tiebreaker with only one team is refused', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, b: null })))).error, /needs two teams/)
+  const tbDrawn = await draw(admin, ev.id, 'tiebreak', tbPlan.matches)
+  check('an administrator can draw the tiebreaker', !tbDrawn.error && tbDrawn.data === 1 && (await count(ev.id, 'tiebreak')) === 1, msg(tbDrawn.error))
+  refused('another tiebreaker cannot be drawn while one is open', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, key: 'TB9-0' })))).error, /every qualifier and tiebreaker match is decided/)
+  refused('the knockout cannot be built while a tiebreaker is open',
+    (await draw(admin, ev.id, 'knockout', buildKnockout([ev.seeded[0], ev.seeded[1]], format.knockout!))).error, /qualifier is not finished/)
+  // The lower seed wins it, so seed plainly did not decide.
+  const tbRow = (await stored(ev.id))
+  const tbMatch = tbRow.matches.find((m) => m.stage === 'tiebreak')!
+  const lowerIsA = tbMatch.a === ev.seeded[2]
+  const tbScore = await admin.client.rpc('set_tournament_match_score', { p_match: tbRow.ids.get(tbMatch.key), p_score_a: lowerIsA ? 1 : 0, p_score_b: lowerIsA ? 0 : 1 })
+  check('the tiebreaker takes a result like any match', !tbScore.error, msg(tbScore.error))
+
   const afterQualifier = (await stored(ev.id)).matches
   const status = qualifierStatus(format, ev.seeded, afterQualifier, noDeparted)
   check('the qualifier is complete, and two teams advance', status.complete && status.advancing.length === 2)
+  check('...the tiebreaker winner among them, though the lower seed', status.advancing.join() === [ev.seeded[0], ev.seeded[2]].join(), JSON.stringify(status.advancing))
   refused('a knockout naming a team from another event is refused',
     (await draw(admin, ev.id, 'knockout', buildKnockout([status.advancing[0], foreign], format.knockout!))).error, /not in this event/)
   const ko = planKnockout(format, ev.seeded, afterQualifier, noDeparted, status.advancing, ev.schedule)
@@ -1847,6 +1909,7 @@ async function laterStages(admin: Person) {
   const built = await draw(admin, ev.id, 'knockout', ko.matches)
   check('an administrator can build the knockout', !built.error && built.data === ko.matches.length, msg(built.error))
   refused('the knockout cannot be built twice', (await draw(admin, ev.id, 'knockout', ko.matches)).error, /already been built/)
+  refused('no tiebreaker once the knockout exists', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, key: 'TB9-0' })))).error, /already been built/)
   await playOpen(ev.id)
   const done = (await svc.from('tournaments').select('status, champion_id').eq('id', ev.id).single()).data
   check('played through, the event finishes itself with a champion', done?.status === 'finished' && !!done.champion_id)

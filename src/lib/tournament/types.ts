@@ -23,8 +23,12 @@
 
 export type Side = "a" | "b";
 
-/** Which part of the event a match belongs to. */
-export type MatchStage = "swiss" | "group" | "knockout";
+/**
+ * Which part of the event a match belongs to. "tiebreak" is a match played to settle a qualifier tie
+ * that every tiebreak in the standings failed to (see planTiebreaks); it never counts as a win in the
+ * table itself, and a group's tiebreak carries that group's number.
+ */
+export type MatchStage = "swiss" | "group" | "knockout" | "tiebreak";
 
 /**
  * Which bracket a knockout match sits in.

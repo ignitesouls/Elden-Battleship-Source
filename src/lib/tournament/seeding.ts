@@ -27,11 +27,31 @@ export function seedFromSwiss(standings: StandingRow[], cut: number): string[] {
 }
 
 /**
+ * The same game-stat tiebreaks the standings use (sinks, then shots, then winning-game time, all per
+ * game played), for comparing teams from DIFFERENT groups. Negative when `x` is better; 0 when either has
+ * no data for a step, so that step is passed over.
+ */
+function perGame(x: StandingRow, y: StandingRow): number {
+  const a = x.stats;
+  const b = y.stats;
+  if (a.games > 0 && b.games > 0) {
+    const sinks = b.sinks * a.games - a.sinks * b.games;
+    if (sinks !== 0) return sinks;
+    const shots = a.shots * b.games - b.shots * a.games;
+    if (shots !== 0) return shots;
+  }
+  if (a.wonGames > 0 && b.wonGames > 0) return a.wonSeconds * b.wonGames - b.wonSeconds * a.wonGames;
+  return 0;
+}
+
+/**
  * The entrants a knockout takes from group tables, best first.
  *
  * Seeded in tiers - every group winner before any runner-up - so that finishing first in a group
- * always earns a better bracket position than finishing second in any group. Within a tier the
- * order is by record, with group number as the last resort.
+ * always earns a better bracket position than finishing second in any group. Within a tier the order is
+ * by record, then the per-game stats, with group number as the last resort - teams from different groups
+ * never played each other, so there is no mini-table to read, and an administrator can still reorder the
+ * seeding by hand before the knockout is built.
  *
  * Tiering alone would happily draw the winner of group A against the runner-up of group A in round
  * one, which is a rematch of a match they played a week ago and a bad look for a format whose
@@ -56,13 +76,7 @@ export function seedFromGroups(groupTables: StandingRow[][], take: number | read
       const rows = groupTables
         .map((table, group) => ({ row: tier < takes[group] && !!challenger[group] === band ? table[tier] : undefined, group }))
         .filter((entry): entry is { row: StandingRow; group: number } => entry.row !== undefined)
-        .sort(
-          (x, y) =>
-            y.row.wins - x.row.wins ||
-            y.row.gameDiff - x.row.gameDiff ||
-            y.row.buchholz - x.row.buchholz ||
-            x.group - y.group,
-        );
+        .sort((x, y) => y.row.wins - x.row.wins || y.row.gameDiff - x.row.gameDiff || perGame(x.row, y.row) || x.group - y.group);
       for (const { row, group } of rows) {
         groupOf.set(row.id, group);
         // Offset so that no swap in avoidSameGroupOpeners can trade a challenger for a main-group team.
