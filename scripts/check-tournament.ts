@@ -1973,5 +1973,149 @@ console.log('\nPairing solo signups into teams')
   check('...so naming nothing stores nothing', tidyGroupNames(['', ' ']).length === 0)
 }
 
+// ---------------------------------------------------------------------------------------------
+console.log('\nPlayoff picture (clinched / out)')
+{
+  const { groupOutlook, swissOutlook } = await import('../src/lib/tournament/clinch.ts')
+  const { newMatch } = await import('../src/lib/tournament/types.ts')
+
+  /** A round-robin group (once or twice through) with a random share of it already played. */
+  const randomGroup = (r: () => number) => {
+    const n = 3 + Math.floor(r() * 4) // 3..6 teams
+    const legs = n <= 4 && r() < 0.4 ? 2 : 1
+    const team = ids(n)
+    const ms: TMatch[] = []
+    let k = 0
+    for (let leg = 0; leg < legs; leg++)
+      for (let i = 0; i < n; i++)
+        for (let j = i + 1; j < n; j++) {
+          const m = newMatch({ key: `G0-${k}`, stage: 'group', group: 0, round: k + 1, index: 0, a: team[i], b: team[j] })
+          k++
+          if (r() < 0.55) {
+            const aWon = r() < 0.5
+            Object.assign(m, { winner: aWon ? m.a : m.b, scoreA: aWon ? 1 : 0, scoreB: aWon ? 0 : 1, status: 'done' })
+          }
+          ms.push(m)
+        }
+    return { team, ms, cut: 1 + Math.floor(r() * (n - 1)) }
+  }
+
+  /** Every way the open matches can finish, as key -> winner. */
+  function* outcomes(open: TMatch[]): Generator<Map<string, string>> {
+    for (let mask = 0; mask < 1 << open.length; mask++)
+      yield new Map(open.map((m, i) => [m.key, mask & (1 << i) ? m.a! : m.b!] as const))
+  }
+  const finalWins = (team: string[], ms: TMatch[], extra: Map<string, string>) => {
+    const w = new Map(team.map((id) => [id, 0]))
+    for (const m of ms) {
+      const winner = m.winner ?? extra.get(m.key)
+      if (winner) w.set(winner, w.get(winner)! + 1)
+    }
+    return w
+  }
+  /** The brute-force definitions the engine has to match exactly. */
+  const truth = (team: string[], ms: TMatch[], cut: number, id: string, fixed: Map<string, string>) => {
+    const open = ms.filter((m) => !m.winner && !fixed.has(m.key))
+    let safe = true, out = true
+    for (const o of outcomes(open)) {
+      const w = finalWins(team, ms, new Map([...fixed, ...o]))
+      const me = w.get(id)!
+      if (team.filter((s) => s !== id && w.get(s)! >= me).length >= cut) safe = false
+      if (team.filter((s) => s !== id && w.get(s)! > me).length < cut) out = false
+      if (!safe && !out) break
+    }
+    return safe ? 'clinched' : out ? 'eliminated' : 'alive'
+  }
+
+  const r = rng(424242)
+  let tried = 0, fateBad = '', magicBad = '', branchBad = ''
+  for (let trial = 0; trial < 400; trial++) {
+    const { team, ms, cut } = randomGroup(r)
+    const open = ms.filter((m) => !m.winner)
+    if (open.length === 0 || open.length > 12) continue
+    tried++
+    const table = computeStandings(team, ms, { buchholz: false })
+    const looks = groupOutlook(table, ms, cut)
+    for (const o of looks) {
+      const want = truth(team, ms, cut, o.id, new Map())
+      if (o.fate !== want && !fateBad) fateBad = `trial ${trial} ${o.id}: engine ${o.fate}, truth ${want}`
+      if (o.fate !== 'alive') continue
+      const mine = open.filter((m) => m.a === o.id || m.b === o.id)
+      const opp = (m: TMatch) => (m.a === o.id ? m.b! : m.a!)
+      // Any N wins: the smallest N for which every choice of N wins clinches.
+      let anyWins: number | null = null
+      for (let nWin = 0; nWin <= mine.length && anyWins === null; nWin++) {
+        let every = true
+        for (let mask = 0; mask < 1 << mine.length && every; mask++) {
+          if (mask.toString(2).split('1').length - 1 !== nWin) continue
+          const fixed = new Map(mine.flatMap((m, i) => (mask & (1 << i) ? [[m.key, o.id] as const] : [])))
+          if (truth(team, ms, cut, o.id, fixed) !== 'clinched') every = false
+        }
+        if (every) anyWins = nWin
+      }
+      let anyLosses: number | null = null
+      for (let nLoss = 1; nLoss <= mine.length && anyLosses === null; nLoss++) {
+        let every = true
+        for (let mask = 0; mask < 1 << mine.length && every; mask++) {
+          if (mask.toString(2).split('1').length - 1 !== nLoss) continue
+          const fixed = new Map(mine.flatMap((m, i) => (mask & (1 << i) ? [[m.key, opp(m)] as const] : [])))
+          if (truth(team, ms, cut, o.id, fixed) !== 'eliminated') every = false
+        }
+        if (every) anyLosses = nLoss
+      }
+      const winOut = truth(team, ms, cut, o.id, new Map(mine.map((m) => [m.key, o.id] as const))) === 'clinched'
+      if ((o.clinchWith !== anyWins || o.outWith !== anyLosses || o.ownDestiny !== winOut) && !magicBad)
+        magicBad = `trial ${trial} ${o.id}: engine ${o.clinchWith}/${o.outWith}/${o.ownDestiny}, truth ${anyWins}/${anyLosses}/${winOut}`
+      // The next match's branches, and the single results elsewhere that settle each.
+      // Alive with nothing of its own left: it is waiting on the others, and has no next match.
+      if (!o.next) { if (mine.length > 0 && !branchBad) branchBad = `trial ${trial} ${o.id}: alive with matches left but no next match`; continue }
+      for (const [b, winner] of [[o.next.win, o.id], [o.next.loss, o.next.opponent]] as const) {
+        const fixed = new Map([[o.next.key, winner]])
+        const want = truth(team, ms, cut, o.id, fixed)
+        if (b.fate !== want && !branchBad) branchBad = `trial ${trial} ${o.id} branch ${winner}: engine ${b.fate}, truth ${want}`
+        if (want !== 'alive') continue
+        for (const m of open.filter((x) => x.a !== o.id && x.b !== o.id)) {
+          for (const w of [m.a!, m.b!]) {
+            const t = truth(team, ms, cut, o.id, new Map(fixed).set(m.key, w))
+            const says = b.clinchIf.some((x) => x.key === m.key && x.winner === w) ? 'clinched' : b.outIf.some((x) => x.key === m.key && x.winner === w) ? 'eliminated' : 'alive'
+            if (says !== t && !branchBad) branchBad = `trial ${trial} ${o.id} branch ${winner} + ${m.key}->${w}: engine ${says}, truth ${t}`
+          }
+        }
+      }
+    }
+  }
+  check(`clinched / out match a brute force over every remaining result (${tried} random groups)`, !fateBad && tried > 100, fateBad)
+  check('"any N wins", "any N losses" and "win out" match the brute force', !magicBad, magicBad)
+  check('next-match branches and the results elsewhere that settle them match the brute force', !branchBad, branchBad)
+
+  // A finished group reads its table: level teams at the line wait on a tiebreaker.
+  {
+    const team = ids(3)
+    const done = (key: string, a: string, b: string, winner: string) =>
+      Object.assign(newMatch({ key, stage: 'group', group: 0, round: 1, index: 0, a, b }), { winner, scoreA: winner === a ? 1 : 0, scoreB: winner === b ? 1 : 0, status: 'done' as const })
+    const cycle = [done('x', 'e1', 'e2', 'e1'), done('y', 'e2', 'e3', 'e2'), done('z', 'e3', 'e1', 'e3')]
+    const looks = groupOutlook(computeStandings(team, cycle, { buchholz: false }), cycle, 1)
+    check('a finished three-way cycle with one place: all three wait on a tiebreaker', looks.every((o) => o.fate === 'alive' && o.awaitingTiebreak))
+    const clean = [done('x', 'e1', 'e2', 'e1'), done('y', 'e2', 'e3', 'e2'), done('z', 'e3', 'e1', 'e1')]
+    const fin = groupOutlook(computeStandings(team, clean, { buchholz: false }), clean, 2)
+    check('a finished group with no tie at the line: top two through, third out',
+      fin.map((o) => o.fate).join() === 'clinched,clinched,eliminated', fin.map((o) => `${o.id}:${o.fate}`).join())
+  }
+
+  // Swiss: the bound is one win a round, so the verdicts are safe (never wrong) for any pairing.
+  {
+    const team = ids(8)
+    const table = team.map((id, i) => ({ id, played: 3, wins: [3, 3, 2, 2, 1, 1, 0, 0][i], losses: 0, byes: 0, gameDiff: 0, buchholz: 0, stats: { games: 0, sinks: 0, shots: 0, wonGames: 0, wonSeconds: 0 }, rank: i + 1, tied: false }))
+    const played = team.flatMap((id, i) => [0, 1, 2].map((rd) => Object.assign(newMatch({ key: `S${rd}-${i}`, stage: 'swiss', round: rd + 1, index: i, a: id, isBye: true }), { winner: id, status: 'done' as const })))
+    // 5 rounds, 2 left, cut to 2: a 3-0 team can be caught by the 2-1s (4 wins) but not by a 1-2 (3 max).
+    const looks = swissOutlook(table, played, 5, 2)
+    const fate = (id: string) => looks.find((o) => o.id === id)!
+    check('Swiss: 0-3 with two rounds left and a cut of 2 is out', fate('e7').fate === 'eliminated' && fate('e8').fate === 'eliminated')
+    // One more win (4) could still be matched by e2, e3 and e4 on the bound; two (5) only by e2.
+    check('Swiss: 3-0 is alive, and winning both clinches', fate('e1').fate === 'alive' && fate('e1').clinchWith === 2 && fate('e1').ownDestiny)
+    check('Swiss: 1-2 needs both wins and help', fate('e5').fate === 'alive' && fate('e5').clinchWith === null)
+  }
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) FAILED.`)
 process.exit(failures === 0 ? 0 : 1)

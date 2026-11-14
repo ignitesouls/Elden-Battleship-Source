@@ -12,6 +12,7 @@ import {
 } from "../lib/tournament/api";
 import { tableCuts } from "../lib/tournament/format";
 import { qualifierStatus } from "../lib/tournament/stages";
+import { groupOutlook, swissOutlook } from "../lib/tournament/clinch";
 import type { MatchGameStats } from "../lib/tournament/standings";
 import type { TMatch } from "../lib/tournament/types";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -109,11 +110,22 @@ export function useEventData(id: string, userId: string | null, { alwaysConfig =
       .map((team) => team.id);
     const gone = new Set(teams.filter((team) => team.forfeited_at).map((team) => team.id));
     const status = qualifierStatus(engine.format, seededIds, engine.matches, gone, gameStats);
+    // One per table: groups can send different numbers (a challenger group usually sends fewer).
+    const cuts = tableCuts(engine.format);
+    const q = engine.format.qualifier;
+    // Who has clinched, who is out and what it would take - only where a cut leads to a knockout.
+    const outlooks = cuts
+      ? status.tables.map((table, g) =>
+          q.format === "swiss"
+            ? swissOutlook(table, engine.matches.filter((m) => m.stage === "swiss"), q.rounds, cuts[g] ?? 0)
+            : groupOutlook(table, engine.matches.filter((m) => m.stage === "group" && m.group === g), cuts[g] ?? 0),
+        )
+      : undefined;
     return {
       tables: status.tables,
-      grouped: engine.format.qualifier.format === "groups",
-      // One per table: groups can send different numbers (a challenger group usually sends fewer).
-      cuts: tableCuts(engine.format),
+      grouped: q.format === "groups",
+      cuts,
+      outlooks,
       playoffs: status.playoffs,
     };
   }, [engine, teams, gameStats]);

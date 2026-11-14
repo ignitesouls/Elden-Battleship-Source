@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { EventDetail } from "../lib/tournament/api";
 import { signupHeadline, signupIsOpen } from "../lib/tournament/frontPage";
@@ -12,6 +13,7 @@ import { SignupPanel } from "../components/event/SignupPanel";
 import { MatchList } from "../components/event/MatchList";
 import { BracketView } from "../components/event/BracketView";
 import { StandingsTable } from "../components/event/StandingsTable";
+import { PlayoffPicture } from "../components/event/PlayoffPicture";
 import { EntrantLabel, RosterNames } from "../components/event/TeamLogo";
 import { EventLogo } from "../components/event/EventLogo";
 import { DivisionSwitcher } from "../components/event/DivisionSwitcher";
@@ -41,6 +43,7 @@ export function Event() {
 
   const { event, teams, matches, error, reload, standings, powers, profiles, names, logos, twitch, departedIds, games } = useEventData(id, userId);
   const showsPower = !!powers && powers.size > 0;
+  const [standingsTab, setStandingsTab] = useState<"table" | "picture">("table");
 
   if (!isSupabaseConfigured) {
     return <div className="panel">{t("Supabase isn't configured.", "Supabase n'est pas configuré.")}</div>;
@@ -155,20 +158,46 @@ export function Event() {
       {standings && standings.tables.length > 0 && (
         <div className="panel stack">
           <h3>{t("Standings", "Classement")}</h3>
-          {standings.tables.map((rows, g) => (
-            <StandingsTable
-              key={g}
-              rows={rows}
+          {/* The playoff picture only exists where a cut leads to a knockout. */}
+          {standings.outlooks && standings.cuts && (
+            <div className="t-tabs" role="tablist">
+              <button role="tab" aria-selected={standingsTab === "table"} className={standingsTab === "table" ? "on" : undefined} onClick={() => setStandingsTab("table")}>
+                {t("Standings", "Classement")}
+              </button>
+              <button role="tab" aria-selected={standingsTab === "picture"} className={standingsTab === "picture" ? "on" : undefined} onClick={() => setStandingsTab("picture")}>
+                {t("Playoff picture", "Course à la qualification")}
+              </button>
+            </div>
+          )}
+          {standingsTab === "picture" && standings.outlooks && standings.cuts ? (
+            <PlayoffPicture
+              tables={standings.tables}
+              outlooks={standings.outlooks}
+              cuts={standings.cuts}
+              titles={standings.tables.map((_, g) => (standings.grouped ? groupLabel(event.group_names, g, lang) : undefined))}
               names={names}
               logos={logos}
               twitch={twitch}
-              departed={departedIds}
-              cut={standings.cuts?.[g]}
-              title={standings.grouped ? groupLabel(event.group_names, g, lang) : undefined}
               eventId={event.id}
+              swiss={!standings.grouped}
             />
-          ))}
-          {standings.cuts !== undefined && (
+          ) : (
+            standings.tables.map((rows, g) => (
+              <StandingsTable
+                key={g}
+                rows={rows}
+                names={names}
+                logos={logos}
+                twitch={twitch}
+                departed={departedIds}
+                cut={standings.cuts?.[g]}
+                title={standings.grouped ? groupLabel(event.group_names, g, lang) : undefined}
+                eventId={event.id}
+                outlooks={standings.outlooks?.[g]}
+              />
+            ))
+          )}
+          {!(standingsTab === "picture" && standings.outlooks) && standings.cuts !== undefined && (
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {t("The line marks where the knockout starts. T before a rank means the teams are level on every tiebreak; where that decides who goes through, they play a tiebreaker match.", "La ligne marque le début de l'élimination. = devant un rang signifie une égalité sur tous les critères ; si elle décide de la qualification, un match de barrage les départage.")}
             </span>

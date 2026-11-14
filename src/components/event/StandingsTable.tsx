@@ -1,4 +1,5 @@
 import type { StandingRow } from "../../lib/tournament/standings";
+import type { Outlook } from "../../lib/tournament/clinch";
 import { useT } from "../../lib/language";
 import { EntrantLabel } from "./TeamLogo";
 
@@ -18,6 +19,8 @@ interface Props {
   highlight?: string;
   /** Given, each team's name opens its tale of the tape. */
   eventId?: string;
+  /** Each team's playoff outlook (see clinch.ts): a clinched team gets a badge, an eliminated one is dimmed. */
+  outlooks?: Outlook[];
 }
 
 /**
@@ -27,9 +30,10 @@ interface Props {
  * tiebreaker match played - share a place and show it as "T3", so nobody reads the order between them as
  * a verdict. Where such a tie decides anything, a tiebreaker match has to settle it (see planTiebreaks).
  */
-export function StandingsTable({ rows, names, logos, twitch, cut, departed, title, highlight, eventId }: Props) {
+export function StandingsTable({ rows, names, logos, twitch, cut, departed, title, highlight, eventId, outlooks }: Props) {
   const t = useT();
   if (rows.length === 0) return null;
+  const fateOf = new Map(outlooks?.map((o) => [o.id, o.fate] as const));
 
   return (
     <div>
@@ -51,7 +55,7 @@ export function StandingsTable({ rows, names, logos, twitch, cut, departed, titl
               key={row.id}
               style={{
                 borderTop: cut !== undefined && index === cut ? "2px solid var(--accent)" : "1px solid rgba(30, 65, 87, 0.7)",
-                opacity: departed?.has(row.id) ? 0.55 : 1,
+                opacity: departed?.has(row.id) || fateOf.get(row.id) === "eliminated" ? 0.55 : 1,
                 background: row.id === highlight ? "rgba(217, 164, 65, 0.12)" : undefined,
                 fontWeight: row.id === highlight ? 600 : undefined,
               }}
@@ -69,6 +73,16 @@ export function StandingsTable({ rows, names, logos, twitch, cut, departed, titl
               <td>
                 <EntrantLabel eventId={eventId} teamId={row.id} name={names.get(row.id) ?? "?"} logo={logos?.get(row.id)} twitch={twitch?.get(row.id)} />
                 {departed?.has(row.id) && <span className="badge badge--bad" style={{ marginLeft: "0.4rem" }}>{t("withdrawn", "retirée")}</span>}
+                {fateOf.get(row.id) === "clinched" && (
+                  <span className="badge badge--good" style={{ marginLeft: "0.4rem" }} title={t("Sure of a knockout place, whatever happens in the matches left", "Assuré d'une place en élimination, quoi qu'il arrive dans les matchs restants")}>
+                    {t("clinched", "qualifiée")}
+                  </span>
+                )}
+                {fateOf.get(row.id) === "eliminated" && (
+                  <span className="badge" style={{ marginLeft: "0.4rem" }} title={t("Can no longer reach the knockout, whatever happens in the matches left", "Ne peut plus atteindre l'élimination, quoi qu'il arrive dans les matchs restants")}>
+                    {t("eliminated", "éliminée")}
+                  </span>
+                )}
               </td>
               <td>{row.wins}</td>
               <td>{row.losses}</td>

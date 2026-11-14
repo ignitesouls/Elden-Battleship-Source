@@ -111,6 +111,29 @@ a.link-button.primary:hover {
   border-color: rgba(212, 80, 63, 0.6);
 }
 
+/* Tabs inside a panel - the standings and the playoff picture. */
+.t-tabs {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+}
+
+.t-tabs button {
+  flex: none;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+.t-tabs button.on {
+  background: var(--panel-raised);
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 /* Lists of teams, roster members and matches: quiet rows with a hairline between them. */
 .t-list {
   display: flex;

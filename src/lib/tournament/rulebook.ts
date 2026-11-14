@@ -272,7 +272,13 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
             tr("The event page ranks entrants in this order:", "La page de l'événement classe les participants dans cet ordre :"),
             {
               ordered: [
-                tr("Wins (a bye counts as a win, but not as a game played)", "Victoires (une exemption compte comme une victoire, mais pas comme un match joué)"),
+                // Only a Swiss round with an odd field hands out byes; a group's week off is not one.
+                ctx.format?.qualifier.format === "swiss"
+                  ? tr(
+                      "Wins (a bye counts as a win, but not as a game played: with an odd field one entrant sits out each round, never the same one twice until everyone has, and starting from the bottom of the table)",
+                      "Victoires (une exemption compte comme une victoire, mais pas comme un match joué : avec un nombre impair de participants, un participant est exempté à chaque ronde, jamais deux fois avant que tous l'aient été, en commençant par le bas du classement)",
+                    )
+                  : tr("Wins", "Victoires"),
                 tr(
                   "Head-to-head among only the tied entrants: wins, then game difference, in their matches against each other",
                   "Confrontations directes entre les seuls participants à égalité : victoires, puis différence de manches dans leurs matchs entre eux",

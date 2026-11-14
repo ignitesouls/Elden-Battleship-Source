@@ -504,6 +504,7 @@ function Charts({ event, mine, data }: { event: EventDetail; mine: TeamRow; data
             title={title(ourTable)}
             highlight={mine.id}
             eventId={event.id}
+            outlooks={standings.outlooks?.[ourTable]}
           />
           {standings.cuts !== undefined && (
             <span className="muted" style={{ fontSize: "0.75rem" }}>
@@ -530,7 +531,7 @@ function Charts({ event, mine, data }: { event: EventDetail; mine: TeamRow; data
           <summary style={{ cursor: "pointer" }}>{t(`The other groups (${others.length})`, `Les autres poules (${others.length})`)}</summary>
           <div className="stack" style={{ marginTop: "0.6rem" }}>
             {others.map(({ rows, g }) => (
-              <StandingsTable key={g} rows={rows} names={names} logos={logos} twitch={twitch} departed={departedIds} cut={standings?.cuts?.[g]} title={title(g)} eventId={event.id} />
+              <StandingsTable key={g} rows={rows} names={names} logos={logos} twitch={twitch} departed={departedIds} cut={standings?.cuts?.[g]} title={title(g)} eventId={event.id} outlooks={standings?.outlooks?.[g]} />
             ))}
           </div>
         </details>
