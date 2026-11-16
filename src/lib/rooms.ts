@@ -564,6 +564,10 @@ const BALANCE_PARALLEL = 2;
  * unmigrated database or a function that hangs all end with board_perm null, and a room that cannot
  * start is much worse than a room with an unbalanced board.
  *
+ * Except an official match, where startBattle turns that outcome into a refused start instead - see
+ * BoardNotDealtError. An official is the one match whose fairness everyone has agreed to hold it to,
+ * so it waits for a dealt board rather than going out on the raw seeded deal.
+ *
  * What it is no longer is SILENT. This used to swallow every outcome into a console line, and two
  * consecutive matches duly went out unbalanced - one of them visibly lopsided - without anyone
  * noticing until the board was on screen. The reason now comes back to the caller so the host can
@@ -651,6 +655,56 @@ async function balanceCall(roomId: string, final: boolean): Promise<BalanceOutco
   }
 }
 
+/**
+ * An official match whose board could not be dealt, so it did not start. The room is left in
+ * placement exactly as it was - fleets down, everyone ready - and dealing again is safe: the pool
+ * keeps what the last attempt found (see balance_candidates), so a second try picks up where the
+ * first one stopped rather than starting over.
+ */
+export class BoardNotDealtError extends Error {
+  readonly reason: string | undefined;
+  constructor(reason: string | undefined) {
+    super(`board not dealt: ${reason ?? "unknown"}`);
+    this.name = "BoardNotDealtError";
+    this.reason = reason;
+  }
+}
+
+/**
+ * Whether a failed deal should stop this match starting: an official match on a set the balancer
+ * deals, with no board dealt.
+ *
+ * Asked of the room rather than read off the outcome, because the outcome is one caller's view. A
+ * `too_late` or a failed call may well mean somebody else's call dealt it after all, and the board
+ * on the room is the only thing that settles that. `unsupported_square_set` is a set with nothing to
+ * balance, which is not a failure. A room that cannot be read here starts as it always did: this is
+ * a guard on top of the old behaviour, and an unmigrated column is no reason to lock a room.
+ */
+async function officialBoardMissing(roomId: string, balance: BalanceOutcome): Promise<boolean> {
+  if (balance.reason === "unsupported_square_set") return false;
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("tournament_match_id, board_perm")
+    .eq("id", roomId)
+    .maybeSingle();
+  if (error || !data) return false;
+  return Boolean(data.tournament_match_id) && !data.board_perm;
+}
+
+/**
+ * Tells every crew in an official match that its deal failed (or, with `false`, that the host is
+ * dealing again), so their placement screens stop saying the board is being dealt. Display only and
+ * best-effort: a project without the column (20261116000000_official_board_dealt) just keeps the old
+ * message. The database clears it by itself once a board is dealt or the room leaves placement.
+ */
+export async function setDealFailed(roomId: string, failed: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("rooms")
+    .update({ deal_failed_at: failed ? new Date().toISOString() : null })
+    .eq("id", roomId);
+  if (error) console.warn("Couldn't tell the crews about the deal", error.message);
+}
+
 export async function startBattle(roomId: string): Promise<BalanceOutcome> {
   // Before the balancer, the water and the clock marker - all three of which write something - so a
   // refused start leaves the room exactly as it found it. It is also the only order that makes the
@@ -678,6 +732,12 @@ export async function startBattle(roomId: string): Promise<BalanceOutcome> {
   // played on an unbalanced board while there is still someone to tell. `already_balanced` is the
   // benign one - a duplicate caller, which startBattle explicitly tolerates.
   const balance = await balanceBoardFor(roomId);
+
+  // An official match does not go out on the raw deal. Thrown before the water, the marker and the
+  // status flip, so the room is left exactly as it was and the host can simply deal again.
+  if (!balance.balanced && balance.reason !== "already_balanced" && (await officialBoardMissing(roomId, balance))) {
+    throw new BoardNotDealtError(balance.reason);
+  }
 
   // Hide everything in the water before anyone can shoot at it (see lib/deepWater.ts). This is the
   // only moment it can happen: every fleet is confirmed, so the squares no fleet occupies are

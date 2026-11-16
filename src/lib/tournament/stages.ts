@@ -21,8 +21,19 @@ import { newMatch, type TMatch } from "./types";
  */
 
 export interface QualifierStatus {
-  /** Every qualifier match is decided (and, for Swiss, every round has been drawn). */
+  /**
+   * Who goes through and where they are seeded is settled, so the knockout can be built: every qualifier
+   * match is decided (and, for Swiss, every round has been drawn) - or, in a group stage, every match
+   * still open is a leftover (see `leftover`).
+   */
   complete: boolean;
+  /**
+   * Group matches still open that can no longer change who goes through or the seeding: every team going
+   * through has played all its group games, and no team still playing can reach their wins. They are
+   * played on for final places alongside the knockout. Always 0 for Swiss, whose next pairings depend on
+   * every result.
+   */
+  leftover: number;
   /** Why it isn't, in words for the administrator. Empty when complete. */
   waitingOn: string[];
   /** The teams going through, best seed first. Only meaningful once complete. */
@@ -64,6 +75,31 @@ export function groupsFromMatches(matches: TMatch[], seeded: string[]): string[]
 }
 
 /**
+ * Whether a group's knockout places - who goes through AND in what order - can no longer change, though
+ * the group still has matches to play. Two things have to hold:
+ *
+ *   1. Every team in the top `take` has played all its group games. Seeding across groups compares
+ *      wins, game difference and the per-game stats (seedFromGroups), and any game a qualified team still
+ *      had to play could move every one of those.
+ *   2. Every team still playing is out of reach: even winning everything left, it ends with fewer wins
+ *      than the weakest qualifier. Wins alone, as in the playoff picture (clinch.ts), so the verdict can
+ *      never be taken back.
+ *
+ * With both, every tiebreak among the top teams is final as well - each step reads only their own
+ * results - and a team still playing can never join one of their ties. Mirrored by
+ * tournament_group_settled() in the database, which refuses an early draw on its own.
+ */
+export function groupSettled(table: StandingRow[], matches: TMatch[], take: number): boolean {
+  if (take <= 0) return true;
+  const top = table.slice(0, take);
+  if (top.length === 0) return false;
+  const openFor = (id: string) => matches.filter((m) => isOpen(m) && (m.a === id || m.b === id)).length;
+  if (top.some((row) => openFor(row.id) > 0)) return false;
+  const line = Math.min(...top.map((row) => row.wins));
+  return table.slice(take).every((row) => row.wins + openFor(row.id) < line);
+}
+
+/**
  * Where qualifier standings are read, and why: `stats` are the per-game numbers behind the sinks / shots
  * / time tiebreaks (tournament_game_stats). Without them those steps are skipped - the table is still
  * right, a tie just reaches the tiebreaker-match step sooner.
@@ -76,7 +112,7 @@ export function qualifierStatus(
   stats?: MatchGameStats,
 ): QualifierStatus {
   const q = format.qualifier;
-  const empty: QualifierStatus = { complete: false, waitingOn: [], advancing: [], playoffs: [], tables: [] };
+  const empty: QualifierStatus = { complete: false, leftover: 0, waitingOn: [], advancing: [], playoffs: [], tables: [] };
   if (q.format === "none") return { ...empty, complete: true };
 
   const cut = effectiveCut(format, seeded.length);
@@ -112,6 +148,7 @@ export function qualifierStatus(
     waitingOn.push(...tie.waitingOn);
     return {
       complete: waitingOn.length === 0,
+      leftover: 0,
       waitingOn,
       advancing: seedFromSwiss(table, cut),
       playoffs: tie.playoffs,
@@ -135,11 +172,16 @@ export function qualifierStatus(
   const takes = pools.map((p) => p.advance);
   // Each place a group sends is its own seeding tier, so every one of them matters, as does the cut.
   const boundaries = tables.map((_, g) => (format.knockout ? upTo(takes[g] ?? 0) : []));
-  const waitingOn = open > 0 ? [`${open} match${open === 1 ? " is" : "es are"} still open`] : [];
-  const tie = finish(open > 0, tables, boundaries, (g) => g);
+  // The knockout need not wait for games that can no longer change it (see groupSettled). Ties at the
+  // line are then final too, as everyone level there has finished, so they can be played off now.
+  const settled =
+    open > 0 && !!format.knockout && tables.every((table, g) => groupSettled(table, groupMatches.filter((m) => m.group === g), takes[g] ?? 0));
+  const waitingOn = open > 0 && !settled ? [`${open} match${open === 1 ? " is" : "es are"} still open`] : [];
+  const tie = finish(open > 0 && !settled, tables, boundaries, (g) => g);
   waitingOn.push(...tie.waitingOn);
   return {
     complete: groupMatches.length > 0 && waitingOn.length === 0,
+    leftover: settled ? open : 0,
     waitingOn,
     advancing: seedFromGroups(tables, takes, pools.map((p) => p.challenger)),
     playoffs: tie.playoffs,

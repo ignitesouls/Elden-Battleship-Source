@@ -1888,7 +1888,7 @@ async function laterStages(admin: Person) {
   refused('a tiebreaker with only one team is refused', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, b: null })))).error, /needs two teams/)
   const tbDrawn = await draw(admin, ev.id, 'tiebreak', tbPlan.matches)
   check('an administrator can draw the tiebreaker', !tbDrawn.error && tbDrawn.data === 1 && (await count(ev.id, 'tiebreak')) === 1, msg(tbDrawn.error))
-  refused('another tiebreaker cannot be drawn while one is open', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, key: 'TB9-0' })))).error, /every qualifier and tiebreaker match is decided/)
+  refused('another tiebreaker cannot be drawn while one is open', (await draw(admin, ev.id, 'tiebreak', tbPlan.matches.map((m) => ({ ...m, key: 'TB9-0' })))).error, /every qualifier and tiebreaker match/)
   refused('the knockout cannot be built while a tiebreaker is open',
     (await draw(admin, ev.id, 'knockout', buildKnockout([ev.seeded[0], ev.seeded[1]], format.knockout!))).error, /qualifier is not finished/)
   // The lower seed wins it, so seed plainly did not decide.
@@ -1913,6 +1913,60 @@ async function laterStages(admin: Person) {
   await playOpen(ev.id)
   const done = (await svc.from('tournaments').select('status, champion_id').eq('id', ev.id).single()).data
   check('played through, the event finishes itself with a champion', done?.status === 'finished' && !!done.champion_id)
+
+  // -- the knockout built before the group stage ends ---------------------------------------------------
+  // One group of four, two through. T1 and T2 beat T3 and T4, T1 beats T2: T3 v T4 can only decide third.
+  {
+    const gFmt: TournamentFormat = {
+      qualifier: { format: 'groups', groupCount: 1, advancePerGroup: 2, legs: 1, bestOf: 1 },
+      knockout: { format: 'single', bestOf: 1, thirdPlace: false, grandFinalReset: false },
+    }
+    const g = await started('Early knockout', gFmt)
+    const [t1, t2, t3, t4] = g.seeded
+    const score = async (x: string, y: string, winner: string) => {
+      const s = await stored(g.id)
+      const m = s.matches.find((mm) => mm.stage === 'group' && [mm.a, mm.b].includes(x) && [mm.a, mm.b].includes(y))!
+      const r = await admin.client.rpc('set_tournament_match_score', { p_match: s.ids.get(m.key), p_score_a: m.a === winner ? 1 : 0, p_score_b: m.a === winner ? 0 : 1 })
+      if (r.error) throw new Error(r.error.message)
+    }
+    await score(t1, t2, t1)
+    await score(t1, t3, t1)
+    await score(t1, t4, t1)
+    await score(t2, t3, t2)
+    // T2 v T4 still open: T2 is going through but could still move.
+    refused('the knockout cannot be built while a team going through has a group game left',
+      (await draw(admin, g.id, 'knockout', buildKnockout([t1, t2], gFmt.knockout!))).error, /group stage is not settled/)
+    await score(t2, t4, t2)
+    const early = qualifierStatus(gFmt, g.seeded, (await stored(g.id)).matches, noDeparted)
+    check('with only T3 v T4 left, the engine calls the group settled', early.complete && early.leftover === 1 && early.advancing.join() === [t1, t2].join(),
+      `${early.leftover} ${early.waitingOn.join('; ')}`)
+    const ko = planKnockout(gFmt, g.seeded, (await stored(g.id)).matches, noDeparted, early.advancing, g.schedule)
+    if (!ko.ok) throw new Error(ko.problems.join(', '))
+    const built = await draw(admin, g.id, 'knockout', ko.matches)
+    check('...and the database lets the knockout be built with that game still open', !built.error, msg(built.error))
+
+    const s = await stored(g.id)
+    const final = s.matches.find((m) => m.stage === 'knockout')!
+    const fin = await admin.client.rpc('set_tournament_match_score', { p_match: s.ids.get(final.key), p_score_a: 1, p_score_b: 0 })
+    check('(setup) the final is played', !fin.error, msg(fin.error))
+    const crowned = (await svc.from('tournaments').select('status, champion_id, crowned_at').eq('id', g.id).single()).data
+    check('the champion is crowned when the final ends, while the event stays live for the leftover game',
+      crowned?.status === 'live' && crowned.champion_id === final.a && !!crowned.crowned_at, JSON.stringify(crowned))
+
+    // Past its due date, the daily job drops it, and that finishes the event.
+    const leftoverId = s.ids.get(s.matches.find((m) => m.stage === 'group' && m.status !== 'done')!.key)!
+    const noJobYet = execFileSync('docker', ['exec', '-i', 'supabase_db_web', 'psql', '-U', 'postgres', '-q', '-tA', '-v', 'ON_ERROR_STOP=1'],
+      { input: 'select public.tournament_drop_dead_games();', encoding: 'utf8' })
+    check('a leftover not yet due is left to be played', ((await svc.from('tournament_matches').select('status').eq('id', leftoverId).single()).data?.status) === 'ready', noJobYet.trim())
+    await svc.from('tournament_matches').update({ due_at: new Date(Date.now() - 3600_000).toISOString() }).eq('id', leftoverId)
+    execFileSync('docker', ['exec', '-i', 'supabase_db_web', 'psql', '-U', 'postgres', '-q', '-tA', '-v', 'ON_ERROR_STOP=1'],
+      { input: 'select public.tournament_drop_dead_games();', encoding: 'utf8' })
+    const after = (await svc.from('tournaments').select('status, champion_id, finished_by_bracket').eq('id', g.id).single()).data
+    const leftoverNow = (await svc.from('tournament_matches').select('status').eq('id', leftoverId).single()).data?.status
+    check('past its due date it is dropped, and the event finishes itself with the champion kept',
+      leftoverNow === 'skipped' && after?.status === 'finished' && after.finished_by_bracket && after.champion_id === final.a, `${leftoverNow} ${JSON.stringify(after)}`)
+    refused('nobody but the database runs the dropper', (await admin.client.rpc('tournament_drop_dead_games')).error, /permission denied|not find/)
+  }
 
   // -- other states and other formats ------------------------------------------------------------------
   const notLive = await newTournament({ status: 'signup', team_size: 1, name: `Not live ${run}` })

@@ -37,7 +37,8 @@ function perGame(x: StandingRow, y: StandingRow): number {
   if (a.games > 0 && b.games > 0) {
     const sinks = b.sinks * a.games - a.sinks * b.games;
     if (sinks !== 0) return sinks;
-    const shots = a.shots * b.games - b.shots * a.games;
+    // Most shots per game first: every shot is a boss kill.
+    const shots = b.shots * a.games - a.shots * b.games;
     if (shots !== 0) return shots;
   }
   if (a.wonGames > 0 && b.wonGames > 0) return a.wonSeconds * b.wonGames - b.wonSeconds * a.wonGames;

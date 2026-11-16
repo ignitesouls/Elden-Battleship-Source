@@ -74,7 +74,7 @@ const EMPTY_STATS: TeamGameStats = { games: 0, sinks: 0, shots: 0, wonGames: 0, 
  *   3. Game difference over the whole table.
  *   4. Buchholz (Swiss only).
  *   5. Most sinks per game played.
- *   6. Fewest shots per game played.
+ *   6. Most shots per game played. Every shot is a boss kill, so this is work done, not missed aim.
  *   7. Fastest winning game, on average.
  *   8. Tiebreaker matches among the tied teams, once none of them is still open.
  *
@@ -167,7 +167,7 @@ export function computeStandings(ids: string[], matches: TMatch[], options: Stan
     () => (row) => [row.gameDiff, 1],
     ...(useBuchholz ? [(() => (row: StandingRow) => [row.buchholz, 1] as const) as Step] : []),
     () => (row) => (row.stats.games > 0 ? [row.stats.sinks, row.stats.games] : null),
-    () => (row) => (row.stats.games > 0 ? [-row.stats.shots, row.stats.games] : null),
+    () => (row) => (row.stats.games > 0 ? [row.stats.shots, row.stats.games] : null),
     () => (row) => (row.stats.wonGames > 0 ? [-row.stats.wonSeconds, row.stats.wonGames] : null),
     (tie) => {
       const set = new Set(tie.map((r) => r.id));

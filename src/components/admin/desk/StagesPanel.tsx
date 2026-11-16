@@ -30,7 +30,9 @@ function previewRow(m: TMatch): MatchRow {
  * qualifier - each shown with the reason it is or isn't available, and a preview of exactly what would
  * be drawn before anything is written.
  *
- * Neither can be drawn early, and the database refuses an early draw on its own. What this panel adds is
+ * Neither can be drawn early, and the database refuses an early draw on its own. (A knockout after groups
+ * can come before the last group games, once those can no longer change who goes through or the seeding:
+ * see groupSettled.) What this panel adds is
  * telling the administrator WHY it isn't time yet ("3 matches are still open"), which a refusal after the
  * fact would only say once they had already tried.
  */
@@ -175,6 +177,14 @@ export function StagesPanel({ data, act, busy }: { data: DeskData; act: DeskAct;
             </span>
           ) : (
             <>
+              {status.leftover > 0 && (
+                <span className="muted">
+                  {t(
+                    `${status.leftover} group game${status.leftover === 1 ? " is" : "s are"} still open, but none can change who goes through or the seeding: every team going through has finished, and nobody still playing can catch them. Those games are played on for final places alongside the knockout.`,
+                    `${status.leftover} match(s) de poule reste(nt) à jouer, mais aucun ne peut changer les qualifiés ni les têtes de série : toutes les équipes qualifiées ont fini, et aucune équipe encore en lice ne peut les rattraper. Ces matchs se jouent pour le classement final, en parallèle de l'élimination.`,
+                  )}
+                </span>
+              )}
               <span className="muted">{t("Seeding for the knockout, best first - move teams to change it:", "Têtes de série de l'élimination, la meilleure d'abord - déplacez les équipes pour la modifier :")}</span>
               {advancing && <SeedList teams={advancing} onChange={setAdvancing} signupOrder={seeded.filter((s) => status.advancing.includes(s.id))} />}
               {koPlan?.ok ? (

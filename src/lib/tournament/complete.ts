@@ -15,14 +15,19 @@ const isOpen = (m: TMatch) => m.status === "pending" || m.status === "ready" || 
  *   - A qualifier followed by a knockout has nothing left to play the moment the qualifier ends, but
  *     the knockout has not been built yet. It is only complete once the knockout exists and is done.
  *
- * A grand-final reset that was not needed is `skipped`, not open, so it does not hold an event up.
+ *   - The knockout can be built before the group stage ends (see groupSettled in stages.ts), and the
+ *     leftover group games are played on for final places. The champion is crowned the moment the
+ *     knockout is done (knockoutDone), but the event stays running, so those games can still be played,
+ *     until the last of them is decided or dropped (tournament_drop_dead_games).
+ *
+ * A grand-final reset that was not needed is `skipped`, not open, so it does not hold an event up, and
+ * neither does a leftover game dropped at its deadline.
  */
 export function tournamentComplete(format: TournamentFormat, matches: TMatch[]): boolean {
   const ofStage = (stage: TMatch["stage"]) => matches.filter((m) => m.stage === stage);
 
   if (format.knockout) {
-    const knockout = ofStage("knockout");
-    return knockout.length > 0 && !knockout.some(isOpen);
+    return knockoutDone(matches) && !matches.some((m) => m.stage !== "knockout" && isOpen(m));
   }
 
   const q = format.qualifier;
@@ -39,7 +44,16 @@ export function tournamentComplete(format: TournamentFormat, matches: TMatch[]):
   return false;
 }
 
-/** The champion the database records when the bracket finishes the event: only a knockout has one. */
+/** The knockout has been built and nothing in it is left to play. */
+export function knockoutDone(matches: TMatch[]): boolean {
+  const knockout = matches.filter((m) => m.stage === "knockout");
+  return knockout.length > 0 && !knockout.some(isOpen);
+}
+
+/**
+ * The champion the database records: only a knockout has one, and it is crowned as soon as the knockout
+ * is done, even while leftover group games keep the event running.
+ */
 export function eventChampion(format: TournamentFormat, matches: TMatch[]): string | null {
-  return format.knockout && tournamentComplete(format, matches) ? knockoutChampion(matches) : null;
+  return format.knockout && knockoutDone(matches) ? knockoutChampion(matches) : null;
 }

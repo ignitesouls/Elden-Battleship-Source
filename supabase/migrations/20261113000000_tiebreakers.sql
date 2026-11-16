@@ -6,7 +6,7 @@
 -- src/lib/tournament/standings.ts, which is where it is applied) is:
 --
 --   wins -> mini-table among the tied teams -> game difference -> Buchholz (Swiss only)
---        -> most sinks per game -> fewest shots per game -> fastest winning game
+--        -> most sinks per game -> most shots per game -> fastest winning game
 --        -> a TIEBREAKER MATCH, played, where the tie decides who advances or how they are seeded.
 --
 -- The three game stats come from the games actually played (a forfeit or an administrator's result has

@@ -140,6 +140,21 @@ export function Event() {
         </div>
       )}
 
+      {/* The knockout is won, but the event stays running while the last group games are played. */}
+      {event.status === "live" && event.champion_name && (
+        <div className="panel stack event-banner event-banner--finished" style={{ textAlign: "center" }}>
+          <h3 style={{ margin: 0, border: "none" }}>
+            {t(`Congratulations to ${event.champion_name}!`, `Félicitations à ${event.champion_name} !`)}
+          </h3>
+          <span className="muted">
+            {t(
+              "The last group games are still being played for final places.",
+              "Les derniers matchs de poule se jouent encore pour le classement final.",
+            )}
+          </span>
+        </div>
+      )}
+
       {event.status === "signup" && !open && (
         <div className="panel">
           <strong>{t("Signup has closed.", "Les inscriptions sont closes.")}</strong>{" "}

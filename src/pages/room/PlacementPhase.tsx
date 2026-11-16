@@ -114,6 +114,17 @@ export function PlacementPhase({
   const readyTeams = new Set(teamReady.filter((t) => t.ready).map((t) => t.team));
   const notReadyTeams = activeTeamsList.filter((t) => !readyTeams.has(t));
   const allReady = notReadyTeams.length === 0;
+  // What the crews read once everyone is ready. An official match whose deal failed is waiting on the
+  // host to deal again (see deal_failed_at), and saying it is still being dealt would be a lie.
+  const allReadyText = room.deal_failed_at
+    ? t(
+        "Every fleet is ready, but a fair board couldn't be dealt in time for this official match. It stays on hold - nobody needs to move - until the host deals again.",
+        "Toutes les flottes sont prêtes, mais aucun plateau équitable n'a pu être tiré à temps pour ce match officiel. Le match reste en attente - personne n'a besoin de bouger - jusqu'à ce que l'hôte relance le tirage."
+      )
+    : t(
+        "Every fleet is ready. Dealing the fairest board for these fleets - this can take a little while...",
+        "Toutes les flottes sont prêtes. Tirage du plateau le plus équitable pour ces flottes - cela peut prendre un moment..."
+      );
 
   // Battle opens automatically the instant every team confirms - no host click needed. That
   // trigger lives in Room.tsx rather than here, because this component doesn't mount at all for a
@@ -332,7 +343,7 @@ export function PlacementPhase({
             <span className="muted" style={{ fontSize: "0.75rem" }}>
               {myFleet.placement_confirmed
                 ? allReady
-                  ? t("Every fleet is ready. Dealing the fairest board for these fleets - this can take a little while...", "Toutes les flottes sont prêtes. Tirage du plateau le plus équitable pour ces flottes - cela peut prendre un moment...")
+                  ? allReadyText
                   : `${t("Confirmed. Waiting on:", "Confirmé. En attente de :")} ${notReadyTeams
                       .map((t) => teamName(t))
                       .join(", ")}`
@@ -369,7 +380,7 @@ export function PlacementPhase({
           <h2>{t("Fleet confirmed", "Flotte confirmée")}</h2>
           <p className="muted">
             {allReady
-              ? t("Every fleet is ready. Dealing the fairest board for these fleets - this can take a little while...", "Toutes les flottes sont prêtes. Tirage du plateau le plus équitable pour ces flottes - cela peut prendre un moment...")
+              ? allReadyText
               : `${t("Waiting on:", "En attente de :")} ${notReadyTeams.map((t) => teamName(t)).join(", ")}`}
           </p>
           {error && <div className="error-text">{error}</div>}

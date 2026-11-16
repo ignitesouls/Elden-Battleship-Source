@@ -126,6 +126,12 @@ export interface Room {
    */
   official_seed?: string | null;
   /**
+   * When the host's last attempt to deal this official match's board failed, so the match is held in
+   * placement until they deal again. Cleared by the database once a board is dealt or the room leaves
+   * placement. Display only - see 20261116000000_official_board_dealt.
+   */
+  deal_failed_at?: string | null;
+  /**
    * The bot opponent in this room - see lib/bot.ts and the bot_opponent migration. Null (or absent,
    * on a project without the migration) is a room of people only. A room with one is always practice.
    */

@@ -76,6 +76,18 @@ export function DeskView({ eventId }: { eventId: string }) {
         </div>
       </div>
 
+      {event.status === "live" && event.champion_name && (
+        <div className="panel">
+          <strong>{t(`Champions: ${event.champion_name}.`, `Vainqueurs : ${event.champion_name}.`)}</strong>{" "}
+          <span className="muted">
+            {t(
+              "The event stays live while the leftover group games are played for final places. Any still unplayed past its due date (or 7 days after the final, if it has none) is dropped automatically, and the event then finishes by itself.",
+              "L'événement reste en cours pendant que les derniers matchs de poule se jouent pour le classement final. Ceux encore non joués après leur échéance (ou 7 jours après la finale s'ils n'en ont pas) sont abandonnés automatiquement, puis l'événement se termine de lui-même.",
+            )}
+          </span>
+        </div>
+      )}
+
       {(event.status === "finished" || event.status === "cancelled") && (
         <div className="panel">
           <strong>

@@ -248,7 +248,7 @@ Deno.serve(async (req) => {
     // -- is this the moment ------------------------------------------------------------------
     const { data: room } = await admin
       .from('rooms')
-      .select('id, board_size, square_set, seed, seed_set_at, status, board_perm')
+      .select('id, board_size, square_set, seed, seed_set_at, status, board_perm, tournament_match_id')
       .eq('id', roomId)
       .maybeSingle()
     if (!room) return jsonResponse({ balanced: false, reason: 'no_room' }, 404)
@@ -461,6 +461,20 @@ Deno.serve(async (req) => {
           report = { ...balanceReport, ...totals }
         }
       }
+    }
+
+    // An official match is never dealt the fairest miss. Everywhere else a board that fails the tests
+    // is still better than the raw deal, but an official is the one match everybody agreed to hold to
+    // the tests, so it waits for a passer instead: `searching` while the caller is still looking, and
+    // `no_fair_board` on its last call, which startBattle turns into a held start with "Deal again".
+    // Nothing found is lost - the pool keeps this call's attempts for the next deal.
+    if (room.tournament_match_id && report.accepted === false) {
+      return jsonResponse({
+        balanced: false,
+        reason: final ? 'no_fair_board' : 'searching',
+        passers: report.passers ?? 0,
+        attempts: report.attempts,
+      })
     }
 
     // Two conditions, and the second one matters more than it looks - see the note above the record.

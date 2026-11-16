@@ -406,7 +406,7 @@ console.log('\nStandings')
   check('sinks per game separate a cycle, worst seed first', bySinks.slice(0, 3).map((r) => r.id).join('') === 'cba' && bySinks.every((r) => !r.tied),
     bySinks.map((r) => r.id).join(''))
   const byShots = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 4, c: 4 }, { a: 90, b: 70, c: 80 }, {}) })
-  check('equal sinks: FEWEST shots per game is better', byShots.slice(0, 3).map((r) => r.id).join('') === 'bca', byShots.map((r) => r.id).join(''))
+  check('equal sinks: MOST shots per game is better (every shot is a boss kill)', byShots.slice(0, 3).map((r) => r.id).join('') === 'acb', byShots.map((r) => r.id).join(''))
   const byTime = computeStandings(field, cyc, { stats: evenStats({ a: 4, b: 4, c: 4 }, { a: 80, b: 80, c: 80 }, { a: 900, b: 600, c: 700 }) })
   check('equal sinks and shots: fastest winning game is better', byTime.slice(0, 3).map((r) => r.id).join('') === 'bca', byTime.map((r) => r.id).join(''))
 
@@ -592,6 +592,14 @@ console.log('\nGroups')
   check('...and no first-round match is between group-mates',
     firstRound.every((m) => groupOf.get(m.a!) !== groupOf.get(m.b!)),
     firstRound.map((m) => `${m.a}(${groupOf.get(m.a!)}) v ${m.b}(${groupOf.get(m.b!)})`).join(' '))
+
+  // Group winners level on wins, game difference and sinks: the one with more shots per game is seeded first.
+  {
+    const row = (id: string, shots: number) => ({ id, played: 2, wins: 2, losses: 0, byes: 0, gameDiff: 2, buchholz: 0,
+      stats: { games: 2, sinks: 6, shots, wonGames: 0, wonSeconds: 0 }, rank: 1, tied: false })
+    const order = seedFromGroups([[row('g0', 60)], [row('g1', 90)]], 1)
+    check('across groups: MOST shots per game is seeded first', order.join(' ') === 'g1 g0', order.join(' '))
+  }
 
   // The repair on a deliberately bad draw: 4 groups, 2 each, tier order A1 B1 C1 D1 A2 B2 C2 D2.
   const bad = ['A1', 'B1', 'C1', 'D1', 'A2', 'B2', 'C2', 'D2']
@@ -1486,8 +1494,11 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
         if (format.knockout && status.tables.some((table) => table[0]?.tied)) { ok = false; notes.push(`${tag}: first place is still shared after the tiebreakers`) }
 
         if (format.knockout) {
-          const early = planKnockout(format, seeded, matches.map((m, i) => (i === 0 ? { ...m, status: 'ready' as const, winner: null } : m)), departed, status.advancing, schedule)
-          if (early.ok) { ok = false; notes.push(`${tag}: the knockout was built while a qualifier match was open`) }
+          // A team going through with a game still to play could still move in the seeding, so that is refused.
+          // (A game between two teams that are out is a leftover, and may be open - checked separately.)
+          const qualifiersGame = matches.findIndex((m) => (m.stage === 'group' || m.stage === 'swiss') && !m.isBye && [m.a, m.b].includes(status.advancing[0]))
+          const early = planKnockout(format, seeded, matches.map((m, i) => (i === qualifiersGame ? { ...m, status: 'ready' as const, winner: null } : m)), departed, status.advancing, schedule)
+          if (qualifiersGame >= 0 && early.ok) { ok = false; notes.push(`${tag}: the knockout was built while a qualifier's own match was open`) }
 
           const ko = planKnockout(format, seeded, matches, departed, status.advancing, schedule)
           if (!ko.ok) { ok = false; notes.push(`${tag}: cannot build the knockout: ${ko.problems.join('/')}`); continue }
@@ -1507,6 +1518,70 @@ console.log('\nLater stages: the next Swiss round, and the knockout after a qual
     }
     check(`${spec.label}: ${events} whole events (half losing a team, ${tiebreakEvents} tiebreaker rounds) run start to finish through the planners, refusing at the wrong moment`,
       ok, notes.slice(0, 3).join('; '))
+  }
+
+  // Early knockout. Whenever the engine calls a group stage settled with games still open, those games can
+  // go ANY way without changing who goes through, the seeding, or which ties need playing off: checked
+  // against every way the leftovers could finish.
+  {
+    const fmt = { qualifier: { format: 'groups' as const, groupCount: 2, advancePerGroup: 2, legs: 1 as const, bestOf: 1 }, knockout: opts() }
+    const decide = (m: TMatch, aWins: boolean): TMatch => ({ ...m, scoreA: aWins ? 1 : 0, scoreB: aWins ? 0 : 1, winner: aWins ? m.a : m.b, status: 'done' })
+    const field = ids(10)
+    const stage = buildGroupStage(assignGroups(field, 2), 1, 1)
+    let settledSeen = 0
+    let heldSeen = 0
+    const wrong: string[] = []
+    for (let trial = 0; trial < 3000 && wrong.length === 0; trial++) {
+      const rand = rng(9000 + trial)
+      const openIdx = stage.map((_, i) => i).filter(() => rand() < 0.15).slice(0, 8)
+      if (openIdx.length === 0) continue
+      // Mostly the better seed wins, as in a real group: a coin flip for every game almost never settles early.
+      const played = stage.map((m, i) => (openIdx.includes(i) ? m : decide(m, (seedNo(m.a!) < seedNo(m.b!)) === rand() < 0.85)))
+      const now = qualifierStatus(fmt, field, played, new Set())
+      if (now.leftover === 0) { heldSeen++; continue }
+      settledSeen++
+      if (now.leftover !== openIdx.length) wrong.push(`trial ${trial}: ${now.leftover} leftover, ${openIdx.length} open`)
+      const qualifierOpen = played.some((m) => m.status !== 'done' && now.advancing.some((id) => id === m.a || id === m.b))
+      if (qualifierOpen) wrong.push(`trial ${trial}: settled while a team going through still had a game`)
+      for (let mask = 0; mask < 1 << openIdx.length; mask++) {
+        const filled = played.map((m, i) => { const k = openIdx.indexOf(i); return k < 0 ? m : decide(m, ((mask >> k) & 1) === 1) })
+        const end = qualifierStatus(fmt, field, filled, new Set())
+        if (end.advancing.join() !== now.advancing.join() || JSON.stringify(end.playoffs) !== JSON.stringify(now.playoffs)) {
+          wrong.push(`trial ${trial}, outcome ${mask}: ${now.advancing.join()} became ${end.advancing.join()}`)
+          break
+        }
+      }
+    }
+    check(`early knockout: ${settledSeen} part-played group stages called settled, and no way the leftover games go changes who goes through or the seeding`,
+      wrong.length === 0 && settledSeen > 60 && heldSeen > 60, wrong.slice(0, 3).join('; ') || `settled ${settledSeen}, held ${heldSeen}`)
+
+    // A team going through that still has a game to play holds the knockout back.
+    const allPlayed = stage.map((m) => decide(m, seedNo(m.a!) < seedNo(m.b!)))
+    const full = qualifierStatus(fmt, field, allPlayed, new Set())
+    const topGame = allPlayed.findIndex((m) => m.a === full.advancing[0] || m.b === full.advancing[0])
+    const held = qualifierStatus(fmt, field, allPlayed.map((m, i) => (i === topGame ? stage[i] : m)), new Set())
+    check('early knockout: a qualifier with a game left holds it back', !held.complete && held.leftover === 0, held.waitingOn.join('; '))
+    // Better seed always wins, so the bottom two of each group are long out of reach: their game is a leftover.
+    const tables = full.tables.map((t) => t.map((r) => r.id))
+    const deadGame = allPlayed.findIndex((m) => tables.some((t) => t.slice(-2).includes(m.a!) && t.slice(-2).includes(m.b!)))
+    const withLeftover = allPlayed.map((m, i) => (i === deadGame ? stage[i] : m))
+    const early = qualifierStatus(fmt, field, withLeftover, new Set())
+    check('early knockout: a game between two teams that are out does not hold it back', early.complete && early.leftover === 1 && early.advancing.join() === full.advancing.join(),
+      `${early.leftover} ${early.waitingOn.join('; ')}`)
+    const ko = planKnockout(fmt, field, withLeftover, new Set(), early.advancing, suggestSchedule(fmt, 10, '2026-10-01T00:00:00.000Z').schedule)
+    check('...and the knockout can be built with it still open', ko.ok, ko.ok ? '' : ko.problems.join('; '))
+    if (ko.ok) {
+      const finished = playOut(ko.matches, () => 'a').matches
+      const crowned = [...withLeftover, ...finished]
+      check('...the champion is crowned when the knockout ends, but the event is not complete while the leftover is open',
+        eventChampion(fmt, crowned) !== null && !tournamentComplete(fmt, crowned))
+      const dropped = crowned.map((m, i) => (i === deadGame ? { ...m, status: 'skipped' as const } : m))
+      check('...and it is complete once the leftover is dropped', tournamentComplete(fmt, dropped))
+      const playedOut = crowned.map((m, i) => (i === deadGame ? decide(m, true) : m))
+      check('...or played', tournamentComplete(fmt, playedOut))
+    }
+    // Swiss never settles early: the next pairings hang on every result.
+    check('early knockout: groups only - Swiss reports no leftovers', qualifierStatus({ qualifier: { format: 'swiss', rounds: 3, bestOf: 1 }, knockout: { ...opts(), cutTo: 4 } }, ids(8), pairSwissRound(ids(8), [], 1, 1), new Set()).leftover === 0)
   }
 
   // What is stored is what the engine drew: rows in, rows out, for every kind of match.

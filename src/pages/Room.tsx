@@ -4,7 +4,14 @@ import { useRoom } from "../hooks/useRoom";
 import { LobbyPhase } from "./room/LobbyPhase";
 import { PlacementPhase } from "./room/PlacementPhase";
 import { BattlePhase } from "./room/BattlePhase";
-import { joinRoom, resetRoomToLobby, redeemRejoinCode, startBattle } from "../lib/rooms";
+import {
+  BoardNotDealtError,
+  joinRoom,
+  resetRoomToLobby,
+  redeemRejoinCode,
+  setDealFailed as setDealFailedOnRoom,
+  startBattle,
+} from "../lib/rooms";
 import { activeTeams } from "../lib/battleshipLogic";
 import { teamName, teamHex } from "../lib/teamColors";
 import { useLanguage, useT } from "../lib/language";
@@ -178,14 +185,23 @@ export function Room() {
   // startedRef guards against a second request from this client between the write and the status
   // actually flipping; startBattle() itself tolerates a duplicate caller.
   const [hostError, setHostError] = useState<string | null>(null);
+  // An official match whose board could not be dealt (see BoardNotDealtError). The start is held
+  // until the host asks for another deal, rather than retried on every realtime tick - each try is up
+  // to 40s of balance-board calls, and a platform that is down would be hammered for nothing.
+  //
+  // The room's own deal_failed_at holds it too, so a host who reloads mid-hold (or a new host who
+  // takes over) gets the button rather than a silent automatic re-deal.
+  const [dealFailed, setDealFailed] = useState(false);
+  const dealHeld = dealFailed || Boolean(state.room?.status === "placement" && state.room.deal_failed_at);
   const battleStartedRef = useRef(false);
   useEffect(() => {
     const room = state.room;
     if (!room || room.status !== "placement") {
       battleStartedRef.current = false; // so a rematch in this same room can start again
+      setDealFailed(false);
       return;
     }
-    if (!state.myPlayer?.is_host || battleStartedRef.current) return;
+    if (!state.myPlayer?.is_host || battleStartedRef.current || dealHeld) return;
 
     const teams = activeTeams(state.players);
     if (teams.length < 2) return;
@@ -212,10 +228,35 @@ export function Room() {
         );
       })
       .catch((e) => {
+        if (e instanceof BoardNotDealtError) {
+          // battleStartedRef stays set, which is what holds the start until "Deal again" clears it.
+          setDealFailed(true);
+          void setDealFailedOnRoom(room.id, true);
+          // `no_fair_board` is the balancer working and simply not finding a fair layout in time,
+          // which reads very differently from a call that broke.
+          const why =
+            e.reason === "no_fair_board"
+              ? t("no layout passed every fairness test in time", "aucune disposition n'a passé tous les tests d'équité à temps")
+              : (e.reason ?? t("unknown", "inconnue"));
+          setHostError(
+            `${t("The board for this official match could not be dealt fairly (", "Le plateau de ce match officiel n'a pas pu être tiré équitablement (")}${why}${t(
+              "), so the match has not started. Official matches never go out on an unbalanced board. Everyone stays ready - deal again when you're set; the next deal carries on from where this one stopped.",
+              "), donc le match n'a pas commencé. Un match officiel ne se joue jamais sur un plateau déséquilibré. Tout le monde reste prêt - relancez le tirage quand vous voulez ; le prochain reprend là où celui-ci s'est arrêté."
+            )}`
+          );
+          return;
+        }
         battleStartedRef.current = false;
         setHostError(e instanceof Error ? e.message : String(e));
       });
-  }, [state.room, state.myPlayer, state.players, state.teamReady, t]);
+  }, [state.room, state.myPlayer, state.players, state.teamReady, dealHeld, t]);
+
+  function dealAgain() {
+    battleStartedRef.current = false;
+    setHostError(null);
+    setDealFailed(false);
+    if (state.room) void setDealFailedOnRoom(state.room.id, false);
+  }
 
   // Remembers where you are so the top bar can offer a way back from the leaderboard, a captain's
   // page or the almanac - and forgets it the moment the room stops being somewhere you can return
@@ -406,6 +447,21 @@ export function Room() {
       {/* Rendered above the phase rather than inside it: the thing most likely to fail here is the
           automatic battle start, and the host may well be spectating when it does. */}
       {hostError && <div className="error-text">{hostError}</div>}
+      {dealHeld && state.myPlayer?.is_host && (
+        <>
+          {!hostError && (
+            <div className="error-text">
+              {t(
+                "The last deal for this official match's board failed, so the match is on hold until you deal again.",
+                "Le dernier tirage du plateau de ce match officiel a échoué, donc le match est en attente jusqu'à ce que vous relanciez le tirage."
+              )}
+            </div>
+          )}
+          <button type="button" onClick={dealAgain}>
+            {t("Deal again", "Relancer le tirage")}
+          </button>
+        </>
+      )}
       {renderPhase()}
     </>
   );

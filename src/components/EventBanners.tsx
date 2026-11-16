@@ -200,7 +200,12 @@ function EventBanner({ banner }: { banner: Banner }) {
     return (
       <div className="panel stack event-banner event-banner--live" style={{ gap: "0.5rem" }}>
         <BannerHead event={event}>
-          <h3 style={{ margin: 0 }}>{t(`${event.name} is underway`, `${event.name} est en cours`)}</h3>
+          {/* Crowned while the last group games are still played for final places. */}
+          <h3 style={{ margin: 0 }}>
+            {event.championName
+              ? t(`Congratulations to ${event.championName}, champions of ${event.name}!`, `Félicitations à ${event.championName}, vainqueurs de ${event.name} !`)
+              : t(`${event.name} is underway`, `${event.name} est en cours`)}
+          </h3>
         </BannerHead>
         <div style={{ textAlign: "center" }}>
           <Link to={to} className="link-button primary">

@@ -144,6 +144,14 @@ function formatRule(format: TournamentFormat | null, tr: Tr): string[] {
           ? tr(`. ${advancingFrom(pools, challengers, tr)} advance to a ${knockoutKind}.`, `. ${advancingFrom(pools, challengers, tr)} accèdent à une ${knockoutKind}.`)
           : tr(". The group tables decide the winner.", ". Les classements des poules désignent le vainqueur.")),
     );
+    if (k && pools.length > 0 && pools.every((p) => p.advance > 0)) {
+      out.push(
+        tr(
+          "The knockout can start before the group stage ends, once every team going through has played all its group games and no team still playing can catch them. The remaining group games are played on for final places. Once the champion is crowned, any of them still unplayed after its deadline is dropped.",
+          "La phase finale peut commencer avant la fin des poules, dès que toutes les équipes qualifiées ont joué tous leurs matchs de poule et qu'aucune équipe encore en lice ne peut les rattraper. Les matchs de poule restants se jouent pour le classement final. Une fois le champion couronné, ceux encore non joués après leur échéance sont abandonnés.",
+        ),
+      );
+    }
     if (k && challengers > 0 && challengers < pools.length) {
       out.push(
         tr(
@@ -288,7 +296,7 @@ export function rulebook(ctx: RulebookContext, lang: Language = "en"): RuleSecti
                   ? [tr("Strength of schedule (the combined wins of every opponent you played)", "Force du calendrier (le total des victoires de tous vos adversaires)")]
                   : []),
                 tr("Most sinks per game played", "Le plus de navires coulés par manche jouée"),
-                tr("Fewest shots fired per game played", "Le moins de tirs par manche jouée"),
+                tr("Most shots fired per game played", "Le plus de tirs par manche jouée"),
                 tr("Fastest average time to win a game", "Le temps moyen le plus court pour gagner une manche"),
                 tr("A tiebreaker match", "Un match de barrage"),
               ],
