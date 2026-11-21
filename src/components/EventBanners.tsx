@@ -1,16 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { EventLogo } from "./event/EventLogo";
-import { fetchFrontPageEvents, fetchMyInbox, type InboxInvite } from "../lib/tournament/api";
+import { fetchMyInbox, type InboxInvite } from "../lib/tournament/api";
 import { frontPageBanners, signupHeadlineParts, type Banner, type EventSummary } from "../lib/tournament/frontPage";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { serverNow } from "../lib/serverTime";
 import { useAuthProfile } from "../hooks/useAuthProfile";
+import { useFrontPageFeed } from "../hooks/useFrontPageFeed";
 import { useLanguage, useT } from "../lib/language";
 import "./Tournament.css";
-
-/** How often the banners are re-read. Events change over hours and days, so a minute is generous. */
-const REFRESH_MS = 60_000;
 
 /** How many event banners the front page shows before folding the rest behind a button. */
 const MAX_BANNERS = 3;
@@ -30,38 +28,16 @@ const MAX_BANNERS = 3;
  * down the page people use to get into a match.
  *
  * -- Polled, not subscribed -------------------------------------------------------------------------
- * Same reasoning as the live-battles list on this page: the front page is the one screen people leave
- * open, so a realtime channel here would be held by every idle tab on the site. Nothing is fetched
- * while the tab is hidden.
+ * The events come from the front page's one shared front_page() poll (hooks/useFrontPageFeed), which
+ * fetches nothing while the tab is hidden.
  */
 export function EventBanners() {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
   const profile = useAuthProfile();
-  const [events, setEvents] = useState<EventSummary[]>([]);
+  const { events } = useFrontPageFeed();
   const [inbox, setInbox] = useState<InboxInvite[]>([]);
   const userId = profile?.isTwitch ? profile.userId : null;
-
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    let cancelled = false;
-
-    const read = () => {
-      if (document.visibilityState !== "visible") return;
-      fetchFrontPageEvents(serverNow())
-        .then((rows) => !cancelled && setEvents(rows))
-        .catch(() => undefined);
-    };
-
-    read();
-    const timer = setInterval(read, REFRESH_MS);
-    document.addEventListener("visibilitychange", read);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", read);
-    };
-  }, []);
 
   // Invitations belong to a Twitch account, so an anonymous visitor never asks. Re-read when the
   // account changes, so signing in shows the invitation without a reload.

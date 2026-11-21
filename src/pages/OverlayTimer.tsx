@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useOverlaySource, type OverlaySourceProps } from "../hooks/useOverlaySource";
 import { useRoom } from "../hooks/useRoom";
 import { useBattleClock } from "../hooks/useBattlePhase";
 import { useVictoryOdds } from "../hooks/useVictoryOdds";
 import { activeTeams, sunkHullFlags } from "../lib/battleshipLogic";
 import { formatDuration } from "../lib/matchTime";
+import { finalMatchSeconds } from "../lib/matchReport";
 import { ClockBar } from "../components/ClockBar";
 import { readOpacity, MAX_DELAY_MS } from "../lib/overlayCast";
 import { readTextSize } from "../lib/overlayText";
@@ -59,6 +60,15 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
   // a variable it then ignored. See the `enabled` note in useVictoryOdds.
   const { snapshot, timeline } = useVictoryOdds(state.attacks, state.room, state.players, showOdds, showOdds);
 
+  // Where the clock stops once the match is over - the recap's own "Match time", from the same
+  // function, so the scorebug and the recap posted afterwards never disagree by a second. Memoised
+  // because the clock re-renders this page every second and the log only changes on a shot.
+  const finished = state.room?.status === "finished";
+  const finalSecs = useMemo(
+    () => (finished && state.room ? finalMatchSeconds(state.room, state.attacks) : null),
+    [finished, state.room, state.attacks]
+  );
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.add("overlay-mode");
@@ -97,14 +107,32 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
    * detail nobody reads a scorebug for.
    */
   const delaySec = Math.max(0, Math.min(MAX_DELAY_MS, Number(params.get("delay")) || 0)) / 1000;
-  const shownElapsed = phase ? Math.max(0, Math.round(phase.matchElapsed - delaySec)) : 0;
+  const liveElapsed = phase ? Math.max(0, Math.round(phase.matchElapsed - delaySec)) : 0;
   const shownCountdown = phase ? Math.round(phase.countdown + delaySec) : 0;
 
-  const clock = phase
-    ? phase.phase === "match"
-      ? formatDuration(shownElapsed)
-      : `-${formatDuration(shownCountdown)}`
-    : "--:--";
+  /**
+   * The finished state: the clock stops on the match's final time and the label says it is over.
+   *
+   * Not the moment the room flips to finished, but the moment the DELAYED clock reaches the final
+   * time. A caster holding the scorebug back to match the players' streams would otherwise see it
+   * stop and read "Match finished" before the killing shot has even happened on the stream beside
+   * it. With no delay the two are the same instant, since the room only finishes after that shot.
+   *
+   * A match that ended without a shot to time it by (a forfeit before anyone fired) has no final
+   * time - the recap prints --:-- for it too - so the bug says finished and shows the same.
+   */
+  const showFinished = finished && (finalSecs === null || liveElapsed >= Math.round(finalSecs));
+  const shownElapsed = finished && finalSecs !== null ? Math.min(liveElapsed, Math.round(finalSecs)) : liveElapsed;
+
+  const clock = showFinished
+    ? finalSecs === null
+      ? "--:--"
+      : formatDuration(Math.round(finalSecs))
+    : phase
+      ? phase.phase === "match"
+        ? formatDuration(shownElapsed)
+        : `-${formatDuration(shownCountdown)}`
+      : "--:--";
 
   /**
    * The bar itself is components/ClockBar, which the OBS box's scene preview mounts too.
@@ -116,8 +144,11 @@ export function OverlayTimer(props: OverlaySourceProps = {}) {
   return (
     <div className="ovt">
       <ClockBar
-        phaseLabel={phase ? TR_PHASE_LABEL[phase.phase] : t("Match", "Match")}
+        phaseLabel={
+          showFinished ? t("Match finished", "Match terminé") : phase ? TR_PHASE_LABEL[phase.phase] : t("Match", "Match")
+        }
         clock={clock}
+        finished={showFinished}
         fleets={teams.map((t) => ({ team: t, sunkHulls: sunkHullsFor(t) }))}
         shipDefs={room.ship_defs}
         highlightTeam={highlightTeam}

@@ -160,6 +160,37 @@ export function buildPlayerStats(
   return stats;
 }
 
+/**
+ * How long the match ran, in seconds of match clock: from firing opening to the last shot, with
+ * stopped time taken off. Null when there is no start marker or no shot to measure to.
+ *
+ * Stopped clock comes off the same way the countdown buffer does, and for the same reason: this is
+ * the match that was played, not the evening it was played over. Measured at the LAST SHOT rather
+ * than at now, so a pause that is still open when the recap renders bills only the part of it that
+ * had passed by the time the match ended. (The last shot is when it ended: you fire the instant you
+ * kill, so the shot that sank the last fleet is the finish.)
+ *
+ * Mirrors archive_match, which recomputes this from the room's own columns when the result is filed
+ * (see the match_pause migration). The recap on screen and the record in the book have to read the
+ * same, or a crew watching their own duration will catch the difference - and the scorebug freezes
+ * on this same number when the match finishes, for the same reason.
+ *
+ * `shots` is optional so a caller that has already grouped the log doesn't do it twice.
+ */
+export function finalMatchSeconds(
+  room: Room,
+  attacks: Attack[],
+  shots: FeedShot[] = groupIntoShots(attacks, [])
+): number | null {
+  const startedAt = matchStartedAt(attacks);
+  const lastShot = shots.length > 0 ? shots[0].at : null; // groupIntoShots sorts newest-first
+  if (!startedAt || !lastShot) return null;
+  const lastShotMs = new Date(lastShot).getTime();
+  const stopped = pausedMsBefore(pauseWindows(room), lastShotMs);
+  const secs = (lastShotMs - new Date(startedAt).getTime() - stopped) / 1000;
+  return Math.max(0, secs - matchTimings(room).matchBeginsAt);
+}
+
 export function buildMatchReport(
   room: Room,
   players: Player[],
@@ -182,22 +213,8 @@ export function buildMatchReport(
   const deep = deepWater(room, shots, deepHides, bayleCell);
 
   const startedAt = matchStartedAt(attacks);
-  const lastShot = shots.length > 0 ? shots[0].at : null; // groupIntoShots sorts newest-first
-  let duration = "--:--";
-  if (startedAt && lastShot) {
-    // Stopped clock comes off the same way the countdown buffer does, and for the same reason: this
-    // is the match that was played, not the evening it was played over. Measured at the LAST SHOT
-    // rather than at now, so a pause that is still open when the recap renders bills only the part
-    // of it that had passed by the time the match ended.
-    //
-    // Mirrors archive_match, which recomputes this from the room's own columns when the result is
-    // filed (see the match_pause migration). The recap on screen and the record in the book have to
-    // read the same, or a crew watching their own duration will catch the difference.
-    const lastShotMs = new Date(lastShot).getTime();
-    const stopped = pausedMsBefore(pauseWindows(room), lastShotMs);
-    const secs = (lastShotMs - new Date(startedAt).getTime() - stopped) / 1000;
-    duration = formatDuration(secs - matchTimings(room).matchBeginsAt);
-  }
+  const finalSecs = finalMatchSeconds(room, attacks, shots);
+  const duration = finalSecs === null ? "--:--" : formatDuration(finalSecs);
 
   // Stable across every client in the room, so concurrent saves dedupe on it (see the
   // match_reports.match_key unique constraint) - which is exactly the property the honors draw

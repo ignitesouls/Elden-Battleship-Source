@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { createRoom, joinRoom, fetchLiveBattles, type LiveBattle } from "../lib/rooms";
+import { createRoom, joinRoom, type LiveBattle } from "../lib/rooms";
+import { useFrontPageFeed } from "../hooks/useFrontPageFeed";
 import { serverNow } from "../lib/serverTime";
 import { getLastNickname, storeLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
@@ -23,40 +24,11 @@ export function Home() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * The matches being fought right now.
-   *
-   * Polled rather than subscribed. A realtime channel on `rooms` would be live to the second, but
-   * it would also be a channel held open by every idle front page on the site - and the front page
-   * is the one screen people leave sitting there. Every twenty seconds is well inside the pace this
-   * changes at: a match runs for tens of minutes, and the cost of being a few seconds stale is a
-   * card that lingers a moment after the last hull goes down.
-   *
-   * Nothing is fetched while the tab is hidden, for the same reason useRoom stops reading: nobody
-   * is looking, and a background tab quietly polling forever is how a free Supabase project's
-   * request budget disappears.
+   * The matches being fought right now, from the front page's one shared front_page() poll
+   * (hooks/useFrontPageFeed) - polled rather than subscribed, since a realtime channel on `rooms`
+   * would be held open by every idle front page on the site, and nothing while the tab is hidden.
    */
-  const [live, setLive] = useState<LiveBattle[]>([]);
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    let cancelled = false;
-
-    const read = () => {
-      if (document.visibilityState !== "visible") return;
-      void fetchLiveBattles().then((rows) => {
-        if (!cancelled) setLive(rows);
-      });
-    };
-
-    read();
-    const timer = setInterval(read, 20_000);
-    // So a tab brought back to the front is current immediately, rather than up to 20s behind.
-    document.addEventListener("visibilitychange", read);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", read);
-    };
-  }, []);
+  const { live } = useFrontPageFeed();
 
   // A signed-in player's own nickname wins; their Twitch display name is only adopted when they
   // have never chosen one. Typing beats both, for this visit.

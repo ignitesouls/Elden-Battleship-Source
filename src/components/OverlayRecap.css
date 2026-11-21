@@ -1,0 +1,56 @@
+/**
+ * The post-match recap on the board source - see components/OverlayRecap.
+ *
+ * Fills the source like the board did, transparent around the page. Text pages are a panel laid out
+ * at a natural width and scaled about the centre; a board page is centred at a real size.
+ */
+.ovr {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.ovr-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  width: 560px;
+  gap: 0.5rem;
+  /* Solid rather than the app's panel glass: this sits over gameplay, not over the site's own
+     background, and a recap you can see a boss fight through is a recap nobody reads. */
+  background: rgba(6, 16, 24, 0.9);
+  animation: ovr-in 0.5s ease-out;
+}
+
+.ovr-win {
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+}
+
+.ovr-winner {
+  margin: 0;
+  font-size: 2.6rem;
+  line-height: 1.1;
+}
+
+.ovr-board {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ovr-in 0.5s ease-out;
+}
+
+/* Opacity only - the card's transform carries its fit scale, and animating it would fight that. */
+@keyframes ovr-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

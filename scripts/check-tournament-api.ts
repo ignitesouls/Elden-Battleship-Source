@@ -70,14 +70,14 @@ try {
   trackTournament(eventId)
 
   check('a draft is not on the front page for an anonymous visitor',
-    !(await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!.some((e) => e.id === eventId))
-  check('...nor for a signed-in player', !(await as(stranger, () => api.fetchFrontPageEvents(Date.now()))).value!.some((e) => e.id === eventId))
+    !(await as(null, () => api.fetchFrontPageEvents())).value!.some((e) => e.id === eventId))
+  check('...nor for a signed-in player', !(await as(stranger, () => api.fetchFrontPageEvents())).value!.some((e) => e.id === eventId))
   check('...and fetching it directly finds nothing', (await as(stranger, () => api.fetchEvent(eventId))).value === null)
   check('...but an admin can fetch it', (await as(admin, () => api.fetchEvent(eventId))).value?.status === 'draft')
   check('a player cannot create an event', !!(await as(stranger, () => api.createEvent({ name: 'Nope Cup', description: '', team_size: 1, max_entrants: null, signup_closes_at: null }))).error)
 
   await as(admin, () => api.setEventStatus(eventId, 'signup'))
-  const front = (await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!
+  const front = (await as(null, () => api.fetchFrontPageEvents())).value!
   const mine = front.find((e) => e.id === eventId)
   check('once signup is open the event is on the front page, for a visitor with no account', !!mine)
   check('...with its name, status and closing time', mine?.name === `API Cup ${run}` && mine.status === 'signup' && !!mine.signupClosesAt)
@@ -192,7 +192,7 @@ try {
   await svc.from('tournaments').update({ champion_id: winner.data!.id, finished_at: new Date(Date.now() - 3 * day).toISOString() }).eq('id', recentId)
   await svc.from('tournaments').update({ finished_at: new Date(Date.now() - 15 * day).toISOString() }).eq('id', oldId)
 
-  const page = (await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!
+  const page = (await as(null, () => api.fetchFrontPageEvents())).value!
   const ids = new Set(page.map((e) => e.id))
   check('a live event is on the front page', ids.has(liveId))
   check('a finished event from 3 days ago is', ids.has(recentId))
@@ -240,7 +240,7 @@ try {
   check('it is now running, and its matches are public', startedEvent?.status === 'live' && startedMatches.length === startPlan.plan.matches.length)
   check('...each with its deadline', startedMatches.every((m) => !!m.due_at))
   check('...and it is on the front page as an event underway',
-    frontPageBanners((await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!, new Date()).some((b) => b.event.id === startable && b.kind === 'live'))
+    frontPageBanners((await as(null, () => api.fetchFrontPageEvents())).value!, new Date()).some((b) => b.event.id === startable && b.kind === 'live'))
 
   console.log('\nAn event that has not started has no format')
   const unstarted = await mk('Unstarted', 'signup')
@@ -260,7 +260,7 @@ try {
   check('an admin can cancel a running event', !cancel.error, cancel.error)
   const cancelled = (await as(stranger, () => api.fetchEvent(eventId))).value
   check('...and the event page still reads, now with its reason', cancelled?.status === 'cancelled' && cancelled.cancel_reason === 'Server outage' && !!cancelled.cancelled_at, JSON.stringify(cancelled))
-  check('...but it is off the front page', !(await as(null, () => api.fetchFrontPageEvents(Date.now()))).value!.some((e) => e.id === eventId))
+  check('...but it is off the front page', !(await as(null, () => api.fetchFrontPageEvents())).value!.some((e) => e.id === eventId))
   check('a player cannot cancel an event', !!(await as(stranger, () => api.cancelEvent(liveId, ''))).error)
   check('an admin can delete an event', !(await as(admin, () => api.deleteEvent(draftId))).error)
 } catch (e) {

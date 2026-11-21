@@ -43,6 +43,7 @@ export function ClockBar({
   odds,
   opacity,
   textSize,
+  finished = false,
 }: {
   /** "Match", "Randomization", "Preparation" - see the PHASE_LABEL note in OverlayTimer. */
   phaseLabel: string;
@@ -63,6 +64,8 @@ export function ClockBar({
   opacity: number;
   /** The CEILING on the fit, not a multiplier after it - see fitScale and lib/overlayText. */
   textSize: number;
+  /** The match is over and `clock` is its final time - drawn so a viewer can tell it has stopped. */
+  finished?: boolean;
 }) {
   const [frameRef, frame] = useBoxSize<HTMLDivElement>();
   const [barRef, bar] = useBoxSize<HTMLDivElement>();
@@ -92,7 +95,7 @@ export function ClockBar({
         <div className="ovt-row" ref={rowRef}>
           {showFleets && <div className="ovt-side ovt-left">{side(fleets.slice(0, half))}</div>}
 
-          <div className="ovt-clock">
+          <div className={finished ? "ovt-clock ovt-clock--finished" : "ovt-clock"}>
             <span className="ovt-phase">{phaseLabel}</span>
             <span className="ovt-time">{clock}</span>
           </div>

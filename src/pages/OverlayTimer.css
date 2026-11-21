@@ -84,6 +84,16 @@
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
+/* Match over: the clock has stopped on the final time. Gold label and border so a stopped clock
+   reads as "that's the result" rather than "the source has frozen". */
+.ovt-clock--finished {
+  border-color: rgba(232, 196, 110, 0.6);
+}
+
+.ovt-clock--finished .ovt-phase {
+  color: #e8c46e;
+}
+
 /**
  * -- Why the scorebug's own rules hang off .ovt-fit and not .ovt ---------------------------------
  *

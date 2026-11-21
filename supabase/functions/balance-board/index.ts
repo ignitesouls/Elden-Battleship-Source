@@ -32,8 +32,21 @@
 // nothing yet fired. Only once. Every refusal is a 200 with a reason, never a throw: startBattle
 // awaits this, and a room that cannot start is a far worse outcome than a room with an unbalanced
 // board.
+//
+// -- Why it talks to Postgres directly ------------------------------------------------------------
+//
+// Every REST request through the API gateway is a metered log line (Supabase bills log ingest from
+// 2027), and a supabase-js .from()/.rpc() made from here is one of those just like a browser's. This
+// used to make seven or eight per call - and startBattle makes several calls per match, more on a
+// hard board. Over SUPABASE_DB_URL, as auto-fire does, the reads are ONE round trip and nothing below
+// writes a gateway line. The one request left is auth.getUser(), kept on purpose: it is what actually
+// verifies the caller's token, and a host check on an unverified id would be no check at all.
+//
+// Writes run as `postgres`, which every room guard (guard_board_perm and the rest) exempts exactly as
+// it exempted the service role.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import postgres from 'npm:postgres@3.4.7'
 import { rng, seedFrom } from '../../../src/lib/seededRandom.ts'
 import { buildFlatBoard, dealtPool } from '../../../src/lib/squareSetFormat.ts'
 import { balanceBoard, scoreLayout, BEST_OF, DEFAULT_RULES, smallCrewFloor } from '../../../src/lib/boardBalance.ts'
@@ -54,6 +67,68 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+}
+
+// Same settings as auto-fire, for the same reasons (see its header): one connection, since nearly
+// every call is a cold boot; no array-type lookup, since everything comes back as JSON through rows()
+// or as jsonb; no prepared statements, so the transaction pooler works too.
+const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, {
+  prepare: false,
+  fetch_types: false,
+  max: 1,
+  idle_timeout: 30,
+})
+
+/** A query's rows exactly as PostgREST would have returned them: through json, timestamps and all. */
+async function rows<T>(query: postgres.PendingQuery<postgres.Row[]>): Promise<T[]> {
+  const [{ rows }] = await sql`select coalesce(json_agg(q), '[]'::json) as rows from (${query}) q`
+  return rows as T[]
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+interface RoomRow {
+  id: string
+  board_size: number
+  square_set: string | null
+  seed: string | null
+  seed_set_at: string | null
+  status: string
+  board_perm: number[] | null
+  tournament_match_id: string | null
+}
+
+interface FleetRow {
+  team: number
+  ship_grid: unknown
+  ship_index_grid: unknown
+  placement_confirmed: boolean
+}
+
+/**
+ * Everything a call needs to decide, in one round trip: is the caller the host, the room, whether a
+ * shot has been fired, who is on which team, and every fleet (ordered by team - see below).
+ */
+async function readRoom(roomId: string, userId: string) {
+  const [state] = await rows<{
+    is_host: boolean | null
+    room: RoomRow | null
+    shots: number
+    roster: Array<{ team: number | null }>
+    fleets: FleetRow[]
+  }>(sql`
+    select
+      (select p.is_host from public.players p where p.room_id = ${roomId} and p.user_id = ${userId}) as is_host,
+      (select row_to_json(r) from (
+         select id, board_size, square_set, seed, seed_set_at, status, board_perm, tournament_match_id
+           from public.rooms where id = ${roomId}) r) as room,
+      (select count(*)::int from public.attacks a where a.room_id = ${roomId} and a.cell_index >= 0) as shots,
+      (select coalesce(json_agg(json_build_object('team', p.team)), '[]'::json)
+         from public.players p where p.room_id = ${roomId}) as roster,
+      (select coalesce(json_agg(f order by f.team), '[]'::json) from (
+         select team, ship_grid, ship_index_grid, placement_confirmed
+           from public.fleets where room_id = ${roomId}) f) as fleets`)
+  return state
 }
 
 /**
@@ -216,19 +291,15 @@ Deno.serve(async (req) => {
     // from before the pool existed calls once and would read `searching` as a failure and start the
     // match unbalanced, so without it every call is the last one - the old single-call deal.
     const { roomId, final: finalAsked, pool: poolAsked } = await req.json().catch(() => ({ roomId: null }))
-    if (!roomId || typeof roomId !== 'string') {
+    // A uuid or nothing: anything else would make Postgres throw, which reads as a retryable `error`.
+    if (!roomId || typeof roomId !== 'string' || !UUID.test(roomId)) {
       return jsonResponse({ balanced: false, reason: 'no_room' }, 400)
     }
     const final = finalAsked === true || poolAsked !== true
 
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
-
     // -- who is asking -----------------------------------------------------------------------
-    // The caller's own token, not the service key, so this identifies a real signed-in player
-    // rather than trusting an id in the body.
+    // The caller's own token, verified by Auth, so this identifies a real signed-in player rather
+    // than trusting an id in the body. The one gateway request left - see the header.
     const authHeader = req.headers.get('Authorization') ?? ''
     const caller = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: authHeader } },
@@ -237,20 +308,11 @@ Deno.serve(async (req) => {
     const userId = userData?.user?.id
     if (!userId) return jsonResponse({ balanced: false, reason: 'not_signed_in' }, 401)
 
-    const { data: me } = await admin
-      .from('players')
-      .select('is_host')
-      .eq('room_id', roomId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!me?.is_host) return jsonResponse({ balanced: false, reason: 'not_host' }, 403)
+    const state = await readRoom(roomId, userId)
+    if (!state.is_host) return jsonResponse({ balanced: false, reason: 'not_host' }, 403)
 
     // -- is this the moment ------------------------------------------------------------------
-    const { data: room } = await admin
-      .from('rooms')
-      .select('id, board_size, square_set, seed, seed_set_at, status, board_perm, tournament_match_id')
-      .eq('id', roomId)
-      .maybeSingle()
+    const room = state.room
     if (!room) return jsonResponse({ balanced: false, reason: 'no_room' }, 404)
 
     // `null` is the default set. Anything that is not a cut of the boss board is refused - see the
@@ -268,28 +330,17 @@ Deno.serve(async (req) => {
 
     // Never mid-match. Nothing below could tell a fired square from an unfired one, and rearranging
     // the board under a shot already taken would change what that shot hit.
-    const { count: shots } = await admin
-      .from('attacks')
-      .select('id', { count: 'exact', head: true })
-      .eq('room_id', roomId)
-      .gte('cell_index', 0)
-    if ((shots ?? 0) > 0) return jsonResponse({ balanced: false, reason: 'already_fired' })
+    if (state.shots > 0) return jsonResponse({ balanced: false, reason: 'already_fired' })
 
     // -- the fleets --------------------------------------------------------------------------
-    const { data: roster } = await admin.from('players').select('team').eq('room_id', roomId)
-    const teams = activeTeams(roster ?? [])
+    const teams = activeTeams(state.roster)
     if (teams.length < 2) return jsonResponse({ balanced: false, reason: 'not_enough_teams' })
 
     // Ordered by team, which costs nothing and makes every array derived from these rows - the cost
     // profiles, topCost - line up with the team numbers rather than with whatever order the table
     // happened to return. The direction below no longer depends on that order, but anything reading
     // topCost positionally still does.
-    const { data: fleetRows } = await admin
-      .from('fleets')
-      .select('team, ship_grid, ship_index_grid, placement_confirmed')
-      .eq('room_id', roomId)
-      .order('team')
-    const fleets = (fleetRows ?? []).filter((f) => teams.includes(f.team))
+    const fleets = state.fleets.filter((f) => teams.includes(f.team))
 
     // Every hull still has to be final. Balancing against a fleet that can still move is balancing
     // against nothing, and the captain would then be laying ships against a board already dealt to
@@ -437,18 +488,21 @@ Deno.serve(async (req) => {
     let perm = result.perm
     let report: Record<string, unknown> = balanceReport
     if (occupied.length === 2) {
-      const { data: pool, error: poolErr } = await admin.rpc('merge_balance_candidate', {
-        p_room: room.id,
-        p_key: await dealKey(room, setId, occupied),
-        p_perm: result.perm,
-        p_score: result.fairness,
-        p_report: balanceReport,
-        p_passers: result.accepted ? result.passers : 0,
-        p_attempts: result.attempts,
-      })
-      if (poolErr) {
-        console.warn('balance-board: pool unavailable, dealing this call alone', poolErr.message)
-      } else {
+      // sql.json, not JSON.stringify - see the same note in auto-fire: a pre-stringified object
+      // would arrive as a jsonb STRING.
+      const key = await dealKey(room, setId, occupied)
+      const pool = await rows<{ perm: number[] | null; report: Record<string, unknown> | null; passers: number; attempts: number; calls: number }>(sql`
+        select * from public.merge_balance_candidate(
+          ${room.id}::uuid, ${key},
+          ${sql.json(result.perm as unknown as postgres.JSONValue)}, ${result.fairness}::float8,
+          ${sql.json(balanceReport as unknown as postgres.JSONValue)},
+          ${result.accepted ? result.passers : 0}::int, ${result.attempts}::int)`)
+        .then((r) => r[0])
+        .catch((err) => {
+          console.warn('balance-board: pool unavailable, dealing this call alone', err instanceof Error ? err.message : err)
+          return null
+        })
+      if (pool) {
         if (pool.passers < BEST_OF && !final) {
           return jsonResponse({ balanced: false, reason: 'searching', passers: pool.passers, attempts: pool.attempts })
         }
@@ -478,19 +532,25 @@ Deno.serve(async (req) => {
     }
 
     // Two conditions, and the second one matters more than it looks - see the note above the record.
-    const { data: written, error } = await admin
-      .from('rooms')
-      .update({ board_perm: perm, balance_report: report })
-      .eq('id', roomId)
-      .eq('status', 'placement')
-      .is('board_perm', null)
-      .select('id')
-    if (error) return jsonResponse({ balanced: false, reason: 'write_failed' }, 500)
-    if (!written?.length) return jsonResponse({ balanced: false, reason: 'too_late' })
+    let written: readonly unknown[]
+    try {
+      written = await sql`
+        update public.rooms
+           set board_perm = ${sql.json(perm as unknown as postgres.JSONValue)},
+               balance_report = ${sql.json(report as unknown as postgres.JSONValue)}
+         where id = ${roomId} and status = 'placement' and board_perm is null
+        returning id`
+    } catch (err) {
+      console.error('balance-board: write failed', err)
+      return jsonResponse({ balanced: false, reason: 'write_failed' }, 500)
+    }
+    if (!written.length) return jsonResponse({ balanced: false, reason: 'too_late' })
 
     // Dealt: the pool has done its job. Best-effort - a row left behind is started over by the next
     // deal (its key will not match) and goes with the room either way.
-    if (occupied.length === 2) await admin.from('balance_candidates').delete().eq('room_id', room.id)
+    if (occupied.length === 2) {
+      await sql`delete from public.balance_candidates where room_id = ${room.id}`.catch(() => undefined)
+    }
 
     // The record as stored. `accepted` false means nothing in the whole search met the rules and
     // this is the fairest miss; `passers` is how many layouts the board was chosen from.

@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import type { LiveBattle } from "../rooms";
 import type { TournamentFormat } from "./format";
 import { CHAMPION_BANNER_DAYS, type EventSummary } from "./frontPage";
 import { rulesFrom, type MatchRules } from "./matchRules";
@@ -175,41 +176,59 @@ export function approvedCasters(match: Pick<MatchRow, "casts">): Caster[] {
 //  The front page
 // ===========================================================================
 
-/**
- * The events the front page has anything to say about, as summaries.
- *
- * Only what can produce a banner is asked for - open and running events, and finished ones still
- * inside their two weeks - so the reply is a handful of rows however many events have ever run. The
- * cutoff is computed by the caller, from the server's clock, rather than here from the browser's: a
- * laptop a day fast would otherwise drop a champion banner a day early.
- */
-export async function fetchFrontPageEvents(serverNowMs: number): Promise<EventSummary[]> {
-  const cutoff = new Date(serverNowMs - CHAMPION_BANNER_DAYS * 86_400_000).toISOString();
-  const { data, error } = await supabase
-    .from("tournaments")
-    .select(
-      "id, name, status, signup_closes_at, starts_at, finished_at, logo_path, champion:tournament_entrants!tournaments_champion_id_fkey(name)",
-    )
-    .or(`status.in.(signup,live),and(status.eq.finished,finished_at.gte.${cutoff})`)
-    // The database already hides test events from everyone else; this keeps them off an admin's front page too.
-    .eq("is_test", false)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) fail(error);
+/** Everything the front page polls for, from one front_page() call. */
+export interface FrontPageFeed {
+  /** Battles being fought now - see the front_page migration for why only `battle`. */
+  live: LiveBattle[];
+  /** Every event a banner can be made from; frontPageBanners decides which become one. */
+  events: EventSummary[];
+  /** Scheduled and in-progress official matches, as scheduled_official_matches orders them. */
+  scheduled: ScheduledMatch[];
+}
 
-  return (data ?? []).map((row) => {
-    const champion = row.champion as { name: string } | { name: string }[] | null;
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      status: row.status as EventSummary["status"],
-      signupClosesAt: (row.signup_closes_at as string | null) ?? null,
-      startsAt: (row.starts_at as string | null) ?? null,
-      finishedAt: (row.finished_at as string | null) ?? null,
-      championName: (Array.isArray(champion) ? champion[0]?.name : champion?.name) ?? null,
-      logoPath: (row.logo_path as string | null) ?? null,
-    };
-  });
+interface FrontPageEventRow {
+  id: string;
+  name: string;
+  status: EventSummary["status"];
+  signup_closes_at: string | null;
+  starts_at: string | null;
+  finished_at: string | null;
+  logo_path: string | null;
+  champion_name: string | null;
+}
+
+/**
+ * The whole front page in ONE request (the front_page RPC): live battles, event banners and scheduled
+ * official matches. It used to be four reads on three timers, ~450 requests an hour per open tab, and
+ * every request is a billed log line (see the front_page_feed migration).
+ *
+ * Only what can produce a banner comes back - open and running events, and finished ones still inside
+ * their CHAMPION_BANNER_DAYS - and never a test event. The cutoff is taken from the database's clock:
+ * a laptop a day fast would otherwise drop a champion banner a day early.
+ */
+export async function fetchFrontPage(limit = 12): Promise<FrontPageFeed> {
+  const { data, error } = await supabase.rpc("front_page", { p_champion_days: CHAMPION_BANNER_DAYS, p_limit: limit });
+  if (error) fail(error);
+  const feed = (data ?? {}) as { live?: LiveBattle[]; events?: FrontPageEventRow[]; scheduled?: ScheduledMatch[] };
+  return {
+    live: feed.live ?? [],
+    events: (feed.events ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      signupClosesAt: row.signup_closes_at ?? null,
+      startsAt: row.starts_at ?? null,
+      finishedAt: row.finished_at ?? null,
+      championName: row.champion_name ?? null,
+      logoPath: row.logo_path ?? null,
+    })),
+    scheduled: feed.scheduled ?? [],
+  };
+}
+
+/** The front page's events alone - the same front_page call, for the check scripts. */
+export async function fetchFrontPageEvents(): Promise<EventSummary[]> {
+  return (await fetchFrontPage()).events;
 }
 
 /** The signed-in player's pending invitations, for the front page's "you've been invited" notice. */
@@ -557,13 +576,6 @@ export interface ScheduledMatch {
   casters: Caster[];
   /** The reader's own request to cast it, or null - including for a visitor who isn't signed in. */
   my_cast: CastRow["status"] | null;
-}
-
-/** Scheduled and in-progress official matches across every running event, soonest first - one request. */
-export async function fetchScheduledMatches(limit = 12): Promise<ScheduledMatch[]> {
-  const { data, error } = await supabase.rpc("scheduled_official_matches", { p_limit: limit });
-  if (error) fail(error);
-  return (data ?? []) as ScheduledMatch[];
 }
 
 // -- Official casters ----------------------------------------------------------------------------------

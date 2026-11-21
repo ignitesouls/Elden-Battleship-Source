@@ -207,6 +207,15 @@ export interface CastView {
    * Here rather than a one-off message so a refreshed source hears it again. Absent means every cam.
    */
   camsOff?: string[] | null;
+  /**
+   * Turn the board into the post-match recap when the match ends - see components/OverlayRecap.
+   *
+   * Absent means yes, like `eggs`: every player-pinned source, which never hears from a desk, shows
+   * it by itself. False is the desk's "Back to board", for a caster who wants the final board up
+   * while they talk over it. The desk clears it when the next match starts, so one match's choice
+   * never silently suppresses the next one's result.
+   */
+  recap?: boolean;
 }
 
 /** Ceiling on the overlay hold. Past this a "delay" is really "the board has stopped". */

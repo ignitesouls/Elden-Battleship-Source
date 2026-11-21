@@ -1267,7 +1267,7 @@ export interface LiveBattle {
   players: number;
   /** Fleets with at least one player on them, which is what "2 fleets" on the card means. */
   fleets: number;
-  /** When the room was opened. Not when the match started - see fetchLiveBattles. */
+  /** When the room was opened, not when the match started. */
   created_at: string;
   /**
    * Whether this one counts. Carried onto the front page because the alternative is inviting a
@@ -1275,53 +1275,6 @@ export interface LiveBattle {
    * tell them so until they have already clicked.
    */
   practice?: boolean;
-}
-
-/**
- * Every match currently being fought, for the front page.
- *
- * Deliberately `status = 'battle'` and nothing else. A lobby is somebody's room being arranged and
- * a placement phase is a match that hasn't opened yet - neither is a thing to walk in on, and
- * listing them would turn the front page into a directory of rooms to gatecrash. 'finished' is out
- * for the opposite reason: it's over, and the recap is reachable from the almanac.
- *
- * Two reads rather than a join, exactly as listRooms() does it for the admin: PostgREST can only
- * aggregate through a foreign-table select, and the counting is cheaper here than the round trip
- * saved. Rooms cap at 15 (see the room-limit migration) so both reads are small by construction.
- *
- * Every column read here is already world-readable ("rooms select" / "players select" are both
- * `using (true)`), so this publishes no fact a room code didn't already expose. What it does change
- * is that the codes themselves are now public - which is what the spectators_cannot_disrupt
- * migration exists to make safe.
- */
-export async function fetchLiveBattles(): Promise<LiveBattle[]> {
-  const { data: rooms, error } = await supabase
-    .from("rooms")
-    .select("id, code, created_at, practice")
-    .eq("status", "battle")
-    .order("created_at", { ascending: false });
-  if (error || !rooms || rooms.length === 0) return [];
-
-  const ids = rooms.map((r) => r.id);
-  const { data: players } = await supabase.from("players").select("room_id, team").in("room_id", ids);
-
-  const heads = new Map<string, number>();
-  const crews = new Map<string, Set<number>>();
-  for (const p of players ?? []) {
-    heads.set(p.room_id, (heads.get(p.room_id) ?? 0) + 1);
-    if (p.team === null) continue;
-    const teams = crews.get(p.room_id) ?? new Set<number>();
-    teams.add(p.team);
-    crews.set(p.room_id, teams);
-  }
-
-  return rooms.map((r) => ({
-    code: r.code,
-    players: heads.get(r.id) ?? 0,
-    fleets: crews.get(r.id)?.size ?? 0,
-    created_at: r.created_at,
-    practice: r.practice ?? false,
-  }));
 }
 
 /**

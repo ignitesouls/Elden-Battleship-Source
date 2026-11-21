@@ -1,10 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchScheduledMatches, linkCastRoom, multitwitchUrl, requestCast, teamLogoUrl, withdrawCast, type ScheduledMatch } from "../lib/tournament/api";
+import { refreshFrontPage, useFrontPageFeed } from "../hooks/useFrontPageFeed";
+import { linkCastRoom, multitwitchUrl, requestCast, teamLogoUrl, withdrawCast, type ScheduledMatch } from "../lib/tournament/api";
 import { createRoom } from "../lib/rooms";
 import { getLastNickname } from "../lib/playerSession";
 import { BOARD_SIZE, fleetFor } from "../types/battleship";
-import { isSupabaseConfigured } from "../lib/supabase";
 import { useLanguage, useT } from "../lib/language";
 import { groupLabel } from "../lib/tournament/groupNames";
 import { useAuthProfile, accountName } from "../hooks/useAuthProfile";
@@ -14,9 +14,6 @@ import "./Tournament.css";
 
 // The tale of the tape lives with its own page; the front page only fetches that code when a card is opened.
 const MatchupTapeInline = lazy(() => import("../pages/TaleOfTheTape").then((m) => ({ default: m.MatchupTapeInline })));
-
-/** Polled gently: a time agreed a minute ago can wait two to appear, and the front page is busy. */
-const REFRESH_MS = 120_000;
 
 /**
  * The front page's "Tournament matches": every official match a pair of captains has put a time on, and
@@ -31,7 +28,8 @@ const REFRESH_MS = 120_000;
  * event desk. The card says where their request stands and lets them withdraw it - and, once approved,
  * open the match's lobby themselves before either team has.
  *
- * One request (scheduled_official_matches) per look, and nothing at all while the tab is hidden. Renders
+ * Its rows ride on the front page's one shared front_page() poll (hooks/useFrontPageFeed), which reads
+ * nothing at all while the tab is hidden. Renders
  * nothing when there is nothing scheduled - most days, between events.
  */
 export function ScheduledMatches() {
@@ -39,7 +37,7 @@ export function ScheduledMatches() {
   const lang = useLanguage();
   const me = useAuthProfile();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<ScheduledMatch[]>([]);
+  const rows = useFrontPageFeed().scheduled;
   // One card open at a time: each open tape re-reads its event every minute.
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -47,25 +45,14 @@ export function ScheduledMatches() {
   /** The match whose "Ask to cast" is showing its language choice, if any. */
   const [asking, setAsking] = useState<string | null>(null);
 
-  const read = useCallback(() => {
-    if (!isSupabaseConfigured || document.visibilityState !== "visible") return Promise.resolve();
-    return fetchScheduledMatches()
-      .then(setRows)
-      .catch(() => undefined); // a front page must never fail over an extra
-  }, []);
+  // The shared poll keeps the rows current; this re-reads at once after a cast action.
+  const read = refreshFrontPage;
 
+  // Re-read when the account changes: my_cast is the reader's own. (On mount this joins the poller's
+  // first read rather than making a second - concurrent refreshes share one request.)
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    const tick = () => void read();
-    tick();
-    const timer = setInterval(tick, REFRESH_MS);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
-    };
-    // Re-read when the account changes: my_cast is the reader's own.
-  }, [read, me?.userId]);
+    void refreshFrontPage();
+  }, [me?.userId]);
 
   /** Asks to cast, or withdraws; the server's refusal is shown under the card in its own words. */
   async function cast(m: ScheduledMatch, action: (matchId: string) => Promise<void>, done?: () => void) {

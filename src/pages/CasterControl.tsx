@@ -989,6 +989,17 @@ export function CasterControl({
     });
   }, [lapSecs, punchOn, punchSecs, driving]);
 
+  /**
+   * "Back to board" lasts one match. Cleared the moment the room leaves finished, so the next match's
+   * result comes up on stream by itself rather than being suppressed by a choice made an hour ago.
+   * Only by the holding desk, which is the one whose view reaches the sources.
+   */
+  const roomFinished = room?.status === "finished";
+  useEffect(() => {
+    if (roomFinished || !driving) return;
+    setView((v) => (v.recap === undefined ? v : { ...v, recap: undefined }));
+  }, [roomFinished, driving]);
+
   if (!room) {
     return (
       <div className="panel stack" style={{ width: "min(460px, 100%)" }}>
@@ -1625,6 +1636,32 @@ export function CasterControl({
           {/* Everything that aims or dresses the board belongs to whoever holds it: these groups lock,
               still openable, for a caster watching another's hands. */}
           <DeskMenu id="view" title={t("On stream", "À l'écran")} locked={!driving} lockedNote={lockedNote}>
+          {/* The board turns into the recap by itself when a match ends (see components/OverlayRecap);
+              this is the way back to the final board, and back again. Only while there is a result. */}
+          {room.status === "finished" && (
+            <section>
+              <h3>{t("Match over", "Match terminé")}</h3>
+              <div className="cast-buttons">
+                <button
+                  className={view.recap !== false ? "primary" : ""}
+                  onClick={() => set({ recap: true })}
+                  title={t(
+                    "The board shows the win card, honors, scoreboard and every fleet's final board, in turn",
+                    "Le plateau affiche tour à tour la victoire, les honneurs, le tableau des scores et le plateau final de chaque flotte"
+                  )}
+                >
+                  {t("Show recap", "Afficher le récap")}
+                </button>
+                <button
+                  className={view.recap === false ? "primary" : ""}
+                  onClick={() => set({ recap: false })}
+                  title={t("Keep the final board on stream instead", "Garder le plateau final à l'écran")}
+                >
+                  {t("Back to board", "Retour au plateau")}
+                </button>
+              </div>
+            </section>
+          )}
           <section>
             <h3>{t("View", "Vue")}</h3>
             <div className="cast-buttons">

@@ -18,8 +18,13 @@ import {
   MAX_ZOOM,
   readOpacity,
   readEmptyFade,
+  MAX_DELAY_MS,
   type CastView,
 } from "../lib/overlayCast";
+import { OverlayRecap } from "../components/OverlayRecap";
+
+/** How long the final board stays up before the recap takes over - see `showRecap` below. */
+const RECAP_BEAT_MS = 3000;
 import { newestMarked, readMotion, type CastMotion } from "../lib/overlayCamera";
 import { useBoardCamera } from "../hooks/useBoardCamera";
 import { readTextSize, OVERLAY_MAX_FONT } from "../lib/overlayText";
@@ -381,8 +386,44 @@ export function OverlayBoard(props: OverlaySourceProps = {}) {
     [stageRef, attachCamera]
   );
 
+  /**
+   * When the board turns into the post-match recap - see components/OverlayRecap.
+   *
+   * Not the instant the room finishes. Shots reach this board live, but a caster holding their
+   * frames back to line up with the players' streams (CastView.delayMs) has a stream on which the
+   * killing blow hasn't happened yet, and "Red wins" must not land before it does - so the hold is
+   * waited out first. Then a short beat on top, for everybody, so the final shot is seen landing on
+   * the board before the board goes away. A pinned source hears no desk, so holds only the beat.
+   *
+   * The desk's "Back to board" (CastView.recap === false) wins over all of it.
+   */
+  const finished = state.room?.status === "finished";
+  const holdMs = (pinned ? 0 : Math.min(MAX_DELAY_MS, Math.max(0, view.delayMs ?? 0))) + RECAP_BEAT_MS;
+  const [recapDue, setRecapDue] = useState(false);
+  useEffect(() => {
+    if (!finished) {
+      setRecapDue(false);
+      return;
+    }
+    const timer = setTimeout(() => setRecapDue(true), holdMs);
+    return () => clearTimeout(timer);
+  }, [finished, holdMs]);
+  const showRecap = finished && recapDue && view.recap !== false;
+
   if (!room) return null;
   if (!view.visible) return null;
+  // Faded to nothing is the streamer saying "nothing on screen", and that holds for the recap too.
+  if (showRecap && (view.opacity ?? 1) > 0) {
+    return (
+      <OverlayRecap
+        room={room}
+        players={state.players}
+        attacks={state.attacks}
+        deepHides={state.deepHides}
+        teams={teams}
+      />
+    );
+  }
 
   const boardSize = room.board_size;
   // Blank water until the shooting starts, exactly as the players' own placement board is - see
